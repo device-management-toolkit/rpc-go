@@ -19,6 +19,39 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Activate Device (Local-ACM)",
+            "type": "go",
+            "asRoot": true,
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "activate",
+                "-local",
+                "-config",
+                "../config (1).yaml",
+                "-acm",
+                "-n",
+                "-v"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Configure CIRA (Local)",
+            "type": "go",
+            "asRoot": true,
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/main.go",
+            "args": [
+                "configure",
+                "cira",
+                "-mpsaddress",
+                "192.168.10.13",
+                "-mpspassword",
+                "P@ssw0rd"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
             "name": "AMT Info",
             "type": "go",
             "asRoot": true,

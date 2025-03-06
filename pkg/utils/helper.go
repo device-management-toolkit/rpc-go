@@ -4,6 +4,11 @@
  **********************************************************************/
 package utils
 
+import (
+	"fmt"
+	"regexp"
+)
+
 func InterpretControlMode(mode int) string {
 	switch mode {
 	case 0:
@@ -75,4 +80,36 @@ func InterpretRemoteAccessTrigger(status int) string {
 	default:
 		return "unknown"
 	}
+}
+
+func ValidateMPSPassword(password string) error {
+	const (
+		minLength = 8
+		maxLength = 16
+	)
+
+	// Check length constraint
+	if length := len(password); length < minLength || length > maxLength {
+		return IncorrectCommandLineParameters
+	}
+
+	// Check character requirements using regex
+	patterns := map[string]string{
+		"uppercase": `[A-Z]`,
+		"lowercase": `[a-z]`,
+		"digit":     `[0-9]`,
+		"special":   `[!@#$%^&*()-=+\[\]{}|;:'",.<>?/` + "`" + `~]`,
+	}
+
+	for patternType, pattern := range patterns {
+		matched, err := regexp.MatchString(pattern, password)
+		if err != nil {
+			return fmt.Errorf("regex error checking for %s: %w", patternType, err)
+		}
+		if !matched {
+			return IncorrectCommandLineParameters
+		}
+	}
+
+	return nil
 }
