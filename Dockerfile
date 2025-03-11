@@ -11,7 +11,7 @@ WORKDIR /rpc
 COPY . .
 
 # Install go-licenses
-RUN go install github.com/google/go-licenses@latest
+RUN go install github.com/google/go-licenses@v1.0.0
 # Generate license files
 RUN go-licenses save ./... --save_path=licenses
 
