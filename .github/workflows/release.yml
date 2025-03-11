@@ -46,7 +46,7 @@ jobs:
           password: ${{ secrets.INTC_DOCKER_PASSWORD }}
       - name: Install go-licenses
         run: |
-          go install github.com/google/go-licenses@latest
+          go install github.com/google/go-licenses@v1.0.0
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
 
       - name: Semantic Release
