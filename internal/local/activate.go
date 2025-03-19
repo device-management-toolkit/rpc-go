@@ -115,6 +115,7 @@ func (service *ProvisioningService) ActivateACM() error {
 		}
 		return nil
 	}
+
 	return nil
 }
 
