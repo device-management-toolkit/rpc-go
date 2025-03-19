@@ -23,6 +23,7 @@ type AmtInfoFlags struct {
 	Lan      bool
 	Hostname bool
 	OpState  bool
+	All      bool
 }
 
 func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
@@ -41,6 +42,7 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 	amtInfoCommand.BoolVar(&f.AmtInfo.Lan, "lan", false, "LAN Settings")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Hostname, "hostname", false, "OS Hostname")
 	amtInfoCommand.BoolVar(&f.AmtInfo.OpState, "operationalState", false, "AMT Operational State")
+	amtInfoCommand.BoolVar(&f.AmtInfo.All, "all", false, "All AMT Information (incl. Certificates)")
 	amtInfoCommand.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT Password")
 
 	if err := amtInfoCommand.Parse(f.commandLineArgs[2:]); err != nil {
@@ -51,7 +53,8 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 	if f.JsonOutput {
 		defaultFlagCount = defaultFlagCount + 1
 	}
-	if len(f.commandLineArgs) == defaultFlagCount {
+
+	if len(f.commandLineArgs) == defaultFlagCount || f.AmtInfo.All {
 		f.AmtInfo.Ver = true
 		f.AmtInfo.Bld = true
 		f.AmtInfo.Sku = true
@@ -62,6 +65,10 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 		f.AmtInfo.Lan = true
 		f.AmtInfo.Hostname = true
 		f.AmtInfo.OpState = true
+	}
+
+	if f.AmtInfo.All {
+		f.AmtInfo.Cert = true
 	}
 
 	// no password - same behavior only cert hashes
