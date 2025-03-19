@@ -1,3 +1,10 @@
+# [2.44.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.43.1...v2.44.0) (2025-03-19)
+
+
+### Features
+
+* add -all flag to list all amtinfo including cert hashes ([db702c0](https://github.com/device-management-toolkit/rpc-go/commit/db702c0caf9611bb674e449bb5d69f24b872757b))
+
 ## [2.43.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.43.0...v2.43.1) (2025-03-11)
 
 
