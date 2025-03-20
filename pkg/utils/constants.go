@@ -48,6 +48,7 @@ const (
 	SubCommandSyncHostname        = "synchostname"
 	SubCommandSyncIP              = "syncip"
 	SubCommandSetAMTFeatures      = "amtfeatures"
+	SubCommandCIRA                = "cira"
 
 	// Return Codes
 	Success ReturnCode = 0
@@ -124,7 +125,7 @@ var ActivationFailedAddCert = CustomError{Code: 131, Message: "ActivationFailed"
 var ActivationFailedGenerateNonce = CustomError{Code: 132, Message: "ActivationFailed", Details: "failed to generate nonce"}
 var ActivationFailedSignString = CustomError{Code: 133, Message: "ActivationFailed", Details: "failed to create signed string"}
 var ActivationFailedGetControlMode = CustomError{Code: 134, Message: "ActivationFailed", Details: "failed to get control mode"}
-var ActivationFailedControlMode = CustomError{Code: 135, Message: "ActivationFailed", Details: "recieved invalid control mode"}
+var ActivationFailedControlMode = CustomError{Code: 135, Message: "ActivationFailed", Details: "received invalid control mode"}
 var DuplicateKey = CustomError{Code: 136, Message: "DuplicateKey", Details: "Key pair already exists"}
 var WiredConfigurationFailed = CustomError{Code: 137, Message: "WiredConfigurationFailed"}
 var UnsupportedAMTVersion = CustomError{Code: 138, Message: "UnsupportedAMTVersion"}

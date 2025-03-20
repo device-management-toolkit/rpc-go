@@ -106,27 +106,37 @@ var encryptionMethod = map[string]wifi.EncryptionMethod{
 }
 
 func (f *Flags) printConfigurationUsage() string {
+	var sb strings.Builder
 	baseCommand := fmt.Sprintf("%s %s", filepath.Base(os.Args[0]), utils.CommandConfigure)
-	usage := "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
-	usage += "Usage: " + baseCommand + " COMMAND [OPTIONS]\n\n"
-	usage += "Supported Configuration Commands:\n"
-	usage += "  " + utils.SubCommandWired + " Add or modify ethernet settings in AMT. AMT password is required. A config.yml or command line flags must be provided for all settings. This command runs without cloud interaction.\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandWired + " -password YourAMTPassword -config ethernetconfig.yaml\n"
-	usage += "  " + utils.SubCommandWireless + " Add or modify WiFi settings in AMT. AMT password is required. A config.yml or command line flags must be provided for all settings. This command runs without cloud interaction.\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandWireless + " -password YourAMTPassword -config wificonfig.yaml\n"
-	usage += "  " + utils.SubCommandEnableWifiPort + "  Enables WiFi port and local profile synchronization settings in AMT. AMT password is required.\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandEnableWifiPort + " -password YourAMTPassword\n"
-	usage += "  " + utils.SubCommandConfigureTLS + "             Configures TLS in AMT. AMT password is required.  A config.yml or command line flags must be provided for all settings. This command runs without cloud interaction.\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandConfigureTLS + " -mode Server -password YourAMTPassword\n"
-	usage += "  " + utils.SubCommandSetMEBx + "            Configures MEBx Password. AMT password is required.\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandSetMEBx + " -mebxpassword YourMEBxPassword -password YourAMTPassword\n"
-	usage += "  " + utils.SubCommandSyncClock + "       Sync the host OS clock to AMT. AMT password is required\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandSyncClock + " -password YourAMTPassword\n"
-	usage += "  " + utils.SubCommandSetAMTFeatures + "     Enables or Disables KVM, SOL, IDER. Sets user consent option (kvm, all, or none).\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandSetAMTFeatures + " -userConsent all -kvm -sol -ider\n"
-	usage += "  " + utils.SubCommandChangeAMTPassword + "     Updates AMT password. If flags are not provided, new and current AMT passwords will be prompted for. AMT password is required\n"
-	usage += "                  Example: " + baseCommand + " " + utils.SubCommandChangeAMTPassword + " -password YourAMTPassword -newamtpassword YourNewPassword\n"
-	usage += "\nRun '" + baseCommand + " COMMAND -h' for more information on a command.\n"
+
+	sb.WriteString("\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance, and status of AMT\n\n")
+	sb.WriteString("Usage: " + baseCommand + " COMMAND [OPTIONS]\n\n")
+	sb.WriteString("Supported Configuration Commands:\n\n")
+
+	commands := []struct {
+		command string
+		desc    string
+		example string
+	}{
+		{utils.SubCommandWired, "Add or modify ethernet settings in AMT. Requires AMT password. A config file or command-line flags must be provided. No cloud interaction.", baseCommand + " " + utils.SubCommandWired + " -password YourAMTPassword -config ethernetconfig.yaml"},
+		{utils.SubCommandWireless, "Add or modify WiFi settings in AMT. Requires AMT password. A config file or command-line flags must be provided. No cloud interaction.", baseCommand + " " + utils.SubCommandWireless + " -password YourAMTPassword -config wificonfig.yaml"},
+		{utils.SubCommandEnableWifiPort, "Enable WiFi port and local profile synchronization in AMT. Requires AMT password.", baseCommand + " " + utils.SubCommandEnableWifiPort + " -password YourAMTPassword"},
+		{utils.SubCommandConfigureTLS, "Configure TLS in AMT. Requires AMT password. A config file or command-line flags must be provided. No cloud interaction.", baseCommand + " " + utils.SubCommandConfigureTLS + " -mode Server -password YourAMTPassword"},
+		{utils.SubCommandSetMEBx, "Configure MEBx Password. Requires AMT password.", baseCommand + " " + utils.SubCommandSetMEBx + " -mebxpassword YourMEBxPassword -password YourAMTPassword"},
+		{utils.SubCommandSyncClock, "Sync the host OS clock to AMT. Requires AMT password.", baseCommand + " " + utils.SubCommandSyncClock + " -password YourAMTPassword"},
+		{utils.SubCommandSetAMTFeatures, "Enable/Disable KVM, SOL, IDER. Set user consent option (kvm, all, or none).", baseCommand + " " + utils.SubCommandSetAMTFeatures + " -userConsent all -kvm -sol -ider"},
+		{utils.SubCommandChangeAMTPassword, "Update AMT password. If flags are omitted, passwords will be prompted. Requires AMT password.", baseCommand + " " + utils.SubCommandChangeAMTPassword + " -password YourAMTPassword -newamtpassword YourNewPassword"},
+		{utils.SubCommandCIRA, "(Experimental) Configure CIRA. Enable CIRA. Requires AMT password.", baseCommand + " " + utils.SubCommandCIRA + " -mpspassword YourMPSPassword -mpsaddress myfqdn.com -mpscert <mpscert>"},
+	}
+
+	for _, cmd := range commands {
+		sb.WriteString(fmt.Sprintf("  %-17s %s\n", cmd.command, cmd.desc))
+		sb.WriteString(fmt.Sprintf("                    Example: %s\n", cmd.example))
+	}
+
+	sb.WriteString("\nRun '" + baseCommand + " COMMAND -h' for more information on a command.\n")
+
+	usage := sb.String()
 	fmt.Println(usage)
 	return usage
 }
@@ -163,6 +173,8 @@ func (f *Flags) handleConfigureCommand() error {
 		err = f.handleChangeAMTPassword()
 	case utils.SubCommandSetAMTFeatures:
 		err = f.handleSetAMTFeatures()
+	case utils.SubCommandCIRA:
+		err = f.handleCIRA()
 	default:
 		f.printConfigurationUsage()
 		err = utils.IncorrectCommandLineParameters
@@ -329,8 +341,6 @@ func (f *Flags) handleMEBxPassword() error {
 }
 
 func (f *Flags) handleEnableWifiPort() error {
-	var err error
-	// var rc error
 	if len(f.commandLineArgs) > 5 {
 		f.printConfigurationUsage()
 		return utils.IncorrectCommandLineParameters
@@ -340,10 +350,39 @@ func (f *Flags) handleEnableWifiPort() error {
 	f.flagSetEnableWifiPort.BoolVar(&f.JsonOutput, "json", false, "JSON output")
 	f.flagSetEnableWifiPort.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
 
-	if err = f.flagSetEnableWifiPort.Parse(f.commandLineArgs[3:]); err != nil {
+	if err := f.flagSetEnableWifiPort.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
 		return utils.IncorrectCommandLineParameters
 	}
+	return nil
+}
+
+func (f *Flags) handleCIRA() error {
+	fmt.Println(f.commandLineArgs[3:])
+	if len(f.commandLineArgs) > 9 {
+		f.printConfigurationUsage()
+		return utils.IncorrectCommandLineParameters
+	}
+	var environmentDetection string
+	f.flagSetCIRA.StringVar(&f.MPSPassword, "mpspassword", f.lookupEnvOrString("MPS_PASSWORD", ""), "MPS Password")
+	f.flagSetCIRA.StringVar(&f.MPSAddress, "mpsaddress", f.lookupEnvOrString("MPS_ADDRESS", ""), "MPS Address")
+	f.flagSetCIRA.StringVar(&f.MPSCert, "mpscert", f.lookupEnvOrString("MPS_CERT", ""), "MPS Root Public Certificate")
+	f.flagSetCIRA.StringVar(&environmentDetection, "envdetection", f.lookupEnvOrString("ENVIRONMENT_DETECTION", ""), "Environment Detection")
+
+	// parse environmentdetection comma delimited string
+	f.EnvironmentDetection = strings.Split(environmentDetection, ",")
+
+	if err := f.flagSetCIRA.Parse(f.commandLineArgs[3:]); err != nil {
+		f.printConfigurationUsage()
+		return utils.IncorrectCommandLineParameters
+	}
+
+	err := utils.ValidateMPSPassword(f.MPSPassword)
+	if err != nil {
+		fmt.Println("MPS password should be between 8 to 16 characters, containing at least one uppercase letter, one lowercase letter, one digit, and one special character")
+		return err
+	}
+
 	return nil
 }
 
