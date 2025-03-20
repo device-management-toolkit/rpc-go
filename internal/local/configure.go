@@ -156,7 +156,7 @@ func (service *ProvisioningService) EnableCIRA() error {
 		return err
 	}
 
-	if len(service.flags.EnvironmentDetection) == 0 {
+	if len(service.flags.EnvironmentDetection) == 0 || service.flags.EnvironmentDetection[0] == "" {
 		service.flags.EnvironmentDetection = []string{uuid.NewString() + ".com"}
 	}
 
