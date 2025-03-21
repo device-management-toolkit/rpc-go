@@ -70,6 +70,7 @@ type Flags struct {
 	JsonOutput                          bool
 	RandomPassword                      bool
 	Local                               bool
+	PartialUnprovision                  bool
 	StaticPassword                      string
 	Password                            string
 	NewPassword                         string
