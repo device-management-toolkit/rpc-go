@@ -1,3 +1,10 @@
+# [2.45.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.44.0...v2.45.0) (2025-03-24)
+
+
+### Features
+
+* adds support for partial unprovisioning ([a78f092](https://github.com/device-management-toolkit/rpc-go/commit/a78f0925f9f9cae182f899fd43c2c98860350589)), closes [#781](https://github.com/device-management-toolkit/rpc-go/issues/781)
+
 # [2.44.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.43.1...v2.44.0) (2025-03-19)
 
 
