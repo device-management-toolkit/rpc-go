@@ -19,6 +19,7 @@ func (service *ProvisioningService) Deactivate() (err error) {
 		log.Error(err)
 		return utils.AMTConnectionFailed
 	}
+
 	// Deactivate based on the control mode
 	switch controlMode {
 	case 1: // CCMMode
@@ -35,7 +36,12 @@ func (service *ProvisioningService) Deactivate() (err error) {
 		return utils.UnableToDeactivate
 	}
 
-	log.Info("Status: Device deactivated")
+	if service.flags.PartialUnprovision {
+		log.Info("Status: Device partially deactivated")
+	} else {
+		log.Info("Status: Device deactivated")
+	}
+
 	return nil
 }
 
@@ -54,10 +60,18 @@ func (service *ProvisioningService) DeactivateACM() (err error) {
 	if err != nil {
 		return err
 	}
-	_, err = service.interfacedWsmanMessage.Unprovision(1)
-	if err != nil {
-		log.Error("Status: Unable to deactivate ", err)
-		return utils.UnableToDeactivate
+	if service.flags.PartialUnprovision {
+		_, err := service.interfacedWsmanMessage.PartialUnprovision()
+		if err != nil {
+			log.Error("Status: Unable to partially deactivate ", err)
+			return utils.UnableToDeactivate
+		}
+	} else {
+		_, err = service.interfacedWsmanMessage.Unprovision(1)
+		if err != nil {
+			log.Error("Status: Unable to deactivate ", err)
+			return utils.UnableToDeactivate
+		}
 	}
 	return nil
 }
@@ -66,10 +80,18 @@ func (service *ProvisioningService) DeactivateCCM() (err error) {
 	if service.flags.Password != "" {
 		log.Warn("Password not required for CCM deactivation")
 	}
-	status, err := service.amtCommand.Unprovision()
-	if err != nil || status != 0 {
-		log.Error("Status: Failed to deactivate ", err)
-		return utils.DeactivationFailed
+	if service.flags.PartialUnprovision {
+		_, err := service.interfacedWsmanMessage.PartialUnprovision()
+		if err != nil {
+			log.Error("Status: Unable to partially deactivate ", err)
+			return utils.UnableToDeactivate
+		}
+	} else {
+		status, err := service.amtCommand.Unprovision()
+		if err != nil || status != 0 {
+			log.Error("Status: Failed to deactivate ", err)
+			return utils.DeactivationFailed
+		}
 	}
 	return nil
 }

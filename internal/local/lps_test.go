@@ -264,6 +264,15 @@ func (m MockWSMAN) Unprovision(int) (setupandconfiguration.Response, error) {
 		},
 	}, mockACMUnprovisionErr
 }
+func (m MockWSMAN) PartialUnprovision() (setupandconfiguration.Response, error) {
+	return setupandconfiguration.Response{
+		Body: setupandconfiguration.Body{
+			PartialUnprovision_OUTPUT: setupandconfiguration.PartialUnprovision_OUTPUT{
+				ReturnValue: setupandconfiguration.ReturnValue(0),
+			},
+		},
+	}, nil
+}
 
 var mockSetupAndConfigurationErr error = nil
 
@@ -745,7 +754,8 @@ func (c MockAMT) GetLocalSystemAccount() (amt2.LocalSystemAccount, error) {
 var mockUnprovisionCode = 0
 var mockUnprovisionErr error = nil
 
-func (c MockAMT) Unprovision() (int, error) { return mockUnprovisionCode, mockUnprovisionErr }
+func (c MockAMT) Unprovision() (int, error)        { return mockUnprovisionCode, mockUnprovisionErr }
+func (c MockAMT) PartialUnprovision() (int, error) { return 0, nil }
 
 type ResponseFuncArray []func(w http.ResponseWriter, r *http.Request)
 

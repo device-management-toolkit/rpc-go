@@ -12,6 +12,8 @@ import (
 
 func (f *Flags) handleDeactivateCommand() error {
 	f.amtDeactivateCommand.BoolVar(&f.Local, "local", false, "Execute command to AMT directly without cloud interaction")
+	f.amtDeactivateCommand.BoolVar(&f.PartialUnprovision, "partial", false, "Partially unprovision the device. Only supported w/ -local flag.")
+
 	if len(f.commandLineArgs) == 2 {
 		f.amtDeactivateCommand.PrintDefaults()
 		return utils.IncorrectCommandLineParameters
@@ -24,6 +26,10 @@ func (f *Flags) handleDeactivateCommand() error {
 		return utils.InvalidParameterCombination
 	}
 	if !f.Local {
+		if f.PartialUnprovision {
+			fmt.Println("Partial unprovisioning is only supported with local flag")
+			return utils.InvalidParameterCombination
+		}
 		if f.URL == "" {
 			fmt.Println("-u flag is required and cannot be empty")
 			f.amtDeactivateCommand.Usage()

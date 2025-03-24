@@ -37,6 +37,7 @@ import (
 type WSMANer interface {
 	SetupWsmanClient(username string, password string, useTLS bool, logAMTMessages bool, tlsConfig *cryptotls.Config) error
 	Unprovision(int) (setupandconfiguration.Response, error)
+	PartialUnprovision() (setupandconfiguration.Response, error)
 	GetGeneralSettings() (general.Response, error)
 	HostBasedSetupService(digestRealm string, password string) (hostbasedsetup.Response, error)
 	GetHostBasedSetupService() (hostbasedsetup.Response, error)
@@ -154,6 +155,9 @@ func (g *GoWSMANMessages) AddNextCertInChain(cert string, isLeaf bool, isRoot bo
 
 func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.AdminSetup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password, base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
+}
+func (g *GoWSMANMessages) PartialUnprovision() (setupandconfiguration.Response, error) {
+	return g.wsmanMessages.AMT.SetupAndConfigurationService.PartialUnprovision()
 }
 
 func (g *GoWSMANMessages) Unprovision(int) (setupandconfiguration.Response, error) {
