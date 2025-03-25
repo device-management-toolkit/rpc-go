@@ -7,6 +7,7 @@ package local
 
 import (
 	"crypto/tls"
+	"fmt"
 	"rpc/internal/config"
 	"rpc/pkg/utils"
 
@@ -23,6 +24,10 @@ func (service *ProvisioningService) Deactivate() (err error) {
 	// Deactivate based on the control mode
 	switch controlMode {
 	case 1: // CCMMode
+		if service.flags.PartialUnprovision {
+			fmt.Println("Partial unprovisioning is only supported in ACM mode")
+			return utils.InvalidParameterCombination
+		}
 		err = service.DeactivateCCM()
 	case 2: // ACMMode
 		err = service.DeactivateACM()
@@ -80,18 +85,12 @@ func (service *ProvisioningService) DeactivateCCM() (err error) {
 	if service.flags.Password != "" {
 		log.Warn("Password not required for CCM deactivation")
 	}
-	if service.flags.PartialUnprovision {
-		_, err := service.interfacedWsmanMessage.PartialUnprovision()
-		if err != nil {
-			log.Error("Status: Unable to partially deactivate ", err)
-			return utils.UnableToDeactivate
-		}
-	} else {
-		status, err := service.amtCommand.Unprovision()
-		if err != nil || status != 0 {
-			log.Error("Status: Failed to deactivate ", err)
-			return utils.DeactivationFailed
-		}
+
+	status, err := service.amtCommand.Unprovision()
+	if err != nil || status != 0 {
+		log.Error("Status: Failed to deactivate ", err)
+		return utils.DeactivationFailed
 	}
+
 	return nil
 }
