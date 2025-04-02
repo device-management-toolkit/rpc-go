@@ -56,15 +56,18 @@ func (service *ProvisioningService) PerformPostRequest(url string, requestBody [
 	}
 
 	request.Header.Set("Content-Type", "application/json")
+
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	client := &http.Client{}
+
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("sending request: %v", err)
 	}
+
 	defer response.Body.Close()
 
 	responseBody, err := ioutil.ReadAll(response.Body)

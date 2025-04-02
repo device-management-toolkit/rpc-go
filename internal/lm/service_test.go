@@ -14,6 +14,7 @@ import (
 func TestNewLMSConnection(t *testing.T) {
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
+
 	lme := NewLMSConnection("::1", "16992", false, lmDataChannel, lmErrorChannel, 0)
 	defer lme.Close()
 	assert.Equal(t, lmDataChannel, lme.data)
@@ -25,6 +26,7 @@ func TestInitialize(t *testing.T) {
 	_, client := net.Pipe()
 	lms := LMSConnection{address: "", port: "", Connection: client}
 	err := lms.Initialize()
+
 	defer lms.Close()
 	assert.Error(t, err)
 }
@@ -33,6 +35,7 @@ func TestConnect(t *testing.T) {
 	_, client := net.Pipe()
 	lms := LMSConnection{address: "", port: "", Connection: client}
 	err := lms.Connect()
+
 	defer lms.Close()
 	assert.NoError(t, err)
 }
@@ -43,6 +46,7 @@ func TestSend(t *testing.T) {
 
 	lms := LMSConnection{Connection: client}
 	defer lms.Close() // should close client pipe
+
 	go func() {
 		err := lms.Send([]byte("data"))
 		assert.NoError(t, err)
@@ -59,6 +63,7 @@ func TestListen(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
 	defer server.Close()
+
 	wait2 := make(chan bool)
 	data := make(chan []byte)
 	errCh := make(chan error)
@@ -74,6 +79,7 @@ func TestListen(t *testing.T) {
 			if len(data) > 0 {
 				assert.Equal(t, []byte("data"), data)
 				wait2 <- true
+
 				break
 			}
 		}

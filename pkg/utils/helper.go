@@ -35,6 +35,7 @@ func InterpretHashAlgorithm(hashAlgorithm int) (hashSize int, algorithm string) 
 		hashSize = 0
 		algorithm = "UNKNOWN"
 	}
+
 	return
 }
 

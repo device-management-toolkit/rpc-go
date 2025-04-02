@@ -39,6 +39,7 @@ func (f *Flags) handleActivateCommand() error {
 		f.amtActivateCommand.PrintDefaults()
 		return utils.IncorrectCommandLineParameters
 	}
+
 	if err := f.amtActivateCommand.Parse(f.commandLineArgs[2:]); err != nil {
 		re := regexp.MustCompile(`: .*`)
 		switch re.FindString(err.Error()) {
@@ -53,8 +54,10 @@ func (f *Flags) handleActivateCommand() error {
 		default:
 			err = utils.IncorrectCommandLineParameters
 		}
+
 		return err
 	}
+
 	if f.Local && f.URL != "" {
 		fmt.Println("provide either a 'url' or a 'local', but not both")
 		return utils.InvalidParameterCombination
@@ -64,19 +67,24 @@ func (f *Flags) handleActivateCommand() error {
 		if f.URL == "" {
 			fmt.Println("-u flag is required and cannot be empty")
 			f.amtActivateCommand.Usage()
+
 			return utils.MissingOrIncorrectURL
 		}
+
 		if f.Profile == "" {
 			fmt.Println("-profile flag is required and cannot be empty")
 			f.amtActivateCommand.Usage()
+
 			return utils.MissingOrIncorrectProfile
 		}
+
 		if f.UUID != "" {
 			err := f.validateUUIDOverride()
 			if err != nil {
 				f.amtActivateCommand.Usage()
 				return utils.InvalidUUID
 			}
+
 			fmt.Println("Warning: Overriding UUID prevents device from connecting to MPS")
 		}
 	} else {
@@ -97,6 +105,7 @@ func (f *Flags) handleActivateCommand() error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -140,6 +149,7 @@ func (f *Flags) handleLocalConfigV1() error {
 	if f.UUID != "" {
 		fmt.Println("-uuid cannot be use in local activation")
 		f.amtActivateCommand.Usage()
+
 		return utils.InvalidParameterCombination
 	}
 
@@ -161,10 +171,12 @@ func (f *Flags) ValidateConfigV2() error {
 	// Check if the AMT Password is set
 	if f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword == "" {
 		log.Warn("AMT Password is not set")
+
 		if rc := f.ReadNewPasswordTo(&f.Password, "New AMT Password"); rc != nil {
 			return rc
 		}
 	}
+
 	f.LocalConfig.ACMSettings.AMTPassword = f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword
 	f.LocalConfig.Password = f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword
 
@@ -174,6 +186,7 @@ func (f *Flags) ValidateConfigV2() error {
 			log.Error("Provisioning Certificate is not set")
 			return utils.IncorrectCommandLineParameters
 		}
+
 		f.LocalConfig.ACMSettings.ProvisioningCert = f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCert
 
 		// Check if the Provisioning Certificate Password is set
@@ -181,7 +194,9 @@ func (f *Flags) ValidateConfigV2() error {
 			log.Error("Provisioning Certificate Password is not set")
 			return utils.IncorrectCommandLineParameters
 		}
+
 		f.LocalConfig.ACMSettings.ProvisioningCertPwd = f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCertPwd
 	}
+
 	return nil
 }

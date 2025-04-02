@@ -19,10 +19,12 @@ func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	splitName := strings.SplitAfterN(fqdn, ".", 2)
 	if len(splitName) == 2 {
 		return splitName[1], nil
 	}
+
 	return fqdn, err
 }
 

@@ -104,7 +104,9 @@ func TestCheckAndEnableAMT(t *testing.T) {
 
 func TestRenewIP(t *testing.T) {
 	f := &flags.Flags{}
+
 	log.SetLevel(log.DebugLevel)
+
 	lps := setupService(f)
 	origRC := mockRenewDHCPLeaseerr
 	mockRenewDHCPLeaseerr = utils.WiredConfigurationFailed

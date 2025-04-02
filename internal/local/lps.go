@@ -37,6 +37,7 @@ func NewProvisioningService(flags *flags.Flags) ProvisioningService {
 		Host:   utils.LMSAddress + ":" + utils.LMSPort,
 		Path:   "/wsman",
 	}
+
 	return ProvisioningService{
 		flags:                  flags,
 		serverURL:              serverURL,
@@ -50,7 +51,9 @@ func NewProvisioningService(flags *flags.Flags) ProvisioningService {
 
 func ExecuteCommand(flags *flags.Flags) error {
 	var err error
+
 	service := NewProvisioningService(flags)
+
 	switch flags.Command {
 	case utils.CommandActivate:
 		err = service.Activate()
@@ -63,8 +66,10 @@ func ExecuteCommand(flags *flags.Flags) error {
 	case utils.CommandVersion:
 		err = service.DisplayVersion()
 	}
+
 	if err != nil {
 		return err
 	}
+
 	return nil
 }

@@ -20,16 +20,19 @@ func reflectObjectName(v any) string {
 	} else {
 		vName = t.Name()
 	}
+
 	return vName
 }
 
 func GetTokenFromKeyValuePairs(kvList string, token string) string {
 	attributes := strings.Split(kvList, ",")
 	tokenMap := make(map[string]string)
+
 	for _, att := range attributes {
 		parts := strings.Split(att, "=")
 		tokenMap[parts[0]] = parts[1]
 	}
+
 	return tokenMap[token]
 }
 
@@ -40,6 +43,7 @@ func checkHandleExists(handles map[string]string, cert string) string {
 			return k
 		}
 	}
+
 	return ""
 }
 
@@ -47,6 +51,7 @@ func (service *ProvisioningService) Pause(howManySeconds int) {
 	if howManySeconds <= 0 {
 		return
 	}
+
 	log.Debugf("pausing %d seconds", howManySeconds)
 	time.Sleep(time.Duration(howManySeconds) * time.Second)
 }

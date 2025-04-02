@@ -158,16 +158,20 @@ func userInput(t *testing.T, input string) func() {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_, err = w.Write([]byte(input))
 	if err != nil {
 		t.Error(err)
 	}
+
 	err = w.Close()
 	if err != nil {
 		t.Error(err)
 	}
+
 	stdin := os.Stdin
 	os.Stdin = r
+
 	return func() {
 		os.Stdin = stdin
 	}
@@ -318,9 +322,11 @@ func TestLookupEnvOrString_Default(t *testing.T) {
 }
 func TestLookupEnvOrString_Env(t *testing.T) {
 	args := []string{"./rpc", ""}
+
 	if err := os.Setenv("URL", "wss://localhost"); err != nil {
 		t.Error(err)
 	}
+
 	flags := NewFlags(args, MockPRSuccess)
 	result := flags.lookupEnvOrString("URL", "")
 	assert.Equal(t, "wss://localhost", result)
@@ -338,6 +344,7 @@ func TestLookupEnvOrBool_Env(t *testing.T) {
 	if err := os.Setenv("SKIP_CERT_CHECK", "true"); err != nil {
 		t.Error(err)
 	}
+
 	flags := NewFlags(args, MockPRSuccess)
 	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
 	assert.Equal(t, true, result)
@@ -345,9 +352,11 @@ func TestLookupEnvOrBool_Env(t *testing.T) {
 
 func TestLookupEnvOrBool_EnvError(t *testing.T) {
 	args := []string{"./rpc", ""}
+
 	if err := os.Setenv("SKIP_CERT_CHECK", "notparsable"); err != nil {
 		t.Error(err)
 	}
+
 	flags := NewFlags(args, MockPRSuccess)
 	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
 	assert.Equal(t, false, result)
@@ -365,11 +374,14 @@ func NewMockSambaService(err error) smb.ServiceInterface {
 
 func (s *MockSambaService) FetchFileContents(url string) ([]byte, error) {
 	var contents []byte
+
 	var service = smb.NewSambaService(MockPRSuccess)
+
 	p, err := service.ParseUrl(url)
 	if err != nil {
 		return contents, err
 	}
+
 	return os.ReadFile(p.FilePath)
 }
 
@@ -383,7 +395,9 @@ func writeTestCfgFiles(t *testing.T, cfg *config.Config, ext string) (cfgFilePat
 	cfgFilePath = filepath.Join(tempDir, "test-config."+ext)
 
 	var cfgBytes []byte
+
 	var err error = nil
+
 	switch ext {
 	case "json":
 		cfgBytes, err = json.MarshalIndent(cfg, "", "  ")
@@ -392,9 +406,11 @@ func writeTestCfgFiles(t *testing.T, cfg *config.Config, ext string) (cfgFilePat
 	case "pfx":
 		cfgBytes, err = base64.StdEncoding.DecodeString(cfg.ACMSettings.ProvisioningCert)
 	}
+
 	assert.Nil(t, err)
 	err = os.WriteFile(cfgFilePath, cfgBytes, 0644)
 	assert.Nil(t, err)
+
 	return cfgFilePath
 }
 
@@ -418,10 +434,12 @@ func TestHandleLocalConfig(t *testing.T) {
 			flags.configContent = "smb://localhost/xxx/" + cfgFilePath
 			rc := flags.handleLocalConfig()
 			assert.Equal(t, nil, rc)
+
 			if ext == "json" || ext == "yaml" {
 				assert.Equal(t, cfg.Password, flags.LocalConfig.Password)
 				assert.Equal(t, cfg.ACMSettings, flags.LocalConfig.ACMSettings)
 			}
+
 			if ext == "pfx" {
 				assert.Equal(t, cfg.ACMSettings.ProvisioningCert, flags.LocalConfig.ACMSettings.ProvisioningCert)
 			}
@@ -433,10 +451,12 @@ func TestHandleLocalConfig(t *testing.T) {
 			flags.configContent = cfgFilePath
 			rc := flags.handleLocalConfig()
 			assert.Equal(t, nil, rc)
+
 			if ext == "json" || ext == "yaml" {
 				assert.Equal(t, cfg.Password, flags.LocalConfig.Password)
 				assert.Equal(t, cfg.ACMSettings, flags.LocalConfig.ACMSettings)
 			}
+
 			if ext == "pfx" {
 				assert.Equal(t, cfg.ACMSettings.ProvisioningCert, flags.LocalConfig.ACMSettings.ProvisioningCert)
 			}
@@ -473,7 +493,9 @@ func TestHandleLocalConfig(t *testing.T) {
 func TestReadNewPasswordTo(t *testing.T) {
 	args := []string{"./rpc"}
 	flags := NewFlags(args, MockPRSuccess)
+
 	var password string
+
 	flags.ReadNewPasswordTo(&password, "TEST")
 	assert.Equal(t, utils.TestPassword, password)
 }

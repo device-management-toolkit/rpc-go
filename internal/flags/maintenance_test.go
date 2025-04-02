@@ -202,9 +202,11 @@ func TestParseFlagsMaintenance(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			args := strings.Fields(tc.cmdLine)
 			flags := NewFlags(args, MockPRSuccess)
+
 			if tc.passwordFail {
 				flags = NewFlags(args, MockPRFail)
 			}
+
 			flags.AmtCommand.PTHI = MockPTHICommands{}
 			flags.netEnumerator = testNetEnumerator
 			gotResult := flags.ParseFlags()

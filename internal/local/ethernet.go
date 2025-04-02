@@ -12,6 +12,7 @@ import (
 
 func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	var handles Handles
+
 	defer func() {
 		if err != nil {
 			service.PruneCerts()
@@ -55,6 +56,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	// Configure 802.1x
 	// Get the 802.1x settings to configure
 	ieee8021xConfig := config.Ieee8021xConfig{}
+
 	for _, curCfg := range service.config.Ieee8021xConfigs {
 		if curCfg.ProfileName == service.config.WiredConfig.Ieee8021xProfileName {
 			ieee8021xConfig = curCfg
@@ -95,7 +97,9 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 			return utils.WiredConfigurationFailed
 		}
 	}
+
 	log.Info("Wired settings configured with 802.1x successfully")
+
 	return nil
 }
 
@@ -144,12 +148,15 @@ func (service *ProvisioningService) verifyInput() error {
 		if service.config.WiredConfig.IpAddress == "" {
 			return utils.MissingOrIncorrectStaticIP
 		}
+
 		if service.config.WiredConfig.Subnetmask == "" {
 			return utils.MissingOrIncorrectNetworkMask
 		}
+
 		if service.config.WiredConfig.Gateway == "" {
 			return utils.MissingOrIncorrectGateway
 		}
+
 		if service.config.WiredConfig.PrimaryDNS == "" {
 			return utils.MissingOrIncorrectPrimaryDNS
 		}
@@ -206,7 +213,9 @@ func (service *ProvisioningService) createEthernetSettingsRequest(getResponse et
 
 func (service *ProvisioningService) AddCerts(ieee8021xConfig config.Ieee8021xConfig) (Handles, error) {
 	var handles Handles
+
 	var err error
+
 	securitySettings, err := service.GetCertificates()
 	if err != nil {
 		return handles, utils.WiredConfigurationFailed
@@ -235,6 +244,7 @@ func (service *ProvisioningService) AddCerts(ieee8021xConfig config.Ieee8021xCon
 
 func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xConfig config.Ieee8021xConfig) (Handles, config.Ieee8021xConfig, error) {
 	var handles Handles
+
 	securitySettings, err := service.GetCertificates()
 	if err != nil {
 		return handles, ieee8021xConfig, utils.WiredConfigurationFailed
@@ -244,6 +254,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 		Username: service.config.EnterpriseAssistant.EAUsername,
 		Password: service.config.EnterpriseAssistant.EAPassword,
 	}
+
 	guid, err := service.amtCommand.GetUUID()
 	if err != nil {
 		return handles, ieee8021xConfig, err
@@ -251,20 +262,24 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 
 	// Call GetAuthToken
 	url := service.config.EnterpriseAssistant.EAAddress + "/api/authenticate/" + guid
+
 	token, err := service.GetAuthToken(url, credentials)
 	if token == "" && err != nil {
 		log.Errorf("error getting auth token: %v", err)
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
+
 	devName, err := os.Hostname()
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
 		return handles, ieee8021xConfig, err
 	}
+
 	reqProfile := EAProfile{NodeID: guid, Domain: "", ReqID: "", AuthProtocol: ieee8021xConfig.AuthenticationProtocol, OSName: "win11", DevName: devName, Icon: 1, Ver: ""}
 
 	//Request Profile from Microsoft EA
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/profile/" + guid
+
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error while requesting EA: %v", err)
@@ -277,9 +292,11 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 		ieee8021xConfig.Username = reqResponse.Response.Username
 		ieee8021xConfig.Password = reqResponse.Response.Password
 		handles.rootCertHandle, err = service.GetTrustedRootCertHandle(securitySettings, reqResponse.Response.RootCert)
+
 		if err != nil {
 			return handles, ieee8021xConfig, utils.WSMANMessageError
 		}
+
 		return handles, ieee8021xConfig, nil
 	}
 
@@ -288,6 +305,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	if err != nil {
 		return handles, ieee8021xConfig, err
 	}
+
 	handles.privateKeyHandle = handles.keyPairHandle
 
 	// Get DERkey
@@ -301,6 +319,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	reqProfile.DERKey = derKey
 	reqProfile.KeyInstanceId = handles.keyPairHandle
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/keypair/" + guid
+
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error generating 802.1x keypair: %v", err)
@@ -314,13 +333,16 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 
 	reqProfile.SignedCSR = response.Body.GeneratePKCS10RequestEx_OUTPUT.SignedCertificateRequest
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/csr/" + guid
+
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error signing the certificate: %v", err)
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
+
 	ieee8021xConfig.Username = eaResponse.Response.Username
 	handles.clientCertHandle, err = service.GetClientCertHandle(securitySettings, eaResponse.Response.Certificate)
+
 	if err != nil {
 		return handles, ieee8021xConfig, utils.WSMANMessageError
 	}
@@ -351,10 +373,13 @@ func (service *ProvisioningService) PutIEEESettings(getIEEESettings ieee8021x.Re
 	}
 
 	putResponse, err := service.interfacedWsmanMessage.PutIPSIEEE8021xSettings(request)
+
 	log.Info("IEEE8021x settings updated successfully")
 	log.Debug("IEEE8021x settings: ", putResponse.JSON())
+
 	if err != nil {
 		return err
 	}
+
 	return nil
 }

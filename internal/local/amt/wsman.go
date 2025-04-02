@@ -113,20 +113,26 @@ func (g *GoWSMANMessages) SetupWsmanClient(username string, password string, use
 		con net.Conn // Declared to hold the connection object
 		err error
 	)
+
 	if clientParams.UseTLS {
 		logrus.Info("Attempting to connect to LMS over TLS...")
+
 		con, err = cryptotls.Dial("tcp", utils.LMSAddress+":"+client.TLSPort, clientParams.TlsConfig)
 	} else {
 		logrus.Info("Attempting to connect to LMS...")
+
 		con, err = net.Dial("tcp", utils.LMSAddress+":"+client.NonTLSPort)
 	}
 
 	if err != nil {
 		logrus.Trace("Failed to connect to LMS: ", err)
+
 		if clientParams.UseTLS {
 			return utils.LMSConnectionFailed
 		}
+
 		logrus.Info("using local transport instead...")
+
 		clientParams.Transport = NewLocalTransport()
 	} else {
 		logrus.Info("Successfully connected to LMS.")
@@ -134,6 +140,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username string, password string, use
 	}
 
 	g.wsmanMessages = wsman.NewMessages(clientParams)
+
 	return nil
 }
 
@@ -173,10 +180,12 @@ func (g *GoWSMANMessages) GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCerti
 	if err != nil {
 		return nil, err
 	}
+
 	response, err = g.wsmanMessages.AMT.PublicKeyCertificate.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
+
 	return response.Body.RefinedPullResponse.PublicKeyCertificateItems, nil
 }
 
@@ -205,10 +214,12 @@ func (g *GoWSMANMessages) GetPublicPrivateKeyPairs() ([]publicprivate.RefinedPub
 	if err != nil {
 		return nil, err
 	}
+
 	response, err = g.wsmanMessages.AMT.PublicPrivateKeyPair.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
+
 	return response.Body.RefinedPullResponse.PublicPrivateKeyPairItems, nil
 }
 func (g *GoWSMANMessages) GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse, error) {
@@ -216,10 +227,12 @@ func (g *GoWSMANMessages) GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse
 	if err != nil {
 		return nil, err
 	}
+
 	response, err = g.wsmanMessages.CIM.WiFiEndpointSettings.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
+
 	return response.Body.PullResponse.EndpointSettingsItems, nil
 }
 func (g *GoWSMANMessages) GetEthernetSettings() ([]ethernetport.SettingsResponse, error) {
@@ -227,10 +240,12 @@ func (g *GoWSMANMessages) GetEthernetSettings() ([]ethernetport.SettingsResponse
 	if err != nil {
 		return nil, err
 	}
+
 	response, err = g.wsmanMessages.AMT.EthernetPortSettings.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
+
 	return response.Body.PullResponse.EthernetPortItems, nil
 }
 func (g *GoWSMANMessages) PutEthernetSettings(ethernetPortSettings ethernetport.SettingsRequest, instanceId string) (ethernetport.Response, error) {
@@ -249,10 +264,12 @@ func (g *GoWSMANMessages) GetCredentialRelationships() (credential.Items, error)
 	if err != nil {
 		return credential.Items{}, err
 	}
+
 	response, err = g.wsmanMessages.CIM.CredentialContext.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return credential.Items{}, err
 	}
+
 	return response.Body.PullResponse.Items, nil
 }
 func (g *GoWSMANMessages) GetConcreteDependencies() ([]concrete.ConcreteDependency, error) {
@@ -260,10 +277,12 @@ func (g *GoWSMANMessages) GetConcreteDependencies() ([]concrete.ConcreteDependen
 	if err != nil {
 		return nil, err
 	}
+
 	response, err = g.wsmanMessages.CIM.ConcreteDependency.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
+
 	return response.Body.PullResponse.Items, nil
 }
 func (g *GoWSMANMessages) DeleteWiFiSetting(instanceID string) error {
@@ -275,9 +294,11 @@ func (g *GoWSMANMessages) AddTrustedRootCert(caCert string) (handle string, err 
 	if err != nil {
 		return "", err
 	}
+
 	if len(response.Body.AddTrustedRootCertificate_OUTPUT.CreatedCertificate.ReferenceParameters.SelectorSet.Selectors) > 0 {
 		handle = response.Body.AddTrustedRootCertificate_OUTPUT.CreatedCertificate.ReferenceParameters.SelectorSet.Selectors[0].Text
 	}
+
 	return handle, nil
 }
 func (g *GoWSMANMessages) AddClientCert(clientCert string) (handle string, err error) {
@@ -285,9 +306,11 @@ func (g *GoWSMANMessages) AddClientCert(clientCert string) (handle string, err e
 	if err != nil {
 		return "", err
 	}
+
 	if len(response.Body.AddCertificate_OUTPUT.CreatedCertificate.ReferenceParameters.SelectorSet.Selectors) > 0 {
 		handle = response.Body.AddCertificate_OUTPUT.CreatedCertificate.ReferenceParameters.SelectorSet.Selectors[0].Text
 	}
+
 	return handle, nil
 }
 func (g *GoWSMANMessages) AddPrivateKey(privateKey string) (handle string, err error) {
@@ -301,6 +324,7 @@ func (g *GoWSMANMessages) AddPrivateKey(privateKey string) (handle string, err e
 	if len(response.Body.AddKey_OUTPUT.CreatedKey.ReferenceParameters.SelectorSet.Selectors) > 0 {
 		handle = response.Body.AddKey_OUTPUT.CreatedKey.ReferenceParameters.SelectorSet.Selectors[0].Text
 	}
+
 	return handle, nil
 }
 
@@ -349,6 +373,7 @@ func (g *GoWSMANMessages) EnableWiFi(enableSync bool) error {
 	if err != nil {
 		return err // utils.WSMANMessageError
 	}
+
 	return nil
 }
 func (g *GoWSMANMessages) AddWiFiSettings(wifiEndpointSettings wifi.WiFiEndpointSettingsRequest, ieee8021xSettings models.IEEE8021xSettings, wifiEndpoint, clientCredential, caCredential string) (response wifiportconfiguration.Response, err error) {

@@ -28,6 +28,7 @@ func (service *ProvisioningService) Deactivate() (err error) {
 			fmt.Println("Partial unprovisioning is only supported in ACM mode")
 			return utils.InvalidParameterCombination
 		}
+
 		err = service.DeactivateCCM()
 	case 2: // ACMMode
 		err = service.DeactivateACM()
@@ -57,14 +58,17 @@ func (service *ProvisioningService) DeactivateACM() (err error) {
 			return utils.MissingOrIncorrectPassword
 		}
 	}
+
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
 		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
 	}
+
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return err
 	}
+
 	if service.flags.PartialUnprovision {
 		_, err := service.interfacedWsmanMessage.PartialUnprovision()
 		if err != nil {
@@ -78,6 +82,7 @@ func (service *ProvisioningService) DeactivateACM() (err error) {
 			return utils.UnableToDeactivate
 		}
 	}
+
 	return nil
 }
 

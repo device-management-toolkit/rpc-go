@@ -21,14 +21,17 @@ func (service *ProvisioningService) Configure() (err error) {
 		log.Error("Device is not activated to configure. Please activate the device first.")
 		return utils.UnableToConfigure
 	}
+
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
 		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
 	}
+
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return err
 	}
+
 	switch service.flags.SubCommand {
 	case utils.SubCommandAddEthernetSettings, utils.SubCommandWired:
 		return service.AddEthernetSettings()
@@ -41,6 +44,7 @@ func (service *ProvisioningService) Configure() (err error) {
 			log.Error("Device needs to be in admin control mode to set MEBx password.")
 			return utils.UnableToConfigure
 		}
+
 		return service.SetMebx()
 	case utils.SubCommandConfigureTLS:
 		return service.ConfigureTLS()
@@ -53,9 +57,11 @@ func (service *ProvisioningService) Configure() (err error) {
 			log.Error("Device needs to be in admin control mode to configure AMT features.")
 			return utils.UnableToConfigure
 		}
+
 		return service.SetAMTFeatures()
 	default:
 	}
+
 	return utils.IncorrectCommandLineParameters
 }
 
@@ -65,7 +71,9 @@ func (service *ProvisioningService) EnableWifiPort(enableSync bool) (err error) 
 		log.Error("Failed to enable wifi port and local profile synchronization.")
 		return
 	}
+
 	log.Info("Successfully enabled wifi port and local profile synchronization.")
+
 	return
 }
 
@@ -74,6 +82,7 @@ func (service *ProvisioningService) ValidateURL(u string) error {
 	if err != nil {
 		return err
 	}
+
 	if parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return errors.New("url is missing scheme or host")
 	}

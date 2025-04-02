@@ -52,5 +52,6 @@ func (s Status) String() string {
 	case AMT_STATUS_NOT_FOUND:
 		return "AMT_STATUS_NOT_FOUND"
 	}
+
 	return "AMT_STATUS_UNKNOWN"
 }

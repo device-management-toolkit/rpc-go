@@ -89,8 +89,10 @@ func TestGetCertificates(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+
 			assert.Equal(t, tc.res, response)
 		})
 	}
+
 	errGetConcreteDependencies = nil
 }

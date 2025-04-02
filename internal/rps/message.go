@@ -71,22 +71,28 @@ func NewPayload() Payload {
 // createPayload gathers data from ME to assemble required information for sending to the server
 func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout time.Duration) (MessagePayload, error) {
 	payload := MessagePayload{}
+
 	var err error
+
 	wired, err := p.AMT.GetLANInterfaceSettings(false)
 	if err != nil {
 		return payload, err
 	}
+
 	if wired.LinkStatus != "up" {
 		log.Warn("link status is down, unable to activate AMT in Admin Control Mode (ACM)")
 	}
+
 	payload.Version, err = p.AMT.GetVersionDataFromME("AMT", amtTimeout)
 	if err != nil {
 		return payload, err
 	}
+
 	payload.Build, err = p.AMT.GetVersionDataFromME("Build Number", amtTimeout)
 	if err != nil {
 		return payload, err
 	}
+
 	payload.SKU, err = p.AMT.GetVersionDataFromME("Sku", amtTimeout)
 	if err != nil {
 		return payload, err
@@ -98,14 +104,17 @@ func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout tim
 	if err != nil {
 		return payload, err
 	}
+
 	payload.CurrentMode, err = p.AMT.GetControlMode()
 	if err != nil {
 		return payload, err
 	}
+
 	lsa, err := p.AMT.GetLocalSystemAccount()
 	if err != nil {
 		return payload, err
 	}
+
 	payload.Username = lsa.Username
 	payload.Password = lsa.Password
 
@@ -117,11 +126,14 @@ func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout tim
 			return payload, err
 		}
 	}
+
 	payload.Client = utils.ClientName
 	hashes, err := p.AMT.GetCertificateHashes()
+
 	if err != nil {
 		return payload, err
 	}
+
 	for _, v := range hashes {
 		payload.CertificateHashes = append(payload.CertificateHashes, v.Hash)
 	}
@@ -136,6 +148,7 @@ func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout tim
 		if payload.FQDN == "" {
 			payload.FQDN, _ = p.AMT.GetOSDNSSuffix()
 		}
+
 		if payload.FQDN == "" {
 			log.Warn("DNS suffix is empty, unable to activate AMT in admin Control Mode (ACM)")
 		}
@@ -156,9 +169,11 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 		TenantID:        flags.TenantID,
 	}
 	payload, err := p.createPayload(flags.DNS, flags.Hostname, flags.AMTTimeoutDuration)
+
 	if err != nil {
 		return message, err
 	}
+
 	payload.IPConfiguration = flags.IpConfiguration
 	payload.HostnameInfo = flags.HostnameInfo
 
@@ -175,6 +190,7 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 				}
 			}
 		}
+
 		payload.Password = flags.Password
 	}
 
@@ -201,5 +217,6 @@ func (p Payload) CreateMessageResponse(payload []byte) Message {
 		Message:         "ok",
 		Payload:         base64.StdEncoding.EncodeToString(payload),
 	}
+
 	return message
 }

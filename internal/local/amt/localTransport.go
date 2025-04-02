@@ -123,6 +123,7 @@ func serializeHTTPRequest(r *http.Request) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		length := fmt.Sprintf("%x", len(bodyBytes))
 		bodyBytes = append([]byte(length+"\r\n"), bodyBytes...)
 		bodyBytes = append(bodyBytes, []byte("\r\n0\r\n\r\n")...)

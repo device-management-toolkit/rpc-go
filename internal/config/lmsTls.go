@@ -28,6 +28,7 @@ func GetTLSConfig(mode *int) *tls.Config {
 	}
 	// default tls config if device is in ACM or CCM
 	log.Trace("Setting default TLS Config for ACM/CCM mode")
+
 	return &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -35,13 +36,16 @@ func GetTLSConfig(mode *int) *tls.Config {
 
 func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 	numCerts := len(rawCerts)
+
 	const (
 		selfSignedChainLength = 1
 		prodChainLength       = 6
 		odcaCertLevel         = 3
 		leafLevel             = 0
 	)
+
 	var parsedCerts []*x509.Certificate
+
 	if numCerts == prodChainLength {
 		for i, rawCert := range rawCerts {
 			cert, err := x509.ParseCertificate(rawCert)
@@ -49,7 +53,9 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 				log.Error("Failed to parse certificate ", i, ": ", err)
 				return err
 			}
+
 			parsedCerts = append(parsedCerts, cert)
+
 			switch i {
 			case leafLevel:
 				if err := VerifyLeafCertificate(cert.Subject.CommonName); err != nil {
@@ -66,10 +72,12 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 		if err := VerifyFullChain(parsedCerts); err != nil {
 			return err
 		}
+
 		return nil
 	} else if numCerts == selfSignedChainLength {
 		return HandleAMTTransition(mode)
 	}
+
 	return errors.New("unexpected number of certificates received from AMT: " + strconv.Itoa(numCerts))
 }
 
@@ -83,7 +91,9 @@ func VerifyLeafCertificate(cn string) error {
 			return nil
 		}
 	}
+
 	log.Error("leaf certificate CN is not allowed: ", cn)
+
 	return errors.New("leaf certificate CN is not allowed")
 }
 
@@ -106,7 +116,9 @@ func VerifyROMODCACertificate(cn string, issuerOU []string) error {
 			}
 		}
 	}
+
 	log.Error("ROM ODCA Certificate OU does not have a valid prefix: ", issuerOU)
+
 	return errors.New("ROM ODCA Certificate OU does not have a valid prefix")
 }
 
@@ -122,6 +134,7 @@ func VerifyFullChain(certificates []*x509.Certificate) error {
 	for _, cert := range certificates[1:] {
 		intermediates.AddCert(cert)
 	}
+
 	leafCert := certificates[0]
 	opts := x509.VerifyOptions{
 		Roots:         rootCAs,
@@ -133,6 +146,7 @@ func VerifyFullChain(certificates []*x509.Certificate) error {
 		log.Error("Certificate chain validation failed:", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -143,11 +157,15 @@ func HandleAMTTransition(mode *int) error {
 		log.Error("failed to get control mode: ", err)
 		return err
 	}
+
 	if controlMode != 0 {
 		log.Trace("AMT has transitioned to mode: ", controlMode)
 		*mode = controlMode
+
 		return nil
 	}
+
 	log.Error("unexpected number of certificates received from AMT")
+
 	return errors.New("unexpected number of certificates received from AMT")
 }

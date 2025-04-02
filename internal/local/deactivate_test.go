@@ -25,6 +25,7 @@ func TestDeactivation(t *testing.T) {
 		mockControlModeErr = stdErr
 		err := lps.Deactivate()
 		assert.Equal(t, utils.AMTConnectionFailed, err)
+
 		mockControlModeErr = nil
 	})
 
@@ -60,6 +61,7 @@ func TestDeactivateCCM(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Deactivate()
 		assert.Error(t, err)
+
 		mockUnprovisionErr = nil
 	})
 	t.Run("returns DeactivationFailed when unprovision ReturnStatus is not success (0)", func(t *testing.T) {
@@ -67,6 +69,7 @@ func TestDeactivateCCM(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Deactivate()
 		assert.Error(t, err)
+
 		mockUnprovisionCode = 0
 	})
 }
@@ -96,6 +99,7 @@ func TestDeactivateACM(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Deactivate()
 		assert.Error(t, err)
+
 		mockACMUnprovisionErr = nil
 	})
 }

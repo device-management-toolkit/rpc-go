@@ -28,6 +28,7 @@ func TestConfigure(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Configure()
 		assert.Error(t, utils.UnableToConfigure, err)
+
 		f.ControlMode = 1
 	})
 	t.Run("expect error for unhandled Subcommand", func(t *testing.T) {
@@ -43,6 +44,7 @@ func TestConfigure(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Configure()
 		assert.Error(t, err)
+
 		errEnableWiFi = nil
 	})
 	t.Run("expect success for SubCommandWireless", func(t *testing.T) {
@@ -59,6 +61,7 @@ func TestConfigure(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Configure()
 		assert.Error(t, err)
+
 		errEnableWiFi = nil
 	})
 
@@ -76,6 +79,7 @@ func TestConfigure(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Configure()
 		assert.Error(t, err)
+
 		errEnableWiFi = nil
 	})
 	t.Run("expect success for SubCommandEnableWifiPort", func(t *testing.T) {
@@ -90,6 +94,7 @@ func TestConfigure(t *testing.T) {
 		mockSetupAndConfigurationErr = errTestError
 		err := lps.Configure()
 		assert.Error(t, utils.UnableToConfigure, err)
+
 		mockSetupAndConfigurationErr = nil
 		f.ControlMode = 2
 	})
@@ -99,6 +104,7 @@ func TestConfigure(t *testing.T) {
 		mockSetupAndConfigurationErr = errTestError
 		err := lps.Configure()
 		assert.Error(t, err)
+
 		mockSetupAndConfigurationErr = nil
 	})
 	t.Run("expect success for SetMebx", func(t *testing.T) {
@@ -114,6 +120,7 @@ func TestConfigure(t *testing.T) {
 		mockGetLowAccuracyTimeSynchErr = errTestError
 		err := lps.Configure()
 		assert.Error(t, err)
+
 		mockGetLowAccuracyTimeSynchErr = nil
 	})
 	t.Run("expect success for Syncclock", func(t *testing.T) {
@@ -129,6 +136,7 @@ func TestConfigure(t *testing.T) {
 		lps := setupService(f)
 		err := lps.Configure()
 		assert.Error(t, utils.UnableToConfigure, err)
+
 		f.ControlMode = 2
 	})
 	t.Run("expect error for AMT features", func(t *testing.T) {
@@ -187,6 +195,7 @@ func TestValidateURL(t *testing.T) {
 			service := NewProvisioningService(f)
 			service.amtCommand = mockAMT
 			service.interfacedWsmanMessage = mockWsman
+
 			err := service.ValidateURL(tt.url)
 			if tt.wantErr {
 				assert.Error(t, err, "ValidateURL() should return an error")

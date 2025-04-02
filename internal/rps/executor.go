@@ -53,6 +53,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 		}
 		// client.localManagement.Close()
 		log.Trace("LMS not running.  Using LME Connection\n")
+
 		client.localManagement = lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
 		client.isLME = true
 		client.localManagement.Initialize()
@@ -67,20 +68,24 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 		// TODO: should the connection be closed?
 		// client.localManagement.Close()
 	}
+
 	return client, err
 }
 
 func (e Executor) MakeItSo(messageRequest Message) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
 	rpsDataChannel := e.server.Listen()
 
 	log.Debug("sending activation request to RPS")
+
 	err := e.server.Send(messageRequest)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
+
 	defer e.localManagement.Close()
 
 	for {
@@ -90,6 +95,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 			if shallIReturn { //quits the loop -- we're either done or reached a point where we need to stop
 				close(e.data)
 				close(e.errors)
+
 				return
 			}
 		case <-interrupt:
@@ -135,6 +141,7 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		log.Error(err)
 		return true
 	}
+
 	if e.isLME {
 		// wait for channel open confirmation
 		e.waitGroup.Wait()
@@ -155,9 +162,11 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		select {
 		case dataFromLM := <-e.data:
 			e.HandleDataFromLM(dataFromLM)
+
 			if e.isLME {
 				e.waitGroup.Wait()
 			}
+
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {

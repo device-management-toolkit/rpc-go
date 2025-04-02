@@ -764,6 +764,7 @@ func setupService(f *flags.Flags) ProvisioningService {
 	service.amtCommand = MockAMT{}
 	service.networker = &MockOSNetworker{}
 	service.interfacedWsmanMessage = MockWSMAN{}
+
 	return service
 }
 

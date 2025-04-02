@@ -15,5 +15,6 @@ func (f *Flags) handleVersionCommand() error {
 	}
 	// runs locally
 	f.Local = true
+
 	return nil
 }

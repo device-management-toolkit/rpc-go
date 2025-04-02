@@ -27,10 +27,12 @@ func (pr *RealPasswordReader) ReadPassword() (string, error) {
 		return string(pass), err
 	} else {
 		reader := bufio.NewReader(os.Stdin)
+
 		pass, err := reader.ReadString('\n')
 		if err != nil {
 			return "", err
 		}
+
 		return pass, nil
 	}
 }

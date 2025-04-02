@@ -26,6 +26,7 @@ func rpcCheckAccess() int {
 	if err != nil {
 		return handleError(err)
 	}
+
 	return int(utils.Success)
 }
 
@@ -46,12 +47,15 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	// Split string
 	r := csv.NewReader(strings.NewReader(inputString))
 	r.Comma = ' ' // space
+
 	args, err := r.Read()
 	if err != nil {
 		log.Error(err.Error())
 		return utils.InvalidParameterCombination.Code
 	}
+
 	args = append([]string{"rpc"}, args...)
+
 	err = runRPC(args)
 	if err != nil {
 		*Output = C.CString("rpcExec failed: " + inputString)
@@ -60,9 +64,13 @@ func rpcExec(Input *C.char, Output **C.char) int {
 
 	// Save captured output to Output variable and restore stdout
 	w.Close()
+
 	var buf bytes.Buffer
+
 	io.Copy(&buf, rd)
+
 	os.Stdout = oldStdout
+
 	*Output = C.CString(buf.String())
 
 	return int(utils.Success)

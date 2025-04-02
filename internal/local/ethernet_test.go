@@ -342,7 +342,9 @@ func TestAddCertsUsingEnterpriseAssistant(t *testing.T) {
 			service.config.EnterpriseAssistant.EAAddress = server.URL
 			service.config.EnterpriseAssistant.EAUsername = "user"
 			service.config.EnterpriseAssistant.EAPassword = "pass"
+
 			var handles Handles
+
 			handles, _, err := service.AddCertsUsingEnterpriseAssistant(Ieee8021xConfigs[0])
 			if tt.expectError != nil {
 				assert.Error(t, err)

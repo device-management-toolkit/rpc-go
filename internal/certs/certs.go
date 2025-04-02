@@ -43,6 +43,7 @@ type CompositeChain struct {
 func (c *Composite) StripPem() string {
 	stripped := strings.Replace(c.Pem, "-----BEGIN CERTIFICATE-----", "", -1)
 	stripped = strings.Replace(stripped, "-----END CERTIFICATE-----", "", -1)
+
 	return strings.Replace(stripped, "\n", "", -1)
 }
 
@@ -52,17 +53,20 @@ func (c *Composite) GenerateCert(template, parent *x509.Certificate, pub, priv a
 		log.Error(err)
 		return err
 	}
+
 	c.Cert, err = x509.ParseCertificate(rawBytes)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
+
 	hash := sha256.Sum256(c.Cert.Raw)
 	c.Fingerprint = hex.EncodeToString(hash[:])
 	c.Pem = string(pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: c.Cert.Raw,
 	}))
+
 	return nil
 }
 
@@ -74,6 +78,7 @@ func GetRootCATemplate() x509.Certificate {
 		OrganizationalUnit: []string{"Remote Provisioning Client"},
 		CommonName:         "RPC Root CA Certificate",
 	}
+
 	return x509.Certificate{
 		SerialNumber: big.NewInt(1000),
 		Subject:      sharedName,
@@ -158,17 +163,22 @@ func GetAMTClientTemplate() x509.Certificate {
 
 func NewRootComposite() (Composite, error) {
 	var err error
+
 	composite := Composite{}
+
 	composite.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
 		return composite, err
 	}
+
 	rootCATemplate := GetRootCATemplate()
+
 	err = composite.GenerateCert(&rootCATemplate, &rootCATemplate, &composite.privateKey.PublicKey, composite.privateKey)
 	if err != nil {
 		log.Error(err)
 	}
+
 	return composite, err
 }
 
@@ -176,16 +186,20 @@ func NewSignedAMTComposite(derKey string, parent *Composite) (Composite, error) 
 	composite := Composite{}
 	clientPubKey, err := ParseAMTPublicKey(derKey)
 	template := GetAMTClientTemplate()
+
 	err = composite.GenerateCert(&template, parent.Cert, clientPubKey, parent.privateKey)
 	if err != nil {
 		log.Error(err)
 	}
+
 	return composite, err
 }
 
 func ParseAMTPublicKey(derKey string) (any, error) {
 	var err error
+
 	var pubKey any
+
 	pemFormat := fmt.Sprintf("-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----", derKey)
 	pemBlock, _ := pem.Decode([]byte(pemFormat))
 	pubKey, err = x509.ParsePKCS1PublicKey(pemBlock.Bytes)
@@ -193,6 +207,7 @@ func ParseAMTPublicKey(derKey string) (any, error) {
 	if strings.Contains(fmt.Sprint(err), "use ParsePKIXPublicKey instead") {
 		pubKey, err = x509.ParsePKIXPublicKey(pemBlock.Bytes)
 	}
+
 	return pubKey, err
 }
 
@@ -202,12 +217,15 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 
 	chain.Intermediate = Composite{}
 	template := GetIntermediateCATemplate()
+
 	var err error
+
 	chain.Intermediate.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
 		return chain, err
 	}
+
 	err = chain.Intermediate.GenerateCert(&template, chain.Root.Cert, &chain.Intermediate.privateKey.PublicKey, chain.Root.privateKey)
 	if err != nil {
 		log.Error(err)
@@ -216,16 +234,19 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 
 	chain.Leaf = Composite{}
 	template = GetLeafTemplate()
+
 	chain.Leaf.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
 		return chain, err
 	}
+
 	err = chain.Leaf.GenerateCert(&template, chain.Intermediate.Cert, &chain.Leaf.privateKey.PublicKey, chain.Intermediate.privateKey)
 	if err != nil {
 		log.Error(err)
 		return chain, err
 	}
+
 	chain.PfxPassword = password
 	chain.PfxData, err = pkcs12.Legacy.Encode(
 		chain.Leaf.privateKey,

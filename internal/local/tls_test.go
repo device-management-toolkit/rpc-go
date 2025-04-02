@@ -28,6 +28,7 @@ func setupProvisioningService() (ProvisioningService, *MockAMT, *MockWSMAN) {
 	service := NewProvisioningService(f)
 	service.amtCommand = mockAMT
 	service.interfacedWsmanMessage = mockWsman
+
 	return service, mockAMT, mockWsman
 }
 
@@ -122,6 +123,7 @@ func TestConfigureTLSWithEA(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service, _, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(r.URL.Path, "/api/authenticate/") {
 					if tt.expectError {
@@ -216,6 +218,7 @@ func TestConfigureTLSWithSelfSignedCert(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service, _, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
+
 			err := service.ConfigureTLSWithSelfSignedCert()
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)
@@ -271,6 +274,7 @@ func TestGenerateKeyPair(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service, _, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
+
 			handle, err := service.GenerateKeyPair()
 			if tt.expectedError != nil {
 				assert.Equal(t, tt.expectedError, err)
@@ -366,6 +370,7 @@ func TestCreateTLSCredentialContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service, _, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
+
 			err := service.CreateTLSCredentialContext("dummyCertHandle")
 			if tt.expectedError != nil {
 				assert.Equal(t, tt.expectedError, err)
@@ -433,6 +438,7 @@ func TestEnableTLS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service, _, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
+
 			err := service.EnableTLS()
 			if tt.expectedError != nil {
 				assert.ErrorIs(t, err, tt.expectedError)

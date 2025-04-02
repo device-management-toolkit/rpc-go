@@ -46,6 +46,7 @@ func (lme *LMEConnection) Initialize() error {
 	}
 
 	var bin_buf bytes.Buffer
+
 	protocolVersion := apf.ProtocolVersion(1, 0, 9)
 	binary.Write(&bin_buf, binary.BigEndian, protocolVersion)
 
@@ -54,20 +55,24 @@ func (lme *LMEConnection) Initialize() error {
 		log.Error(err)
 		return err
 	}
+
 	return nil
 }
 
 // Connect initializes connection to LME via MEI Driver
 func (lme *LMEConnection) Connect() error {
 	log.Debug("Sending APF_CHANNEL_OPEN")
+
 	channel := ((lme.ourChannel + 1) % 32)
 	if channel == 0 {
 		lme.ourChannel = 1
 	} else {
 		lme.ourChannel = channel
 	}
+
 	lme.Session.WaitGroup.Add(1)
 	bin_buf := apf.ChannelOpen(lme.ourChannel)
+
 	err := lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
 	if err != nil {
 		lme.retries = lme.retries + 1
@@ -82,9 +87,12 @@ func (lme *LMEConnection) Connect() error {
 		} else {
 			log.Error(err)
 		}
+
 		return err
 	}
+
 	lme.retries = 0
+
 	return nil
 }
 
@@ -92,6 +100,7 @@ func (lme *LMEConnection) Connect() error {
 func (lme *LMEConnection) Send(data []byte) error {
 	log.Debug("sending message to LME")
 	log.Trace(string(data))
+
 	var bin_buf bytes.Buffer
 
 	channelData := apf.ChannelData(lme.Session.SenderChannel, data)
@@ -99,12 +108,16 @@ func (lme *LMEConnection) Send(data []byte) error {
 	binary.Write(&bin_buf, binary.BigEndian, channelData.RecipientChannel)
 	binary.Write(&bin_buf, binary.BigEndian, channelData.DataLength)
 	binary.Write(&bin_buf, binary.BigEndian, channelData.Data)
+
 	lme.Session.TXWindow -= lme.Session.TXWindow // hmmm
+
 	err := lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
 	if err != nil {
 		return err
 	}
+
 	log.Debug("sent message to LME")
+
 	return nil
 }
 
@@ -117,12 +130,14 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 		} else if err != nil {
 			return err
 		}
+
 		bin_buf = apf.Process(result, lme.Session)
 		if bin_buf.Len() == 0 {
 			log.Debug("done EXECUTING.........")
 			break
 		}
 	}
+
 	return nil
 }
 
@@ -133,13 +148,16 @@ func (lme *LMEConnection) Listen() {
 		<-lme.Session.Timer.C
 		lme.Session.DataBuffer <- lme.Session.Tempdata
 		lme.Session.Tempdata = []byte{}
+
 		var bin_buf bytes.Buffer
+
 		channelData := apf.ChannelClose(lme.Session.SenderChannel)
 		binary.Write(&bin_buf, binary.BigEndian, channelData.MessageType)
 		binary.Write(&bin_buf, binary.BigEndian, channelData.RecipientChannel)
 
 		lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
 	}()
+
 	for {
 		result2, bytesRead, err2 := lme.Command.Receive()
 		if bytesRead == 0 || err2 != nil {
@@ -152,6 +170,7 @@ func (lme *LMEConnection) Listen() {
 				if err2 != nil {
 					log.Trace(err2)
 				}
+
 				log.Trace(result)
 			}
 		}
@@ -162,8 +181,10 @@ func (lme *LMEConnection) Listen() {
 func (lme *LMEConnection) Close() error {
 	log.Debug("closing connection to lme")
 	lme.Command.Close()
+
 	if lme.Session.Timer != nil {
 		lme.Session.Timer.Stop()
 	}
+
 	return nil
 }

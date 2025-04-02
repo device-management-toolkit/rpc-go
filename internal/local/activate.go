@@ -41,6 +41,7 @@ func (service *ProvisioningService) Activate() error {
 		log.Error(err)
 		return utils.AMTConnectionFailed
 	}
+
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
 		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
@@ -50,6 +51,7 @@ func (service *ProvisioningService) Activate() error {
 	if err != nil {
 		return err
 	}
+
 	if service.flags.UseACM {
 		err = service.ActivateACM()
 		if err == nil {
@@ -83,7 +85,9 @@ func (service *ProvisioningService) ActivateACM() error {
 	if err != nil {
 		return utils.ActivationFailedSetupService
 	}
+
 	decodedNonce := getHostBasedSetupResponse.Body.GetResponse.ConfigurationNonce
+
 	fwNonce, err := base64.StdEncoding.DecodeString(decodedNonce)
 	if err != nil {
 		return utils.ActivationFailedDecode64
@@ -110,11 +114,14 @@ func (service *ProvisioningService) ActivateACM() error {
 		if err != nil {
 			return utils.ActivationFailedGetControlMode
 		}
+
 		if controlMode != 2 {
 			return utils.ActivationFailedControlMode
 		}
+
 		return nil
 	}
+
 	return nil
 }
 
@@ -123,11 +130,14 @@ func (service *ProvisioningService) ActivateCCM() error {
 	if err != nil {
 		return utils.ActivationFailedGeneralSettings
 	}
+
 	_, err = service.interfacedWsmanMessage.HostBasedSetupService(generalSettings.Body.GetResponse.DigestRealm, service.config.Password)
 	if err != nil {
 		return utils.ActivationFailedSetupService
 	}
+
 	log.Info("Status: Device activated in Client Control Mode")
+
 	return nil
 }
 
@@ -150,19 +160,23 @@ type ProvisioningCertObj struct {
 func cleanPEM(pem string) string {
 	pem = strings.Replace(pem, "-----BEGIN CERTIFICATE-----", "", -1)
 	pem = strings.Replace(pem, "-----END CERTIFICATE-----", "", -1)
+
 	return strings.Replace(pem, "\n", "", -1)
 }
 
 func (service *ProvisioningService) GetProvisioningCertObj() (ProvisioningCertObj, string, error) {
 	config := service.config.ACMSettings
+
 	certsAndKeys, err := convertPfxToObject(config.ProvisioningCert, config.ProvisioningCertPwd)
 	if err != nil {
 		return ProvisioningCertObj{}, "", err
 	}
+
 	result, fingerprint, err := dumpPfx(certsAndKeys)
 	if err != nil {
 		return ProvisioningCertObj{}, "", err
 	}
+
 	return result, fingerprint, nil
 }
 
@@ -171,6 +185,7 @@ func convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) 
 	if err != nil {
 		return CertsAndKeys{}, utils.ActivationFailedDecode64
 	}
+
 	privateKey, certificate, extraCerts, err := pkcs12.DecodeChain(pfx, passphrase)
 	if err != nil {
 		if strings.Contains(err.Error(), "decryption password incorrect") {
@@ -179,6 +194,7 @@ func convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) 
 
 		return CertsAndKeys{}, utils.ActivationFailedInvalidProvCert
 	}
+
 	certs := append([]*x509.Certificate{certificate}, extraCerts...)
 	pfxOut := CertsAndKeys{certs: certs, keys: []interface{}{privateKey}}
 
@@ -189,11 +205,15 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 	if len(pfxobj.certs) == 0 {
 		return ProvisioningCertObj{}, "", utils.ActivationFailedNoCertFound
 	}
+
 	if len(pfxobj.keys) == 0 {
 		return ProvisioningCertObj{}, "", utils.ActivationFailedNoPrivKeys
 	}
+
 	var provisioningCertificateObj ProvisioningCertObj
+
 	var certificateList []*CertificateObject
+
 	var fingerprint string
 
 	for _, cert := range pfxobj.certs {
@@ -269,17 +289,20 @@ func (service *ProvisioningService) CompareCertHashes(fingerPrint string) error 
 	if err != nil {
 		return utils.ActivationFailedGetCertHash
 	}
+
 	for _, v := range result {
 		if v.Hash == fingerPrint {
 			return nil
 		}
 	}
+
 	return utils.ActivationFailedProvCertNoMatch
 }
 
 func (service *ProvisioningService) injectCertificate(certChain []string) error {
 	firstIndex := 0
 	lastIndex := len(certChain) - 1
+
 	for i, cert := range certChain {
 		isLeaf := i == firstIndex
 		isRoot := i == lastIndex
@@ -289,6 +312,7 @@ func (service *ProvisioningService) injectCertificate(certChain []string) error 
 			return utils.ActivationFailedAddCert
 		}
 	}
+
 	return nil
 }
 
@@ -298,6 +322,7 @@ func (service *ProvisioningService) generateNonce() ([]byte, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, utils.ActivationFailedGenerateNonce
 	}
+
 	return nonce, nil
 }
 
@@ -306,6 +331,7 @@ func (service *ProvisioningService) signString(message []byte, privateKey crypto
 	if !ok {
 		return "", errors.New("not an RSA private key")
 	}
+
 	keyBytes := x509.MarshalPKCS1PrivateKey(rsaKey)
 	privatekeyPEM := pem.EncodeToMemory(
 		&pem.Block{
@@ -313,16 +339,19 @@ func (service *ProvisioningService) signString(message []byte, privateKey crypto
 			Bytes: keyBytes,
 		},
 	)
+
 	block, _ := pem.Decode([]byte(string(privatekeyPEM)))
 	if block == nil {
 		return "", errors.New("failed to decode PEM block containing private key")
 	}
+
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		return "", errors.New("failed to parse private key")
 	}
 
 	hashed := sha256.Sum256(message)
+
 	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hashed[:])
 	if err != nil {
 		return "", errors.New("failed to sign message")
@@ -335,9 +364,11 @@ func (service *ProvisioningService) signString(message []byte, privateKey crypto
 
 func (service *ProvisioningService) createSignedString(nonce []byte, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {
 	arr := append(fwNonce, nonce...)
+
 	signature, err := service.signString(arr, privateKey)
 	if err != nil {
 		return "", utils.ActivationFailedSignString
 	}
+
 	return signature, nil
 }

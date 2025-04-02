@@ -26,10 +26,12 @@ func (service *ProvisioningService) DisplayVersion() (err error) {
 			Version:  utils.ProjectVersion,
 			Protocol: utils.ProtocolVersion,
 		}
+
 		outBytes, err := json.MarshalIndent(info, "", "  ")
 		if err != nil {
 			return err
 		}
+
 		println(string(outBytes))
 	} else {
 		fmt.Println(strings.ToUpper(utils.ProjectName))

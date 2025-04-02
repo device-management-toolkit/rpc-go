@@ -30,6 +30,7 @@ func TestDisplayVersion(t *testing.T) {
 		err := lps.DisplayVersion()
 		assert.NoError(t, err)
 		assert.Equal(t, nil, err)
+
 		f.JsonOutput = false
 	})
 }

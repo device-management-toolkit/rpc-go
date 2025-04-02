@@ -26,6 +26,7 @@ var mockInitUseWDResult bool
 func (c *MockHECICommands) Init(useLME bool, useWD bool) error {
 	mockInitUseLMEResult = useLME
 	mockInitUseWDResult = useWD
+
 	return mockInitErr
 }
 func (c *MockHECICommands) GetBufferSize() uint32 { return 5120 } // MaxMessageLength
@@ -38,6 +39,7 @@ func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRea
 	for i = 0; i < len(message) && i < len(buffer); i++ {
 		buffer[i] = message[i]
 	}
+
 	return uint32(i), nil
 }
 func (c *MockHECICommands) Close() {}
@@ -62,7 +64,9 @@ func TestOpen(t *testing.T) {
 	})
 	t.Run("expect error for Open", func(t *testing.T) {
 		mockInitErr = errors.New("test error")
+
 		assert.NotNil(t, pthi.Open(true))
+
 		mockInitErr = nil
 	})
 	t.Run("expect no error for OpenWatchdog", func(t *testing.T) {
@@ -72,7 +76,9 @@ func TestOpen(t *testing.T) {
 	})
 	t.Run("expect error for OpenWatchdog", func(t *testing.T) {
 		mockInitErr = errors.New("test error")
+
 		assert.NotNil(t, pthi.OpenWatchdog())
+
 		mockInitErr = nil
 	})
 }
@@ -94,7 +100,9 @@ func TestReceive(t *testing.T) {
 		Header: ResponseMessageHeader{},
 		UUID:   [16]uint8{1, 2, 3, 4},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -112,7 +120,9 @@ func TestGetGUID(t *testing.T) {
 		Header: ResponseMessageHeader{},
 		UUID:   [16]uint8{1, 2, 3, 4},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -128,7 +138,9 @@ func TestGetControlMode(t *testing.T) {
 		Header: ResponseMessageHeader{},
 		State:  3,
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -142,7 +154,9 @@ func TestUnprovision(t *testing.T) {
 	prepareMessage := UnprovisionResponse{
 		Header: ResponseMessageHeader{},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -159,7 +173,9 @@ func TestGetCodeVersions(t *testing.T) {
 			VersionsCount: 1,
 		},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -179,7 +195,9 @@ func TestGetDNSSuffix(t *testing.T) {
 			Buffer: [1000]uint8{1, 2, 3, 4},
 		},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -198,7 +216,9 @@ func TestEnumerateHashHandles(t *testing.T) {
 			Handles: [CERT_HASH_MAX_NUMBER]uint32{0},
 		},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 	result, err := pthi.enumerateHashHandles()
@@ -221,7 +241,9 @@ func TestGetCertificateHashes(t *testing.T) { // Needs more work
 			},
 		},
 	}
+
 	var bin_buf2 bytes.Buffer
+
 	binary.Write(&bin_buf2, binary.LittleEndian, prepareMessage2)
 	message = bin_buf2.Bytes()
 
@@ -247,7 +269,9 @@ func TestGetRemoteAccessConnectionStatus(t *testing.T) {
 			Buffer: [1000]uint8{1, 2, 3, 4},
 		},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -271,7 +295,9 @@ func TestGetLANInterfaceSettings(t *testing.T) {
 		LinkStatus:  1,
 		MacAddress:  [6]uint8{1, 2, 3, 4, 5, 6},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -295,7 +321,9 @@ func TestGetLocalSystemAccount(t *testing.T) {
 			Password: [CFG_MAX_ACL_USER_LENGTH]uint8{8, 7, 6, 5},
 		},
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -312,7 +340,9 @@ func TestGetIsAMTEnabled(t *testing.T) {
 	prepareMessage := GetStateIndependenceIsChangeToAMTEnabledResponse{
 		Enabled: enabledValue,
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
@@ -331,7 +361,9 @@ func TestSetAmtOperationalState(t *testing.T) {
 		VersionNumber: 0x10,
 		Status:        AMT_STATUS_INVALID_AMT_MODE,
 	}
+
 	var bin_buf bytes.Buffer
+
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 

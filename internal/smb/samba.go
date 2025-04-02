@@ -47,6 +47,7 @@ func NewSambaService(pr utils.PasswordReader) ServiceInterface {
 
 func (s *Service) FetchFileContents(url string) ([]byte, error) {
 	var contents []byte
+
 	p, err := s.ParseUrl(url)
 	if err != nil {
 		return contents, err
@@ -94,6 +95,7 @@ func (s *Service) FetchFileContents(url string) ([]byte, error) {
 	}(fs)
 
 	contents, err = fs.ReadFile(p.FilePath)
+
 	return contents, err
 }
 
@@ -104,6 +106,7 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 	p := Properties{}
 	p.Url = url
 	u, err := netURL.Parse(url)
+
 	if err != nil {
 		return p, err
 	}
@@ -111,10 +114,12 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 	if u.Scheme != "smb" {
 		return p, errors.New("invalid scheme")
 	}
+
 	p.Host = u.Hostname()
 	if p.Host == "" {
 		return p, errors.New("missing hostname")
 	}
+
 	p.Port = u.Port()
 	if p.Port == "" {
 		p.Port = "445"
@@ -150,8 +155,10 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 		if err != nil {
 			return p, err
 		}
+
 		p.User = curUser.Username
 	}
+
 	if p.User == "root" {
 		if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
 			p.User = sudoUser
@@ -161,6 +168,7 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 	p.Password, _ = u.User.Password()
 	if p.Password == "*" {
 		fmt.Println("Please enter smb password: ")
+
 		p.Password, err = s.pr.ReadPassword()
 		if err != nil {
 			return p, err
@@ -178,5 +186,6 @@ func lookupEnvOrString(key string, defaultVal string) string {
 	if val, ok := os.LookupEnv(key); ok {
 		return val
 	}
+
 	return defaultVal
 }

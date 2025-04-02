@@ -157,9 +157,11 @@ func NewFlags(args []string, pr utils.PasswordReader) *Flags {
 // ParseFlags is used for understanding the command line flags
 func (f *Flags) ParseFlags() error {
 	var err error
+
 	if len(f.commandLineArgs) > 1 {
 		f.Command = f.commandLineArgs[1]
 	}
+
 	switch f.Command {
 	case utils.CommandAMTInfo:
 		err = f.handleAMTInfo(f.amtInfoCommand)
@@ -175,8 +177,10 @@ func (f *Flags) ParseFlags() error {
 		err = f.handleConfigureCommand()
 	default:
 		err = utils.IncorrectCommandLineParameters
+
 		f.printUsage()
 	}
+
 	return err
 }
 
@@ -199,6 +203,7 @@ func (f *Flags) printUsage() string {
 	usage = usage + "              Example: " + executable + " version\n"
 	usage = usage + "\nRun '" + executable + " COMMAND' for more information on a command.\n"
 	fmt.Println(usage)
+
 	return usage
 }
 
@@ -224,9 +229,11 @@ func (f *Flags) setupCommonFlags() {
 		fs.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
 		fs.BoolVar(&f.EchoPass, "echo-password", false, "echos AMT Password to the terminal during input")
 		fs.DurationVar(&f.AMTTimeoutDuration, "t", 2*time.Minute, "AMT timeout - time to wait until AMT is ready (ex. '2m' or '30s')")
+
 		if fs.Name() != utils.CommandActivate { // activate does not use the -f flag
 			fs.BoolVar(&f.Force, "f", false, "Force even if device is not registered with a server")
 		}
+
 		if fs.Name() != utils.CommandDeactivate { // activate does not use the -f flag
 			fs.StringVar(&f.UUID, "uuid", "", "override AMT device uuid for use with non-CIRA workflow")
 		}
@@ -238,6 +245,7 @@ func (f *Flags) validateUUIDOverride() error {
 		fmt.Println("uuid provided does not follow proper uuid format:", err)
 		return err
 	}
+
 	return nil
 }
 
@@ -245,6 +253,7 @@ func (f *Flags) lookupEnvOrString(key string, defaultVal string) string {
 	if val, ok := os.LookupEnv(key); ok {
 		return val
 	}
+
 	return defaultVal
 }
 func (f *Flags) lookupEnvOrBool(key string, defaultVal bool) bool {
@@ -254,54 +263,67 @@ func (f *Flags) lookupEnvOrBool(key string, defaultVal bool) bool {
 			log.Error(err)
 			return false
 		}
+
 		return parsedVal
 	}
+
 	return defaultVal
 }
 
 func (f *Flags) PromptUserInput(prompt string, value *string) error {
 	fmt.Println(prompt)
+
 	_, err := fmt.Scanln(value)
 	if err != nil {
 		log.Error(err)
 		return utils.InvalidUserInput
 	}
+
 	return nil
 }
 
 func (f *Flags) ReadNewPasswordTo(saveLocation *string, promptPhrase string) error {
 	var password, confirmPassword string
+
 	var err error
 
 	fmt.Printf("Please enter %s: \n", promptPhrase)
+
 	password, err = f.passwordReader.ReadPassword()
 	if password == "" || err != nil {
 		return utils.MissingOrIncorrectPassword
 	}
 
 	fmt.Printf("Please confirm %s: \n", promptPhrase)
+
 	confirmPassword, err = f.passwordReader.ReadPassword()
 	if password != confirmPassword || err != nil {
 		return utils.PasswordsDoNotMatch
 	}
 
 	*saveLocation = password
+
 	return nil
 }
 
 func (f *Flags) ReadPasswordFromUser() error {
 	fmt.Println("Please enter AMT Password: ")
+
 	var password string
+
 	var err error
 	if f.EchoPass {
 		_, err = fmt.Scanln(&password)
 	} else {
 		password, err = f.passwordReader.ReadPassword()
 	}
+
 	if password == "" || err != nil {
 		return utils.MissingOrIncorrectPassword
 	}
+
 	f.Password = password
+
 	return nil
 }
 
@@ -309,30 +331,38 @@ func (f *Flags) handleLocalConfig() error {
 	if f.configContent == "" {
 		return nil
 	}
+
 	err := utils.FailedReadingConfiguration
 	ext := filepath.Ext(strings.ToLower(f.configContent))
 	isPFX := ext == ".pfx"
+
 	if strings.HasPrefix(f.configContent, "smb:") {
 		isJSON := ext == ".json"
 		isYAML := ext == ".yaml" || ext == ".yml"
+
 		if !isPFX && !isJSON && !isYAML {
 			log.Error("remote config unsupported smb file extension: ", ext)
 			return err
 		}
+
 		configBytes, err := f.SambaService.FetchFileContents(f.configContent)
 		if err != nil {
 			log.Error("config error: ", err)
 			return utils.FailedReadingConfiguration
 		}
+
 		if isPFX {
 			f.LocalConfig.ACMSettings.ProvisioningCert = base64.StdEncoding.EncodeToString(configBytes)
 		}
+
 		if isJSON {
 			err = cleanenv.ParseJSON(bytes.NewReader(configBytes), &f.LocalConfig)
 		}
+
 		if isYAML {
 			err = cleanenv.ParseYAML(bytes.NewReader(configBytes), &f.LocalConfig)
 		}
+
 		if err != nil {
 			log.Error("config error: ", err)
 			return err
@@ -343,6 +373,7 @@ func (f *Flags) handleLocalConfig() error {
 			log.Error("config error: ", err)
 			return utils.FailedReadingConfiguration
 		}
+
 		f.LocalConfig.ACMSettings.ProvisioningCert = base64.StdEncoding.EncodeToString(pfxBytes)
 	} else {
 		err := cleanenv.ReadConfig(f.configContent, &f.LocalConfig)
@@ -351,6 +382,7 @@ func (f *Flags) handleLocalConfig() error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -361,6 +393,7 @@ func (f *Flags) handleLocalConfigV2() error {
 	}
 
 	security := security.Crypto{EncryptionKey: f.configV2Key}
+
 	content, err := security.ReadAndDecryptFile(f.configContentV2)
 	if err != nil {
 		log.Error("config error: ", err)
@@ -372,6 +405,8 @@ func (f *Flags) handleLocalConfigV2() error {
 		log.Error("error formatting config content: ", err)
 		return err
 	}
+
 	f.LocalConfigV2 = content
+
 	return nil
 }

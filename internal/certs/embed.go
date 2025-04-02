@@ -42,28 +42,36 @@ var LoadRootCAPool = func() (*x509.CertPool, error) {
 func LoadRootCAPoolwithFS(fs FileSystem) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
 	loadedCerts := 0
+
 	certFiles, err := fs.ReadDir("trustedstore")
 	if err != nil {
 		return nil, errors.New("failed to read embedded certificates directory")
 	}
+
 	for _, certFile := range certFiles {
 		if !certFile.IsDir() {
 			certPath := "trustedstore/" + certFile.Name()
 			certData, err := fs.ReadFile(certPath)
+
 			if err != nil {
 				log.Error("Failed to read file: ", certPath, " Error: ", err)
 				continue
 			}
+
 			derCert, err := x509.ParseCertificate(certData)
 			if err != nil {
 				continue
 			}
+
 			certPool.AddCert(derCert)
+
 			loadedCerts++
 		}
 	}
+
 	if loadedCerts == 0 {
 		return nil, errors.New("no certificates found in the trusted store")
 	}
+
 	return certPool, nil
 }

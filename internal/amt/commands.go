@@ -135,6 +135,7 @@ func (amt AMTCommand) Initialize() error {
 	}
 
 	defer amt.PTHI.Close()
+
 	return nil
 }
 
@@ -144,8 +145,10 @@ func (amt AMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration)
 	if err1 != nil {
 		return "", err1
 	}
+
 	ticker := time.NewTicker(15 * time.Second)
 	startTime := time.Now()
+
 	var result, err = amt.PTHI.GetCodeVersions()
 	// retry upto flag AMTTimeoutDuration
 	if err != nil {
@@ -161,7 +164,9 @@ func (amt AMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration)
 			}
 		}
 	}
+
 	amt.PTHI.Close()
+
 	if err != nil {
 		return "", err
 	}
@@ -180,11 +185,14 @@ func (amt AMTCommand) GetChangeEnabled() (ChangeEnabledResponse, error) {
 	if err != nil {
 		return ChangeEnabledResponse(0), err
 	}
+
 	defer amt.PTHI.Close()
+
 	rawVal, err := amt.PTHI.GetIsAMTEnabled()
 	if err != nil {
 		return ChangeEnabledResponse(0), err
 	}
+
 	return ChangeEnabledResponse(rawVal), nil
 }
 
@@ -201,15 +209,19 @@ func setAmtOperationalState(state pthi.AMTOperationalState, amt AMTCommand) erro
 	if err != nil {
 		return err
 	}
+
 	defer amt.PTHI.Close()
+
 	status, err := amt.PTHI.SetAmtOperationalState(state)
 	if err != nil {
 		return err
 	}
+
 	if status != pthi.AMT_STATUS_SUCCESS {
 		s := fmt.Sprintf("error setting AMT operational state %s: %s", state, status)
 		return errors.New(s)
 	}
+
 	return nil
 }
 
@@ -219,7 +231,9 @@ func (amt AMTCommand) GetUUID() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetUUID()
 	if err != nil {
 		return "", err
@@ -236,6 +250,7 @@ func (amt AMTCommand) GetUUID() (string, error) {
 		hexValues[7] + hexValues[6] + "-" +
 		hexValues[8] + hexValues[9] + "-" +
 		hexValues[10] + hexValues[11] + hexValues[12] + hexValues[13] + hexValues[14] + hexValues[15]
+
 	return uuidStr, nil
 }
 
@@ -245,7 +260,9 @@ func (amt AMTCommand) GetControlMode() (int, error) {
 	if err != nil {
 		return -1, err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetControlMode()
 	if err != nil {
 		return -1, err
@@ -260,7 +277,9 @@ func (amt AMTCommand) Unprovision() (int, error) {
 	if err != nil {
 		return -1, err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.Unprovision()
 	if err != nil {
 		return -1, err
@@ -274,7 +293,9 @@ func (amt AMTCommand) GetDNSSuffix() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetDNSSuffix()
 	if err != nil {
 		return "", err
@@ -286,10 +307,13 @@ func (amt AMTCommand) GetDNSSuffix() (string, error) {
 func (amt AMTCommand) GetCertificateHashes() ([]CertHashEntry, error) {
 	err := amt.PTHI.Open(false)
 	amtEntryList := []CertHashEntry{}
+
 	if err != nil {
 		return amtEntryList, err
 	}
+
 	defer amt.PTHI.Close()
+
 	pthiEntryList, err := amt.PTHI.GetCertificateHashes(pthi.AMTHashHandles{})
 	if err != nil {
 		return amtEntryList, err
@@ -321,10 +345,13 @@ func (amt AMTCommand) GetCertificateHashes() ([]CertHashEntry, error) {
 func (amt AMTCommand) GetRemoteAccessConnectionStatus() (RemoteAccessStatus, error) {
 	err := amt.PTHI.Open(false)
 	emptyRAStatus := RemoteAccessStatus{}
+
 	if err != nil {
 		return emptyRAStatus, err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetRemoteAccessConnectionStatus()
 	if err != nil {
 		return emptyRAStatus, err
@@ -343,10 +370,13 @@ func (amt AMTCommand) GetRemoteAccessConnectionStatus() (RemoteAccessStatus, err
 func (amt AMTCommand) GetLANInterfaceSettings(useWireless bool) (InterfaceSettings, error) {
 	err := amt.PTHI.Open(false)
 	emptySettings := InterfaceSettings{}
+
 	if err != nil {
 		return emptySettings, err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetLANInterfaceSettings(useWireless)
 	if err != nil {
 		return emptySettings, err
@@ -390,16 +420,20 @@ func (amt AMTCommand) GetLANInterfaceSettings(useWireless bool) (InterfaceSettin
 func (amt AMTCommand) GetLocalSystemAccount() (LocalSystemAccount, error) {
 	err := amt.PTHI.Open(false)
 	emptySystemAccount := LocalSystemAccount{}
+
 	if err != nil {
 		return emptySystemAccount, err
 	}
+
 	defer amt.PTHI.Close()
+
 	result, err := amt.PTHI.GetLocalSystemAccount()
 	if err != nil {
 		return emptySystemAccount, err
 	}
 
 	username := ""
+
 	for i := 0; i < len(result.Account.Username); i++ {
 		if string(result.Account.Username[i]) != "\x00" {
 			username = username + string(result.Account.Username[i])
@@ -407,6 +441,7 @@ func (amt AMTCommand) GetLocalSystemAccount() (LocalSystemAccount, error) {
 	}
 
 	password := ""
+
 	for i := 0; i < len(result.Account.Password); i++ {
 		if string(result.Account.Password[i]) != "\x00" {
 			password = password + string(result.Account.Password[i])

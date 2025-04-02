@@ -38,12 +38,15 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		log.Error("Error while getting the System type: ", err)
 		return utils.AMTFeaturesConfigurationFailed
 	}
+
 	if !isISMSystem {
 		var kvmStateEnabled kvm.KVMRedirectionSAPRequestStateChangeInput
+
 		kvmStateEnabled = 3 // 3 (Disabled) - to disable the network interface of the feature
 		if service.flags.KVM {
 			kvmStateEnabled = 2 // 2 (Enabled) - to enable the network interface of the feature
 		}
+
 		if _, err := service.interfacedWsmanMessage.RequestKVMStateChange(kvmStateEnabled); err != nil {
 			log.Error("Error while setting the KVM state: ", err)
 			return utils.AMTFeaturesConfigurationFailed
@@ -66,8 +69,11 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		log.Error("Error while getting the OptIn Service: ", err)
 		return utils.AMTFeaturesConfigurationFailed
 	}
+
 	var optInRequired uint32
+
 	optInRequired = uint32(getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired)
+
 	switch service.flags.UserConsent {
 	case "none":
 		optInRequired = uint32(optin.OptInRequiredNone)
@@ -76,6 +82,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	case "all":
 		optInRequired = uint32(optin.OptInRequiredAll)
 	}
+
 	if uint32(getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired) != optInRequired {
 		//Put OptInService
 		request := optin.OptInServiceRequest{
@@ -90,6 +97,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 			SystemCreationClassName: getOptInServiceResponse.Body.GetAndPutResponse.SystemCreationClassName,
 			SystemName:              getOptInServiceResponse.Body.GetAndPutResponse.SystemName,
 		}
+
 		_, err := service.interfacedWsmanMessage.PutIpsOptInService(request)
 		if err != nil {
 			log.Error("Error while putting the OptIn Service: ", err)
@@ -99,9 +107,11 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 
 	// Get the AMT Features
 	println("AMT Features configured successfully")
+
 	if !isISMSystem {
 		println("KVM Enabled		:", service.flags.KVM)
 	}
+
 	println("SOL Enabled		:", service.flags.SOL)
 	println("IDER Enabled		:", service.flags.IDER)
 	println("User Consent		:", service.flags.UserConsent)
@@ -111,10 +121,12 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 
 func (service *ProvisioningService) setAMTRedirectionService() error {
 	var requestedState redirection.RequestedState
+
 	requestedState = 32768 //supported values in RequestedState are 32768-32771
 	if service.flags.IDER {
 		requestedState += 1
 	}
+
 	if service.flags.SOL {
 		requestedState += 2
 	}
@@ -123,6 +135,7 @@ func (service *ProvisioningService) setAMTRedirectionService() error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -140,30 +153,38 @@ func (service *ProvisioningService) putRedirectionService(getResponse redirectio
 	if isRedirectionChanged {
 		redirRequest.EnabledState = redirection.EnabledState(2)
 	}
+
 	_, err := service.interfacedWsmanMessage.PutRedirectionState(redirRequest)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 func (service *ProvisioningService) isISMSystem() (bool, error) {
 	dataStruct := make(map[string]interface{})
+
 	result, err := service.amtCommand.GetVersionDataFromME("AMT", service.flags.AMTTimeoutDuration)
 	if err != nil {
 		log.Error(err)
 		return false, err
 	}
+
 	dataStruct["amt"] = result
+
 	result, err = service.amtCommand.GetVersionDataFromME("Sku", service.flags.AMTTimeoutDuration)
 	if err != nil {
 		log.Error(err)
 		return false, err
 	}
+
 	dataStruct["sku"] = result
 	result = DecodeAMT(dataStruct["amt"].(string), dataStruct["sku"].(string))
+
 	dataStruct["features"] = strings.TrimSpace(result)
 	if strings.Contains(dataStruct["features"].(string), "Intel Standard Manageability") {
 		return true, nil
 	}
+
 	return false, nil
 }

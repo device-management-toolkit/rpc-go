@@ -107,7 +107,7 @@ linters:
     # - unconvert
     # - unparam
     # - unused
-    # - wsl
+    - wsl
     - whitespace
 
 # disable:

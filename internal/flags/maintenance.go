@@ -36,6 +36,7 @@ func (f *Flags) printMaintenanceUsage() string {
 	usage = usage + "                 If a static ip is not specified, the ip address and netmask of the host OS is used\n"
 	usage = usage + "\nRun '" + executable + " maintenance COMMAND -h' for more information on a command.\n"
 	fmt.Println(usage)
+
 	return usage
 }
 
@@ -47,6 +48,7 @@ func (f *Flags) handleMaintenanceCommand() error {
 	}
 
 	var err error
+
 	f.SubCommand = f.commandLineArgs[2]
 	switch f.SubCommand {
 	case "syncclock":
@@ -61,8 +63,10 @@ func (f *Flags) handleMaintenanceCommand() error {
 		err = f.handleMaintenanceSyncDeviceInfo()
 	default:
 		f.printMaintenanceUsage()
+
 		err = utils.IncorrectCommandLineParameters
 	}
+
 	if err != nil {
 		return err
 	}
@@ -76,6 +80,7 @@ func (f *Flags) handleMaintenanceCommand() error {
 	if f.URL == "" {
 		fmt.Print("\n-u flag is required and cannot be empty\n\n")
 		f.printMaintenanceUsage()
+
 		return utils.MissingOrIncorrectURL
 	}
 
@@ -96,8 +101,10 @@ func (f *Flags) handleMaintenanceSyncClock() error {
 		if err.Error() == utils.HelpRequested.Message {
 			return utils.HelpRequested
 		}
+
 		return utils.IncorrectCommandLineParameters
 	}
+
 	return nil
 }
 
@@ -107,24 +114,30 @@ func (f *Flags) handleMaintenanceSyncDeviceInfo() error {
 		if err.Error() == utils.HelpRequested.Message {
 			return utils.HelpRequested
 		}
+
 		return utils.IncorrectCommandLineParameters
 	}
+
 	return nil
 }
 
 func (f *Flags) handleMaintenanceSyncHostname() error {
 	var err error
+
 	err = f.amtMaintenanceSyncHostnameCommand.Parse(f.commandLineArgs[3:])
 	if err != nil {
 		if err.Error() == utils.HelpRequested.Message {
 			return utils.HelpRequested
 		}
+
 		return utils.IncorrectCommandLineParameters
 	}
+
 	amtCommand := amt.NewAMTCommand()
 	if f.HostnameInfo.DnsSuffixOS, err = amtCommand.GetOSDNSSuffix(); err != nil {
 		log.Error(err)
 	}
+
 	f.HostnameInfo.Hostname, err = os.Hostname()
 	if err != nil {
 		log.Error(err)
@@ -133,6 +146,7 @@ func (f *Flags) handleMaintenanceSyncHostname() error {
 		log.Error("OS hostname is not available")
 		return utils.OSNetworkInterfacesLookupFailed
 	}
+
 	return nil
 }
 
@@ -142,7 +156,9 @@ func validateIP(assignee *string) func(string) error {
 		if net.ParseIP(val) == nil {
 			return errors.New("not a valid ip address")
 		}
+
 		*assignee = val
+
 		return nil
 	}
 }
@@ -182,6 +198,7 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 		default:
 			err = utils.IncorrectCommandLineParameters
 		}
+
 		return err
 	} else if len(f.IpConfiguration.IpAddress) != 0 {
 		return nil
@@ -203,9 +220,11 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 		if len(f.IpConfiguration.IpAddress) != 0 {
 			break
 		}
+
 		if i.HardwareAddr.String() != amtLanIfc.MACAddress {
 			continue
 		}
+
 		addrs, _ := f.netEnumerator.InterfaceAddrs(&i)
 		for _, address := range addrs {
 			if ipnet, ok := address.(*net.IPNet); ok &&
@@ -221,17 +240,21 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 		log.Errorf("static ip address not found")
 		return utils.OSNetworkInterfacesLookupFailed
 	}
+
 	return nil
 }
 
 func (f *Flags) handleMaintenanceSyncChangePassword() error {
 	f.amtMaintenanceChangePasswordCommand.StringVar(&f.StaticPassword, "static", "", "specify a new password for AMT")
+
 	err := f.amtMaintenanceChangePasswordCommand.Parse(f.commandLineArgs[3:])
 	if err != nil {
 		if err.Error() == utils.HelpRequested.Message {
 			return utils.HelpRequested
 		}
+
 		return utils.IncorrectCommandLineParameters
 	}
+
 	return nil
 }

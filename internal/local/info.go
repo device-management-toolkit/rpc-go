@@ -39,6 +39,7 @@ func GetOSIPAddress(mac_addr string, netEnumerator flags.NetEnumerator) (string,
 		value, _ := strconv.ParseUint(v, 16, 8)
 		mac_in_byte[i] = uint8(value)
 	}
+
 	interfaces, err := netEnumerator.Interfaces()
 	if err != nil {
 		return "0.0.0.0", errors.New("Failed to get net interfaces")
@@ -75,6 +76,7 @@ func GetOSIPAddress(mac_addr string, netEnumerator flags.NetEnumerator) (string,
 				if ip == nil || ip.IsLoopback() {
 					continue
 				}
+
 				ip = ip.To4()
 				if ip == nil {
 					continue // not an ipv4 address
@@ -84,6 +86,7 @@ func GetOSIPAddress(mac_addr string, netEnumerator flags.NetEnumerator) (string,
 			}
 		}
 	}
+
 	return "Not Found", nil
 }
 
@@ -100,9 +103,11 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		result, err := cmd.GetControlMode()
 		if err != nil {
 			log.Error(err)
+
 			service.flags.AmtInfo.UserCert = false
 		} else if result == 0 {
 			log.Warn("Device is in pre-provisioning mode. User certificates are not available")
+
 			service.flags.AmtInfo.UserCert = false
 		} else {
 			if err := service.flags.ReadPasswordFromUser(); err != nil {
@@ -117,9 +122,11 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		if err != nil {
 			log.Error(err)
 		}
+
 		dataStruct["amt"] = result
 		service.PrintOutput("Version			: " + result)
 	}
+
 	if service.flags.AmtInfo.Bld {
 		result, err := cmd.GetVersionDataFromME("Build Number", service.flags.AMTTimeoutDuration)
 		if err != nil {
@@ -129,6 +136,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["buildNumber"] = result
 		service.PrintOutput("Build Number		: " + result)
 	}
+
 	if service.flags.AmtInfo.Sku {
 		result, err := cmd.GetVersionDataFromME("Sku", service.flags.AMTTimeoutDuration)
 		if err != nil {
@@ -138,12 +146,14 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["sku"] = result
 		service.PrintOutput("SKU			: " + result)
 	}
+
 	if service.flags.AmtInfo.Ver && service.flags.AmtInfo.Sku {
 		result := DecodeAMT(dataStruct["amt"].(string), dataStruct["sku"].(string))
 
 		dataStruct["features"] = strings.TrimSpace(result)
 		service.PrintOutput("Features		: " + result)
 	}
+
 	if service.flags.AmtInfo.UUID {
 		result, err := cmd.GetUUID()
 		if err != nil {
@@ -153,6 +163,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["uuid"] = result
 		service.PrintOutput("UUID			: " + result)
 	}
+
 	if service.flags.AmtInfo.Mode {
 		result, err := cmd.GetControlMode()
 		if err != nil {
@@ -162,11 +173,13 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["controlMode"] = utils.InterpretControlMode(result)
 		service.PrintOutput("Control Mode		: " + string(utils.InterpretControlMode(result)))
 	}
+
 	if service.flags.AmtInfo.OpState {
 		majorVersion, err := GetMajorVersion(dataStruct["amt"].(string))
 		if err != nil {
 			log.Error(err)
 		}
+
 		const minimumAMTVersion = 11
 		// Check if the AMT major version is greater than 11
 		if majorVersion > minimumAMTVersion {
@@ -174,6 +187,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 			if err != nil {
 				log.Error(err)
 			}
+
 			if result.IsNewInterfaceVersion() {
 				opStateValue := "disabled"
 				if result.IsAMTEnabled() {
@@ -187,11 +201,13 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 			log.Debug("OpState will not work on AMT versions 11 and below.")
 		}
 	}
+
 	if service.flags.AmtInfo.DNS {
 		result, err := cmd.GetDNSSuffix()
 		if err != nil {
 			log.Error(err)
 		}
+
 		dataStruct["dnsSuffix"] = result
 		service.PrintOutput("DNS Suffix		: " + string(result))
 
@@ -203,11 +219,13 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["dnsSuffixOS"] = result
 		service.PrintOutput("DNS Suffix (OS)		: " + result)
 	}
+
 	if service.flags.AmtInfo.Hostname {
 		result, err := os.Hostname()
 		if err != nil {
 			log.Error(err)
 		}
+
 		dataStruct["hostnameOS"] = result
 		service.PrintOutput("Hostname (OS)		: " + string(result))
 	}
@@ -217,6 +235,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		if err != nil {
 			log.Error(err)
 		}
+
 		dataStruct["ras"] = result
 
 		service.PrintOutput("RAS Network      	: " + result.NetworkStatus)
@@ -224,6 +243,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		service.PrintOutput("RAS Trigger      	: " + result.RemoteTrigger)
 		service.PrintOutput("RAS MPS Hostname 	: " + result.MPSHostname)
 	}
+
 	if service.flags.AmtInfo.Lan {
 		wired, err := cmd.GetLANInterfaceSettings(false)
 		if err != nil {
@@ -243,6 +263,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		if err != nil {
 			log.Error(err)
 		}
+
 		wired.OsIPAddress = wired_osIpAddress
 
 		dataStruct["wiredAdapter"] = wired
@@ -266,6 +287,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		if err != nil {
 			log.Error(err)
 		}
+
 		wireless.OsIPAddress = wireless_osIpAddress
 
 		dataStruct["wirelessAdapter"] = wireless
@@ -278,24 +300,30 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		service.PrintOutput("OS  IP Address		: " + wireless.OsIPAddress)
 		service.PrintOutput("MAC Address  		: " + wireless.MACAddress)
 	}
+
 	if service.flags.AmtInfo.Cert {
 		result, err := cmd.GetCertificateHashes()
 		if err != nil {
 			log.Error(err)
 		}
+
 		sysCertMap := map[string]amt.CertHashEntry{}
 		for _, v := range result {
 			sysCertMap[v.Name] = v
 		}
+
 		dataStruct["certificateHashes"] = sysCertMap
+
 		if !service.flags.JsonOutput {
 			if len(result) == 0 {
 				fmt.Println("---No Certificate Hashes Found---")
 			} else {
 				fmt.Println("---Certificate Hashes---")
 			}
+
 			for k, v := range sysCertMap {
 				fmt.Printf("%s", k)
+
 				if v.IsDefault && v.IsActive {
 					fmt.Printf("  (Default, Active)")
 				} else if v.IsDefault {
@@ -303,19 +331,23 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 				} else if v.IsActive {
 					fmt.Printf("  (Active)")
 				}
+
 				fmt.Println()
 				fmt.Println("   " + v.Algorithm + ": " + v.Hash)
 			}
 		}
 	}
+
 	if service.flags.AmtInfo.UserCert {
 		tlsConfig := &tls.Config{}
 		if service.flags.LocalTlsEnforced {
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
 		}
+
 		service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		userCerts, _ := service.interfacedWsmanMessage.GetPublicKeyCerts()
 		userCertMap := map[string]publickey.RefinedPublicKeyCertificateResponse{}
+
 		for i := range userCerts {
 			c := userCerts[i]
 			name := GetTokenFromKeyValuePairs(c.Subject, "CN")
@@ -324,8 +356,10 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 			if name == "" {
 				name = c.InstanceID
 			}
+
 			userCertMap[name] = c
 		}
+
 		dataStruct["publicKeyCerts"] = userCertMap
 
 		if !service.flags.JsonOutput {
@@ -334,8 +368,10 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 			} else {
 				fmt.Println("---Public Key Certs---")
 			}
+
 			for k, c := range userCertMap {
 				fmt.Printf("%s", k)
+
 				if c.TrustedRootCertificate && c.ReadOnlyCertificate {
 					fmt.Printf("  (TrustedRoot, ReadOnly)")
 				} else if c.TrustedRootCertificate {
@@ -343,6 +379,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 				} else if c.ReadOnlyCertificate {
 					fmt.Printf("  (ReadOnly)")
 				}
+
 				fmt.Println()
 			}
 		}
@@ -351,11 +388,14 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 	if service.flags.JsonOutput {
 		outBytes, err := json.MarshalIndent(dataStruct, "", "  ")
 		output := string(outBytes)
+
 		if err != nil {
 			output = err.Error()
 		}
+
 		fmt.Println(output)
 	}
+
 	return nil
 }
 func (service *ProvisioningService) PrintOutput(message string) {
@@ -368,15 +408,19 @@ func DecodeAMT(version, SKU string) string {
 	if len(amtParts) <= 1 {
 		return "Invalid AMT version format"
 	}
+
 	amtVer, err := strconv.ParseFloat(amtParts[0], 64)
 	if err != nil {
 		return "Invalid AMT version"
 	}
+
 	skuNum, err := strconv.ParseInt(SKU, 0, 64)
 	if err != nil {
 		return "Invalid SKU"
 	}
+
 	result := ""
+
 	if amtVer <= 2.2 {
 		switch skuNum {
 		case 0:
@@ -392,9 +436,11 @@ func DecodeAMT(version, SKU string) string {
 		if skuNum&0x02 > 0 {
 			result += "iQST "
 		}
+
 		if skuNum&0x04 > 0 {
 			result += "ASF "
 		}
+
 		if skuNum&0x08 > 0 {
 			result += "AMT"
 		}
@@ -402,34 +448,44 @@ func DecodeAMT(version, SKU string) string {
 		if skuNum&0x02 > 0 && amtVer < 7.0 {
 			result += "iQST "
 		}
+
 		if skuNum&0x04 > 0 && amtVer < 6.0 {
 			result += "ASF "
 		}
+
 		if skuNum&0x08 > 0 {
 			result += "AMT Pro "
 		}
+
 		if skuNum&0x10 > 0 {
 			result += "Intel Standard Manageability "
 		}
+
 		if skuNum&0x20 > 0 && amtVer < 6.0 {
 			result += "TPM "
 		}
+
 		if skuNum&0x100 > 0 && amtVer < 6.0 {
 			result += "Home IT "
 		}
+
 		if skuNum&0x400 > 0 && amtVer < 6.0 {
 			result += "WOX "
 		}
+
 		if skuNum&0x2000 > 0 {
 			result += "AT-p "
 		}
+
 		if skuNum&0x4000 > 0 {
 			result += "Corporate "
 		}
+
 		if skuNum&0x8000 > 0 && amtVer < 8.0 {
 			result += "L3 Mgt Upgrade"
 		}
 	}
+
 	return result
 }
 func GetMajorVersion(version string) (int, error) {

@@ -27,20 +27,24 @@ func (service *ProvisioningService) ChangeAMTPassword() (err error) {
 	}
 
 	hashedMessage := challenge.HashCredentials()
+
 	bytes, err := hex.DecodeString(hashedMessage)
 	if err != nil {
 		log.Error("Failed to decode hex string")
 		return
 	}
+
 	encodedMessage := base64.StdEncoding.EncodeToString(bytes)
 
 	response, err := service.interfacedWsmanMessage.UpdateAMTPassword(encodedMessage)
 	log.Trace(response)
+
 	if err != nil {
 		log.Error("Failed to updated AMT Password:", err)
 		return err
 	}
 
 	log.Info("Successfully updated AMT Password.")
+
 	return nil
 }

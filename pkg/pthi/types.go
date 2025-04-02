@@ -284,9 +284,11 @@ func (opstate AMTOperationalState) String() string {
 	if opstate == 0 {
 		return "disabled"
 	}
+
 	if opstate == 1 {
 		return "enabled"
 	}
+
 	return ""
 }
 

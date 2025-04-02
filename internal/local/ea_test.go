@@ -59,6 +59,7 @@ func TestGetAuthToken(t *testing.T) {
 				t.Errorf("GetAuthToken() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
 			if gotToken != tt.wantToken {
 				t.Errorf("GetAuthToken() gotToken = %v, want %v", gotToken, tt.wantToken)
 			}
@@ -98,6 +99,7 @@ func TestEAConfigureRequest(t *testing.T) {
 			service := NewProvisioningService(f)
 			service.amtCommand = mockAMT
 			service.interfacedWsmanMessage = mockWsman
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if tt.wantErr {
 					w.WriteHeader(http.StatusInternalServerError)

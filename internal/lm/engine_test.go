@@ -39,6 +39,7 @@ func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRea
 	for i := 0; i < len(message) && i < len(buffer); i++ {
 		buffer[i] = message[i]
 	}
+
 	return uint32(len(message)), nil
 }
 func (c *MockHECICommands) Close() {}
@@ -51,6 +52,7 @@ func init() {
 }
 func Test_NewLMEConnection(t *testing.T) {
 	resetMock()
+
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
 	wg := &sync.WaitGroup{}
@@ -60,7 +62,9 @@ func Test_NewLMEConnection(t *testing.T) {
 }
 func TestLMEConnection_Initialize(t *testing.T) {
 	resetMock()
+
 	testError := errors.New("test error")
+
 	tests := []struct {
 		name         string
 		sendNumBytes uint32
@@ -95,6 +99,7 @@ func TestLMEConnection_Initialize(t *testing.T) {
 			sendBytesWritten = tt.sendNumBytes
 			sendError = tt.sendErr
 			initError = tt.initErr
+
 			lme := &LMEConnection{
 				Command: pthiVar,
 				Session: &apf.Session{
@@ -111,6 +116,7 @@ func TestLMEConnection_Initialize(t *testing.T) {
 
 func Test_Send(t *testing.T) {
 	resetMock()
+
 	sendBytesWritten = 14
 
 	lme := &LMEConnection{
@@ -125,6 +131,7 @@ func Test_Send(t *testing.T) {
 }
 func Test_Connect(t *testing.T) {
 	resetMock()
+
 	sendBytesWritten = 54
 	lme := &LMEConnection{
 		Command: pthiVar,
@@ -138,6 +145,7 @@ func Test_Connect(t *testing.T) {
 }
 func Test_Connect_With_Error(t *testing.T) {
 	resetMock()
+
 	sendError = errors.New("no such device")
 	sendBytesWritten = 54
 	lme := &LMEConnection{
@@ -152,6 +160,7 @@ func Test_Connect_With_Error(t *testing.T) {
 }
 func Test_Listen(t *testing.T) {
 	resetMock()
+
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
 
@@ -166,12 +175,15 @@ func Test_Listen(t *testing.T) {
 		ourChannel: 1,
 	}
 	message = []byte{0x94, 0x01}
+
 	defer lme.Close()
+
 	go lme.Listen()
 }
 
 func Test_Close(t *testing.T) {
 	resetMock()
+
 	lme := &LMEConnection{
 		Command:    pthiVar,
 		Session:    &apf.Session{},
@@ -182,6 +194,7 @@ func Test_Close(t *testing.T) {
 }
 func Test_CloseWithChannel(t *testing.T) {
 	resetMock()
+
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
 

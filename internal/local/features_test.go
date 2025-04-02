@@ -207,6 +207,7 @@ func TestSetAMTFeatures(t *testing.T) {
 			service.amtCommand = mockAMT
 			service.interfacedWsmanMessage = mockWsman
 			tc.setupMocks(mockWsman)
+
 			err := service.SetAMTFeatures()
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)

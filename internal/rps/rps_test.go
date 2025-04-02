@@ -24,12 +24,15 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+
 	defer c.Close()
+
 	for {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
 			break
 		}
+
 		err = c.WriteMessage(mt, message)
 		if err != nil {
 			break
@@ -64,6 +67,7 @@ func TestSetCommandMethodActivate(t *testing.T) {
 	f.Command = utils.CommandActivate
 	f.Profile = "profile01"
 	expected := utils.CommandActivate + " --profile profile01"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 }
@@ -73,10 +77,12 @@ func TestSetCommandMethodDeactivate(t *testing.T) {
 	f.Command = utils.CommandDeactivate
 	f.Password = "password"
 	expected := utils.CommandDeactivate + " --password password"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 	f.Force = true
 	expected += " -f"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 }
@@ -87,11 +93,13 @@ func TestSetCommandMethodMaintenanceSynctime(t *testing.T) {
 	f.SubCommand = "syncclock"
 	f.Password = "password"
 	expected := utils.CommandMaintenance + " -password password --synctime"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 	f.Command = utils.CommandMaintenance
 	f.Force = true
 	expected += " -f"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 }
@@ -102,6 +110,7 @@ func TestSetCommandMethodMaintenanceSyncHostname(t *testing.T) {
 	f.SubCommand = "synchostname"
 	f.Password = "password"
 	expected := utils.CommandMaintenance + " -password password --synchostname"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 }
@@ -112,6 +121,7 @@ func TestSetCommandMethodMaintenanceSyncIP(t *testing.T) {
 	f.SubCommand = "syncip"
 	f.Password = "password"
 	expected := utils.CommandMaintenance + " -password password --syncip"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 }
@@ -122,6 +132,7 @@ func TestSetCommandMethodMaintenanceChangePassword(t *testing.T) {
 	f.Password = "password"
 	f.SubCommand = "changepassword"
 	expected := utils.CommandMaintenance + " -password password --changepassword"
+
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 
@@ -140,14 +151,17 @@ func TestPrepareInitialMessage(t *testing.T) {
 func TestConnect(t *testing.T) {
 	server := NewAMTActivationServer(testFlags)
 	err := server.Connect(true)
+
 	defer server.Close()
 	assert.NoError(t, err)
 }
 func TestSend(t *testing.T) {
 	server := NewAMTActivationServer(testFlags)
 	err := server.Connect(true)
+
 	defer server.Close()
 	assert.NoError(t, err)
+
 	message := Message{
 		Status: "test",
 	}
@@ -156,19 +170,26 @@ func TestSend(t *testing.T) {
 func TestListen(t *testing.T) {
 	server := NewAMTActivationServer(testFlags)
 	err := server.Connect(true)
+
 	defer server.Close()
 	assert.NoError(t, err)
+
 	var wgAll sync.WaitGroup
+
 	wgAll.Add(1)
+
 	rpsChan := server.Listen()
+
 	go func() {
 		for {
 			dataFromRPS := <-rpsChan
 			assert.Equal(t, []byte("{\"method\":\"\",\"apiKey\":\"\",\"appVersion\":\"\",\"protocolVersion\":\"\",\"status\":\"test\",\"message\":\"\",\"fqdn\":\"\",\"payload\":\"\",\"tenantId\":\"\"}"), dataFromRPS)
 			wgAll.Done()
+
 			return
 		}
 	}()
+
 	message := Message{
 		Status: "test",
 	}
