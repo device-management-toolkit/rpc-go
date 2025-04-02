@@ -64,9 +64,9 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 
 	err = client.server.Connect(flags.SkipCertCheck)
 	if err != nil {
-		log.Error("error connecting to RPS")
 		// TODO: should the connection be closed?
 		// client.localManagement.Close()
+		log.Error("error connecting to RPS")
 	}
 
 	return client, err

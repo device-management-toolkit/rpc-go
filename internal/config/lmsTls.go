@@ -65,8 +65,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 				if err := VerifyROMODCACertificate(cert.Subject.CommonName, cert.Issuer.OrganizationalUnit); err != nil {
 					return err
 				}
-			}
-			// TODO: verify CRL for each cert
+			} // TODO: verify CRL for each cert
 		}
 		// verify the full chain
 		if err := VerifyFullChain(parsedCerts); err != nil {
