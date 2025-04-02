@@ -46,7 +46,6 @@ func NewProvisioningService(flags *flags.Flags) ProvisioningService {
 		networker:              &RealOSNetworker{},
 		interfacedWsmanMessage: amt.NewGoWSMANMessages(flags.LMSAddress),
 	}
-
 }
 
 func ExecuteCommand(flags *flags.Flags) error {

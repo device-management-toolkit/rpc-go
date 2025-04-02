@@ -96,7 +96,6 @@ func (service *ProvisioningService) ProcessWifiConfigs() error {
 }
 
 func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig) (err error) {
-
 	// profile names can only be alphanumeric (not even dashes)
 	var reAlphaNum = regexp.MustCompile("[^a-zA-Z0-9]+")
 	if reAlphaNum.MatchString(wifiCfg.ProfileName) {
@@ -136,7 +135,6 @@ func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig
 			return err
 		}
 	} else {
-
 		// not using IEEE8021x, so set the wireless passphrase
 		wifiEndpointSettings.PSKPassPhrase = wifiCfg.PskPassphrase
 	}

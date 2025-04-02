@@ -14,7 +14,6 @@ import (
 )
 
 func TestParseFlagsAmtInfo(t *testing.T) {
-
 	defaultFlags := AmtInfoFlags{
 		Ver:      true,
 		Bld:      true,

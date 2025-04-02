@@ -86,5 +86,4 @@ func TestListen(t *testing.T) {
 
 	<-wait2
 	lms.Close() // should close client pipe
-
 }

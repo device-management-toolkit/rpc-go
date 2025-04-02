@@ -15,7 +15,6 @@ import (
 )
 
 func (service *ProvisioningService) ChangeAMTPassword() (err error) {
-
 	generalSettings, err := service.interfacedWsmanMessage.GetGeneralSettings()
 	if err != nil {
 		return err

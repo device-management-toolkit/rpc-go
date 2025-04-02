@@ -142,7 +142,6 @@ func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout tim
 	}
 
 	return payload, nil
-
 }
 
 // CreateMessageRequest is used for assembling the message to request activation of a device

@@ -27,7 +27,6 @@ type LMSConnection struct {
 }
 
 func NewLMSConnection(address string, port string, useTls bool, data chan []byte, errors chan error, mode int) *LMSConnection {
-
 	lms := &LMSConnection{
 		address:     address,
 		port:        port,
@@ -83,7 +82,6 @@ func (lms *LMSConnection) Close() error {
 			return err
 		}
 		lms.Connection = nil
-
 	}
 	return nil
 }
@@ -97,7 +95,6 @@ func (lms *LMSConnection) Listen() {
 	buf := make([]byte, 0, 8192) // big buffer
 	tmp := make([]byte, 4096)
 	for {
-
 		n, err := lms.Connection.Read(tmp)
 
 		if err != nil {
@@ -109,7 +106,6 @@ func (lms *LMSConnection) Listen() {
 		}
 
 		buf = append(buf, tmp[:n]...)
-
 	}
 	lms.data <- buf
 

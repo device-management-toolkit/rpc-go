@@ -104,7 +104,6 @@ func TestReceive(t *testing.T) {
 	assert.NoError(t, err)
 }
 func TestGetGUID(t *testing.T) {
-
 	// Call function will check that numBytes equals the command size
 	numBytes = GET_REQUEST_SIZE
 
@@ -152,7 +151,6 @@ func TestUnprovision(t *testing.T) {
 	assert.Equal(t, 0, result)
 }
 func TestGetCodeVersions(t *testing.T) {
-
 	numBytes = GET_REQUEST_SIZE
 	prepareMessage := GetCodeVersionsResponse{
 		Header: ResponseMessageHeader{},

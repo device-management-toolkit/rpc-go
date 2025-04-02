@@ -376,7 +376,6 @@ func TestCreateTLSCredentialContext(t *testing.T) {
 	}
 }
 func TestEnableTLS(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		setupMocks    func(*MockWSMAN)

@@ -93,7 +93,6 @@ Loop:
 				break Loop
 			}
 		}
-
 	}
 
 	response, err := http.ReadResponse(responseReader, r)

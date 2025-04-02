@@ -71,7 +71,6 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 }
 
 func (e Executor) MakeItSo(messageRequest Message) {
-
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 	rpsDataChannel := e.server.Listen()
@@ -98,7 +97,6 @@ func (e Executor) MakeItSo(messageRequest Message) {
 			return
 		}
 	}
-
 }
 
 func (e Executor) HandleInterrupt() {

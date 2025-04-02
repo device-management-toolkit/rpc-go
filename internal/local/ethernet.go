@@ -100,7 +100,6 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 }
 
 func (service *ProvisioningService) Disable8021xProfile() (err error) {
-
 	response, err := service.interfacedWsmanMessage.GetIPSIEEE8021xSettings()
 	if err != nil {
 		return err

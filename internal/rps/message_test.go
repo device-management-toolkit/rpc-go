@@ -81,7 +81,6 @@ func (c MockAMT) InitiateLMS() {}
 func init() {
 	p = Payload{}
 	p.AMT = MockAMT{}
-
 }
 func TestCreatePayload(t *testing.T) {
 	mebxDNSSuffix = "mebxdns"

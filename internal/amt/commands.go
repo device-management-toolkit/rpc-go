@@ -237,7 +237,6 @@ func (amt AMTCommand) GetUUID() (string, error) {
 		hexValues[8] + hexValues[9] + "-" +
 		hexValues[10] + hexValues[11] + hexValues[12] + hexValues[13] + hexValues[14] + hexValues[15]
 	return uuidStr, nil
-
 }
 
 // GetControlMode ...
@@ -298,7 +297,6 @@ func (amt AMTCommand) GetCertificateHashes() ([]CertHashEntry, error) {
 
 	// Convert pthi results to amt results
 	for _, pthiEntry := range pthiEntryList {
-
 		hashSize, algo := utils.InterpretHashAlgorithm(int(pthiEntry.HashAlgorithm))
 
 		hashString := ""

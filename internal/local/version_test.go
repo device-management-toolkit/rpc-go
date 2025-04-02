@@ -32,5 +32,4 @@ func TestDisplayVersion(t *testing.T) {
 		assert.Equal(t, nil, err)
 		f.JsonOutput = false
 	})
-
 }

@@ -49,7 +49,6 @@ func TestActivation(t *testing.T) {
 		assert.Error(t, err)
 		mockLocalSystemAccountErr = nil
 	})
-
 }
 
 func TestActivateCCM(t *testing.T) {

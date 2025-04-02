@@ -55,7 +55,7 @@ linters:
   disable-all: true
   enable:
     - asciicheck
-    # - bodyclose
+    - bodyclose
     # - cyclop
     # # - depguard
     - dogsled
@@ -108,7 +108,7 @@ linters:
     # - unparam
     # - unused
     # - wsl
-    # - whitespace
+    - whitespace
 
 # disable:
 #    - exhaustivestruct

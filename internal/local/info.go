@@ -223,7 +223,6 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		service.PrintOutput("RAS Remote Status	: " + result.RemoteStatus)
 		service.PrintOutput("RAS Trigger      	: " + result.RemoteTrigger)
 		service.PrintOutput("RAS MPS Hostname 	: " + result.MPSHostname)
-
 	}
 	if service.flags.AmtInfo.Lan {
 		wired, err := cmd.GetLANInterfaceSettings(false)
@@ -278,7 +277,6 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		service.PrintOutput("AMT IP Address		: " + wireless.IPAddress)
 		service.PrintOutput("OS  IP Address		: " + wireless.OsIPAddress)
 		service.PrintOutput("MAC Address  		: " + wireless.MACAddress)
-
 	}
 	if service.flags.AmtInfo.Cert {
 		result, err := cmd.GetCertificateHashes()

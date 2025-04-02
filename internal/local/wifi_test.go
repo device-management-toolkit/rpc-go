@@ -136,7 +136,6 @@ func TestEnableWifiErrors(t *testing.T) {
 		assert.Error(t, err)
 		errEnableWiFi = nil
 	})
-
 }
 
 func TestSetIeee8021xConfigWithEA(t *testing.T) {

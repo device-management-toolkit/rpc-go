@@ -90,7 +90,6 @@ func (f *Flags) handleActivateCommand() error {
 			if err != nil {
 				return err
 			}
-
 		} else {
 			err := f.handleLocalConfigV1()
 			if err != nil {

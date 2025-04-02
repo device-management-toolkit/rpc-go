@@ -404,7 +404,6 @@ func (f *Flags) handleConfigureTLS() error {
 		f.ConfigTLSInfo.EAAddress = f.LocalConfigV2.Configuration.EnterpriseAssistant.URL
 		f.ConfigTLSInfo.EAUsername = f.LocalConfigV2.Configuration.EnterpriseAssistant.Username
 		f.ConfigTLSInfo.EAPassword = f.LocalConfigV2.Configuration.EnterpriseAssistant.Password
-
 	}
 
 	if f.configContent != "" {
@@ -537,7 +536,6 @@ func (f *Flags) handleAddEthernetSettings() error {
 				f.LocalConfig.EnterpriseAssistant.EAConfigured = true
 			}
 		}
-
 	}
 
 	if f.configContent != "" || configJson != "" {
@@ -609,7 +607,6 @@ func (f *Flags) handleAddEthernetSettings() error {
 }
 
 func (f *Flags) verifyWiredIeee8021xConfig(secretConfig config.SecretConfig) error {
-
 	// Check if the 802.1x profile name is set
 	if f.LocalConfig.WiredConfig.Ieee8021xProfileName == "" {
 		return nil
@@ -791,7 +788,6 @@ func (f *Flags) handleAddWifiSettings() error {
 
 			f.LocalConfig.WifiConfigs = append(f.LocalConfig.WifiConfigs, newWifiConfig)
 		}
-
 	} else {
 		err = f.handleLocalConfig()
 		if err != nil {

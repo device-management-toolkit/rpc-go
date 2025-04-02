@@ -11,7 +11,6 @@ import (
 )
 
 func (service *ProvisioningService) SetMebx() (err error) {
-
 	if service.flags.ControlMode != 2 { // If not in ACM, return an error.
 		errMsg := "MEBx password can only be configured in ACM. Current device control mode: " + utils.InterpretControlMode(service.flags.ControlMode)
 		log.Error(errMsg)

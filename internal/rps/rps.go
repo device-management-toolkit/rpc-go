@@ -99,8 +99,12 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 	} else {
 		websocketDialer.Proxy = http.ProxyFromEnvironment
 	}
-	amt.Conn, _, err = websocketDialer.Dial(amt.URL, nil)
+
+	var resp *http.Response
+
+	amt.Conn, resp, err = websocketDialer.Dial(amt.URL, nil)
 	if err != nil {
+		defer resp.Body.Close()
 		return err
 	}
 	log.Info("connected to ", amt.URL)

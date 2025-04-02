@@ -67,7 +67,6 @@ func TestHandleSetAMTFeatures(t *testing.T) {
 }
 
 func TestPromptForSecrets(t *testing.T) {
-
 	t.Run("expect success on valid user input", func(t *testing.T) {
 		defer userInput(t, "userInput\nuserInput\nuserInput")()
 		f := getPromptForSecretsFlags()
@@ -496,7 +495,6 @@ func runVerifyWifiConfiguration(t *testing.T, expectedResult error, wifiCfgs []c
 }
 
 func TestVerifyWifiConfiguration(t *testing.T) {
-
 	t.Run("expect Success for correct configs", func(t *testing.T) {
 		runVerifyWifiConfiguration(t, nil,
 			[]config.WifiConfig{wifiCfgWPA, wifiCfgWPA2, wifiCfgWPA8021xEAPTLS, wifiCfgWPA28021xPEAPv0_EAPMSCHAPv2},

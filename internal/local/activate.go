@@ -236,7 +236,6 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 
 // orderCertificates orders the certificate list from leaf to root
 func orderCertificates(certificates []*CertificateObject) []*CertificateObject {
-
 	// create a map that we'll use to get the next certificate in chain
 	certificateMap := make(map[string]*CertificateObject)
 	for _, cert := range certificates {

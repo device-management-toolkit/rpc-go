@@ -74,7 +74,6 @@ func TestHandleActivateCommandWithFriendlyName(t *testing.T) {
 	assert.Equal(t, "friendlyName", flags.FriendlyName)
 }
 func TestHandleActivateCommandWithENV(t *testing.T) {
-
 	if err := os.Setenv("DNS_SUFFIX", "envdnssuffix.com"); err != nil {
 		t.Error(err)
 	}
@@ -200,7 +199,6 @@ func TestHandleActivateCommandNoURL(t *testing.T) {
 }
 
 func TestHandleActivateCommandLocal(t *testing.T) {
-
 	tests := map[string]struct {
 		cmdLine      string
 		wantResult   error
@@ -260,5 +258,4 @@ func TestHandleActivateCommandLocal(t *testing.T) {
 			assert.Equal(t, utils.CommandActivate, flags.Command)
 		})
 	}
-
 }
