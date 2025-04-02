@@ -11,7 +11,6 @@ import (
 	"regexp"
 
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-
 	log "github.com/sirupsen/logrus"
 )
 

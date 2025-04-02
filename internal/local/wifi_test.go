@@ -13,14 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
-
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 

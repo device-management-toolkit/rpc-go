@@ -18,10 +18,8 @@ import (
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/smb"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-
-	"gopkg.in/yaml.v3"
-
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 const trickyPassword string = "!@#$%^&*(()-+="

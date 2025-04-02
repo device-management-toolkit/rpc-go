@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/lm"
-
 	"github.com/sirupsen/logrus"
 )
 

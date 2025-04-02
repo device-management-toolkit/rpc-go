@@ -9,7 +9,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"strconv"
-
 	"strings"
 
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
