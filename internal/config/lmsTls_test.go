@@ -13,9 +13,10 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
-	"rpc/internal/certs"
 	"testing"
 	"time"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"

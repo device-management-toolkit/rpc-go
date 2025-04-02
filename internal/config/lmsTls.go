@@ -10,10 +10,10 @@ import (
 	"errors"
 	"strconv"
 
-	"rpc/internal/amt"
-	"rpc/internal/certs"
 	"strings"
 
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
 	log "github.com/sirupsen/logrus"
 )
 

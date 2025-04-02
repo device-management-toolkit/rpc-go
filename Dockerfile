@@ -16,7 +16,7 @@ RUN go install github.com/google/go-licenses@v1.0.0
 RUN go-licenses save ./... --save_path=licenses
 
 # Build rpc
-RUN CGO_ENABLED=0 LDFLAGS="-s -w" GOOS=linux GOARCH=amd64 go build -o /build/rpc ./cmd/main.go
+RUN CGO_ENABLED=0 LDFLAGS="-s -w" GOOS=linux GOARCH=amd64 go build -o /build/rpc ./cmd/rpc/main.go
 
 FROM scratch
 LABEL license='SPDX-License-Identifier: Apache-2.0' \

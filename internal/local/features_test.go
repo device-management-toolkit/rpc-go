@@ -5,14 +5,16 @@
 package local
 
 import (
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
-	"github.com/stretchr/testify/assert"
 )
 
 var getRedirectionResponse = redirection.Response{

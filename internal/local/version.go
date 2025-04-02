@@ -8,8 +8,9 @@ package local
 import (
 	"encoding/json"
 	"fmt"
-	"rpc/pkg/utils"
 	"strings"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 )
 
 type VersionInfo struct {

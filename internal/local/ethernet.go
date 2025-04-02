@@ -2,12 +2,14 @@ package local
 
 import (
 	"os"
-	"rpc/internal/config"
-	"rpc/pkg/utils"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
-	log "github.com/sirupsen/logrus"
 )
 
 func (service *ProvisioningService) AddEthernetSettings() (err error) {

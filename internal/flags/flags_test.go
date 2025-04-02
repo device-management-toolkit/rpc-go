@@ -12,11 +12,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"rpc/internal/config"
-	"rpc/internal/smb"
-	"rpc/pkg/pthi"
-	"rpc/pkg/utils"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/smb"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"gopkg.in/yaml.v3"
 

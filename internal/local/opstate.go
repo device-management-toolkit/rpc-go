@@ -6,8 +6,8 @@
 package local
 
 import (
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 )

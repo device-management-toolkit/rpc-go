@@ -12,8 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"rpc/internal/amt"
-	"rpc/pkg/utils"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 )

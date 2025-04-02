@@ -1,2 +1,2 @@
 build:
-	go build -o ./rpc ./cmd 
+	go build ./cmd/rpc

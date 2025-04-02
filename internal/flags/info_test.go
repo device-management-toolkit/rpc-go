@@ -6,9 +6,10 @@
 package flags
 
 import (
-	"rpc/pkg/utils"
 	"strings"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/stretchr/testify/assert"
 )

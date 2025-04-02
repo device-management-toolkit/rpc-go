@@ -6,8 +6,9 @@
 package pthi
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestAmtStatus_String(t *testing.T) {

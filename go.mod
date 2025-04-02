@@ -1,4 +1,4 @@
-module rpc
+module github.com/open-amt-cloud-toolkit/rpc-go/v2
 
 go 1.23.0
 

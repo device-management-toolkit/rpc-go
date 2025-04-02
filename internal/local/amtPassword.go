@@ -8,10 +8,12 @@ package local
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"rpc/pkg/utils"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/client"
-	log "github.com/sirupsen/logrus"
 )
 
 func (service *ProvisioningService) ChangeAMTPassword() (err error) {

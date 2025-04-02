@@ -6,9 +6,10 @@
 package certs
 
 import (
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func RunNewSignedCompositeTest(t *testing.T, testDer string) {

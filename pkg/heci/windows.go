@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	setupapi "rpc/pkg/windows"
+	setupapi "github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/windows"
 
 	"golang.org/x/sys/windows"
 )

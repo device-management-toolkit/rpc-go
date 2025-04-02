@@ -7,11 +7,12 @@ package rps
 import (
 	"net/http"
 	"net/http/httptest"
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"

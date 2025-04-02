@@ -7,12 +7,14 @@ package lm
 import (
 	"bytes"
 	"encoding/binary"
-	"rpc/pkg/pthi"
 	"sync"
 	"time"
 
-	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/apf"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
+
 	log "github.com/sirupsen/logrus"
+
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/apf"
 )
 
 // LMConnection is struct for managing connection to LMS

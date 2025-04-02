@@ -15,12 +15,13 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"math/big"
 	"net"
-	"software.sslmate.com/src/go-pkcs12"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 type Composite struct {

@@ -25,7 +25,7 @@ jobs:
       with:
         dotnet-version: 6.0.x
     - name: Build rpc as library
-      run: go build -buildmode=c-shared -o rpc.so ./cmd   
+      run: go build -buildmode=c-shared -o rpc.so ./cmd/rpc   
     - name: Restore dependencies
       run: cd samples/dotnet && dotnet restore
     - name: Build

@@ -12,9 +12,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"rpc/internal/config"
-	"rpc/pkg/utils"
 	"strings"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"

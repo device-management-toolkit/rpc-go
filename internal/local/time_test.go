@@ -7,8 +7,9 @@ package local
 
 import (
 	"errors"
-	"rpc/internal/flags"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -1,5 +1,6 @@
 realthing
 rpc
+!/cmd/rpc
 *.exe
 !/internal/rpc
 coverage

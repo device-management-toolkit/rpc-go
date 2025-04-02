@@ -10,8 +10,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"

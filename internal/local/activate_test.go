@@ -7,11 +7,12 @@ package local
 
 import (
 	"crypto/x509"
-	amt2 "rpc/internal/amt"
-	"rpc/internal/certs"
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
 	"testing"
+
+	amt2 "github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -8,12 +8,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
-	"rpc/internal/amt"
-	"rpc/internal/flags"
-	"rpc/internal/local"
-	"rpc/pkg/utils"
 	"strings"
 	"time"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/local"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 )

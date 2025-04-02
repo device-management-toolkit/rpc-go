@@ -12,8 +12,9 @@ import (
 	netURL "net/url"
 	"os"
 	"os/user"
-	"rpc/pkg/utils"
 	"strings"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/hirochachacha/go-smb2"
 	log "github.com/sirupsen/logrus"

@@ -7,7 +7,8 @@ package flags
 
 import (
 	"flag"
-	"rpc/pkg/utils"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 )
 
 type AmtInfoFlags struct {

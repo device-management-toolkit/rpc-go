@@ -1,4 +1,5 @@
 # Remote Provisioning Client (RPC)
+
 ![CodeQL](https://img.shields.io/github/actions/workflow/status/open-amt-cloud-toolkit/rpc-go/codeql-analysis.yml?style=for-the-badge&label=CodeQL&logo=github)
 ![Build](https://img.shields.io/github/actions/workflow/status/open-amt-cloud-toolkit/rpc-go/main.yml?style=for-the-badge&logo=github)
 ![Codecov](https://img.shields.io/codecov/c/github/open-amt-cloud-toolkit/rpc-go?style=for-the-badge&logo=codecov)
@@ -18,7 +19,7 @@ The Remote Provisioning Client (RPC) is an application that assists with activat
 ---
 
 
-## Prerequisites 
+## Prerequisites
 
 - [Golang](https://go.dev/dl/)
 
@@ -26,26 +27,32 @@ The Remote Provisioning Client (RPC) is an application that assists with activat
 
 ### Windows
 
-#### As executable: 
+#### As executable:
+
 ```
-go build -o rpc.exe ./cmd/main.go
+go build -o rpc.exe ./cmd/rpc/main.go
 ```
-#### As Library: 
+
+#### As Library:
+
 ```
-go build -buildmode=c-shared -o rpc.dll ./cmd
+go build -buildmode=c-shared -o rpc.dll ./cmd/rpc
 ```
 
 ### Linux
 
-#### As executable: 
+#### As executable:
+
 ```
-go build -o rpc ./cmd/main.go
+go build -o rpc ./cmd/rpc/main.go
 ```
 
-#### As Library: 
+#### As Library:
+
 ```
-go build -buildmode=c-shared -o librpc.so ./cmd   
+CGO_ENABLED=1 go build -buildmode=c-shared -o librpc.so ./cmd/rpc
 ```
+
 ### Docker image
 
 ```bash
@@ -55,21 +62,24 @@ docker build -t rpc-go:latest .
 ## Run
 
 Install the executable on a target device and then run from a terminal/shell
-command line with <b>adminstrator privileges</b>.  
+command line with <b>adminstrator privileges</b>.
 
-For usage, call the executable with no additional parameters.  
+For usage, call the executable with no additional parameters.
 
 ### Windows
+
 ```shell
 .\rpc
 ```
 
 ### Linux
+
 ```bash
 sudo ./rpc
 ```
 
 ### Docker
+
 ```bash
 $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 ```
@@ -78,7 +88,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 
 # Dev tips for passing CI Checks
 
-- Ensure code is formatted correctly with `gofmt -s -w ./` 
+- Ensure code is formatted correctly with `gofmt -s -w ./`
 - Ensure all unit tests pass with `go test ./...`
 - Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:v1.52.2 golangci-lint run -v`
 
@@ -92,4 +102,4 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 
 - Need additional support or want to get the latest news and events about Open AMT? Connect with the team directly through Discord.
 
-    [![Discord Banner 1](https://discordapp.com/api/guilds/1063200098680582154/widget.png?style=banner2)](https://discord.gg/DKHeUNEWVH)
+  [![Discord Banner 1](https://discordapp.com/api/guilds/1063200098680582154/widget.png?style=banner2)](https://discord.gg/DKHeUNEWVH)

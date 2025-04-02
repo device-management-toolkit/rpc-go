@@ -13,13 +13,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"rpc/internal/amt"
-	"rpc/internal/config"
-	"rpc/internal/smb"
-	"rpc/pkg/utils"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/smb"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	configv2 "github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/security"

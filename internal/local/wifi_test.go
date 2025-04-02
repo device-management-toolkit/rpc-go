@@ -10,11 +10,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"rpc/internal/config"
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
 	"strings"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"

@@ -7,10 +7,11 @@ package local
 
 import (
 	"errors"
-	"rpc/internal/amt"
-	"rpc/internal/flags"
-	"rpc/pkg/utils"
 	"testing"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"

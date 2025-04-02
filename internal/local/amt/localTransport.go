@@ -11,8 +11,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"rpc/internal/lm"
 	"sync"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/lm"
 
 	"github.com/sirupsen/logrus"
 )

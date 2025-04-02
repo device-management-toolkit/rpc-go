@@ -6,12 +6,14 @@ package lm
 
 import (
 	"errors"
-	"rpc/pkg/pthi"
 	"sync"
 	"testing"
 
-	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/apf"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
+
 	"github.com/stretchr/testify/assert"
+
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/apf"
 )
 
 type MockHECICommands struct{}

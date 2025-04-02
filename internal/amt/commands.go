@@ -7,11 +7,12 @@ package amt
 import (
 	"errors"
 	"fmt"
-	"rpc/pkg/pthi"
-	"rpc/pkg/utils"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 )
 
 //TODO: Ensure pointers are freed properly throughout this file

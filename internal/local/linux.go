@@ -9,9 +9,11 @@
 package local
 
 import (
-	log "github.com/sirupsen/logrus"
 	"os/exec"
-	"rpc/pkg/utils"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 )
 
 func (n *RealOSNetworker) RenewDHCPLease() error {
