@@ -740,7 +740,7 @@ func (f *Flags) handleAddWifiSettings() error {
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAUsername, "eaUsername", "", "Enterprise Assistant username")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAPassword, "eaPassword", "", "Enterprise Assistant password")
 
-	// rpc configure wireless is not enough paramaters, need -config or a combination of command line flags
+	// rpc configure wireless is not enough parameters, need -config or a combination of command line flags
 	if len(f.commandLineArgs[3:]) == 0 {
 		f.printConfigurationUsage()
 		return utils.IncorrectCommandLineParameters

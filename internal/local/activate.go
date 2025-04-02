@@ -225,7 +225,7 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 		pem := cleanPEM(string(pem.EncodeToMemory(pemBlock)))
 		certificateObject := CertificateObject{pem: pem, subject: cert.Subject.String(), issuer: cert.Issuer.String()}
 
-		// Get the fingerpint from the Root certificate
+		// Get the fingerprint from the Root certificate
 		if cert.Subject.String() == cert.Issuer.String() {
 			der := cert.Raw
 			hash := sha256.Sum256(der)

@@ -355,7 +355,7 @@ func TestConfigureTLS(t *testing.T) {
 		assert.Equal(t, utils.IncorrectCommandLineParameters, rc)
 	})
 	t.Run("expect error from unknown string", func(t *testing.T) {
-		mode, e := ParseTLSMode("unkown")
+		mode, e := ParseTLSMode("unknown")
 		assert.NotNil(t, e)
 		assert.Equal(t, TLSModeServer, mode)
 	})

@@ -32,7 +32,7 @@ func rpcCheckAccess() int {
 
 //export rpcExec
 func rpcExec(Input *C.char, Output **C.char) int {
-	// Save the current stdout and redirect temporarly
+	// Save the current stdout and redirect temporarily
 	oldStdout := os.Stdout
 	rd, w, _ := os.Pipe()
 	os.Stdout = w
