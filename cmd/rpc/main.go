@@ -7,13 +7,12 @@ package main
 import (
 	"os"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/local"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/rps"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 const AccessErrMsg = "Failed to execute due to access issues. " +

@@ -14,7 +14,6 @@ import (
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-
 	"github.com/stretchr/testify/assert"
 )
 

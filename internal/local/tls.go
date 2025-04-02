@@ -9,15 +9,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-
-	log "github.com/sirupsen/logrus"
-
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 const RemoteTLSInstanceId = `Intel(r) AMT 802.3 TLS Settings`
