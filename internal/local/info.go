@@ -42,7 +42,7 @@ func GetOSIPAddress(mac_addr string, netEnumerator flags.NetEnumerator) (string,
 
 	interfaces, err := netEnumerator.Interfaces()
 	if err != nil {
-		return "0.0.0.0", errors.New("Failed to get net interfaces")
+		return "0.0.0.0", errors.New("failed to get net interfaces")
 	}
 
 	if bytes.Equal(mac_in_byte, make([]byte, 6)) {
@@ -59,7 +59,7 @@ func GetOSIPAddress(mac_addr string, netEnumerator flags.NetEnumerator) (string,
 		if bytes.Equal(hwaddr, mac_in_byte) {
 			addrs, err := netEnumerator.InterfaceAddrs(&iface)
 			if err != nil {
-				return "0.0.0.0", errors.New("Failed to get interface addresses")
+				return "0.0.0.0", errors.New("failed to get interface addresses")
 			}
 
 			for _, addr := range addrs {

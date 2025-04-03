@@ -141,39 +141,38 @@ func (amt AMTCommand) Initialize() error {
 
 // GetVersionDataFromME ...
 func (amt AMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
-	err1 := amt.PTHI.Open(false)
-	if err1 != nil {
-		return "", err1
+	// Open the connection and defer closing it.
+	if err := amt.PTHI.Open(false); err != nil {
+		return "", err
 	}
+	defer amt.PTHI.Close()
 
 	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
 	startTime := time.Now()
 
-	var result, err = amt.PTHI.GetCodeVersions()
-	// retry upto flag AMTTimeoutDuration
+	result, err := amt.PTHI.GetCodeVersions()
 	if err != nil {
-	timeout: //label this for-select so we can break out of it when needed
-		for {
-			select {
-			case <-ticker.C:
-				result, err = amt.PTHI.GetCodeVersions()
-				if err == nil || time.Now().Sub(startTime) > amtTimeout { // if we didnt get an error OR we have tried for longer than specified timeout
-					ticker.Stop()
-					break timeout
-				}
+		// Retry until there's no error or the timeout is exceeded.
+		for range ticker.C {
+			result, err = amt.PTHI.GetCodeVersions()
+			if err == nil || time.Since(startTime) > amtTimeout {
+				break
 			}
 		}
 	}
-
-	amt.PTHI.Close()
 
 	if err != nil {
 		return "", err
 	}
 
+	// Look for the matching version using the provided key.
 	for i := 0; i < int(result.CodeVersion.VersionsCount); i++ {
-		if string(result.CodeVersion.Versions[i].Description.String[:result.CodeVersion.Versions[i].Description.Length]) == key {
-			return strings.Replace(string(result.CodeVersion.Versions[i].Version.String[:]), "\u0000", "", -1), nil
+		description := string(result.CodeVersion.Versions[i].Description.String[:result.CodeVersion.Versions[i].Description.Length])
+		if description == key {
+			version := strings.ReplaceAll(string(result.CodeVersion.Versions[i].Version.String[:]), "\u0000", "")
+			return version, nil
 		}
 	}
 

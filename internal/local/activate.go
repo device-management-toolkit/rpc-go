@@ -158,10 +158,10 @@ type ProvisioningCertObj struct {
 }
 
 func cleanPEM(pem string) string {
-	pem = strings.Replace(pem, "-----BEGIN CERTIFICATE-----", "", -1)
-	pem = strings.Replace(pem, "-----END CERTIFICATE-----", "", -1)
+	pem = strings.ReplaceAll(pem, "-----BEGIN CERTIFICATE-----", "")
+	pem = strings.ReplaceAll(pem, "-----END CERTIFICATE-----", "")
 
-	return strings.Replace(pem, "\n", "", -1)
+	return strings.ReplaceAll(pem, "\n", "")
 }
 
 func (service *ProvisioningService) GetProvisioningCertObj() (ProvisioningCertObj, string, error) {

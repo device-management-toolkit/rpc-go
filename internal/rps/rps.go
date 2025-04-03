@@ -191,7 +191,9 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 	}
 
 	statusMessage := StatusMessage{}
-	if activation.Method == "success" {
+
+	switch activation.Method {
+	case "success":
 		err := json.Unmarshal([]byte(activation.Message), &statusMessage)
 		if err != nil {
 			log.Error(err)
@@ -204,7 +206,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 		}
 
 		return nil
-	} else if activation.Method == "error" {
+	case "error":
 		err := json.Unmarshal([]byte(activation.Message), &statusMessage)
 		if err == nil {
 			log.Error(statusMessage.Status)

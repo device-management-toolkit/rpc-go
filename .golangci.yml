@@ -8,8 +8,9 @@ linters:
     - durationcheck
     - exhaustive
     - misspell
+    - staticcheck
     - unconvert
-    - unparam
+    - unparam    
     - whitespace
     - wsl
   settings:
