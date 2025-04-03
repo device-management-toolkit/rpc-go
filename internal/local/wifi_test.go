@@ -56,7 +56,7 @@ var ieee8021xCfgEAPTLS = config.Ieee8021xConfig{
 	ProfileName:            "ieee8021xCfgEAPTLS",
 	Username:               "username",
 	Password:               "",
-	AuthenticationProtocol: int(ieee8021x.AuthenticationProtocolEAPTLS),
+	AuthenticationProtocol: ieee8021x.AuthenticationProtocolEAPTLS,
 	ClientCert:             "clientCert",
 	CACert:                 "caCert",
 	PrivateKey:             "privateKey",
@@ -202,7 +202,7 @@ func TestSetIeee8021xConfigWithEA(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

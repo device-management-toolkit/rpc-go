@@ -10,6 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestLookupEnvOrString_Default(t *testing.T) {
+	result := LookupEnv("URL")
+	assert.Equal(t, "", result)
+}
 func TestInterpretControlMode0(t *testing.T) {
 	algorithm := InterpretControlMode(0)
 	assert.Equal(t, "pre-provisioning state", algorithm)

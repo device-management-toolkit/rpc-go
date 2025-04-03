@@ -184,7 +184,7 @@ func buildProfileAssociations(certificateHandle string, profileAssociation *Prof
 
 	// Check if the certificate is already in the list
 	for idx := range securitySettings.ProfileAssociation {
-		if !(securitySettings.ProfileAssociation[idx].ProfileID == profileAssociation.ProfileID) {
+		if securitySettings.ProfileAssociation[idx].ProfileID != profileAssociation.ProfileID {
 			continue
 		}
 

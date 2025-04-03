@@ -472,7 +472,7 @@ var ieee8021xCfgEAPTLS = config.Ieee8021xConfig{
 	ProfileName:            "ieee8021xCfgEAPTLS",
 	Username:               "username",
 	Password:               "",
-	AuthenticationProtocol: int(ieee8021x.AuthenticationProtocolEAPTLS),
+	AuthenticationProtocol: ieee8021x.AuthenticationProtocolEAPTLS,
 	ClientCert:             "clientCert",
 	CACert:                 "caCert",
 	PrivateKey:             "privateKey",
@@ -491,7 +491,7 @@ var ieee8021xCfgPEAPv0_EAPMSCHAPv2 = config.Ieee8021xConfig{
 	ProfileName:            "ieee8021xCfgPEAPv0_EAPMSCHAPv2",
 	Username:               "username",
 	Password:               "password",
-	AuthenticationProtocol: int(ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2),
+	AuthenticationProtocol: ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2,
 	ClientCert:             "",
 	CACert:                 "caCert",
 	PrivateKey:             "",
@@ -654,17 +654,17 @@ func TestVerifyMatchingIeee8021xConfig(t *testing.T) {
 	})
 	t.Run("expect MissingOrInvalidConfiguration if missing PskPassphrase", func(t *testing.T) {
 		f.LocalConfig.Ieee8021xConfigs[0].PrivateKey = "AABBCCDDEEFF"
-		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = int(ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2)
+		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2
 		rc := f.verifyMatchingIeee8021xConfig(name)
 		assert.Equal(t, utils.MissingOrInvalidConfiguration, rc)
 	})
 	t.Run("expect Success", func(t *testing.T) {
-		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = int(ieee8021x.AuthenticationProtocolEAPTLS)
+		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = ieee8021x.AuthenticationProtocolEAPTLS
 		rc := f.verifyMatchingIeee8021xConfig(name)
 		assert.Equal(t, nil, rc)
 	})
 	t.Run("expect MissingOrInvalidConfiguration for unsupported AuthenticationProtocolEAPTTLS_MSCHAPv2", func(t *testing.T) {
-		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = int(ieee8021x.AuthenticationProtocolEAPTTLS_MSCHAPv2)
+		f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = ieee8021x.AuthenticationProtocolEAPTTLS_MSCHAPv2
 		rc := f.verifyMatchingIeee8021xConfig(name)
 		assert.Equal(t, utils.MissingOrInvalidConfiguration, rc)
 	})
@@ -787,7 +787,7 @@ func TestInvalidAuthenticationProtocols(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("expect MissingOrInvalidConfiguration for AuthenticationProtocol %d", tc.protocol),
 			func(t *testing.T) {
-				f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = int(tc.protocol)
+				f.LocalConfig.Ieee8021xConfigs[0].AuthenticationProtocol = tc.protocol
 				err := f.verifyIeee8021xConfig(f.LocalConfig.Ieee8021xConfigs[0])
 				assert.Equal(t, utils.MissingOrInvalidConfiguration, err)
 			})

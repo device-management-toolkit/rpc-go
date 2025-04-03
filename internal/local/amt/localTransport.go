@@ -71,7 +71,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	var responseReader *bufio.Reader
 
-	err = l.local.Send([]byte(rawRequest))
+	err = l.local.Send(rawRequest)
 	if err != nil {
 		logrus.Error(err)
 		return nil, err

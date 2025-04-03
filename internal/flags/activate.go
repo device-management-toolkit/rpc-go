@@ -15,9 +15,9 @@ import (
 )
 
 func (f *Flags) handleActivateCommand() error {
-	f.amtActivateCommand.StringVar(&f.DNS, "d", f.lookupEnvOrString("DNS_SUFFIX", ""), "dns suffix override")
-	f.amtActivateCommand.StringVar(&f.Hostname, "h", f.lookupEnvOrString("HOSTNAME", ""), "hostname override")
-	f.amtActivateCommand.StringVar(&f.Profile, "profile", f.lookupEnvOrString("PROFILE", ""), "name of the profile to use")
+	f.amtActivateCommand.StringVar(&f.DNS, "d", utils.LookupEnv("DNS_SUFFIX"), "dns suffix override")
+	f.amtActivateCommand.StringVar(&f.Hostname, "h", utils.LookupEnv("HOSTNAME"), "hostname override")
+	f.amtActivateCommand.StringVar(&f.Profile, "profile", utils.LookupEnv("PROFILE"), "name of the profile to use")
 	f.amtActivateCommand.BoolVar(&f.Local, "local", false, "activate amt locally")
 	f.amtActivateCommand.BoolVar(&f.UseCCM, "ccm", false, "activate in client control mode (CCM)")
 	f.amtActivateCommand.BoolVar(&f.UseACM, "acm", false, "activate in admin control mode (ACM)")
@@ -30,10 +30,10 @@ func (f *Flags) handleActivateCommand() error {
 	// for local activation in ACM mode need a few more items
 	f.amtActivateCommand.StringVar(&f.configContent, "config", "", "specify a config file or smb: file share URL")
 	f.amtActivateCommand.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	f.amtActivateCommand.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
-	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.AMTPassword, "amtPassword", f.lookupEnvOrString("AMT_PASSWORD", ""), "amt password")
-	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCert, "provisioningCert", f.lookupEnvOrString("PROVISIONING_CERT", ""), "provisioning certificate")
-	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCertPwd, "provisioningCertPwd", f.lookupEnvOrString("PROVISIONING_CERT_PASSWORD", ""), "provisioning certificate password")
+	f.amtActivateCommand.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
+	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.AMTPassword, "amtPassword", utils.LookupEnv("AMT_PASSWORD"), "amt password")
+	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCert, "provisioningCert", utils.LookupEnv("PROVISIONING_CERT"), "provisioning certificate")
+	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCertPwd, "provisioningCertPwd", utils.LookupEnv("PROVISIONING_CERT_PASSWORD"), "provisioning certificate password")
 
 	if len(f.commandLineArgs) == 2 {
 		f.amtActivateCommand.PrintDefaults()

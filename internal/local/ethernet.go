@@ -31,10 +31,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	}
 
 	// Create the request for the new settings based on the current settings to update AMT
-	settingsRequest, err := service.createEthernetSettingsRequest(getResponse[0])
-	if err != nil {
-		return utils.WiredConfigurationFailed
-	}
+	settingsRequest := service.createEthernetSettingsRequest(getResponse[0])
 
 	// Update the settings in AMT
 	_, err = service.interfacedWsmanMessage.PutEthernetSettings(settingsRequest, settingsRequest.InstanceID)
@@ -165,7 +162,7 @@ func (service *ProvisioningService) verifyInput() error {
 	return nil
 }
 
-func (service *ProvisioningService) createEthernetSettingsRequest(getResponse ethernetport.SettingsResponse) (request ethernetport.SettingsRequest, err error) {
+func (service *ProvisioningService) createEthernetSettingsRequest(getResponse ethernetport.SettingsResponse) ethernetport.SettingsRequest {
 	settingsRequest := ethernetport.SettingsRequest{
 		XMLName:        getResponse.XMLName,
 		H:              "",
@@ -208,7 +205,7 @@ func (service *ProvisioningService) createEthernetSettingsRequest(getResponse et
 		settingsRequest.SecondaryDNS = service.config.WiredConfig.SecondaryDNS
 	}
 
-	return settingsRequest, nil
+	return settingsRequest
 }
 
 func (service *ProvisioningService) AddCerts(ieee8021xConfig config.Ieee8021xConfig) (Handles, error) {

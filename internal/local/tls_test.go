@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupProvisioningService() (ProvisioningService, *MockAMT, *MockWSMAN) {
+func setupProvisioningService() (ProvisioningService, *MockWSMAN) {
 	f := &flags.Flags{}
 	mockAMT := new(MockAMT)
 	mockWsman := new(MockWSMAN)
@@ -29,7 +29,7 @@ func setupProvisioningService() (ProvisioningService, *MockAMT, *MockWSMAN) {
 	service.amtCommand = mockAMT
 	service.interfacedWsmanMessage = mockWsman
 
-	return service, mockAMT, mockWsman
+	return service, mockWsman
 }
 
 var tlsSettingDataItems = []tls.SettingDataResponse{
@@ -121,7 +121,7 @@ func TestConfigureTLSWithEA(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +216,7 @@ func TestConfigureTLSWithSelfSignedCert(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			err := service.ConfigureTLSWithSelfSignedCert()
@@ -272,7 +272,7 @@ func TestGenerateKeyPair(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			handle, err := service.GenerateKeyPair()
@@ -324,7 +324,7 @@ func TestGetDERKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 			derKey, err := service.GetDERKey(tt.handles)
 
@@ -368,7 +368,7 @@ func TestCreateTLSCredentialContext(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			err := service.CreateTLSCredentialContext("dummyCertHandle")
@@ -436,7 +436,7 @@ func TestEnableTLS(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 
 			err := service.EnableTLS()

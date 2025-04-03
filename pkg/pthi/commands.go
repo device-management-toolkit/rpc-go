@@ -162,7 +162,7 @@ func (pthi Command) GetUUID() (uuid string, err error) {
 
 	binary.Read(buf2, binary.LittleEndian, &response.UUID)
 
-	return string(([]byte)(response.UUID[:])), nil
+	return string(response.UUID[:]), nil
 }
 
 func (pthi Command) GetControlMode() (state int, err error) {

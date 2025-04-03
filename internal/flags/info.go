@@ -44,7 +44,7 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 	amtInfoCommand.BoolVar(&f.AmtInfo.Hostname, "hostname", false, "OS Hostname")
 	amtInfoCommand.BoolVar(&f.AmtInfo.OpState, "operationalState", false, "AMT Operational State")
 	amtInfoCommand.BoolVar(&f.AmtInfo.All, "all", false, "All AMT Information (incl. Certificates)")
-	amtInfoCommand.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT Password")
+	amtInfoCommand.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT Password")
 
 	if err := amtInfoCommand.Parse(f.commandLineArgs[2:]); err != nil {
 		return utils.IncorrectCommandLineParameters

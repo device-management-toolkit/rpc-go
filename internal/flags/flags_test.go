@@ -314,24 +314,6 @@ func TestParseFlagsEmptyCommand(t *testing.T) {
 	assert.Equal(t, "", flags.Command)
 }
 
-func TestLookupEnvOrString_Default(t *testing.T) {
-	args := []string{"./rpc", ""}
-	flags := NewFlags(args, MockPRSuccess)
-	result := flags.lookupEnvOrString("URL", "")
-	assert.Equal(t, "", result)
-}
-func TestLookupEnvOrString_Env(t *testing.T) {
-	args := []string{"./rpc", ""}
-
-	if err := os.Setenv("URL", "wss://localhost"); err != nil {
-		t.Error(err)
-	}
-
-	flags := NewFlags(args, MockPRSuccess)
-	result := flags.lookupEnvOrString("URL", "")
-	assert.Equal(t, "wss://localhost", result)
-}
-
 func TestLookupEnvOrBool_Default(t *testing.T) {
 	args := []string{"./rpc", ""}
 	flags := NewFlags(args, MockPRSuccess)

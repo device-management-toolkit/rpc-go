@@ -336,7 +336,7 @@ func TestAddCertsUsingEnterpriseAssistant(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tt.setupMocks(mockWsman)
 			server := httpServer(tt.expectError)
 			service.config.EnterpriseAssistant.EAAddress = server.URL

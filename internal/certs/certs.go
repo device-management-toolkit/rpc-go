@@ -41,10 +41,10 @@ type CompositeChain struct {
 }
 
 func (c *Composite) StripPem() string {
-	stripped := strings.Replace(c.Pem, "-----BEGIN CERTIFICATE-----", "", -1)
-	stripped = strings.Replace(stripped, "-----END CERTIFICATE-----", "", -1)
+	stripped := strings.ReplaceAll(c.Pem, "-----BEGIN CERTIFICATE-----", "")
+	stripped = strings.ReplaceAll(stripped, "-----END CERTIFICATE-----", "")
 
-	return strings.Replace(stripped, "\n", "", -1)
+	return strings.ReplaceAll(stripped, "\n", "")
 }
 
 func (c *Composite) GenerateCert(template, parent *x509.Certificate, pub, priv any) error {
@@ -184,7 +184,12 @@ func NewRootComposite() (Composite, error) {
 
 func NewSignedAMTComposite(derKey string, parent *Composite) (Composite, error) {
 	composite := Composite{}
+
 	clientPubKey, err := ParseAMTPublicKey(derKey)
+	if err != nil {
+		log.Error(err)
+	}
+
 	template := GetAMTClientTemplate()
 
 	err = composite.GenerateCert(&template, parent.Cert, clientPubKey, parent.privateKey)

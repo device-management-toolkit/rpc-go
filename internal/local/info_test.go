@@ -290,7 +290,7 @@ func TestGetOSIPAddress(t *testing.T) {
 	t.Run("net interface fail", func(t *testing.T) {
 		osIpAddress, err := GetOSIPAddress("00:01:02:03:04:05", testNetEnumerator2)
 		assert.Equal(t, "0.0.0.0", osIpAddress)
-		assert.Equal(t, errors.New("Failed to get interface addresses"), err)
+		assert.Equal(t, errors.New("failed to get interface addresses"), err)
 	})
 
 	t.Run("no matching mac address to map into os ipaddress", func(t *testing.T) {

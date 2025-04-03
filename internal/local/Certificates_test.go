@@ -79,7 +79,7 @@ func TestGetCertificates(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			service, _, mockWsman := setupProvisioningService()
+			service, mockWsman := setupProvisioningService()
 			tc.setupMocks(mockWsman)
 
 			response, err := service.GetCertificates()

@@ -46,7 +46,8 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 
 	var parsedCerts []*x509.Certificate
 
-	if numCerts == prodChainLength {
+	switch numCerts {
+	case prodChainLength:
 		for i, rawCert := range rawCerts {
 			cert, err := x509.ParseCertificate(rawCert)
 			if err != nil {
@@ -73,7 +74,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 		}
 
 		return nil
-	} else if numCerts == selfSignedChainLength {
+	case selfSignedChainLength:
 		return HandleAMTTransition(mode)
 	}
 

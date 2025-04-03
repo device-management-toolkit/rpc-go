@@ -4,6 +4,8 @@
  **********************************************************************/
 package utils
 
+import "os"
+
 func InterpretControlMode(mode int) string {
 	switch mode {
 	case 0:
@@ -15,6 +17,14 @@ func InterpretControlMode(mode int) string {
 	default:
 		return "unknown state"
 	}
+}
+
+func LookupEnv(key string) string {
+	if val, ok := os.LookupEnv(key); ok {
+		return val
+	}
+
+	return ""
 }
 
 func InterpretHashAlgorithm(hashAlgorithm int) (hashSize int, algorithm string) {

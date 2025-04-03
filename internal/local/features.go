@@ -70,9 +70,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		return utils.AMTFeaturesConfigurationFailed
 	}
 
-	var optInRequired uint32
-
-	optInRequired = uint32(getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired)
+	optInRequired := getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired
 
 	switch service.flags.UserConsent {
 	case "none":
@@ -83,17 +81,17 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		optInRequired = uint32(optin.OptInRequiredAll)
 	}
 
-	if uint32(getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired) != optInRequired {
+	if getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired != optInRequired {
 		//Put OptInService
 		request := optin.OptInServiceRequest{
-			CanModifyOptInPolicy:    int(getOptInServiceResponse.Body.GetAndPutResponse.CanModifyOptInPolicy),
+			CanModifyOptInPolicy:    getOptInServiceResponse.Body.GetAndPutResponse.CanModifyOptInPolicy,
 			CreationClassName:       getOptInServiceResponse.Body.GetAndPutResponse.CreationClassName,
 			ElementName:             getOptInServiceResponse.Body.GetAndPutResponse.ElementName,
 			Name:                    getOptInServiceResponse.Body.GetAndPutResponse.Name,
 			OptInCodeTimeout:        getOptInServiceResponse.Body.GetAndPutResponse.OptInCodeTimeout,
 			OptInDisplayTimeout:     getOptInServiceResponse.Body.GetAndPutResponse.OptInDisplayTimeout,
 			OptInRequired:           int(optInRequired),
-			OptInState:              int(getOptInServiceResponse.Body.GetAndPutResponse.OptInState),
+			OptInState:              getOptInServiceResponse.Body.GetAndPutResponse.OptInState,
 			SystemCreationClassName: getOptInServiceResponse.Body.GetAndPutResponse.SystemCreationClassName,
 			SystemName:              getOptInServiceResponse.Body.GetAndPutResponse.SystemName,
 		}

@@ -143,11 +143,11 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 	}
 
 	if p.Domain == "" {
-		p.Domain = lookupEnvOrString("SMB_DOMAIN", "")
+		p.Domain = utils.LookupEnv("SMB_DOMAIN")
 	}
 	// check for setting from environment
 	if p.User == "" {
-		p.User = lookupEnvOrString("SMB_USER", "")
+		p.User = utils.LookupEnv("SMB_USER")
 	}
 	// pull user id from current user if still empty
 	if p.User == "" {
@@ -176,16 +176,8 @@ func (s *Service) ParseUrl(url string) (Properties, error) {
 	}
 
 	if p.Password == "" {
-		p.Password = lookupEnvOrString("SMB_PASSWORD", "")
+		p.Password = utils.LookupEnv("SMB_PASSWORD")
 	}
 
 	return p, nil
-}
-
-func lookupEnvOrString(key string, defaultVal string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-
-	return defaultVal
 }

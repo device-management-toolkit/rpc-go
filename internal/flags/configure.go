@@ -107,7 +107,7 @@ var encryptionMethod = map[string]wifi.EncryptionMethod{
 	"None":  wifi.EncryptionMethod_None,
 }
 
-func (f *Flags) printConfigurationUsage() string {
+func (f *Flags) printConfigurationUsage() {
 	baseCommand := fmt.Sprintf("%s %s", filepath.Base(os.Args[0]), utils.CommandConfigure)
 	usage := "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
 	usage += "Usage: " + baseCommand + " COMMAND [OPTIONS]\n\n"
@@ -130,8 +130,6 @@ func (f *Flags) printConfigurationUsage() string {
 	usage += "                  Example: " + baseCommand + " " + utils.SubCommandChangeAMTPassword + " -password YourAMTPassword -newamtpassword YourNewPassword\n"
 	usage += "\nRun '" + baseCommand + " COMMAND -h' for more information on a command.\n"
 	fmt.Println(usage)
-
-	return usage
 }
 
 func (f *Flags) handleConfigureCommand() error {
@@ -253,11 +251,11 @@ func (f *Flags) handleSetAMTFeatures() error {
 	f.flagSetAMTFeatures.BoolVar(&f.KVM, "kvm", false, "Enables or Disables KVM (Keyboard, Video, Mouse)")
 	f.flagSetAMTFeatures.BoolVar(&f.SOL, "sol", false, "Enables or Disables SOL (Serial Over LAN)")
 	f.flagSetAMTFeatures.BoolVar(&f.IDER, "ider", false, "Enables or Disables IDER (IDE Redirection)")
-	f.flagSetAMTFeatures.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+	f.flagSetAMTFeatures.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	// V2 features
 	f.flagSetAMTFeatures.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	f.flagSetAMTFeatures.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
+	f.flagSetAMTFeatures.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
 
 	if err = f.flagSetAMTFeatures.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
@@ -302,11 +300,11 @@ func (f *Flags) handleMEBxPassword() error {
 	f.flagSetMEBx.BoolVar(&f.Verbose, "v", false, "Verbose output")
 	f.flagSetMEBx.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 	f.flagSetMEBx.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetMEBx.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
-	f.flagSetMEBx.StringVar(&f.MEBxPassword, "mebxpassword", f.lookupEnvOrString("MEBX_PASSWORD", ""), "MEBX password")
+	f.flagSetMEBx.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
+	f.flagSetMEBx.StringVar(&f.MEBxPassword, "mebxpassword", utils.LookupEnv("MEBX_PASSWORD"), "MEBX password")
 	// V2 features
 	f.flagSetMEBx.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	f.flagSetMEBx.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
+	f.flagSetMEBx.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
 
 	if len(f.commandLineArgs) > 3 {
 		if err := f.flagSetMEBx.Parse(f.commandLineArgs[3:]); err != nil {
@@ -352,7 +350,7 @@ func (f *Flags) handleEnableWifiPort() error {
 	f.flagSetEnableWifiPort.BoolVar(&f.Verbose, "v", false, "Verbose output")
 	f.flagSetEnableWifiPort.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 	f.flagSetEnableWifiPort.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetEnableWifiPort.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+	f.flagSetEnableWifiPort.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	if err = f.flagSetEnableWifiPort.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
@@ -368,7 +366,7 @@ func (f *Flags) NewConfigureFlagSet(subCommand string) *flag.FlagSet {
 	fs.BoolVar(&f.Verbose, "v", false, "Verbose output")
 	fs.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 	fs.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	fs.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+	fs.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	return fs
 }
@@ -391,7 +389,7 @@ func (f *Flags) handleConfigureTLS() error {
 
 	// V2 features
 	fs.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	fs.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
+	fs.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
 
 	if len(f.commandLineArgs) < (3 + 0) {
 		fs.Usage()
@@ -481,7 +479,7 @@ func (f *Flags) handleAddEthernetSettings() error {
 
 	// V2 features
 	f.flagSetAddEthernetSettings.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	f.flagSetAddEthernetSettings.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
+	f.flagSetAddEthernetSettings.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
 
 	f.flagSetAddEthernetSettings.StringVar(&f.configContent, "config", "", "specify a config file or smb: file share URL")
 	f.flagSetAddEthernetSettings.StringVar(&configJson, "configJson", "", "configuration as a JSON string")
@@ -506,15 +504,15 @@ func (f *Flags) handleAddEthernetSettings() error {
 	f.flagSetAddEthernetSettings.BoolVar(&f.Verbose, "v", false, "Verbose output")
 	f.flagSetAddEthernetSettings.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 	f.flagSetAddEthernetSettings.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetAddEthernetSettings.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+	f.flagSetAddEthernetSettings.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	ieee8021xCfg := config.Ieee8021xConfig{}
 	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.Username, "username", "", "specify username")
-	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.Password, "ieee8021xPassword", f.lookupEnvOrString("IEE8021X_PASSWORD", ""), "8021x password if authenticationProtocol is PEAPv0/EAP-MSCHAPv2(2)")
+	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.Password, "ieee8021xPassword", utils.LookupEnv("IEE8021X_PASSWORD"), "8021x password if authenticationProtocol is PEAPv0/EAP-MSCHAPv2(2)")
 	f.flagSetAddEthernetSettings.IntVar(&ieee8021xCfg.AuthenticationProtocol, "authenticationProtocol", 0, "specify authentication protocol")
 	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.ClientCert, "clientCert", "", "specify client certificate")
 	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.CACert, "caCert", "", "specify CA certificate")
-	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.PrivateKey, "privateKey", f.lookupEnvOrString("IEE8021X_PRIVATE_KEY", ""), "specify private key")
+	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.PrivateKey, "privateKey", utils.LookupEnv("IEE8021X_PRIVATE_KEY"), "specify private key")
 
 	eaSettings := config.EnterpriseAssistant{}
 	f.flagSetAddEthernetSettings.StringVar(&eaSettings.EAAddress, "eaAddress", "", "Enterprise Assistant address")
@@ -708,7 +706,7 @@ func (f *Flags) handleAddWifiSettings() error {
 
 	// V2 features
 	f.flagSetAddWifiSettings.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
-	f.flagSetAddWifiSettings.StringVar(&f.configV2Key, "configencryptionkey", f.lookupEnvOrString("CONFIG_ENCRYPTION_KEY", ""), "provide the 32 byte key to decrypt the config file")
+	f.flagSetAddWifiSettings.StringVar(&f.configV2Key, "configencryptionkey", utils.LookupEnv("CONFIG_ENCRYPTION_KEY"), "provide the 32 byte key to decrypt the config file")
 
 	f.flagSetAddWifiSettings.StringVar(&f.configContent, "config", "", "specify a config file or smb: file share URL")
 	f.flagSetAddWifiSettings.StringVar(&configJson, "configJson", "", "configuration as a JSON string")
@@ -724,18 +722,18 @@ func (f *Flags) handleAddWifiSettings() error {
 	f.flagSetAddWifiSettings.IntVar(&wifiCfg.AuthenticationMethod, "authenticationMethod", 0, "specify authentication method")
 	f.flagSetAddWifiSettings.IntVar(&wifiCfg.EncryptionMethod, "encryptionMethod", 0, "specify encryption method")
 	f.flagSetAddWifiSettings.StringVar(&wifiCfg.SSID, "ssid", "", "specify ssid")
-	f.flagSetAddWifiSettings.StringVar(&wifiCfg.PskPassphrase, "pskPassphrase", f.lookupEnvOrString("PSK_PASSPHRASE", ""), "specify psk passphrase")
+	f.flagSetAddWifiSettings.StringVar(&wifiCfg.PskPassphrase, "pskPassphrase", utils.LookupEnv("PSK_PASSPHRASE"), "specify psk passphrase")
 	f.flagSetAddWifiSettings.IntVar(&wifiCfg.Priority, "priority", 0, "specify priority")
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.Username, "username", "", "specify username")
-	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.Password, "ieee8021xPassword", f.lookupEnvOrString("IEE8021X_PASSWORD", ""), "8021x password if authenticationProtocol is PEAPv0/EAP-MSCHAPv2(2)")
+	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.Password, "ieee8021xPassword", utils.LookupEnv("IEE8021X_PASSWORD"), "8021x password if authenticationProtocol is PEAPv0/EAP-MSCHAPv2(2)")
 	f.flagSetAddWifiSettings.IntVar(&ieee8021xCfg.AuthenticationProtocol, "authenticationProtocol", 0, "specify authentication protocol")
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.ClientCert, "clientCert", "", "specify client certificate")
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.CACert, "caCert", "", "specify CA certificate")
-	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.PrivateKey, "privateKey", f.lookupEnvOrString("IEE8021X_PRIVATE_KEY", ""), "specify private key")
+	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.PrivateKey, "privateKey", utils.LookupEnv("IEE8021X_PRIVATE_KEY"), "specify private key")
 	f.flagSetAddWifiSettings.BoolVar(&f.Verbose, "v", false, "Verbose output")
 	f.flagSetAddWifiSettings.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 	f.flagSetAddWifiSettings.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetAddWifiSettings.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+	f.flagSetAddWifiSettings.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAAddress, "eaAddress", "", "Enterprise Assistant address")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAUsername, "eaUsername", "", "Enterprise Assistant username")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAPassword, "eaPassword", "", "Enterprise Assistant password")

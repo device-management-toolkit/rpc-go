@@ -226,7 +226,7 @@ func (f *Flags) setupCommonFlags() {
 		fs.BoolVar(&f.Verbose, "v", false, "Verbose output")
 		fs.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
 		fs.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-		fs.StringVar(&f.Password, "password", f.lookupEnvOrString("AMT_PASSWORD", ""), "AMT password")
+		fs.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 		fs.BoolVar(&f.EchoPass, "echo-password", false, "echos AMT Password to the terminal during input")
 		fs.DurationVar(&f.AMTTimeoutDuration, "t", 2*time.Minute, "AMT timeout - time to wait until AMT is ready (ex. '2m' or '30s')")
 
@@ -249,13 +249,6 @@ func (f *Flags) validateUUIDOverride() error {
 	return nil
 }
 
-func (f *Flags) lookupEnvOrString(key string, defaultVal string) string {
-	if val, ok := os.LookupEnv(key); ok {
-		return val
-	}
-
-	return defaultVal
-}
 func (f *Flags) lookupEnvOrBool(key string, defaultVal bool) bool {
 	if val, ok := os.LookupEnv(key); ok {
 		parsedVal, err := strconv.ParseBool(val)

@@ -114,7 +114,7 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint3
 func Ioctl(fd, op, arg uintptr) error {
 	_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
 	if ep != 0 {
-		return syscall.Errno(ep)
+		return ep
 	}
 
 	return nil
