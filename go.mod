@@ -2,7 +2,7 @@ module github.com/open-amt-cloud-toolkit/rpc-go/v2
 
 go 1.23.0
 
-toolchain go1.23.7
+toolchain go1.24.1
 
 // uncomment if developing with go-wsman-messages locally
 // replace github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
@@ -12,7 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
-	github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 v2.26.0
+	github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 v2.26.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sys v0.31.0
