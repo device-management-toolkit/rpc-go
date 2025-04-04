@@ -8,6 +8,7 @@ linters:
     - durationcheck
     - exhaustive
     - misspell
+    - nakedret
     - nlreturn
     - noctx
     - nolintlint
@@ -80,6 +81,7 @@ linters:
       - linters:
           - err113
           - funlen
+          - nestif
         path: (.+)_test.go
     paths:
       - docs

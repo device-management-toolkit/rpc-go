@@ -32,7 +32,7 @@ func (service *ProvisioningService) ChangeAMTPassword() (err error) {
 	if err != nil {
 		log.Error("Failed to decode hex string")
 
-		return
+		return err
 	}
 
 	encodedMessage := base64.StdEncoding.EncodeToString(bytes)
