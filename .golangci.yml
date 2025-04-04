@@ -8,6 +8,8 @@ linters:
     - durationcheck
     - exhaustive
     - misspell
+    - noctx
+    - nolintlint
     - predeclared
     - staticcheck
     - unconvert

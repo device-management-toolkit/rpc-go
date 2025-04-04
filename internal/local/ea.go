@@ -7,6 +7,7 @@ package local
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -50,7 +51,9 @@ type EAProfile struct {
 }
 
 func (service *ProvisioningService) PerformPostRequest(url string, requestBody []byte, token string) ([]byte, error) {
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	ctx := context.Background()
+
+	request, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %v", err)
 	}
