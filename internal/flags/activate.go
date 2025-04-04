@@ -125,19 +125,17 @@ func (f *Flags) handleLocalConfigV1() error {
 		return utils.FailedReadingConfiguration
 	}
 
-	// Gets optimized in rpc-go version 3
-	if f.LocalConfig.CCMSettings.AMTPassword != "" {
+	if f.LocalConfig.CCMSettings.AMTPassword != "" && f.UseCCM {
 		f.LocalConfig.Password = f.LocalConfig.CCMSettings.AMTPassword
-	}
-
-	if (f.LocalConfig.ACMSettings.AMTPassword == "" || f.LocalConfig.CCMSettings.AMTPassword == "") && f.Password == "" {
+		f.Password = f.LocalConfig.Password
+	} else if f.LocalConfig.ACMSettings.AMTPassword != "" && f.UseACM {
+		f.LocalConfig.Password = f.LocalConfig.ACMSettings.AMTPassword
+		f.Password = f.LocalConfig.Password
+	} else if f.Password == "" {
 		if rc := f.ReadNewPasswordTo(&f.Password, "New AMT Password"); rc != nil {
 			return rc
 		}
-	}
 
-	if f.Password != "" {
-		f.LocalConfig.ACMSettings.AMTPassword = f.Password
 		f.LocalConfig.Password = f.Password
 	}
 
