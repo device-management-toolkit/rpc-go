@@ -27,6 +27,8 @@ const (
 	// MPSServerMaxLength is the max length of the servername
 	MPSServerMaxLength = 256
 
+	HelpHeader = "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
+
 	CommandActivate    = "activate"
 	CommandAMTInfo     = "amtinfo"
 	CommandDeactivate  = "deactivate"
@@ -45,6 +47,7 @@ const (
 	SubCommandChangeAMTPassword   = "amtpassword"
 	SubCommandSyncDeviceInfo      = "syncdeviceinfo"
 	SubCommandSyncClock           = "syncclock"
+	SubCommandSyncTime            = "synctime"
 	SubCommandSyncHostname        = "synchostname"
 	SubCommandSyncIP              = "syncip"
 	SubCommandSetAMTFeatures      = "amtfeatures"

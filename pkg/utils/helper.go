@@ -6,6 +6,8 @@ package utils
 
 import "os"
 
+const unknown = "unknown"
+
 func InterpretControlMode(mode int) string {
 	switch mode {
 	case 0:
@@ -15,7 +17,7 @@ func InterpretControlMode(mode int) string {
 	case 2:
 		return "activated in admin control mode"
 	default:
-		return "unknown state"
+		return unknown + " state"
 	}
 }
 
@@ -58,7 +60,7 @@ func InterpretAMTNetworkConnectionStatus(status int) string {
 	case 2:
 		return "outside enterprise"
 	default:
-		return "unknown"
+		return unknown
 	}
 }
 func InterpretRemoteAccessConnectionStatus(status int) string {
@@ -70,7 +72,7 @@ func InterpretRemoteAccessConnectionStatus(status int) string {
 	case 2:
 		return "connected"
 	default:
-		return "unknown"
+		return unknown
 	}
 }
 func InterpretRemoteAccessTrigger(status int) string {
@@ -84,6 +86,6 @@ func InterpretRemoteAccessTrigger(status int) string {
 	case 3:
 		return "provisioning"
 	default:
-		return "unknown"
+		return unknown
 	}
 }

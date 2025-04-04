@@ -7,9 +7,12 @@ linters:
     - dogsled
     - durationcheck
     - exhaustive
-    - misspell
+    - goconst
+    - gomodguard
+    - goprintffuncname
     - ineffassign
     - makezero
+    - misspell
     - nakedret
     - nlreturn
     - noctx
@@ -37,7 +40,7 @@ linters:
       min-complexity: 16
     goconst:
       min-len: 2
-      min-occurrences: 2
+      min-occurrences: 3
     gocritic:
       disabled-checks:
         - dupImport
@@ -84,6 +87,7 @@ linters:
           - err113
           - funlen
           - nestif
+          - goconst
         path: (.+)_test.go
     paths:
       - docs

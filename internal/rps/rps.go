@@ -52,18 +52,18 @@ func setCommandMethod(flags *flags.Flags) {
 		flags.Command += " -password " + flags.Password
 
 		task := flags.SubCommand
-		if task == "syncclock" {
-			task = "synctime"
+		if task == utils.SubCommandSyncClock {
+			task = utils.SubCommandSyncTime
 		}
 
 		flags.Command += " --" + task
-		if task == "changepassword" && flags.StaticPassword != "" {
+		if task == utils.SubCommandChangePassword && flags.StaticPassword != "" {
 			flags.Command += " " + flags.StaticPassword
 		}
 	}
 
 	if flags.Force {
-		flags.Command += " -f"
+		flags.Command += " -f" //nolint:goconst // other instances in test
 	}
 }
 

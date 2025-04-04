@@ -188,7 +188,7 @@ func TestPrintUsage(t *testing.T) {
 
 	flags := NewFlags(args, MockPRSuccess)
 	output := flags.printUsage()
-	usage := "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
+	usage := utils.HelpHeader
 	usage = usage + "Usage: " + executable + " COMMAND [OPTIONS]\n\n"
 	usage = usage + "Supported Commands:\n"
 	usage = usage + "  activate    Activate this device with a specified profile\n"

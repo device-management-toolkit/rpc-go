@@ -7,7 +7,6 @@ package flags
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -32,49 +31,57 @@ const (
 	TLSModeDisabled
 )
 
+const (
+	TLSModeServerValue          = "Server"
+	TLSModeServerAndNonTLSValue = "ServerAndNonTLS"
+	TLSModeMutualValue          = "Mutual"
+	TLSModeMutualAndNonTLSValue = "MutualAndNonTLS"
+	TLSModeDisabledValue        = "None"
+	TLSModeUnknownValue         = "Unknown"
+)
+
 func (m TLSMode) String() string {
 	switch m {
 	case TLSModeServer:
-		return "Server"
+		return TLSModeServerValue
 	case TLSModeServerAndNonTLS:
-		return "ServerAndNonTLS"
+		return TLSModeServerAndNonTLSValue
 	case TLSModeMutual:
-		return "Mutual"
+		return TLSModeMutualValue
 	case TLSModeMutualAndNonTLS:
-		return "MutualAndNonTLS"
+		return TLSModeMutualAndNonTLSValue
 	case TLSModeDisabled:
-		return "None"
+		return TLSModeDisabledValue
 	default:
-		return "Unknown"
+		return TLSModeUnknownValue
 	}
 }
 
 func TLSModesToString() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s", TLSModeServer, TLSModeServerAndNonTLS, TLSModeMutual, TLSModeMutualAndNonTLS, TLSModeDisabled)
+	return strings.Join([]string{
+		TLSModeServerValue,
+		TLSModeServerAndNonTLSValue,
+		TLSModeMutualValue,
+		TLSModeMutualAndNonTLSValue,
+		TLSModeDisabledValue,
+	}, ", ")
 }
 
 func ParseTLSMode(s string) (TLSMode, error) {
-	var m TLSMode
-
-	var err error
-
 	switch s {
-	case "Server":
-		m = TLSModeServer
-	case "ServerAndNonTLS":
-		m = TLSModeServerAndNonTLS
-	case "Mutual":
-		m = TLSModeMutual
-	case "MutualAndNonTLS":
-		m = TLSModeMutualAndNonTLS
-	case "None":
-		m = TLSModeDisabled
+	case TLSModeServerValue:
+		return TLSModeServer, nil
+	case TLSModeServerAndNonTLSValue:
+		return TLSModeServerAndNonTLS, nil
+	case TLSModeMutualValue:
+		return TLSModeMutual, nil
+	case TLSModeMutualAndNonTLSValue:
+		return TLSModeMutualAndNonTLS, nil
+	case TLSModeDisabledValue:
+		return TLSModeDisabled, nil
 	default:
-		// flags error handling already shows appropriate message
-		err = errors.New("")
+		return TLSModeServer, fmt.Errorf("invalid TLS mode: %s", s)
 	}
-
-	return m, err
 }
 
 type ConfigTLSInfo struct {
@@ -109,7 +116,7 @@ var encryptionMethod = map[string]wifi.EncryptionMethod{
 
 func (f *Flags) printConfigurationUsage() {
 	baseCommand := fmt.Sprintf("%s %s", filepath.Base(os.Args[0]), utils.CommandConfigure)
-	usage := "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
+	usage := utils.HelpHeader
 	usage += "Usage: " + baseCommand + " COMMAND [OPTIONS]\n\n"
 	usage += "Supported Configuration Commands:\n"
 	usage += "  " + utils.SubCommandWired + " Add or modify ethernet settings in AMT. AMT password is required. A config.yml or command line flags must be provided for all settings. This command runs without cloud interaction.\n"
@@ -466,13 +473,13 @@ func (f *Flags) handleConfigureTLS() error {
 func (f *Flags) DetermineTLSMode(mutualAuth, enabled, allowNonTLS bool) string {
 	switch {
 	case enabled && !allowNonTLS && !mutualAuth:
-		return "Server"
+		return TLSModeServerValue
 	case enabled && allowNonTLS && !mutualAuth:
-		return "ServerAndNonTLS"
+		return TLSModeServerAndNonTLSValue
 	case enabled && !allowNonTLS && mutualAuth:
-		return "Mutual"
+		return TLSModeMutualValue
 	case enabled && allowNonTLS && mutualAuth:
-		return "MutualAndNonTLS"
+		return TLSModeMutualAndNonTLSValue
 	case !enabled:
 		return "None"
 	default:
