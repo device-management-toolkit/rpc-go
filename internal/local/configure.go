@@ -19,6 +19,7 @@ func (service *ProvisioningService) Configure() (err error) {
 	// Check if the device is already activated
 	if service.flags.ControlMode == 0 {
 		log.Error("Device is not activated to configure. Please activate the device first.")
+
 		return utils.UnableToConfigure
 	}
 
@@ -42,6 +43,7 @@ func (service *ProvisioningService) Configure() (err error) {
 	case utils.SubCommandSetMEBx:
 		if service.flags.ControlMode != 2 {
 			log.Error("Device needs to be in admin control mode to set MEBx password.")
+
 			return utils.UnableToConfigure
 		}
 
@@ -55,6 +57,7 @@ func (service *ProvisioningService) Configure() (err error) {
 	case utils.SubCommandSetAMTFeatures:
 		if service.flags.ControlMode != 2 {
 			log.Error("Device needs to be in admin control mode to configure AMT features.")
+
 			return utils.UnableToConfigure
 		}
 
@@ -69,6 +72,7 @@ func (service *ProvisioningService) EnableWifiPort(enableSync bool) (err error) 
 	err = service.interfacedWsmanMessage.EnableWiFi(enableSync)
 	if err != nil {
 		log.Error("Failed to enable wifi port and local profile synchronization.")
+
 		return
 	}
 

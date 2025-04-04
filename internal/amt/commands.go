@@ -172,6 +172,7 @@ func (amt AMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration)
 		description := string(result.CodeVersion.Versions[i].Description.String[:result.CodeVersion.Versions[i].Description.Length])
 		if description == key {
 			version := strings.ReplaceAll(string(result.CodeVersion.Versions[i].Version.String[:]), "\u0000", "")
+
 			return version, nil
 		}
 	}
@@ -218,6 +219,7 @@ func setAmtOperationalState(state pthi.AMTOperationalState, amt AMTCommand) erro
 
 	if status != pthi.AMT_STATUS_SUCCESS {
 		s := fmt.Sprintf("error setting AMT operational state %s: %s", state, status)
+
 		return errors.New(s)
 	}
 

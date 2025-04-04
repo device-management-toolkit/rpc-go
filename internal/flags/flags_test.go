@@ -369,6 +369,7 @@ func (s *MockSambaService) FetchFileContents(url string) ([]byte, error) {
 
 func (s *MockSambaService) ParseUrl(url string) (smb.Properties, error) {
 	prop := new(smb.Properties)
+
 	return *prop, nil
 }
 

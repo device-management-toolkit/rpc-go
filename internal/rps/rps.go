@@ -78,6 +78,7 @@ func NewAMTActivationServer(flags *flags.Flags) AMTActivationServer {
 }
 func PrepareInitialMessage(flags *flags.Flags) (Message, error) {
 	payload := NewPayload()
+
 	return payload.CreateMessageRequest(*flags)
 }
 
@@ -113,6 +114,7 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 	amt.Conn, resp, err = websocketDialer.Dial(amt.URL, nil)
 	if err != nil {
 		defer resp.Body.Close()
+
 		return err
 	}
 
@@ -138,6 +140,7 @@ func (amt *AMTActivationServer) Send(data Message) error {
 	dataToSend, err := json.Marshal(data)
 	if err != nil {
 		log.Error("unable to marshal activationResponse to JSON")
+
 		return err
 	}
 
@@ -164,6 +167,7 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 			_, message, err := amt.Conn.ReadMessage()
 			if err != nil {
 				log.Error("error:", err)
+
 				break
 			}
 			dataChannel <- message
@@ -182,11 +186,13 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 	err := json.Unmarshal(message, &activation)
 	if err != nil {
 		log.Println(err)
+
 		return nil
 	}
 
 	if activation.Method == "heartbeat_request" {
 		heartbeat, _ := amt.GenerateHeartbeatResponse(activation)
+
 		return heartbeat
 	}
 
@@ -233,6 +239,7 @@ func (amt *AMTActivationServer) GenerateHeartbeatResponse(activation Message) ([
 	err := amt.Send(activation)
 	if err != nil {
 		log.Error("Heartbeat send failure")
+
 		return nil, err
 	}
 

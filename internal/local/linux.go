@@ -23,6 +23,7 @@ func (n *RealOSNetworker) RenewDHCPLease() error {
 	err := cmd.Run()
 	if err != nil {
 		log.Error("Error renewing DHCP lease:", err)
+
 		return utils.NetworkConfigurationFailed
 	}
 

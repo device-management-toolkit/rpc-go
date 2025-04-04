@@ -34,6 +34,7 @@ func (service *ProvisioningService) GetLowAccuracyTimeSynch() (ta0 int64, err er
 	response, err := service.interfacedWsmanMessage.GetLowAccuracyTimeSynch()
 	if err != nil {
 		log.Error("failed GetTimeOffset")
+
 		return ta0, err
 	}
 
@@ -57,12 +58,14 @@ func (service *ProvisioningService) SetHighAccuracyTimeSynch(ta0 int64) error {
 	rsp, err := service.interfacedWsmanMessage.SetHighAccuracyTimeSynch(ta0, tm1, tm1)
 	if err != nil {
 		log.Error("failed SetHighAccuracyTimeSynch")
+
 		return err
 	}
 
 	ptCode := rsp.Body.SetHighAccuracyTimeSynchResponse.ReturnValue
 	if ptCode != 0 {
 		log.Errorf("failed SetHighAccuracyTimeSynch with PT Code: %v", ptCode)
+
 		return utils.AmtPtStatusCodeBase
 	}
 

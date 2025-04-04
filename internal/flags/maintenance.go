@@ -44,6 +44,7 @@ func (f *Flags) handleMaintenanceCommand() error {
 	//validation section
 	if len(f.commandLineArgs) == 2 {
 		f.printMaintenanceUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -88,6 +89,7 @@ func (f *Flags) handleMaintenanceCommand() error {
 		err := f.validateUUIDOverride()
 		if err != nil {
 			f.printMaintenanceUsage()
+
 			return utils.InvalidUUID
 		}
 	}
@@ -141,9 +143,11 @@ func (f *Flags) handleMaintenanceSyncHostname() error {
 	f.HostnameInfo.Hostname, err = os.Hostname()
 	if err != nil {
 		log.Error(err)
+
 		return utils.OSNetworkInterfacesLookupFailed
 	} else if f.HostnameInfo.Hostname == "" {
 		log.Error("OS hostname is not available")
+
 		return utils.OSNetworkInterfacesLookupFailed
 	}
 
@@ -207,12 +211,14 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 	amtLanIfc, err := f.AmtCommand.GetLANInterfaceSettings(false)
 	if err != nil {
 		log.Error(err)
+
 		return utils.AMTConnectionFailed
 	}
 
 	ifaces, err := f.netEnumerator.Interfaces()
 	if err != nil {
 		log.Error(err)
+
 		return utils.OSNetworkInterfacesLookupFailed
 	}
 
@@ -238,6 +244,7 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 
 	if len(f.IpConfiguration.IpAddress) == 0 {
 		log.Errorf("static ip address not found")
+
 		return utils.OSNetworkInterfacesLookupFailed
 	}
 

@@ -209,6 +209,7 @@ func TestGetMajorVersion(t *testing.T) {
 
 		if (err != nil) != tc.wantErr {
 			t.Errorf("GetMajorVersion(%q) error = %v, wantErr %v", tc.version, err, tc.wantErr)
+
 			continue
 		}
 

@@ -135,6 +135,7 @@ func (f *Flags) printConfigurationUsage() {
 func (f *Flags) handleConfigureCommand() error {
 	if len(f.commandLineArgs) == 2 {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -193,6 +194,7 @@ func (f *Flags) handleConfigureCommand() error {
 				f.LocalConfig.Password = f.Password
 			} else if f.LocalConfig.Password != f.Password {
 				log.Error("password does not match config file password")
+
 				return utils.MissingOrIncorrectPassword
 			}
 		}
@@ -208,6 +210,7 @@ func (f *Flags) handleChangeAMTPassword() error {
 	if len(f.commandLineArgs) > 3 {
 		if err := fs.Parse(f.commandLineArgs[3:]); err != nil {
 			f.printConfigurationUsage()
+
 			return utils.IncorrectCommandLineParameters
 		}
 	}
@@ -230,6 +233,7 @@ func (f *Flags) handleChangeAMTPassword() error {
 func (f *Flags) handleSyncClock() error {
 	if err := f.amtMaintenanceSyncClockCommand.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -241,6 +245,7 @@ func (f *Flags) handleSetAMTFeatures() error {
 
 	if len(f.commandLineArgs) == 3 {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -259,6 +264,7 @@ func (f *Flags) handleSetAMTFeatures() error {
 
 	if err = f.flagSetAMTFeatures.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -309,6 +315,7 @@ func (f *Flags) handleMEBxPassword() error {
 	if len(f.commandLineArgs) > 3 {
 		if err := f.flagSetMEBx.Parse(f.commandLineArgs[3:]); err != nil {
 			f.printConfigurationUsage()
+
 			return utils.IncorrectCommandLineParameters
 		}
 	}
@@ -344,6 +351,7 @@ func (f *Flags) handleEnableWifiPort() error {
 	// var rc error
 	if len(f.commandLineArgs) > 5 {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -354,6 +362,7 @@ func (f *Flags) handleEnableWifiPort() error {
 
 	if err = f.flagSetEnableWifiPort.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -393,6 +402,7 @@ func (f *Flags) handleConfigureTLS() error {
 
 	if len(f.commandLineArgs) < (3 + 0) {
 		fs.Usage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -521,6 +531,7 @@ func (f *Flags) handleAddEthernetSettings() error {
 
 	if err := f.flagSetAddEthernetSettings.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 	// update the config with the data read from flags
@@ -573,6 +584,7 @@ func (f *Flags) handleAddEthernetSettings() error {
 			err := json.Unmarshal([]byte(configJson), &f.LocalConfig)
 			if err != nil {
 				log.Error(err)
+
 				return utils.IncorrectCommandLineParameters
 			}
 		}
@@ -585,6 +597,7 @@ func (f *Flags) handleAddEthernetSettings() error {
 
 	if f.LocalConfig.WiredConfig.DHCP == f.LocalConfig.WiredConfig.Static {
 		log.Error("must specify -dhcp or -static, but not both")
+
 		return utils.InvalidParameterCombination
 	}
 
@@ -624,6 +637,7 @@ func (f *Flags) handleAddEthernetSettings() error {
 		err := cleanenv.ReadConfig(secretsFilePath, &secretConfig)
 		if err != nil {
 			log.Error("error reading secrets file: ", err)
+
 			return utils.FailedReadingConfiguration
 		}
 	}
@@ -657,17 +671,20 @@ func (f *Flags) verifyWiredIeee8021xConfig(secretConfig config.SecretConfig) err
 	for i, item := range f.LocalConfig.Ieee8021xConfigs {
 		if item.ProfileName == f.LocalConfig.WiredConfig.Ieee8021xProfileName {
 			wired8021xConfig = &f.LocalConfig.Ieee8021xConfigs[i]
+
 			break
 		}
 	}
 	// If the profile was not found, log and return an error
 	if wired8021xConfig == nil {
 		log.Error("ieee8021x profile name does not match")
+
 		return utils.MissingOrInvalidConfiguration
 	}
 	// Verify authentication protocol
 	if wired8021xConfig.AuthenticationProtocol != ieee8021x.AuthenticationProtocolEAPTLS && wired8021xConfig.AuthenticationProtocol != ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2 {
 		log.Error("invalid authentication protocol for wired 802.1x")
+
 		return utils.MissingOrInvalidConfiguration
 	}
 	// Merge secrets with configs
@@ -741,12 +758,14 @@ func (f *Flags) handleAddWifiSettings() error {
 	// rpc configure wireless is not enough parameters, need -config or a combination of command line flags
 	if len(f.commandLineArgs[3:]) == 0 {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 	// rpc configure wireless -configstring "{ prop: val, prop2: val }"
 	// rpc configure add -config "filename" -secrets "someotherfile"
 	if err = f.flagSetAddWifiSettings.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -782,12 +801,14 @@ func (f *Flags) handleAddWifiSettings() error {
 			authMethod, err := f.getAuthenticationCode(wifiCfg.AuthenticationMethod)
 			if err != nil {
 				log.Error("Failed to get authentication code", err)
+
 				return err
 			}
 
 			encryptionMethod, err := f.getEncrytionCode(wifiCfg.EncryptionMethod)
 			if err != nil {
 				log.Error("Failed to get encryption code", err)
+
 				return err
 			}
 
@@ -836,6 +857,7 @@ func (f *Flags) handleAddWifiSettings() error {
 			err := json.Unmarshal([]byte(configJson), &f.LocalConfig)
 			if err != nil {
 				log.Error(err)
+
 				return utils.IncorrectCommandLineParameters
 			}
 		}
@@ -843,6 +865,7 @@ func (f *Flags) handleAddWifiSettings() error {
 
 	if len(f.LocalConfig.WifiConfigs) == 0 {
 		log.Error("missing wifi configuration")
+
 		return utils.MissingOrInvalidConfiguration
 	}
 
@@ -850,6 +873,7 @@ func (f *Flags) handleAddWifiSettings() error {
 		err = cleanenv.ReadConfig(secretsFilePath, &wifiSecretConfig)
 		if err != nil {
 			log.Error("error reading secrets file: ", err)
+
 			return utils.FailedReadingConfiguration
 		}
 	}
@@ -992,21 +1016,25 @@ func (f *Flags) verifyWifiConfigurations() error {
 		//Check profile name is not empty
 		if cfg.ProfileName == "" {
 			log.Error("missing profile name")
+
 			return utils.MissingOrInvalidConfiguration
 		}
 		//Check ssid is not empty
 		if cfg.SSID == "" {
 			log.Error("missing ssid for config: ", cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		}
 		//Check priority is not empty
 		if cfg.Priority <= 0 {
 			log.Error("invalid priority for config: ", cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		}
 		//Check priority is unique
 		if priorities[cfg.Priority] {
 			log.Error("priority was specified previously: ", cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		}
 
@@ -1019,6 +1047,7 @@ func (f *Flags) verifyWifiConfigurations() error {
 		case wifi.AuthenticationMethodWPA2PSK: // AuthenticationMethod 4
 			if cfg.PskPassphrase == "" {
 				log.Error("missing PskPassphrase for config: ", cfg.ProfileName)
+
 				return utils.MissingOrInvalidConfiguration
 			}
 		case wifi.AuthenticationMethodWPAIEEE8021x:
@@ -1026,11 +1055,13 @@ func (f *Flags) verifyWifiConfigurations() error {
 		case wifi.AuthenticationMethodWPA2IEEE8021x: // AuthenticationMethod 7
 			if cfg.ProfileName == "" {
 				log.Error("missing ieee8021x profile name")
+
 				return utils.MissingOrInvalidConfiguration
 			}
 
 			if cfg.PskPassphrase != "" {
 				log.Errorf("wifi configuration for 8021x contains passphrase: %s", cfg.ProfileName)
+
 				return utils.MissingOrInvalidConfiguration
 			}
 
@@ -1040,21 +1071,27 @@ func (f *Flags) verifyWifiConfigurations() error {
 			}
 		case wifi.AuthenticationMethodOther:
 			log.Errorf("unsupported AuthenticationMethod_Other (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodOpenSystem:
 			log.Errorf("unsupported AuthenticationMethod_OpenSystem (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodSharedKey:
 			log.Errorf("unsupported AuthenticationMethod_SharedKey (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodWPA3SAE:
 			log.Errorf("unsupported AuthenticationMethod_WPA3_SAE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodWPA3OWE:
 			log.Errorf("unsupported AuthenticationMethod_WPA3_OWE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		default:
 			log.Errorf("invalid AuthenticationMethod_VendorReserved (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		}
 
@@ -1067,15 +1104,19 @@ func (f *Flags) verifyWifiConfigurations() error {
 			break
 		case wifi.EncryptionMethod_Other:
 			log.Errorf("unsupported EncryptionMethod_Other (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.EncryptionMethod_WEP:
 			log.Errorf("unsupported EncryptionMethod_WEP (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		case wifi.EncryptionMethod_None:
 			log.Errorf("unsupported EncryptionMethod_None (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		default:
 			log.Errorf("invalid EncryptionMethod (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+
 			return utils.MissingOrInvalidConfiguration
 		}
 	}
@@ -1107,6 +1148,7 @@ func (f *Flags) verifyMatchingIeee8021xConfig(profileName string) error {
 
 	if !foundOne {
 		log.Error("missing IEEE8021x Profile: ", profileName)
+
 		return utils.MissingOrInvalidConfiguration
 	}
 
@@ -1120,11 +1162,13 @@ func (f *Flags) verifyIeee8021xConfig(cfg config.Ieee8021xConfig) error {
 	if !isEAConfigured {
 		if cfg.Username == "" {
 			log.Error("missing username for config: ", cfg.ProfileName)
+
 			return err
 		}
 
 		if cfg.CACert == "" {
 			log.Error("missing caCert for config: ", cfg.ProfileName)
+
 			return err
 		}
 	}
@@ -1134,48 +1178,61 @@ func (f *Flags) verifyIeee8021xConfig(cfg config.Ieee8021xConfig) error {
 		if !isEAConfigured {
 			if cfg.ClientCert == "" {
 				log.Error("missing clientCert for config: ", cfg.ProfileName)
+
 				return err
 			}
 
 			if cfg.PrivateKey == "" {
 				log.Error("missing privateKey for config: ", cfg.ProfileName)
+
 				return err
 			}
 		}
 	case ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2:
 		if !isEAConfigured && cfg.Password == "" {
 			log.Error("missing password for for PEAPv0_EAPMSCHAPv2 config: ", cfg.ProfileName)
+
 			return err
 		}
 	case ieee8021x.AuthenticationProtocolEAPTTLS_MSCHAPv2:
 		log.Errorf("unsupported AuthenticationProtocolEAPTTLS_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolPEAPv1_EAPGTC:
 		log.Errorf("unsupported AuthenticationProtocolPEAPv1_EAPGTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_MSCHAPv2:
 		log.Errorf("unsupported AuthenticationProtocolEAPFAST_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_GTC:
 		log.Errorf("unsupported AuthenticationProtocolEAPFAST_GTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_MD5:
 		log.Errorf("unsupported AuthenticationProtocolEAP_MD5 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_PSK:
 		log.Errorf("unsupported AuthenticationProtocolEAP_PSK (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_SIM:
 		log.Errorf("unsupported AuthenticationProtocolEAP_SIM (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_AKA:
 		log.Errorf("unsupported AuthenticationProtocolEAP_AKA (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_TLS:
 		log.Errorf("unsupported AuthenticationProtocolEAPFAST_TLS (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	default:
 		log.Errorf("invalid AuthenticationProtocol (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+
 		return err
 	}
 

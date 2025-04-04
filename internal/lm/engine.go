@@ -42,6 +42,7 @@ func (lme *LMEConnection) Initialize() error {
 	err := lme.Command.Open(true)
 	if err != nil {
 		log.Error(err)
+
 		return err
 	}
 
@@ -53,6 +54,7 @@ func (lme *LMEConnection) Initialize() error {
 	err = lme.execute(bin_buf)
 	if err != nil {
 		log.Error(err)
+
 		return err
 	}
 
@@ -126,6 +128,7 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 		result, err := lme.Command.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
 		if err != nil && (err.Error() == "empty response from AMT" || err.Error() == "no such device") {
 			log.Warn("AMT Unavailable, retrying...")
+
 			break
 		} else if err != nil {
 			return err
@@ -134,6 +137,7 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 		bin_buf = apf.Process(result, lme.Session)
 		if bin_buf.Len() == 0 {
 			log.Debug("done EXECUTING.........")
+
 			break
 		}
 	}
@@ -162,6 +166,7 @@ func (lme *LMEConnection) Listen() {
 		result2, bytesRead, err2 := lme.Command.Receive()
 		if bytesRead == 0 || err2 != nil {
 			log.Trace("NO MORE DATA TO READ")
+
 			break
 		} else {
 			result := apf.Process(result2, lme.Session)

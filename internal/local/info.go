@@ -112,6 +112,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		} else {
 			if err := service.flags.ReadPasswordFromUser(); err != nil {
 				fmt.Println("Invalid Entry")
+
 				return err
 			}
 		}

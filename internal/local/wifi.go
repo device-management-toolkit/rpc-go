@@ -110,6 +110,7 @@ func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig
 	var reAlphaNum = regexp.MustCompile("[^a-zA-Z0-9]+")
 	if reAlphaNum.MatchString(wifiCfg.ProfileName) {
 		log.Errorf("invalid wifi profile name: %s (only alphanumeric allowed)", wifiCfg.ProfileName)
+
 		return utils.MissingOrIncorrectWifiProfileName
 	}
 
@@ -155,6 +156,7 @@ func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig
 	if err != nil {
 		// The AddWiFiSettings call failed, return error response from go-wsman-messages
 		service.PruneCerts()
+
 		return utils.WiFiConfigurationFailed
 	}
 
@@ -221,12 +223,14 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	token, err := service.GetAuthToken(url, credentials)
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
 	devName, err := os.Hostname()
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return ieee8021xConfig, err
 	}
 
@@ -238,6 +242,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error while requesting EA: %v", err)
+
 		return ieee8021xConfig, err
 	}
 
@@ -264,6 +269,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" || err != nil {
 		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
@@ -275,6 +281,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error generating 802.1x keypair: %v", err)
+
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
@@ -289,6 +296,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error signing the certificate: %v", err)
+
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
@@ -303,6 +311,7 @@ func (service *ProvisioningService) checkForIeee8021xConfig(wifiCfg *config.Wifi
 	for _, curCfg := range service.flags.LocalConfig.Ieee8021xConfigs {
 		if curCfg.ProfileName == wifiCfg.Ieee8021xProfileName {
 			ieee8021xConfig = &curCfg
+
 			return ieee8021xConfig, nil
 		}
 	}

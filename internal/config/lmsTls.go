@@ -52,6 +52,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 			cert, err := x509.ParseCertificate(rawCert)
 			if err != nil {
 				log.Error("Failed to parse certificate ", i, ": ", err)
+
 				return err
 			}
 
@@ -105,6 +106,7 @@ func VerifyROMODCACertificate(cn string, issuerOU []string) error {
 
 	if !strings.Contains(cn, "ROM CA") && !strings.Contains(cn, "ROM DE") {
 		log.Error("invalid ROM ODCA Certificate: ", cn)
+
 		return errors.New("invalid ROM ODCA Certificate")
 	}
 
@@ -127,6 +129,7 @@ func VerifyFullChain(certificates []*x509.Certificate) error {
 	rootCAs, err := certs.LoadRootCAPool()
 	if err != nil {
 		log.Error("Failed to load root CA pool:", err)
+
 		return err
 	}
 	// Create a pool for intermediate certificates
@@ -144,6 +147,7 @@ func VerifyFullChain(certificates []*x509.Certificate) error {
 	// Validate the full chain (leaf → intermediates → trusted root)
 	if _, err := leafCert.Verify(opts); err != nil {
 		log.Error("Certificate chain validation failed:", err)
+
 		return err
 	}
 
@@ -155,6 +159,7 @@ func HandleAMTTransition(mode *int) error {
 	controlMode, err := amt.NewAMTCommand().GetControlMode()
 	if err != nil {
 		log.Error("failed to get control mode: ", err)
+
 		return err
 	}
 

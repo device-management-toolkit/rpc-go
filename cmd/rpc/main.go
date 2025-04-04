@@ -103,9 +103,11 @@ func updateConnectionSettings(flags *flags.Flags) error {
 	if err != nil {
 		if err.Error() == "wait timeout while sending data" {
 			log.Trace("Operation timed out while sending data. This may occur on systems with AMT version 11 and below.")
+
 			return nil
 		} else {
 			log.Error(err)
+
 			return err
 		}
 	}

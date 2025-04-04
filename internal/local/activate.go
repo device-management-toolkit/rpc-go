@@ -28,6 +28,7 @@ func (service *ProvisioningService) Activate() error {
 	// Check if the device is already activated
 	if service.flags.ControlMode != 0 {
 		log.Error("Device is already activated")
+
 		return utils.UnableToActivate
 	}
 
@@ -39,6 +40,7 @@ func (service *ProvisioningService) Activate() error {
 	lsa, err := service.amtCommand.GetLocalSystemAccount()
 	if err != nil {
 		log.Error(err)
+
 		return utils.AMTConnectionFailed
 	}
 

@@ -29,6 +29,7 @@ func (service *ProvisioningService) ConfigureTLS() error {
 			err = service.ValidateURL(service.flags.ConfigTLSInfo.EAAddress)
 			if err != nil {
 				log.Error("url validation failed: ", err)
+
 				return utils.TLSConfigurationFailed
 			}
 
@@ -50,6 +51,7 @@ func (service *ProvisioningService) ConfigureTLS() error {
 	err = service.EnableTLS()
 	if err != nil {
 		log.Error("Failed to configure TLS")
+
 		return utils.TLSConfigurationFailed
 	}
 
@@ -95,12 +97,14 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	token, err := service.GetAuthToken(url, credentials)
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return utils.TLSConfigurationFailed
 	}
 
 	devName, err := os.Hostname()
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return err
 	}
 
@@ -112,6 +116,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	_, err = service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error while requesting EA: %v", err)
+
 		return err
 	}
 
@@ -127,6 +132,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" {
 		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+
 		return utils.TLSConfigurationFailed
 	}
 
@@ -138,6 +144,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error generating 802.1x keypair: %v", err)
+
 		return utils.TLSConfigurationFailed
 	}
 
@@ -152,6 +159,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error signing the certificate: %v", err)
+
 		return utils.TLSConfigurationFailed
 	}
 
@@ -201,6 +209,7 @@ func (service *ProvisioningService) ConfigureTLSWithSelfSignedCert() error {
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" {
 		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+
 		return utils.TLSConfigurationFailed
 	}
 
@@ -237,6 +246,7 @@ func (service *ProvisioningService) GetDERKey(handles Handles) (derKey string, e
 	for _, keyPair := range keyPairs {
 		if keyPair.InstanceID == handles.keyPairHandle {
 			derKey = keyPair.DERKey
+
 			break
 		}
 	}
@@ -254,11 +264,13 @@ func (service *ProvisioningService) GenerateKeyPair() (handle string, err error)
 
 	if response.Body.GenerateKeyPair_OUTPUT.ReturnValue != 0 {
 		log.Errorf("GenerateKeyPair.ReturnValue: %d", response.Body.GenerateKeyPair_OUTPUT.ReturnValue)
+
 		return "", utils.AmtPtStatusCodeBase
 	}
 
 	if len(response.Body.GenerateKeyPair_OUTPUT.KeyPair.ReferenceParameters.SelectorSet.Selectors) == 0 {
 		log.Error("GenerateKeyPair did not return a valid handle")
+
 		return handle, utils.TLSConfigurationFailed
 	}
 
@@ -278,6 +290,7 @@ func (service *ProvisioningService) CreateTLSCredentialContext(certHandle string
 			log.Info("TLSCredentialContext already exists", certHandle)
 		} else {
 			log.Error("failed creating TLSCredentialContext", certHandle, err)
+
 			return utils.WSMANMessageError
 		}
 	}
@@ -312,6 +325,7 @@ func (service *ProvisioningService) EnableTLS() error {
 	_, err = service.interfacedWsmanMessage.CommitChanges()
 	if err != nil {
 		log.Error("commit changes failed")
+
 		return err
 	}
 
@@ -327,6 +341,7 @@ func (service *ProvisioningService) ConfigureTLSSettings(setting tls.SettingData
 	_, err = service.interfacedWsmanMessage.PUTTLSSettings(data.InstanceID, data)
 	if err != nil {
 		log.Errorf("failed to configure remote TLS Settings (%s)\n", data.InstanceID)
+
 		return utils.WSMANMessageError
 	}
 
@@ -351,6 +366,7 @@ func getTLSSettings(setting tls.SettingDataResponse, tlsMode flags.TLSMode) (tls
 	if setting.NonSecureConnectionsSupported != nil {
 		if tlsMode == flags.TLSModeDisabled && !*setting.NonSecureConnectionsSupported {
 			log.Errorf("TLS cannot be disabled on this device")
+
 			return tls.SettingDataRequest{}, utils.TLSConfigurationFailed
 		}
 	}
@@ -395,6 +411,7 @@ func (service *ProvisioningService) updateTLSCredentialContext(handles Handles) 
 		_, err = service.interfacedWsmanMessage.CommitChanges()
 		if err != nil {
 			log.Error("commit changes failed")
+
 			return err
 		}
 	} else {

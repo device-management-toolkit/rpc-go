@@ -24,6 +24,7 @@ func (f *Flags) handleActivateCommand() error {
 	// use the Func call rather than StringVar to keep the default value out of the help/usage message
 	f.amtActivateCommand.Func("name", "friendly name to associate with this device", func(flagValue string) error {
 		f.FriendlyName = flagValue
+
 		return nil
 	})
 	f.amtActivateCommand.BoolVar(&f.SkipIPRenew, "skipIPRenew", false, "skip DHCP renewal of the IP address if AMT becomes enabled")
@@ -37,6 +38,7 @@ func (f *Flags) handleActivateCommand() error {
 
 	if len(f.commandLineArgs) == 2 {
 		f.amtActivateCommand.PrintDefaults()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -60,6 +62,7 @@ func (f *Flags) handleActivateCommand() error {
 
 	if f.Local && f.URL != "" {
 		fmt.Println("provide either a 'url' or a 'local', but not both")
+
 		return utils.InvalidParameterCombination
 	}
 
@@ -82,6 +85,7 @@ func (f *Flags) handleActivateCommand() error {
 			err := f.validateUUIDOverride()
 			if err != nil {
 				f.amtActivateCommand.Usage()
+
 				return utils.InvalidUUID
 			}
 
@@ -112,6 +116,7 @@ func (f *Flags) handleActivateCommand() error {
 func (f *Flags) handleLocalConfigV1() error {
 	if !f.UseCCM && !f.UseACM || f.UseCCM && f.UseACM {
 		fmt.Println("must specify -ccm or -acm, but not both")
+
 		return utils.InvalidParameterCombination
 	}
 
@@ -141,6 +146,7 @@ func (f *Flags) handleLocalConfigV1() error {
 		for i := 0; i < v.NumField(); i++ {
 			if v.Field(i).Interface() == "" { // not checking 0 since authenticantProtocol can and needs to be 0 for EAP-TLS
 				log.Error("Missing value for field: ", v.Type().Field(i).Name)
+
 				return utils.IncorrectCommandLineParameters
 			}
 		}
@@ -165,6 +171,7 @@ func (f *Flags) ValidateConfigV2() error {
 		f.UseCCM = true
 	default:
 		log.Error("Invalid Control Mode")
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -184,6 +191,7 @@ func (f *Flags) ValidateConfigV2() error {
 		// Check if the Provisioning Certificate is set
 		if f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCert == "" {
 			log.Error("Provisioning Certificate is not set")
+
 			return utils.IncorrectCommandLineParameters
 		}
 
@@ -192,6 +200,7 @@ func (f *Flags) ValidateConfigV2() error {
 		// Check if the Provisioning Certificate Password is set
 		if f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCertPwd == "" {
 			log.Error("Provisioning Certificate Password is not set")
+
 			return utils.IncorrectCommandLineParameters
 		}
 

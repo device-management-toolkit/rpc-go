@@ -51,12 +51,14 @@ func (c *Composite) GenerateCert(template, parent *x509.Certificate, pub, priv a
 	rawBytes, err := x509.CreateCertificate(rand.Reader, template, parent, pub, priv)
 	if err != nil {
 		log.Error(err)
+
 		return err
 	}
 
 	c.Cert, err = x509.ParseCertificate(rawBytes)
 	if err != nil {
 		log.Error(err)
+
 		return err
 	}
 
@@ -169,6 +171,7 @@ func NewRootComposite() (Composite, error) {
 	composite.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
+
 		return composite, err
 	}
 
@@ -228,12 +231,14 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 	chain.Intermediate.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
+
 		return chain, err
 	}
 
 	err = chain.Intermediate.GenerateCert(&template, chain.Root.Cert, &chain.Intermediate.privateKey.PublicKey, chain.Root.privateKey)
 	if err != nil {
 		log.Error(err)
+
 		return chain, err
 	}
 
@@ -243,12 +248,14 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 	chain.Leaf.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		log.Error(err)
+
 		return chain, err
 	}
 
 	err = chain.Leaf.GenerateCert(&template, chain.Intermediate.Cert, &chain.Leaf.privateKey.PublicKey, chain.Intermediate.privateKey)
 	if err != nil {
 		log.Error(err)
+
 		return chain, err
 	}
 

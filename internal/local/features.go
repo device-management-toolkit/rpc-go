@@ -24,11 +24,13 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	getResponse, err := service.interfacedWsmanMessage.GetRedirectionService()
 	if err != nil {
 		log.Error("Error while getting the redirection state: ", err)
+
 		return utils.AMTFeaturesConfigurationFailed
 	}
 	// Set the AMT Redirection service if true
 	if err := service.setAMTRedirectionService(); err != nil {
 		log.Error("Error while setting the redirection state: ", err)
+
 		return utils.AMTFeaturesConfigurationFailed
 	}
 
@@ -36,6 +38,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	isISMSystem, err := service.isISMSystem()
 	if err != nil {
 		log.Error("Error while getting the System type: ", err)
+
 		return utils.AMTFeaturesConfigurationFailed
 	}
 
@@ -49,6 +52,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 
 		if _, err := service.interfacedWsmanMessage.RequestKVMStateChange(kvmStateEnabled); err != nil {
 			log.Error("Error while setting the KVM state: ", err)
+
 			return utils.AMTFeaturesConfigurationFailed
 		}
 	}
@@ -60,6 +64,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	// Put the redirection service
 	if err := service.putRedirectionService(getResponse.Body.GetAndPutResponse, isRedirectionChanged); err != nil {
 		log.Error("Error while putting the redirection service: ", err)
+
 		return utils.AMTFeaturesConfigurationFailed
 	}
 
@@ -67,6 +72,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	getOptInServiceResponse, err := service.interfacedWsmanMessage.GetIpsOptInService()
 	if err != nil {
 		log.Error("Error while getting the OptIn Service: ", err)
+
 		return utils.AMTFeaturesConfigurationFailed
 	}
 
@@ -99,6 +105,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		_, err := service.interfacedWsmanMessage.PutIpsOptInService(request)
 		if err != nil {
 			log.Error("Error while putting the OptIn Service: ", err)
+
 			return utils.AMTFeaturesConfigurationFailed
 		}
 	}
@@ -165,6 +172,7 @@ func (service *ProvisioningService) isISMSystem() (bool, error) {
 	result, err := service.amtCommand.GetVersionDataFromME("AMT", service.flags.AMTTimeoutDuration)
 	if err != nil {
 		log.Error(err)
+
 		return false, err
 	}
 
@@ -173,6 +181,7 @@ func (service *ProvisioningService) isISMSystem() (bool, error) {
 	result, err = service.amtCommand.GetVersionDataFromME("Sku", service.flags.AMTTimeoutDuration)
 	if err != nil {
 		log.Error(err)
+
 		return false, err
 	}
 

@@ -83,6 +83,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 	err := e.server.Send(messageRequest)
 	if err != nil {
 		log.Error(err.Error())
+
 		return
 	}
 
@@ -100,6 +101,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 			}
 		case <-interrupt:
 			e.HandleInterrupt()
+
 			return
 		}
 	}
@@ -121,6 +123,7 @@ func (e Executor) HandleInterrupt() {
 	err := e.server.Close()
 	if err != nil {
 		log.Error("Connection close failed", err)
+
 		return
 	}
 }
@@ -139,6 +142,7 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 	if err != nil {
 		log.Error(err)
+
 		return true
 	}
 
@@ -155,6 +159,7 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	err = e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
+
 		return true
 	}
 
@@ -171,6 +176,7 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
 				log.Error("error from LMS")
+
 				return true
 			}
 		}

@@ -42,11 +42,13 @@ func NewCommand() Command {
 
 func (pthi Command) Open(useLME bool) error {
 	err := pthi.Heci.Init(useLME, false)
+
 	return err
 }
 
 func (pthi Command) OpenWatchdog() error {
 	err := pthi.Heci.Init(false, true)
+
 	return err
 }
 
@@ -362,6 +364,7 @@ func (pthi Command) GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryL
 		result, err := pthi.Call(bin_buf.Bytes(), commandSize)
 		if err != nil {
 			emptyHashList := []CertHashEntry{}
+
 			return emptyHashList, err
 		}
 
@@ -395,6 +398,7 @@ func (pthi Command) GetRemoteAccessConnectionStatus() (RAStatus GetRemoteAccessC
 	result, err := pthi.Call(bin_buf.Bytes(), GET_REQUEST_SIZE)
 	if err != nil {
 		emptyResponse := GetRemoteAccessConnectionStatusResponse{}
+
 		return emptyResponse, err
 	}
 
@@ -430,6 +434,7 @@ func (pthi Command) GetLANInterfaceSettings(useWireless bool) (LANInterface GetL
 	result, err := pthi.Call(bin_buf.Bytes(), commandSize)
 	if err != nil {
 		emptySettings := GetLANInterfaceSettingsResponse{}
+
 		return emptySettings, err
 	}
 
@@ -461,6 +466,7 @@ func (pthi Command) GetLocalSystemAccount() (localAccount GetLocalSystemAccountR
 	result, err := pthi.Call(bin_buf.Bytes(), commandSize)
 	if err != nil {
 		emptyAccount := GetLocalSystemAccountResponse{}
+
 		return emptyAccount, err
 	}
 

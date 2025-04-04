@@ -17,6 +17,7 @@ func (f *Flags) handleDeactivateCommand() error {
 
 	if len(f.commandLineArgs) == 2 {
 		f.amtDeactivateCommand.PrintDefaults()
+
 		return utils.IncorrectCommandLineParameters
 	}
 
@@ -26,12 +27,14 @@ func (f *Flags) handleDeactivateCommand() error {
 
 	if f.Local && f.URL != "" {
 		fmt.Println("provide either a 'url' or a 'local', but not both")
+
 		return utils.InvalidParameterCombination
 	}
 
 	if !f.Local {
 		if f.PartialUnprovision {
 			fmt.Println("Partial unprovisioning is only supported with local flag")
+
 			return utils.InvalidParameterCombination
 		}
 

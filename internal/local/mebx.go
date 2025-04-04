@@ -24,6 +24,7 @@ func (service *ProvisioningService) SetMebx() (err error) {
 
 	if err != nil {
 		log.Error("Failed to configure MEBx Password:", err)
+
 		return err
 	}
 

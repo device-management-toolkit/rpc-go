@@ -47,6 +47,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	// Check to configure 802.1x, add the certs and update the settings
 	if service.config.WiredConfig.Ieee8021xProfileName == "" {
 		log.Info("Wired settings configured successfully")
+
 		return nil
 	}
 
@@ -57,6 +58,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	for _, curCfg := range service.config.Ieee8021xConfigs {
 		if curCfg.ProfileName == service.config.WiredConfig.Ieee8021xProfileName {
 			ieee8021xConfig = curCfg
+
 			break
 		}
 	}
@@ -65,6 +67,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 	getIEEESettings, err := service.interfacedWsmanMessage.GetIPSIEEE8021xSettings()
 	if err != nil {
 		log.Error("Get IPS_IEEE8021xSettings failed", err)
+
 		return utils.WiredConfigurationFailed
 	}
 
@@ -91,6 +94,7 @@ func (service *ProvisioningService) AddEthernetSettings() (err error) {
 		_, err = service.interfacedWsmanMessage.SetIPSIEEE8021xCertificates(handles.rootCertHandle, handles.clientCertHandle)
 		if err != nil {
 			log.Errorf("Failed to set 802.1x certificates: %v", err)
+
 			return utils.WiredConfigurationFailed
 		}
 	}
@@ -263,12 +267,14 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	token, err := service.GetAuthToken(url, credentials)
 	if token == "" && err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
 
 	devName, err := os.Hostname()
 	if err != nil {
 		log.Errorf("error getting auth token: %v", err)
+
 		return handles, ieee8021xConfig, err
 	}
 
@@ -280,6 +286,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error while requesting EA: %v", err)
+
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
 
@@ -309,6 +316,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" || err != nil {
 		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+
 		return handles, ieee8021xConfig, err
 	}
 
@@ -320,6 +328,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error generating 802.1x keypair: %v", err)
+
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
 
@@ -334,6 +343,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
 		log.Errorf("error signing the certificate: %v", err)
+
 		return handles, ieee8021xConfig, utils.Ieee8021xConfigurationFailed
 	}
 

@@ -57,6 +57,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	if err != nil {
 		logrus.Error(err)
+
 		return nil, err
 	}
 	// wait for channel open confirmation
@@ -66,6 +67,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	rawRequest, err := serializeHTTPRequest(r)
 	if err != nil {
 		logrus.Error(err)
+
 		return nil, err
 	}
 
@@ -74,6 +76,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	err = l.local.Send(rawRequest)
 	if err != nil {
 		logrus.Error(err)
+
 		return nil, err
 	}
 
@@ -85,11 +88,13 @@ Loop:
 				logrus.Debug("received data from LME")
 				logrus.Trace(string(dataFromLM))
 				responseReader = bufio.NewReader(bytes.NewReader(dataFromLM))
+
 				break Loop
 			}
 		case errFromLMS := <-l.errors:
 			if errFromLMS != nil {
 				logrus.Error("error from LMS")
+
 				break Loop
 			}
 		}
@@ -98,6 +103,7 @@ Loop:
 	response, err := http.ReadResponse(responseReader, r)
 	if err != nil {
 		logrus.Error("Failed to parse response: ", err)
+
 		return nil, err
 	}
 

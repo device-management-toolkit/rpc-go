@@ -31,6 +31,7 @@ func (service *ProvisioningService) ChangeAMTPassword() (err error) {
 	bytes, err := hex.DecodeString(hashedMessage)
 	if err != nil {
 		log.Error("Failed to decode hex string")
+
 		return
 	}
 
@@ -41,6 +42,7 @@ func (service *ProvisioningService) ChangeAMTPassword() (err error) {
 
 	if err != nil {
 		log.Error("Failed to updated AMT Password:", err)
+
 		return err
 	}
 

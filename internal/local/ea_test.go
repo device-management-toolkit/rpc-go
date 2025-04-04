@@ -57,6 +57,7 @@ func TestGetAuthToken(t *testing.T) {
 			gotToken, err := service.GetAuthToken(server.URL+"/api/authenticate/", tt.credentials)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetAuthToken() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 

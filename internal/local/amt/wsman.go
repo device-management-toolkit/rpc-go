@@ -253,10 +253,12 @@ func (g *GoWSMANMessages) PutEthernetSettings(ethernetPortSettings ethernetport.
 }
 func (g *GoWSMANMessages) DeletePublicPrivateKeyPair(instanceId string) error {
 	_, err := g.wsmanMessages.AMT.PublicPrivateKeyPair.Delete(instanceId)
+
 	return err
 }
 func (g *GoWSMANMessages) DeletePublicCert(instanceId string) error {
 	_, err := g.wsmanMessages.AMT.PublicKeyCertificate.Delete(instanceId)
+
 	return err
 }
 func (g *GoWSMANMessages) GetCredentialRelationships() (credential.Items, error) {
@@ -287,6 +289,7 @@ func (g *GoWSMANMessages) GetConcreteDependencies() ([]concrete.ConcreteDependen
 }
 func (g *GoWSMANMessages) DeleteWiFiSetting(instanceID string) error {
 	_, err := g.wsmanMessages.CIM.WiFiEndpointSettings.Delete(instanceID)
+
 	return err
 }
 func (g *GoWSMANMessages) AddTrustedRootCert(caCert string) (handle string, err error) {
@@ -330,6 +333,7 @@ func (g *GoWSMANMessages) AddPrivateKey(privateKey string) (handle string, err e
 
 func (g *GoWSMANMessages) DeleteKeyPair(instanceID string) error {
 	_, err := g.wsmanMessages.AMT.PublicKeyManagementService.Delete(instanceID)
+
 	return err
 }
 func (g *GoWSMANMessages) EnableWiFi(enableSync bool) error {

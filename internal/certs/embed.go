@@ -55,6 +55,7 @@ func LoadRootCAPoolwithFS(fs FileSystem) (*x509.CertPool, error) {
 
 			if err != nil {
 				log.Error("Failed to read file: ", certPath, " Error: ", err)
+
 				continue
 			}
 

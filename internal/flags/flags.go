@@ -243,6 +243,7 @@ func (f *Flags) validateUUIDOverride() error {
 	_, err := uuid.Parse(f.UUID)
 	if err != nil {
 		fmt.Println("uuid provided does not follow proper uuid format:", err)
+
 		return err
 	}
 
@@ -254,6 +255,7 @@ func (f *Flags) lookupEnvOrBool(key string, defaultVal bool) bool {
 		parsedVal, err := strconv.ParseBool(val)
 		if err != nil {
 			log.Error(err)
+
 			return false
 		}
 
@@ -269,6 +271,7 @@ func (f *Flags) PromptUserInput(prompt string, value *string) error {
 	_, err := fmt.Scanln(value)
 	if err != nil {
 		log.Error(err)
+
 		return utils.InvalidUserInput
 	}
 
@@ -335,12 +338,14 @@ func (f *Flags) handleLocalConfig() error {
 
 		if !isPFX && !isJSON && !isYAML {
 			log.Error("remote config unsupported smb file extension: ", ext)
+
 			return err
 		}
 
 		configBytes, err := f.SambaService.FetchFileContents(f.configContent)
 		if err != nil {
 			log.Error("config error: ", err)
+
 			return utils.FailedReadingConfiguration
 		}
 
@@ -358,12 +363,14 @@ func (f *Flags) handleLocalConfig() error {
 
 		if err != nil {
 			log.Error("config error: ", err)
+
 			return err
 		}
 	} else if isPFX {
 		pfxBytes, err := os.ReadFile(f.configContent)
 		if err != nil {
 			log.Error("config error: ", err)
+
 			return utils.FailedReadingConfiguration
 		}
 
@@ -372,6 +379,7 @@ func (f *Flags) handleLocalConfig() error {
 		err := cleanenv.ReadConfig(f.configContent, &f.LocalConfig)
 		if err != nil {
 			log.Error("config error: ", err)
+
 			return err
 		}
 	}
@@ -382,6 +390,7 @@ func (f *Flags) handleLocalConfig() error {
 func (f *Flags) handleLocalConfigV2() error {
 	if f.configV2Key == "" {
 		log.Error("config error: missing encryption key")
+
 		return utils.FailedReadingConfiguration
 	}
 
@@ -390,12 +399,14 @@ func (f *Flags) handleLocalConfigV2() error {
 	content, err := security.ReadAndDecryptFile(f.configContentV2)
 	if err != nil {
 		log.Error("config error: ", err)
+
 		return err
 	}
 
 	_, err = json.MarshalIndent(content, "", "  ")
 	if err != nil {
 		log.Error("error formatting config content: ", err)
+
 		return err
 	}
 
