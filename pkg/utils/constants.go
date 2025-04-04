@@ -48,6 +48,7 @@ const (
 	SubCommandSyncHostname        = "synchostname"
 	SubCommandSyncIP              = "syncip"
 	SubCommandSetAMTFeatures      = "amtfeatures"
+	SubCommandCIRA                = "cira"
 
 	// Return Codes
 	Success ReturnCode = 0
