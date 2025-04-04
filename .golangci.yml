@@ -8,6 +8,8 @@ linters:
     - durationcheck
     - exhaustive
     - misspell
+    - gosec
+    - govet
     - ineffassign
     - makezero
     - nakedret
@@ -51,6 +53,9 @@ linters:
         - style
     gocyclo:
       min-complexity: 15
+    gosec:
+      excludes:
+        - G115
     misspell:
       locale: US
     mnd:

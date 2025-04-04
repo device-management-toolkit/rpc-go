@@ -20,7 +20,7 @@ import (
 func GetTLSConfig(mode *int) *tls.Config {
 	if *mode == 0 { // pre-provisioning mode
 		return &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: true, //nolint:gosec // self signed certs could be used
 			VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 				return VerifyCertificates(rawCerts, mode)
 			},
@@ -30,7 +30,7 @@ func GetTLSConfig(mode *int) *tls.Config {
 	log.Trace("Setting default TLS Config for ACM/CCM mode")
 
 	return &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, //nolint:gosec // self signed certs could be used
 	}
 }
 

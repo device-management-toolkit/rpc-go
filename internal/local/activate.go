@@ -44,7 +44,9 @@ func (service *ProvisioningService) Activate() error {
 		return utils.AMTConnectionFailed
 	}
 
-	tlsConfig := &tls.Config{}
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
 	if service.flags.LocalTlsEnforced {
 		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
 	}
