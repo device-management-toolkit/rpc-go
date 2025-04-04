@@ -48,7 +48,6 @@ func (service *ProvisioningService) AddWifiSettings() (err error) {
 		err := service.interfacedWsmanMessage.DeleteWiFiSetting(wifiSetting.InstanceID)
 		if err != nil {
 			log.Infof("unable to delete: %s %s", wifiSetting.InstanceID, err)
-			err = utils.DeleteConfigsFailed
 
 			continue
 		}

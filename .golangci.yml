@@ -8,6 +8,8 @@ linters:
     - durationcheck
     - exhaustive
     - misspell
+    - ineffassign
+    - makezero
     - nakedret
     - nlreturn
     - noctx

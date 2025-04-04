@@ -42,7 +42,7 @@ func (service *ProvisioningService) GetLowAccuracyTimeSynch() (ta0 int64, err er
 	if ptCode != 0 {
 		log.Errorf("failed GetLowAccuracyTimeSynch with PT Code: %v", ptCode)
 
-		err = utils.AmtPtStatusCodeBase
+		return ta0, utils.AmtPtStatusCodeBase
 	}
 
 	ta0 = response.Body.GetLowAccuracyTimeSynchResponse.Ta0
