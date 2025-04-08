@@ -14,14 +14,18 @@ import (
 	"time"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/remoteaccess"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/setupandconfiguration"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/timesynchronization"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
@@ -48,6 +52,56 @@ func (m MockOSNetworker) RenewDHCPLease() error {
 
 // Mock the go-wsman-messages
 type MockWSMAN struct{}
+
+// AddMPS implements amt.WSMANer.
+func (m MockWSMAN) AddMPS(password string, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error) {
+	panic("unimplemented")
+}
+
+// AddRemoteAccessPolicyRule implements amt.WSMANer.
+func (m MockWSMAN) AddRemoteAccessPolicyRule(remoteAccessTrigger remoteaccess.Trigger, selectorValue string) (response remoteaccess.AddRemoteAccessPolicyRuleResponse, err error) {
+	panic("unimplemented")
+}
+
+// GetEnvironmentDetectionSettings implements amt.WSMANer.
+func (m MockWSMAN) GetEnvironmentDetectionSettings() (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
+	panic("unimplemented")
+}
+
+// GetMPSSAP implements amt.WSMANer.
+func (m MockWSMAN) GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error) {
+	panic("unimplemented")
+}
+
+// GetRemoteAccessPolicies implements amt.WSMANer.
+func (m MockWSMAN) GetRemoteAccessPolicies() (response []remoteaccess.RemoteAccessPolicyAppliesToMPSResponse, err error) {
+	panic("unimplemented")
+}
+
+// PutEnvironmentDetectionSettings implements amt.WSMANer.
+func (m MockWSMAN) PutEnvironmentDetectionSettings(environmentDetectionSettingData environmentdetection.EnvironmentDetectionSettingDataRequest) (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
+	panic("unimplemented")
+}
+
+// PutRemoteAccessPolicyAppliesToMPS implements amt.WSMANer.
+func (m MockWSMAN) PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.RemoteAccessPolicyAppliesToMPSResponse) (response remoteaccess.Body, err error) {
+	panic("unimplemented")
+}
+
+// RequestStateChangeCIRA implements amt.WSMANer.
+func (m MockWSMAN) RequestStateChangeCIRA() (response userinitiatedconnection.RequestStateChange_OUTPUT, err error) {
+	panic("unimplemented")
+}
+
+// RemoveRemoteAccessPolicyRules implements amt.WSMANer.
+func (m MockWSMAN) RemoveRemoteAccessPolicyRules() (err error) {
+	panic("unimplemented")
+}
+
+// RemoveMPSSAP implements amt.WSMANer.
+func (m MockWSMAN) RemoveMPSSAP(name string) (err error) {
+	panic("unimplemented")
+}
 
 var mockPutIPSIEEE8021xError error = nil
 var mockPutIPSIEEE8021xResponse ieee8021x.Response

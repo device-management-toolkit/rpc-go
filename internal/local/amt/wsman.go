@@ -9,17 +9,22 @@ import (
 	cryptotls "crypto/tls"
 	"encoding/base64"
 	"net"
+	"strings"
 
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/remoteaccess"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/setupandconfiguration"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/timesynchronization"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
+	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
@@ -75,6 +80,17 @@ type WSMANer interface {
 	EnumerateTLSSettingData() (response tls.Response, err error)
 	PullTLSSettingData(enumerationContext string) (response tls.Response, err error)
 	PUTTLSSettings(instanceID string, tlsSettingData tls.SettingDataRequest) (response tls.Response, err error)
+	// CIRA
+	GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error)
+	RemoveMPSSAP(name string) (err error)
+	GetRemoteAccessPolicies() (response []remoteaccess.RemoteAccessPolicyAppliesToMPSResponse, err error)
+	AddMPS(password string, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error)
+	AddRemoteAccessPolicyRule(remoteAccessTrigger remoteaccess.Trigger, selectorValue string) (response remoteaccess.AddRemoteAccessPolicyRuleResponse, err error)
+	PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.RemoteAccessPolicyAppliesToMPSResponse) (response remoteaccess.Body, err error)
+	RemoveRemoteAccessPolicyRules() error
+	RequestStateChangeCIRA() (response userinitiatedconnection.RequestStateChange_OUTPUT, err error)
+	GetEnvironmentDetectionSettings() (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error)
+	PutEnvironmentDetectionSettings(environmentDetectionSettingData environmentdetection.EnvironmentDetectionSettingDataRequest) (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error)
 
 	CommitChanges() (response setupandconfiguration.Response, err error)
 	GeneratePKCS10RequestEx(keyPair, nullSignedCertificateRequest string, signingAlgorithm publickey.SigningAlgorithm) (response publickey.Response, err error)
@@ -441,4 +457,161 @@ func (g *GoWSMANMessages) GetIpsOptInService() (response optin.Response, err err
 
 func (g *GoWSMANMessages) PutIpsOptInService(request optin.OptInServiceRequest) (response optin.Response, err error) {
 	return g.wsmanMessages.IPS.OptInService.Put(request)
+}
+
+func (g *GoWSMANMessages) GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error) {
+	enumResult, err := g.wsmanMessages.AMT.ManagementPresenceRemoteSAP.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	pullResult, err := g.wsmanMessages.AMT.ManagementPresenceRemoteSAP.Pull(enumResult.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return pullResult.Body.PullResponse.ManagementRemoteItems, nil
+}
+
+func (g *GoWSMANMessages) AddMPS(password string, server string, port int) (response remoteaccess.AddMpServerResponse, err error) {
+	mpsServer := remoteaccess.AddMpServerRequest{
+		AccessInfo: server,
+		InfoFormat: remoteaccess.IPv4Address,
+		Port:       port,
+		AuthMethod: remoteaccess.UsernamePasswordAuthentication,
+		Username:   "admin",
+		Password:   password,
+	}
+
+	if mpsServer.InfoFormat == 3 {
+		mpsServer.CommonName = server
+	}
+
+	result, err := g.wsmanMessages.AMT.RemoteAccessService.AddMPS(mpsServer)
+
+	if err != nil {
+		return result.Body.AddMpServerResponse, err
+	}
+
+	return result.Body.AddMpServerResponse, nil
+}
+
+func (g *GoWSMANMessages) AddRemoteAccessPolicyRule(remoteAccessTrigger remoteaccess.Trigger, selectorValue string) (response remoteaccess.AddRemoteAccessPolicyRuleResponse, err error) {
+	policyRule := remoteaccess.RemoteAccessPolicyRuleRequest{
+		Trigger:        remoteAccessTrigger,
+		TunnelLifeTime: 0,
+		ExtendedData:   "AAAAAAAAABk=", // Equals to 25 seconds in base 64 with network order
+	}
+
+	if remoteAccessTrigger == remoteaccess.UserInitiated {
+		policyRule.TunnelLifeTime = 300
+		policyRule.ExtendedData = ""
+	}
+
+	result, err := g.wsmanMessages.AMT.RemoteAccessService.AddRemoteAccessPolicyRule(policyRule, selectorValue)
+	if err != nil {
+		return result.Body.AddRemotePolicyRuleResponse, err
+	}
+
+	return result.Body.AddRemotePolicyRuleResponse, nil
+}
+func (g *GoWSMANMessages) PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.RemoteAccessPolicyAppliesToMPSResponse) (response remoteaccess.Body, err error) {
+	remoteAccessPolicyAppliesToMPS := &remoteaccess.RemoteAccessPolicyAppliesToMPSRequest{
+		ManagedElement: remoteaccess.ManagedElement{
+			B:       "http://schemas.xmlsoap.org/ws/2004/08/addressing",
+			Address: policy.ManagedElement.Address,
+			ReferenceParameters: remoteaccess.ReferenceParameters{
+				C:           "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd",
+				ResourceURI: policy.ManagedElement.ReferenceParameters.ResourceURI,
+			},
+		},
+		MPSType:       remoteaccess.BothMPS,
+		OrderOfAccess: 0,
+		PolicySet: remoteaccess.PolicySet{
+			Address: policy.PolicySet.Address,
+			B:       "http://schemas.xmlsoap.org/ws/2004/08/addressing",
+			ReferenceParameters: remoteaccess.ReferenceParameters{
+				C:           "http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd",
+				ResourceURI: policy.PolicySet.ReferenceParameters.ResourceURI,
+			},
+		},
+	}
+	// iterate over the policy set and add the selectors
+	for _, policySet := range policy.PolicySet.ReferenceParameters.SelectorSet.Selectors {
+		remoteAccessPolicyAppliesToMPS.PolicySet.ReferenceParameters.SelectorSet.Selectors = append(remoteAccessPolicyAppliesToMPS.PolicySet.ReferenceParameters.SelectorSet.Selectors, remoteaccess.Selector{
+			Name: policySet.Name,
+			Text: policySet.Text,
+		})
+	}
+
+	result, err := g.wsmanMessages.AMT.RemoteAccessPolicyAppliesToMPS.Put(remoteAccessPolicyAppliesToMPS)
+	if err != nil {
+		return result.Body, err
+	}
+
+	return result.Body, nil
+}
+func (g *GoWSMANMessages) RemoveMPSSAP(name string) (err error) {
+	_, err = g.wsmanMessages.AMT.ManagementPresenceRemoteSAP.Delete(name)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (g *GoWSMANMessages) GetRemoteAccessPolicies() (response []remoteaccess.RemoteAccessPolicyAppliesToMPSResponse, err error) {
+	enumResult, err := g.wsmanMessages.AMT.RemoteAccessPolicyAppliesToMPS.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	pullResult, err := g.wsmanMessages.AMT.RemoteAccessPolicyAppliesToMPS.Pull(enumResult.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return pullResult.Body.PullResponse.PolicyAppliesItems, nil
+}
+func (g *GoWSMANMessages) RemoveRemoteAccessPolicyRules() error {
+	_, err := g.wsmanMessages.AMT.RemoteAccessPolicyRule.Delete("User Initiated")
+	if err != nil && !strings.Contains(err.Error(), "DestinationUnreachable") {
+		return err
+	}
+
+	_, err = g.wsmanMessages.AMT.RemoteAccessPolicyRule.Delete("Alert")
+	if err != nil && !strings.Contains(err.Error(), "DestinationUnreachable") {
+		return err
+	}
+
+	_, err = g.wsmanMessages.AMT.RemoteAccessPolicyRule.Delete("Periodic")
+	if err != nil && !strings.Contains(err.Error(), "DestinationUnreachable") {
+		return err
+	}
+
+	return nil
+}
+func (g *GoWSMANMessages) RequestStateChangeCIRA() (response userinitiatedconnection.RequestStateChange_OUTPUT, err error) {
+	result, err := g.wsmanMessages.AMT.UserInitiatedConnectionService.RequestStateChange(userinitiatedconnection.BIOSandOSInterfacesEnabled)
+	if err != nil {
+		return response, err
+	}
+
+	return result.Body.RequestStateChange_OUTPUT, nil
+}
+func (g *GoWSMANMessages) GetEnvironmentDetectionSettings() (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
+	result, err := g.wsmanMessages.AMT.EnvironmentDetectionSettingData.Get()
+	if err != nil {
+		return response, err
+	}
+
+	return result.Body.GetAndPutResponse, nil
+}
+func (g *GoWSMANMessages) PutEnvironmentDetectionSettings(request environmentdetection.EnvironmentDetectionSettingDataRequest) (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
+	result, err := g.wsmanMessages.AMT.EnvironmentDetectionSettingData.Put(request)
+	if err != nil {
+		return response, err
+	}
+
+	return result.Body.GetAndPutResponse, nil
 }
