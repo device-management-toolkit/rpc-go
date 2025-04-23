@@ -110,7 +110,7 @@ func ValidateMPSPassword(password string) error {
 		"uppercase": `[A-Z]`,
 		"lowercase": `[a-z]`,
 		"digit":     `[0-9]`,
-		"special":   `[!@#$%^&*()-=+\[\]{}|;:'",.<>?/` + "`" + `~]`,
+		"special":   `[!@#$%^&*()\-=_+\[\]{}|;:'",.<>?/\\\` + "`" + `~]`,
 	}
 
 	for patternType, pattern := range patterns {
