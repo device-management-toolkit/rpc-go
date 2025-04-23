@@ -5,6 +5,8 @@
 package pthi
 
 const GET_REQUEST_SIZE uint32 = 12
+const MAX_SUFFIX_LENGTH = 64
+const MAX_DNS_SUFFIXES = 5
 const CERT_HASH_MAX_LENGTH = 64
 const CERT_HASH_MAX_NUMBER = 33
 const NET_TLS_CERT_PKI_MAX_SERIAL_NUMS = 3
@@ -123,6 +125,9 @@ const GET_UUID_RESPONSE = 0x480005c
 
 const STATE_INDEPENNDENCE_IsChangeToAMTEnabled_CMD = 0x5
 const STATE_INDEPENNDENCE_IsChangeToAMTEnabled_SUBCMD = 0x51
+
+const START_CONFIGURATION_HBASED_REQUEST = 0x400008b
+const START_CONFIGURATION_HBASED_RESPONSE = 0x480008b
 
 type AMTUnicodeString struct {
 	Length uint16
@@ -306,4 +311,37 @@ type SetAmtOperationalStateResponse struct {
 	SubCommand    uint8
 	VersionNumber uint8
 	Status        Status
+}
+
+type StartConfigurationHBasedRequest struct {
+	Header               MessageHeader
+	ServerHashAlgorithm  uint8
+	ServerCertHash       [CERT_HASH_MAX_LENGTH]uint8
+	HostVPNEnable        bool
+	SuffixListLen        uint32                                      // max 320
+	NetworkDNSSuffixList [MAX_SUFFIX_LENGTH * MAX_DNS_SUFFIXES]uint8 // separated by NULL termination (0x00)
+}
+
+type StartConfigurationHBasedResponse struct {
+	Header        ResponseMessageHeader
+	Status        uint8
+	HashAlgorithm uint8
+	AMTCertHash   [CERT_HASH_MAX_LENGTH]uint8
+}
+
+const (
+	CERT_HASH_ALGORITHM_MD5 uint8 = iota
+	CERT_HASH_ALGORITHM_SHA1
+	CERT_HASH_ALGORITHM_SHA256
+	CERT_HASH_ALGORITHM_SHA384
+	CERT_HASH_ALGORITHM_SHA224
+	CERT_HASH_ALGORITHM_SHA512
+)
+
+type StopConfigurationRequest struct {
+	Header MessageHeader
+}
+
+type StopConfigurationResponse struct {
+	Header ResponseMessageHeader
 }

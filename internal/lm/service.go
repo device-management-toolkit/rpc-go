@@ -51,7 +51,7 @@ func (lms *LMSConnection) Connect() error {
 		if lms.useTls {
 			log.Debug("connecting to lms over tls...")
 
-			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode))
+			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil))
 		} else {
 			log.Debug("connecting to lms...")
 

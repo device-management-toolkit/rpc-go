@@ -72,6 +72,9 @@ func (m MockWSMAN) GetEnvironmentDetectionSettings() (response environmentdetect
 func (m MockWSMAN) GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error) {
 	panic("unimplemented")
 }
+func (g MockWSMAN) GetSetupAndConfigurationService() (setupandconfiguration.Response, error) {
+	panic("unimplemented")
+}
 
 // GetRemoteAccessPolicies implements amt.WSMANer.
 func (m MockWSMAN) GetRemoteAccessPolicies() (response []remoteaccess.RemoteAccessPolicyAppliesToMPSResponse, err error) {
@@ -810,6 +813,10 @@ var mockUnprovisionErr error = nil
 
 func (c MockAMT) Unprovision() (int, error)        { return mockUnprovisionCode, mockUnprovisionErr }
 func (c MockAMT) PartialUnprovision() (int, error) { return 0, nil }
+
+func (c MockAMT) StartConfigurationHBased(amt2.SecureHBasedParameters) (amt2.SecureHBasedResponse, error) {
+	return amt2.SecureHBasedResponse{}, nil
+}
 
 type ResponseFuncArray []func(w http.ResponseWriter, r *http.Request)
 

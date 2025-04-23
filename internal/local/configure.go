@@ -27,7 +27,7 @@ func (service *ProvisioningService) Configure() (err error) {
 
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
-		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil)
 	}
 
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)

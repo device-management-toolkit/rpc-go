@@ -18,11 +18,29 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
 	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
+
+type CertsAndKeys struct {
+	certs []*x509.Certificate
+	keys  []interface{}
+}
+
+type CertificateObject struct {
+	pem     string
+	subject string
+	issuer  string
+}
+
+type ProvisioningCertObj struct {
+	certChain            []string
+	privateKey           crypto.PrivateKey
+	certificateAlgorithm x509.SignatureAlgorithm
+}
 
 func (service *ProvisioningService) Activate() error {
 	// Check if the device is already activated
@@ -36,6 +54,7 @@ func (service *ProvisioningService) Activate() error {
 	if err != nil {
 		return err
 	}
+
 	// for local activation, wsman client needs local system account credentials
 	lsa, err := service.amtCommand.GetLocalSystemAccount()
 	if err != nil {
@@ -45,14 +64,36 @@ func (service *ProvisioningService) Activate() error {
 	}
 
 	tlsConfig := &tls.Config{}
+
 	if service.flags.LocalTlsEnforced {
-		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
+		acmConfig := service.config.ACMSettings
+
+		certsAndKeys, err := convertPfxToObject(acmConfig.ProvisioningCert, acmConfig.ProvisioningCertPwd)
+		if err != nil {
+			return err
+		}
+		// Use the AMT Certificate response to verify AMT device
+		startHBasedResponse, err := service.StartSecureHostBasedConfiguration(certsAndKeys)
+		if err != nil {
+			return err
+		}
+
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse)
+
+		tlsCert := tls.Certificate{
+			PrivateKey: certsAndKeys.keys[0],
+			Leaf:       certsAndKeys.certs[0],
+		}
+
+		for _, cert := range certsAndKeys.certs {
+			tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
+		}
+
+		tlsConfig.MinVersion = tls.VersionTLS12
+		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
 	}
-	// Setup WSMan Client
-	err = service.interfacedWsmanMessage.SetupWsmanClient(lsa.Username, lsa.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
-	if err != nil {
-		return err
-	}
+
+	service.interfacedWsmanMessage.SetupWsmanClient(lsa.Username, lsa.Password, true, log.GetLevel() == log.TraceLevel, tlsConfig)
 
 	if service.flags.UseACM {
 		err = service.ActivateACM()
@@ -66,9 +107,35 @@ func (service *ProvisioningService) Activate() error {
 	return err
 }
 
+func (service *ProvisioningService) StartSecureHostBasedConfiguration(certsAndKeys CertsAndKeys) (amt.SecureHBasedResponse, error) {
+	// create leaf certificate hash
+	var certHashByteArray [64]byte
+
+	leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
+	copy(certHashByteArray[:], leafHash[:])
+
+	certAlgo, err := utils.CheckCertificateAlgorithmSupported(certsAndKeys.certs[0].SignatureAlgorithm)
+	if err != nil {
+		return amt.SecureHBasedResponse{}, utils.ActivationFailedCertHash
+	}
+
+	// Call StartConfigurationHBased
+	params := amt.SecureHBasedParameters{
+		CertHash:      certHashByteArray,
+		CertAlgorithm: certAlgo,
+	}
+
+	response, err := service.amtCommand.StartConfigurationHBased(params)
+	if err != nil {
+		return amt.SecureHBasedResponse{}, err
+	}
+
+	return response, nil
+}
+
 func (service *ProvisioningService) ActivateACM() error {
 	// Extract the provisioning certificate
-	certObject, fingerPrint, err := service.GetProvisioningCertObj()
+	_, certObject, fingerPrint, err := service.GetProvisioningCertObj()
 	if err != nil {
 		return err
 	}
@@ -100,7 +167,7 @@ func (service *ProvisioningService) ActivateACM() error {
 		return err
 	}
 
-	nonce, err := service.generateNonce()
+	nonce, err := utils.GenerateNonce()
 	if err != nil {
 		return err
 	}
@@ -143,43 +210,20 @@ func (service *ProvisioningService) ActivateCCM() error {
 	return nil
 }
 
-type CertsAndKeys struct {
-	certs []*x509.Certificate
-	keys  []interface{}
-}
-
-type CertificateObject struct {
-	pem     string
-	subject string
-	issuer  string
-}
-
-type ProvisioningCertObj struct {
-	certChain  []string
-	privateKey crypto.PrivateKey
-}
-
-func cleanPEM(pem string) string {
-	pem = strings.ReplaceAll(pem, "-----BEGIN CERTIFICATE-----", "")
-	pem = strings.ReplaceAll(pem, "-----END CERTIFICATE-----", "")
-
-	return strings.ReplaceAll(pem, "\n", "")
-}
-
-func (service *ProvisioningService) GetProvisioningCertObj() (ProvisioningCertObj, string, error) {
+func (service *ProvisioningService) GetProvisioningCertObj() (CertsAndKeys, ProvisioningCertObj, string, error) {
 	config := service.config.ACMSettings
 
 	certsAndKeys, err := convertPfxToObject(config.ProvisioningCert, config.ProvisioningCertPwd)
 	if err != nil {
-		return ProvisioningCertObj{}, "", err
+		return certsAndKeys, ProvisioningCertObj{}, "", err
 	}
 
 	result, fingerprint, err := dumpPfx(certsAndKeys)
 	if err != nil {
-		return ProvisioningCertObj{}, "", err
+		return certsAndKeys, ProvisioningCertObj{}, "", err
 	}
 
-	return result, fingerprint, nil
+	return certsAndKeys, result, fingerprint, nil
 }
 
 func convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) {
@@ -199,6 +243,11 @@ func convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) 
 
 	certs := append([]*x509.Certificate{certificate}, extraCerts...)
 	pfxOut := CertsAndKeys{certs: certs, keys: []interface{}{privateKey}}
+
+	pfxOut.certs, err = utils.OrderCertsChain(pfxOut.certs)
+	if err != nil {
+		return pfxOut, err
+	}
 
 	return pfxOut, nil
 }
@@ -224,7 +273,7 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 			Bytes: cert.Raw,
 		}
 
-		pem := cleanPEM(string(pem.EncodeToMemory(pemBlock)))
+		pem := utils.CleanPEM(string(pem.EncodeToMemory(pemBlock)))
 		certificateObject := CertificateObject{pem: pem, subject: cert.Subject.String(), issuer: cert.Issuer.String()}
 
 		// Get the fingerprint from the Root certificate
@@ -234,7 +283,7 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 			fingerprint = hex.EncodeToString(hash[:])
 		}
 
-		// Put all the certificateObjects into a single un-ordered list
+		// Put all the certificateObjects into a single list
 		certificateList = append(certificateList, &certificateObject)
 	}
 
@@ -242,48 +291,18 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 		return provisioningCertificateObj, "", utils.ActivationFailedNoRootCertFound
 	}
 
-	// Order the certificates from leaf to root
-	orderedCertificateList := orderCertificates(certificateList)
-
 	// Add them to the certChain in order
-	for _, cert := range orderedCertificateList {
+	for _, cert := range certificateList {
 		provisioningCertificateObj.certChain = append(provisioningCertificateObj.certChain, cert.pem)
 	}
 
-	// Add the priviate key
+	// Add the private key
 	provisioningCertificateObj.privateKey = pfxobj.keys[0]
 
+	// Add the certificate algorithm
+	provisioningCertificateObj.certificateAlgorithm = pfxobj.certs[0].SignatureAlgorithm
+
 	return provisioningCertificateObj, fingerprint, nil
-}
-
-// orderCertificates orders the certificate list from leaf to root
-func orderCertificates(certificates []*CertificateObject) []*CertificateObject {
-	// create a map that we'll use to get the next certificate in chain
-	certificateMap := make(map[string]*CertificateObject)
-	for _, cert := range certificates {
-		certificateMap[cert.subject] = cert
-	}
-
-	// this slice will hold our ordered certificates
-	orderedCertificates := []*CertificateObject{}
-
-	// Set current to the leaf certificate since it is always first in our list
-	current := certificateMap[certificates[0].subject]
-
-	// Loop through certificate list until we get to root certificate
-	for current != nil && current.issuer != current.subject {
-		// Append current certificate to the ordered list
-		orderedCertificates = append(orderedCertificates, current)
-		// Move to the issuer of the current certificate
-		current = certificateMap[current.issuer]
-	}
-
-	// Append the root certificate
-	if current != nil {
-		orderedCertificates = append(orderedCertificates, current)
-	}
-
-	return orderedCertificates
 }
 
 func (service *ProvisioningService) CompareCertHashes(fingerPrint string) error {
@@ -316,16 +335,6 @@ func (service *ProvisioningService) injectCertificate(certChain []string) error 
 	}
 
 	return nil
-}
-
-func (service *ProvisioningService) generateNonce() ([]byte, error) {
-	nonce := make([]byte, 20)
-	// fills nonce with 20 random bytes
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, utils.ActivationFailedGenerateNonce
-	}
-
-	return nonce, nil
 }
 
 func (service *ProvisioningService) signString(message []byte, privateKey crypto.PrivateKey) (string, error) {
