@@ -61,6 +61,16 @@ func (f *Flags) handleActivateCommand() error {
 		return err
 	}
 
+	if f.LocalConfig.StopConfiguration {
+		response, err := f.AmtCommand.StopConfiguration()
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(response)
+		return nil
+	}
+
 	if f.Local && f.URL != "" {
 		fmt.Println("provide either a 'url' or a 'local', but not both")
 
@@ -110,14 +120,6 @@ func (f *Flags) handleActivateCommand() error {
 			}
 		}
 
-		if f.LocalConfig.StopConfiguration {
-			response, err := f.AmtCommand.StopConfiguration()
-			if err != nil {
-				return err
-			}
-
-			fmt.Println(response)
-		}
 	}
 
 	return nil

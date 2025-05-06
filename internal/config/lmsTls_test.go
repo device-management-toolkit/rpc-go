@@ -67,13 +67,13 @@ func createCertTemplate(commonName string, isCA bool, ou []string) *x509.Certifi
 
 func TestGetTLSConfig(t *testing.T) {
 	mode := 0
-	tlsConfig := GetTLSConfig(&mode, nil)
+	tlsConfig := GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
 
 	mode = 1
-	tlsConfig = GetTLSConfig(&mode, nil)
+	tlsConfig = GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.Nil(t, tlsConfig.VerifyPeerCertificate)

@@ -78,7 +78,7 @@ func (service *ProvisioningService) Activate() error {
 			return err
 		}
 
-		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse)
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck)
 
 		tlsCert := tls.Certificate{
 			PrivateKey: certsAndKeys.keys[0],
@@ -93,10 +93,10 @@ func (service *ProvisioningService) Activate() error {
 		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
 	}
 
-	service.interfacedWsmanMessage.SetupWsmanClient(lsa.Username, lsa.Password, true, log.GetLevel() == log.TraceLevel, tlsConfig)
+	service.interfacedWsmanMessage.SetupWsmanClient(lsa.Username, lsa.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 
 	if service.flags.UseACM {
-		err = service.ActivateACM()
+		err = service.ActivateACM(!service.flags.LocalTlsEnforced)
 		if err == nil {
 			log.Info("Status: Device activated in Admin Control Mode")
 		}
@@ -133,62 +133,72 @@ func (service *ProvisioningService) StartSecureHostBasedConfiguration(certsAndKe
 	return response, nil
 }
 
-func (service *ProvisioningService) ActivateACM() error {
-	// Extract the provisioning certificate
-	_, certObject, fingerPrint, err := service.GetProvisioningCertObj()
-	if err != nil {
-		return err
-	}
-	// Check provisioning certificate is accepted by AMT
-	err = service.CompareCertHashes(fingerPrint)
-	if err != nil {
-		return err
-	}
-
-	generalSettings, err := service.interfacedWsmanMessage.GetGeneralSettings()
-	if err != nil {
-		return utils.ActivationFailedGeneralSettings
-	}
-
-	getHostBasedSetupResponse, err := service.interfacedWsmanMessage.GetHostBasedSetupService()
-	if err != nil {
-		return utils.ActivationFailedSetupService
-	}
-
-	decodedNonce := getHostBasedSetupResponse.Body.GetResponse.ConfigurationNonce
-
-	fwNonce, err := base64.StdEncoding.DecodeString(decodedNonce)
-	if err != nil {
-		return utils.ActivationFailedDecode64
-	}
-
-	err = service.injectCertificate(certObject.certChain)
-	if err != nil {
-		return err
-	}
-
-	nonce, err := utils.GenerateNonce()
-	if err != nil {
-		return err
-	}
-
-	signedSignature, err := service.createSignedString(nonce, fwNonce, certObject.privateKey)
-	if err != nil {
-		return err
-	}
-
-	_, err = service.interfacedWsmanMessage.HostBasedSetupServiceAdmin(service.config.ACMSettings.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature)
-	if err != nil {
-		controlMode, err := service.amtCommand.GetControlMode()
+func (service *ProvisioningService) ActivateACM(oldWay bool) error {
+	if oldWay {
+		// Extract the provisioning certificate
+		_, certObject, fingerPrint, err := service.GetProvisioningCertObj()
 		if err != nil {
-			return utils.ActivationFailedGetControlMode
+			return err
+		}
+		// Check provisioning certificate is accepted by AMT
+		err = service.CompareCertHashes(fingerPrint)
+		if err != nil {
+			return err
 		}
 
-		if controlMode != 2 {
-			return utils.ActivationFailedControlMode
+		generalSettings, err := service.interfacedWsmanMessage.GetGeneralSettings()
+		if err != nil {
+			return utils.ActivationFailedGeneralSettings
 		}
 
-		return nil
+		getHostBasedSetupResponse, err := service.interfacedWsmanMessage.GetHostBasedSetupService()
+		if err != nil {
+			return utils.ActivationFailedSetupService
+		}
+
+		decodedNonce := getHostBasedSetupResponse.Body.GetResponse.ConfigurationNonce
+
+		fwNonce, err := base64.StdEncoding.DecodeString(decodedNonce)
+		if err != nil {
+			return utils.ActivationFailedDecode64
+		}
+
+		err = service.injectCertificate(certObject.certChain)
+		if err != nil {
+			return err
+		}
+
+		nonce, err := utils.GenerateNonce()
+		if err != nil {
+			return err
+		}
+
+		signedSignature, err := service.createSignedString(nonce, fwNonce, certObject.privateKey)
+		if err != nil {
+			return err
+		}
+
+		_, err = service.interfacedWsmanMessage.HostBasedSetupServiceAdmin(service.config.ACMSettings.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature)
+		if err != nil {
+			controlMode, err := service.amtCommand.GetControlMode()
+			if err != nil {
+				return utils.ActivationFailedGetControlMode
+			}
+
+			if controlMode != 2 {
+				return utils.ActivationFailedControlMode
+			}
+
+			return nil
+		}
+	} else {
+		// commit changes
+		result, err := service.interfacedWsmanMessage.CommitChanges()
+		if err != nil {
+			log.Error(err.Error())
+			return utils.ActivationFailed
+		}
+		log.Debug(result)
 	}
 
 	return nil
