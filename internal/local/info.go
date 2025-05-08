@@ -344,7 +344,7 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 	if service.flags.AmtInfo.UserCert {
 		tlsConfig := &tls.Config{}
 		if service.flags.LocalTlsEnforced {
-			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
+			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
 		}
 
 		service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)

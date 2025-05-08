@@ -15,7 +15,7 @@ func TestNewLMSConnection(t *testing.T) {
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
 
-	lme := NewLMSConnection("::1", "16992", false, lmDataChannel, lmErrorChannel, 0)
+	lme := NewLMSConnection("::1", "16992", false, lmDataChannel, lmErrorChannel, 0, true)
 	defer lme.Close()
 	assert.Equal(t, lmDataChannel, lme.data)
 	assert.Equal(t, lmErrorChannel, lme.errors)

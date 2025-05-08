@@ -63,7 +63,7 @@ func setCommandMethod(flags *flags.Flags) {
 	}
 
 	if flags.Force {
-		flags.Command += " -f" //nolint:goconst // other instances in test
+		flags.Command += " -f"
 	}
 }
 
