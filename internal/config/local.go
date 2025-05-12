@@ -15,6 +15,7 @@ type (
 		Ieee8021xConfigs    []Ieee8021xConfig   `yaml:"ieee8021xConfigs"`
 		ACMSettings         ACMSettings         `yaml:"acmactivate"`
 		EnterpriseAssistant EnterpriseAssistant `yaml:"enterpriseAssistant"`
+		StopConfiguration   bool                `yaml:"stopConfig"`
 		CCMSettings         CCMSettings         `yaml:"ccmactivate"`
 	}
 	TlsConfig struct {

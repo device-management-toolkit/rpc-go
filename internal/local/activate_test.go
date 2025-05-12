@@ -99,7 +99,7 @@ func TestActivateACM(t *testing.T) {
 			IsDefault: true,
 		},
 	}
-	err := lps.ActivateACM()
+	err := lps.ActivateACM(true)
 	assert.NoError(t, err)
 }
 

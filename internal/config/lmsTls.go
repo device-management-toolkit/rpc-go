@@ -5,6 +5,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -17,24 +18,28 @@ import (
 )
 
 // generates a TLS configuration based on the provided mode.
-func GetTLSConfig(mode *int) *tls.Config {
-	if *mode == 0 { // pre-provisioning mode
-		return &tls.Config{
-			InsecureSkipVerify: true,
-			VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-				return VerifyCertificates(rawCerts, mode)
-			},
-		}
-	}
-	// default tls config if device is in ACM or CCM
-	log.Trace("Setting default TLS Config for ACM/CCM mode")
+func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipCertCheck bool) *tls.Config {
+	tlsConfig := &tls.Config{}
 
-	return &tls.Config{
-		InsecureSkipVerify: true,
+	tlsConfig.InsecureSkipVerify = skipCertCheck
+
+	if *mode == 0 { // pre-provisioning mode
+		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			if skipCertCheck {
+				return nil
+			}
+
+			return VerifyCertificates(rawCerts, mode, amtCertInfo)
+		}
+	} else {
+		// default tls config if device is in ACM or CCM
+		log.Trace("Setting default TLS Config for ACM/CCM mode")
 	}
+
+	return tlsConfig
 }
 
-func VerifyCertificates(rawCerts [][]byte, mode *int) error {
+func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBasedResponse) error {
 	numCerts := len(rawCerts)
 
 	const (
@@ -47,6 +52,8 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 	var parsedCerts []*x509.Certificate
 
 	switch numCerts {
+	case 4:
+		fallthrough
 	case prodChainLength:
 		for i, rawCert := range rawCerts {
 			cert, err := x509.ParseCertificate(rawCert)
@@ -56,11 +63,13 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 				return err
 			}
 
+			log.Infof("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
+
 			parsedCerts = append(parsedCerts, cert)
 
 			switch i {
 			case leafLevel:
-				if err := VerifyLeafCertificate(cert.Subject.CommonName); err != nil {
+				if err := VerifyLeafCertificate(cert, amtCertInfo); err != nil {
 					return err
 				}
 			case odcaCertLevel:
@@ -83,12 +92,21 @@ func VerifyCertificates(rawCerts [][]byte, mode *int) error {
 }
 
 // validate the leaf certificate
-func VerifyLeafCertificate(cn string) error {
+func VerifyLeafCertificate(cn *x509.Certificate, amtCertInfo *amt.SecureHBasedResponse) error {
 	allowedLeafCNs := []string{
 		"iAMT CSME IDevID RCFG", "AMT RCFG",
 	}
+
+	if amtCertInfo != nil {
+		hash := sha256.Sum256(cn.Raw)
+		// todo: set length based on algorithm
+		if string(hash[:32]) != amtCertInfo.AMTCertHash[:32] {
+			return errors.New("hashes don't match")
+		}
+	}
+
 	for _, allowed := range allowedLeafCNs {
-		if cn == allowed {
+		if cn.Subject.CommonName == allowed {
 			return nil
 		}
 	}

@@ -74,6 +74,10 @@ func (c MockAMT) Unprovision() (int, error) {
 	return mode, nil
 }
 
+func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
+	return amt.SecureHBasedResponse{}, nil
+}
+
 var p Payload
 
 func (c MockAMT) InitiateLMS() {}

@@ -19,6 +19,23 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Activate Device (local)",
+            "type": "go",
+            "asRoot": true,
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
+            "args": [
+                "activate",
+                "-local",
+                "-config",
+                "${workspaceFolder}/config.yaml",
+                "-n",
+                "-v",
+                "-acm"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
             "name": "AMT Info",
             "type": "go",
             "asRoot": true,

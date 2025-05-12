@@ -67,13 +67,13 @@ func createCertTemplate(commonName string, isCA bool, ou []string) *x509.Certifi
 
 func TestGetTLSConfig(t *testing.T) {
 	mode := 0
-	tlsConfig := GetTLSConfig(&mode)
+	tlsConfig := GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
 
 	mode = 1
-	tlsConfig = GetTLSConfig(&mode)
+	tlsConfig = GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.Nil(t, tlsConfig.VerifyPeerCertificate)
@@ -81,16 +81,16 @@ func TestGetTLSConfig(t *testing.T) {
 
 func TestVerifyLeafCertificate(t *testing.T) {
 	tests := []struct {
-		cn        string
+		cert      *x509.Certificate
 		shouldErr bool
 	}{
-		{"iAMT CSME IDevID RCFG", false},
-		{"AMT RCFG", false},
-		{"Invalid CN", true},
+		{createCertTemplate("iAMT CSME IDevID RCFG", false, []string{}), false},
+		{createCertTemplate("AMT RCFG", false, []string{}), false},
+		{createCertTemplate("Invalid CN", false, []string{}), true},
 	}
 
 	for _, tt := range tests {
-		err := VerifyLeafCertificate(tt.cn)
+		err := VerifyLeafCertificate(tt.cert, nil)
 		if tt.shouldErr {
 			assert.Error(t, err)
 		} else {

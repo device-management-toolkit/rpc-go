@@ -64,6 +64,30 @@ type CertHashEntry struct {
 	IsDefault bool
 }
 
+type SecureHBasedParameters struct {
+	CertAlgorithm uint8
+	CertHash      [64]byte
+}
+
+type SecureHBasedResponse struct {
+	Status        string `json:"status"`
+	HashAlgorithm string `json:"hashAlgorithm"`
+	AMTCertHash   string `json:"amtCertHash"`
+}
+
+type StopConfigurationResponse struct {
+	Status string `json:"status"`
+}
+
+var HashAlgorithmToString = map[uint8]string{
+	0: "MD5",
+	1: "SHA1",
+	2: "SHA256",
+	3: "SHA384",
+	4: "SHA224",
+	5: "SHA512",
+}
+
 // LocalSystemAccount holds username and password
 type LocalSystemAccount struct {
 	Username string
@@ -100,6 +124,7 @@ type Interface interface {
 	GetLANInterfaceSettings(useWireless bool) (InterfaceSettings, error)
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
+	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -455,4 +480,48 @@ func (amt AMTCommand) GetLocalSystemAccount() (LocalSystemAccount, error) {
 	}
 
 	return lsa, nil
+}
+
+func (amt AMTCommand) StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error) {
+	emptySecureHBasedResponse := SecureHBasedResponse{}
+
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return emptySecureHBasedResponse, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.StartConfigurationHBased(params.CertAlgorithm, params.CertHash, false, 0, [320]byte{})
+	if err != nil {
+		return emptySecureHBasedResponse, err
+	}
+
+	shbr := SecureHBasedResponse{
+		Status:        result.Header.Status.String(),
+		HashAlgorithm: HashAlgorithmToString[result.HashAlgorithm],
+		AMTCertHash:   string(result.AMTCertHash[:64]),
+	}
+
+	return shbr, nil
+}
+
+func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, err error) {
+	err = amt.PTHI.Open(false)
+	if err != nil {
+		return StopConfigurationResponse{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.StopConfiguration()
+	if err != nil {
+		return StopConfigurationResponse{}, err
+	}
+
+	response = StopConfigurationResponse{
+		Status: result.Header.Status.String(),
+	}
+
+	return response, nil
 }

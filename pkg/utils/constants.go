@@ -131,6 +131,7 @@ var ActivationFailedGetControlMode = CustomError{Code: 134, Message: "Activation
 var ActivationFailedControlMode = CustomError{Code: 135, Message: "ActivationFailed", Details: "received invalid control mode"}
 var DuplicateKey = CustomError{Code: 136, Message: "DuplicateKey", Details: "Key pair already exists"}
 var WiredConfigurationFailed = CustomError{Code: 137, Message: "WiredConfigurationFailed"}
+var ActivationFailedCertHash = CustomError{Code: 138, Message: "ActivationFailed", Details: "leaf certificate hash too long"}
 var UnsupportedAMTVersion = CustomError{Code: 138, Message: "UnsupportedAMTVersion"}
 var LMSConnectionFailed = CustomError{Code: 139, Message: "LMSConnectionFailed", Details: "Failed to connect to LMS. Please install LMS for activation."}
 

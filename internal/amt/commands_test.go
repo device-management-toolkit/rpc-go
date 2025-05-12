@@ -147,6 +147,13 @@ func (c MockPTHICommands) GetLocalSystemAccount() (localAccount pthi.GetLocalSys
 }
 func (c MockPTHICommands) Unprovision() (state int, err error) { return 0, nil }
 
+func (c MockPTHICommands) StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [64]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [320]byte) (response pthi.StartConfigurationHBasedResponse, err error) {
+	return pthi.StartConfigurationHBasedResponse{}, nil
+}
+func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationResponse, err error) {
+	return pthi.StopConfigurationResponse{}, nil
+}
+
 var amt AMTCommand
 
 func init() {
