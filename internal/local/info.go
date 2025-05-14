@@ -342,7 +342,9 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 	}
 
 	if service.flags.AmtInfo.UserCert {
-		tlsConfig := &tls.Config{}
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
 		if service.flags.LocalTlsEnforced {
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
 		}

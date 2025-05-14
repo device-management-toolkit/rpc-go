@@ -17,7 +17,7 @@ import (
 type MockHECICommands struct{}
 
 var message []byte
-var sendBytesWritten uint32
+var sendBytesWritten int
 var sendError error
 var initError error
 var bufferSize uint32
@@ -32,15 +32,15 @@ func resetMock() {
 
 func (c *MockHECICommands) Init(useLME bool, useWD bool) error { return initError }
 func (c *MockHECICommands) GetBufferSize() uint32              { return bufferSize } // MaxMessageLength
-func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
+func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
 	return sendBytesWritten, sendError
 }
-func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
+func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
 	for i := 0; i < len(message) && i < len(buffer); i++ {
 		buffer[i] = message[i]
 	}
 
-	return uint32(len(message)), nil
+	return len(message), nil
 }
 func (c *MockHECICommands) Close() {}
 
@@ -67,28 +67,28 @@ func TestLMEConnection_Initialize(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		sendNumBytes uint32
+		sendNumBytes int
 		sendErr      error
 		initErr      error
 		wantErr      bool
 	}{
 		{
 			name:         "Normal",
-			sendNumBytes: uint32(93),
+			sendNumBytes: 93,
 			sendErr:      nil,
 			initErr:      nil,
 			wantErr:      false,
 		},
 		{
 			name:         "ExpectedFailureOnOpen",
-			sendNumBytes: uint32(93),
+			sendNumBytes: 93,
 			sendErr:      nil,
 			initErr:      testError,
 			wantErr:      true,
 		},
 		{
 			name:         "ExpectedFailureOnExecute",
-			sendNumBytes: uint32(93),
+			sendNumBytes: 93,
 			sendErr:      testError,
 			initErr:      nil,
 			wantErr:      true,

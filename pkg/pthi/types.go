@@ -4,7 +4,7 @@
  **********************************************************************/
 package pthi
 
-const GET_REQUEST_SIZE uint32 = 12
+const GET_REQUEST_SIZE = 12
 const CERT_HASH_MAX_LENGTH = 64
 const CERT_HASH_MAX_NUMBER = 33
 const NET_TLS_CERT_PKI_MAX_SERIAL_NUMS = 3
