@@ -17,23 +17,25 @@ import (
 )
 
 type LMSConnection struct {
-	Connection  net.Conn
-	address     string
-	port        string
-	useTls      bool
-	data        chan []byte
-	errors      chan error
-	controlMode int
+	Connection    net.Conn
+	address       string
+	port          string
+	useTls        bool
+	data          chan []byte
+	errors        chan error
+	controlMode   int
+	skipCertCheck bool
 }
 
-func NewLMSConnection(address string, port string, useTls bool, data chan []byte, errors chan error, mode int) *LMSConnection {
+func NewLMSConnection(address string, port string, useTls bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) *LMSConnection {
 	lms := &LMSConnection{
-		address:     address,
-		port:        port,
-		useTls:      useTls,
-		data:        data,
-		errors:      errors,
-		controlMode: mode,
+		address:       address,
+		port:          port,
+		useTls:        useTls,
+		data:          data,
+		errors:        errors,
+		controlMode:   mode,
+		skipCertCheck: skipCertCheck,
 	}
 
 	return lms
@@ -51,7 +53,7 @@ func (lms *LMSConnection) Connect() error {
 		if lms.useTls {
 			log.Debug("connecting to lms over tls...")
 
-			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode))
+			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck))
 		} else {
 			log.Debug("connecting to lms...")
 

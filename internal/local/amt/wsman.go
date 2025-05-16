@@ -49,6 +49,7 @@ type WSMANer interface {
 	AddNextCertInChain(cert string, isLeaf bool, isRoot bool) (hostbasedsetup.Response, error)
 	HostBasedSetupServiceAdmin(password string, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error)
 	SetupMEBX(string) (response setupandconfiguration.Response, err error)
+	GetSetupAndConfigurationService() (setupandconfiguration.Response, error)
 	GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error)
 	GetPublicPrivateKeyPairs() ([]publicprivate.RefinedPublicPrivateKeyPair, error)
 	DeletePublicPrivateKeyPair(instanceId string) error
@@ -125,34 +126,32 @@ func (g *GoWSMANMessages) SetupWsmanClient(username string, password string, use
 		LogAMTMessages: logAMTMessages,
 	}
 
-	var (
-		con net.Conn // Declared to hold the connection object
-		err error
-	)
-
 	if clientParams.UseTLS {
-		logrus.Info("Attempting to connect to LMS over TLS...")
+		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
-		con, err = cryptotls.Dial("tcp", utils.LMSAddress+":"+client.TLSPort, clientParams.TlsConfig)
-	} else {
-		logrus.Info("Attempting to connect to LMS...")
+		conn, err := cryptotls.Dial("tcp", utils.LMSAddress+":"+utils.LMSTLSPort, tlsConfig)
+		if err != nil {
+			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
+			logrus.Error(err)
+		} else {
+			logrus.Info("Successfully connected to LMS.")
 
-		con, err = net.Dial("tcp", utils.LMSAddress+":"+client.NonTLSPort)
-	}
+			state := conn.ConnectionState()
+			cert := state.PeerCertificates[0]
+			logrus.Trace("Server certificate: ", cert)
 
-	if err != nil {
-		logrus.Trace("Failed to connect to LMS: ", err)
-
-		if clientParams.UseTLS {
-			return utils.LMSConnectionFailed
+			defer conn.Close()
 		}
-
-		logrus.Info("using local transport instead...")
-
-		clientParams.Transport = NewLocalTransport()
 	} else {
-		logrus.Info("Successfully connected to LMS.")
-		con.Close()
+		con, err := net.Dial("tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		if err != nil {
+			logrus.Info("Failed to connect to LMS, using local transport instead.")
+
+			clientParams.Transport = NewLocalTransport()
+		} else {
+			logrus.Info("Successfully connected to LMS.")
+			con.Close()
+		}
 	}
 
 	g.wsmanMessages = wsman.NewMessages(clientParams)
@@ -189,6 +188,10 @@ func (g *GoWSMANMessages) Unprovision(int) (setupandconfiguration.Response, erro
 
 func (g *GoWSMANMessages) SetupMEBX(password string) (response setupandconfiguration.Response, err error) {
 	return g.wsmanMessages.AMT.SetupAndConfigurationService.SetMEBXPassword(password)
+}
+
+func (g *GoWSMANMessages) GetSetupAndConfigurationService() (setupandconfiguration.Response, error) {
+	return g.wsmanMessages.AMT.SetupAndConfigurationService.Get()
 }
 
 func (g *GoWSMANMessages) GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error) {

@@ -29,7 +29,7 @@ func (service *ProvisioningService) Configure() (err error) {
 		MinVersion: tls.VersionTLS12,
 	}
 	if service.flags.LocalTlsEnforced {
-		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode)
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
 	}
 
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)

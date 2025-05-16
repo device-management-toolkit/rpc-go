@@ -1,3 +1,10 @@
+# [2.47.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.46.1...v2.47.0) (2025-05-15)
+
+
+### Features
+
+* adds support for secure host based configuration ([4e7753e](https://github.com/device-management-toolkit/rpc-go/commit/4e7753e660f6d0efb7e37d351fbfe2aeed999422)), closes [#797](https://github.com/device-management-toolkit/rpc-go/issues/797)
+
 ## [2.46.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.46.0...v2.46.1) (2025-04-09)
 
 

@@ -35,6 +35,7 @@ func (f *Flags) handleActivateCommand() error {
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.AMTPassword, "amtPassword", utils.LookupEnv("AMT_PASSWORD"), "amt password")
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCert, "provisioningCert", utils.LookupEnv("PROVISIONING_CERT"), "provisioning certificate")
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCertPwd, "provisioningCertPwd", utils.LookupEnv("PROVISIONING_CERT_PASSWORD"), "provisioning certificate password")
+	f.amtActivateCommand.BoolVar(&f.LocalConfig.StopConfiguration, "stopConfig", false, "transitions AMT from in-provisioning state back to pre-provisioning state")
 
 	if len(f.commandLineArgs) == 2 {
 		f.amtActivateCommand.PrintDefaults()
@@ -58,6 +59,17 @@ func (f *Flags) handleActivateCommand() error {
 		}
 
 		return err
+	}
+
+	if f.LocalConfig.StopConfiguration {
+		response, err := f.AmtCommand.StopConfiguration()
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(response)
+
+		return nil
 	}
 
 	if f.Local && f.URL != "" {
