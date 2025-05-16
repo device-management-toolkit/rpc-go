@@ -137,7 +137,10 @@ func (f *Flags) handleLocalConfigV1() error {
 		return utils.FailedReadingConfiguration
 	}
 
-	if f.LocalConfig.CCMSettings.AMTPassword != "" && f.UseCCM {
+	if f.Password != "" {
+		f.LocalConfig.CCMSettings.AMTPassword = f.Password
+		f.LocalConfig.Password = f.Password
+	} else if f.LocalConfig.CCMSettings.AMTPassword != "" && f.UseCCM {
 		f.LocalConfig.Password = f.LocalConfig.CCMSettings.AMTPassword
 		f.Password = f.LocalConfig.Password
 	} else if f.LocalConfig.ACMSettings.AMTPassword != "" && f.UseACM {
@@ -192,6 +195,11 @@ func (f *Flags) ValidateConfigV2() error {
 		if rc := f.ReadNewPasswordTo(&f.Password, "New AMT Password"); rc != nil {
 			return rc
 		}
+	}
+
+	if f.Password != "" {
+		f.LocalConfig.ACMSettings.AMTPassword = f.Password
+	    f.LocalConfig.Password = f.Password
 	}
 
 	f.LocalConfig.ACMSettings.AMTPassword = f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword
