@@ -51,8 +51,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "./build.sh ${nextRelease.version} && docker build -t vprodemo.azurecr.io/rpc-go:v${nextRelease.version} -t vprodemo.azurecr.io/rpc-go:latest -t docker.io/intel/oact-rpc-go:v${nextRelease.version} -t docker.io/intel/oact-rpc-go:latest .",
-        "publishCmd": "docker push vprodemo.azurecr.io/rpc-go:v${nextRelease.version} && docker push vprodemo.azurecr.io/rpc-go:latest && docker push docker.io/intel/oact-rpc-go:v${nextRelease.version} && docker push docker.io/intel/oact-rpc-go:latest",
+        "prepareCmd": "./build.sh ${nextRelease.version} && docker build -t vprodemo.azurecr.io/rpc-go:v${nextRelease.version} -t vprodemo.azurecr.io/rpc-go:latest -t docker.io/intel/oact-rpc-go:v${nextRelease.version} -t docker.io/intel/oact-rpc-go:latest -t docker.io/intel/device-mgmt-toolkit-rpc-go:v${nextRelease.version} -t docker.io/intel/device-mgmt-toolkit-rpc-go:latest .",
+        "publishCmd": "docker push vprodemo.azurecr.io/rpc-go:v${nextRelease.version} && docker push vprodemo.azurecr.io/rpc-go:latest && docker push docker.io/intel/oact-rpc-go:v${nextRelease.version} && docker push docker.io/intel/oact-rpc-go:latest && docker push docker.io/intel/device-mgmt-toolkit-rpc-go:v${nextRelease.version} && docker push docker.io/intel/device-mgmt-toolkit-rpc-go:latest",
         "verifyReleaseCmd": "echo v${nextRelease.version} > .nextVersion"
       }
     ],
