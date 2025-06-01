@@ -41,7 +41,7 @@ func (c MockPTHICommands) Open(useLME bool) error {
 	}
 }
 func (c MockPTHICommands) Close() {}
-func (c MockPTHICommands) Call(command []byte, commandSize uint32) (result []byte, err error) {
+func (c MockPTHICommands) Call(command []byte, commandSize int) (result []byte, err error) {
 	return nil, nil
 }
 func (c MockPTHICommands) GetCodeVersions() (pthi.GetCodeVersionsResponse, error) {
