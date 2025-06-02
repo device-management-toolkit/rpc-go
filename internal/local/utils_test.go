@@ -6,7 +6,7 @@
 package local
 
 import (
-	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 )
 
 var mpsCert = publickey.PublicKeyCertificateResponse{

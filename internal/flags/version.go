@@ -6,7 +6,7 @@
 package flags
 
 import (
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
 func (f *Flags) handleVersionCommand() error {

@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/lm"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/sirupsen/logrus"
 )
 

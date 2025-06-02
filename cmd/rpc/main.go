@@ -7,11 +7,11 @@ package main
 import (
 	"os"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/local"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/rps"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/local"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -49,6 +49,10 @@ func runRPC(args []string) error {
 	}
 
 	return err
+}
+
+func fetchProfile(flags *flags.Flags) error {
+	return nil
 }
 
 func parseCommandLine(args []string) (*flags.Flags, error) {

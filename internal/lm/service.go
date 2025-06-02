@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
