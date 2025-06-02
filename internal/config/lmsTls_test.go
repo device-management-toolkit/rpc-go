@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )

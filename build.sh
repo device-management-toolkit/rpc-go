@@ -18,12 +18,12 @@ else
 fi
 
 # Build for Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x64 ./cmd/rpc/main.go
-CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags "-s -w -X 'github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x86 ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x64 ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x86 ./cmd/rpc/main.go
 
 # Build for Windows
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x64.exe ./cmd/rpc/main.go 
-CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags "-s -w -X 'github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x86.exe ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x64.exe ./cmd/rpc/main.go 
+CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x86.exe ./cmd/rpc/main.go
 
 # Build library for Linux
 CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -trimpath -buildmode=c-shared -o rpc.so.$version ./cmd/rpc

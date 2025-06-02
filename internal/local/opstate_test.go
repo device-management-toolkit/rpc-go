@@ -9,9 +9,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/amt"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )

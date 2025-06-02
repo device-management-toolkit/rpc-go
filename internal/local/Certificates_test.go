@@ -4,12 +4,10 @@ import (
 	// "encoding/xml"
 	"testing"
 
-	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
-	"github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/flags"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
-	// "github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
-	// "github.com/open-amt-cloud-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 

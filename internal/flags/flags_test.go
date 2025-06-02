@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/config"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/internal/smb"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/smb"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 )

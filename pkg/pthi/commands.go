@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/heci"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 )
 
 type Command struct {
