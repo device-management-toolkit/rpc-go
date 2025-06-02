@@ -232,11 +232,11 @@
 - **deps:** bump codecov/codecov-action from 4.1.1 to 4.2.0 ([#465](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/465)) 
 - **deps:** bump golang from 0466223 to cdc86d9 ([#464](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/464))
 - **deps:** bump wagoid/commitlint-github-action from 5.4.5 to 6.0.0 ([#457](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/457))
-- **deps:** deps: bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.2.0 to 2.2.2 
+- **deps:** deps: bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.2.0 to 2.2.2 
 - **deps:** bump aquasecurity/trivy-action from 0.18.0 to 0.19.0
 - **deps:** bump actions/add-to-project from 0.6.1 to 1.0.0
 - **deps:** bump codecov/codecov-action from 4.1.0 to 4.1.1
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.11 to 2.2.0 ([#446](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/446))
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.11 to 2.2.0 ([#446](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/446))
 - **deps:** bump github/codeql-action from 3.24.8 to 3.24.9 ([#448](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/448))
 - **deps:** bump actions/add-to-project from 0.6.0 to 0.6.1 ([#445](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/445))
 - **deps:** bump cycjimmy/semantic-release-action from 4.0.0 to 4.1.0 ([#444](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/444))
@@ -266,7 +266,7 @@
 <a name="v2.29.1"></a>
 ## [v2.29.1] - 2024-03-15
 ### Build
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.10 to 2.1.11
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.10 to 2.1.11
 - **deps:** bump docker/login-action from 3.0.0 to 3.1.0 
 
 ### Docs
@@ -278,7 +278,7 @@
 <a name="v2.29.0"></a>
 ## [v2.29.0] - 2024-03-14
 ### Build
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.9 to 2.1.10
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.9 to 2.1.10
 
 ### Feat
 - adds addwiredsettings local configuration command ([#422](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/422)) 
@@ -293,7 +293,7 @@
 ### Build
 - **deps:** bump actions/checkout from 4.1.1 to 4.1.2 ([#423](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/423)) 
 - **deps:** bump github/codeql-action from 3.24.6 to 3.24.7 ([#424](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/424)) 
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.8 to 2.1.9
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.8 to 2.1.9
 
 ### Fix
 - changes amtinfo output to use stdout instead of stderr
@@ -302,7 +302,7 @@
 ## [v2.28.1] - 2024-03-13
 ### Build
 - **deps:** bump golang from 8e96e6c to fc5e584 ([#414](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/414))
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.7 to 2.1.8
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.7 to 2.1.8
 
 ### Ci
 - adds changelog plugin to release
@@ -349,9 +349,9 @@
 <a name="v2.27.0"></a>
 ## [v2.27.0] - 2024-02-28
 ### Build
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.5 to 2.1.6 
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.5 to 2.1.6 
 - **deps:** bump github/codeql-action from 3.24.1 to 3.24.3
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.6 to 2.1.7
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.6 to 2.1.7
 - **deps:** bump codecov/codecov-action from 4.0.1 to 4.0.2
 - **deps:** bump github/codeql-action from 3.24.3 to 3.24.5
 - **deps:** bump codecov/codecov-action from 4.0.2 to 4.1.0
@@ -374,7 +374,7 @@
 ## [v2.26.0] - 2024-02-14
 ### Build
 - **gh-actions:** upgrade build flags for executable
-- **deps:** bump github.com/open-amt-cloud-toolkit/go-wsman-messages/v2 from 2.1.4 to 2.1.5
+- **deps:** bump github.com/device-management-toolkit/go-wsman-messages/v2 from 2.1.4 to 2.1.5
 - **deps:** bump golang.org/x/term from 0.16.0 to 0.17.0 ([#383](https://github.com/open-amt-cloud-toolkit/rpc-go/issues/383))
 - **deps:** bump github/codeql-action from 3.24.0 to 3.24.1 
 

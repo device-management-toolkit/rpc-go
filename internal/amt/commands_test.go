@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/pthi"
-	"github.com/open-amt-cloud-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
