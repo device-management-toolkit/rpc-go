@@ -59,7 +59,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-2019, windows-2022, ubuntu-22.04, ubuntu-24.04]
+        os: [windows-2022, ubuntu-22.04, ubuntu-24.04]
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -87,12 +87,12 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: build go
-        if: ${{ matrix.os == 'windows-2019' }}
+        if: ${{ matrix.os == 'windows-2022' }}
         run: go build -o rpc.exe ./cmd/rpc
 
       # Runs a single command using the runners shell
       - name: build go
-        if: ${{ matrix.os != 'windows-2019' }}
+        if: ${{ matrix.os != 'windows-2022' }}
         run: go build -o rpc ./cmd/rpc
 
       - name: GitHub Upload Release Artifacts
