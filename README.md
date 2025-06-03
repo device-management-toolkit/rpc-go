@@ -1,9 +1,9 @@
 # Remote Provisioning Client (RPC)
 
-![CodeQL](https://img.shields.io/github/actions/workflow/status/open-amt-cloud-toolkit/rpc-go/codeql-analysis.yml?style=for-the-badge&label=CodeQL&logo=github)
-![Build](https://img.shields.io/github/actions/workflow/status/open-amt-cloud-toolkit/rpc-go/main.yml?style=for-the-badge&logo=github)
-![Codecov](https://img.shields.io/codecov/c/github/open-amt-cloud-toolkit/rpc-go?style=for-the-badge&logo=codecov)
-[![OSSF-Scorecard Score](https://img.shields.io/ossf-scorecard/github.com/open-amt-cloud-toolkit/rpc-go?style=for-the-badge&label=OSSF%20Score)](https://api.securityscorecards.dev/projects/github.com/open-amt-cloud-toolkit/rpc-go)
+![CodeQL](https://img.shields.io/github/actions/workflow/status/device-management-toolkit/rpc-go/codeql-analysis.yml?style=for-the-badge&label=CodeQL&logo=github)
+![Build](https://img.shields.io/github/actions/workflow/status/device-management-toolkit/rpc-go/main.yml?style=for-the-badge&logo=github)
+![Codecov](https://img.shields.io/codecov/c/github/device-management-toolkit/rpc-go?style=for-the-badge&logo=codecov)
+[![OSSF-Scorecard Score](https://img.shields.io/ossf-scorecard/github.com/device-management-toolkit/rpc-go?style=for-the-badge&label=OSSF%20Score)](https://api.securityscorecards.dev/projects/github.com/device-management-toolkit/rpc-go)
 [![Discord](https://img.shields.io/discord/1063200098680582154?style=for-the-badge&label=Discord&logo=discord&logoColor=white&labelColor=%235865F2&link=https%3A%2F%2Fdiscord.gg%2FDKHeUNEWVH)](https://discord.gg/DKHeUNEWVH)
 [![Docker Pulls](https://img.shields.io/docker/pulls/intel/oact-rpc-go?style=for-the-badge&logo=docker)](https://hub.docker.com/r/intel/oact-rpc-go)
 
