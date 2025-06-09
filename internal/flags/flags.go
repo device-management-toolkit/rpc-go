@@ -63,6 +63,7 @@ type Flags struct {
 	LMSAddress                          string
 	LMSPort                             string
 	SkipCertCheck                       bool
+	SkipAmtCertCheck                    bool
 	Verbose                             bool
 	Force                               bool
 	JsonOutput                          bool
@@ -225,6 +226,7 @@ func (f *Flags) setupCommonFlags() {
 		f.amtMaintenanceSyncIPCommand} {
 		fs.StringVar(&f.URL, "u", "", "Websocket address of server to activate against") //required
 		fs.BoolVar(&f.SkipCertCheck, "n", false, "Skip Websocket server certificate verification")
+		fs.BoolVar(&f.SkipAmtCertCheck, "skipamtcertcheck", false, "Skip AMT ODCA certificate verification")
 		fs.StringVar(&f.Proxy, "p", "", "Proxy address and port")
 		fs.StringVar(&f.Token, "token", "", "JWT Token for Authorization")
 		fs.StringVar(&f.TenantID, "tenant", "", "TenantID")

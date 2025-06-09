@@ -38,7 +38,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 
 	client := Executor{
 		server:          NewAMTActivationServer(&flags),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipCertCheck),
+		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
 		data:            lmDataChannel,
 		errors:          lmErrorChannel,
 		waitGroup:       &sync.WaitGroup{},
