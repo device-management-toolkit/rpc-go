@@ -6,7 +6,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "activate",
                 "-u",
@@ -40,7 +40,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "amtinfo"
             ],
@@ -51,7 +51,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "deactivate",
                 "-u",
@@ -67,7 +67,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "maintenance",
                 "deviceinfo",
@@ -83,7 +83,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "configure",
                 "mebx",
@@ -99,7 +99,7 @@
             "type": "go",
             "asRoot": true,
             "request": "launch",
-            "program": "${workspaceFolder}/cmd/main.go",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "version"
             ],
