@@ -113,7 +113,9 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 
 	amt.Conn, resp, err = websocketDialer.Dial(amt.URL, nil)
 	if err != nil {
-		defer resp.Body.Close()
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 
 		return err
 	}
