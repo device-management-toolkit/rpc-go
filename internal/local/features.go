@@ -155,7 +155,7 @@ func (service *ProvisioningService) setAMTRedirectionService() error {
 
 func (service *ProvisioningService) putRedirectionService(getResponse redirection.RedirectionResponse, isRedirectionChanged bool) error {
 	// Construct put redirection Request from get redirection response
-	redirRequest := redirection.RedirectionRequest{
+	redirRequest := &redirection.RedirectionRequest{
 		Name:                    getResponse.Name,
 		CreationClassName:       getResponse.CreationClassName,
 		SystemCreationClassName: getResponse.SystemCreationClassName,
