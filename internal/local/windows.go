@@ -11,7 +11,6 @@ import (
 	"os/exec"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-
 	log "github.com/sirupsen/logrus"
 )
 
@@ -21,7 +20,6 @@ func (n *RealOSNetworker) RenewDHCPLease() error {
 	cmd := exec.Command("ipconfig", "/renew")
 
 	err := cmd.Run()
-
 	if err != nil {
 		log.Error("Error renewing DHCP lease:", err)
 

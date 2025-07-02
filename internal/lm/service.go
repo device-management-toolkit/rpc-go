@@ -113,10 +113,10 @@ func (lms *LMSConnection) Listen() {
 
 	for {
 		n, err := lms.Connection.Read(tmp)
-
 		if err != nil {
 			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
 				log.Println("read error:", err)
+
 				lms.errors <- err
 			}
 
@@ -125,6 +125,7 @@ func (lms *LMSConnection) Listen() {
 
 		buf = append(buf, tmp[:n]...)
 	}
+
 	lms.data <- buf
 
 	log.Trace("done listening")

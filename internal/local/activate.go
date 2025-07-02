@@ -234,7 +234,6 @@ func (service *ProvisioningService) ActivateCCM(tlsConfig *tls.Config) error {
 	// If TLS is enforced, commit changes
 	if service.flags.LocalTlsEnforced {
 		err := service.CCMCommit(tlsConfig)
-
 		if err != nil {
 			return utils.ActivationFailed
 		}
@@ -263,7 +262,6 @@ func (service *ProvisioningService) CCMCommit(tlsConfig *tls.Config) error {
 		log.Info("Putting the device back to pre-provisioning mode")
 
 		_, err = service.interfacedWsmanMessage.Unprovision(1)
-
 		if err != nil {
 			log.Error("Status: Unable to deactivate ", err)
 		}

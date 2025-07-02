@@ -150,7 +150,9 @@ func (lme *LMEConnection) Listen() {
 	go func() {
 		lme.Session.Timer = time.NewTimer(2 * time.Second)
 		<-lme.Session.Timer.C
+
 		lme.Session.DataBuffer <- lme.Session.Tempdata
+
 		lme.Session.Tempdata = []byte{}
 
 		var bin_buf bytes.Buffer

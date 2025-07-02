@@ -153,6 +153,7 @@ func TestConnect(t *testing.T) {
 	err := server.Connect(true)
 
 	defer server.Close()
+
 	assert.NoError(t, err)
 }
 func TestSend(t *testing.T) {
@@ -160,6 +161,7 @@ func TestSend(t *testing.T) {
 	err := server.Connect(true)
 
 	defer server.Close()
+
 	assert.NoError(t, err)
 
 	message := Message{
@@ -172,6 +174,7 @@ func TestListen(t *testing.T) {
 	err := server.Connect(true)
 
 	defer server.Close()
+
 	assert.NoError(t, err)
 
 	var wgAll sync.WaitGroup

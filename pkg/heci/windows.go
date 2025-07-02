@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	setupapi "github.com/device-management-toolkit/rpc-go/v2/pkg/windows"
-
 	"golang.org/x/sys/windows"
 )
 
@@ -81,6 +80,7 @@ func (heci *Driver) Init(useLME bool, useWD bool) error {
 	if err2 != nil {
 		return err2
 	}
+
 	return err
 }
 
@@ -89,20 +89,24 @@ func (heci *Driver) FindDevices() error {
 	if err != nil {
 		return err
 	}
+
 	deviceInfo, err := setupapi.SetupDiGetClassDevs(&deviceGUID, nil, 0, setupapi.DIGCF_PRESENT|setupapi.DIGCF_DEVICEINTERFACE)
 	if err != nil {
 		return err
 	}
+
 	if deviceInfo == syscall.InvalidHandle {
 		return errors.New("invalid handle")
 	}
 
 	interfaceData := setupapi.SpDevInterfaceData{}
 	interfaceData.CbSize = (uint32)(unsafe.Sizeof(interfaceData))
+
 	edi, err := setupapi.SetupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
 	if err != nil {
 		return err
 	}
+
 	if edi == syscall.InvalidHandle {
 		return errors.New("invalid handle")
 	}
@@ -111,14 +115,17 @@ func (heci *Driver) FindDevices() error {
 	if err != nil && heci.bufferSize == 0 {
 		return err
 	}
+
 	buf := make([]uint16, heci.bufferSize)
 	buf[0] = 8
+
 	err = setupapi.SetupDiGetDeviceInterfaceDetail(deviceInfo, &interfaceData, &buf[0], heci.bufferSize, nil, nil)
 	if err != nil {
 		return err
 	}
 
 	const firstChar = 2
+
 	l := firstChar
 	for l < len(buf) && buf[l] != 0 {
 		l++
@@ -128,8 +135,8 @@ func (heci *Driver) FindDevices() error {
 	if err != nil {
 		return err
 	}
-	heci.meiDevice, err = windows.CreateFile(&buf[2], windows.GENERIC_READ|windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
 
+	heci.meiDevice, err = windows.CreateFile(&buf[2], windows.GENERIC_READ|windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
 	if err != nil {
 		return err
 	}
@@ -160,6 +167,7 @@ func (heci *Driver) GetHeciVersion() error {
 	if err != nil {
 		return err
 	}
+
 	buf2 := bytes.NewBuffer(packedVersion.packed[:])
 	binary.Read(buf2, binary.LittleEndian, &version.major)
 	binary.Read(buf2, binary.LittleEndian, &version.minor)
@@ -185,6 +193,7 @@ func (heci *Driver) ConnectHeciClient() error {
 	if err != nil {
 		return err
 	}
+
 	buf2 := bytes.NewBuffer(propertiesPacked.data[:])
 	binary.Read(buf2, binary.LittleEndian, &properties)
 	heci.bufferSize = properties.MaxMessageLength
@@ -194,10 +203,12 @@ func (heci *Driver) ConnectHeciClient() error {
 
 func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, outBuf *byte, outsize uint32) (err error) {
 	var bytesRead uint32
+
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
 	defer windows.CloseHandle(overlapped.HEvent)
+
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
@@ -208,17 +219,21 @@ func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, out
 	windows.DeviceIoControl(heci.meiDevice, controlCode, inBuf, intsize, outBuf, outsize, &bytesRead, &overlapped)
 
 	windows.WaitForSingleObject(overlapped.HEvent, windows.INFINITE)
+
 	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, &bytesRead, true)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
 	var overlapped windows.Overlapped
+
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
 	defer windows.CloseHandle(overlapped.HEvent)
+
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
@@ -237,13 +252,15 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 	if err != nil {
 		return 0, err
 	}
+
 	return *done, nil
 }
 func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
-
 	var overlapped windows.Overlapped
+
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
 	defer windows.CloseHandle(overlapped.HEvent)
+
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
@@ -262,6 +279,7 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint3
 	if err != nil {
 		return 0, err
 	}
+
 	return *done, nil
 }
 

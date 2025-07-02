@@ -164,8 +164,8 @@ func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig
 
 func (service *ProvisioningService) setIeee8021xConfig(ieee8021xConfig *config.Ieee8021xConfig) (ieee8021xSettings models.IEEE8021xSettings, handles Handles, err error) {
 	handles = Handles{}
-	securitySettings, err := service.GetCertificates()
 
+	securitySettings, err := service.GetCertificates()
 	if err != nil {
 		return ieee8021xSettings, handles, utils.WiFiConfigurationFailed
 	}

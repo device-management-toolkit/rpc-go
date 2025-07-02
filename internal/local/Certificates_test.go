@@ -81,7 +81,6 @@ func TestGetCertificates(t *testing.T) {
 			tc.setupMocks(mockWsman)
 
 			response, err := service.GetCertificates()
-
 			if tc.err != nil {
 				assert.Error(t, err)
 			} else {

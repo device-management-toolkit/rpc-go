@@ -172,6 +172,7 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 
 				break
 			}
+
 			dataChannel <- message
 		}
 	}()

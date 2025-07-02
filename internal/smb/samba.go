@@ -105,8 +105,8 @@ func (s *Service) FetchFileContents(url string) ([]byte, error) {
 func (s *Service) ParseUrl(url string) (Properties, error) {
 	p := Properties{}
 	p.Url = url
-	u, err := netURL.Parse(url)
 
+	u, err := netURL.Parse(url)
 	if err != nil {
 		return p, err
 	}

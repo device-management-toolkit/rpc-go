@@ -501,7 +501,6 @@ func (g *GoWSMANMessages) AddMPS(password string, server string, port int) (resp
 	}
 
 	result, err := g.wsmanMessages.AMT.RemoteAccessService.AddMPS(mpsServer)
-
 	if err != nil {
 		return result.Body.AddMpServerResponse, err
 	}

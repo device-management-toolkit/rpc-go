@@ -205,8 +205,8 @@ func (pthi Command) GetIsAMTEnabled() (uint8, error) {
 	var bin_buf bytes.Buffer
 
 	binary.Write(&bin_buf, binary.LittleEndian, command)
-	result, err := pthi.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
 
+	result, err := pthi.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
 	if err != nil {
 		return uint8(0), err
 	}

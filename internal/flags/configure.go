@@ -455,6 +455,7 @@ func (f *Flags) handleConfigureTLS() error {
 	tlsModeUsage := fmt.Sprintf("TLS authentication usage model (%s) (default %s)", TLSModesToString(), f.ConfigTLSInfo.TLSMode)
 	fs.Func("mode", tlsModeUsage, func(flagValue string) error {
 		var e error
+
 		f.ConfigTLSInfo.TLSMode, e = ParseTLSMode(flagValue)
 
 		return e

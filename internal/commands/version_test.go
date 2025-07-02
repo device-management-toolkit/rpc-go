@@ -69,6 +69,7 @@ func TestVersionCmd_Run_PlainText(t *testing.T) {
 				assert.True(t, json.Valid(output), "Output should be valid JSON")
 
 				var info map[string]string
+
 				err := json.Unmarshal(output, &info)
 				assert.NoError(t, err)
 
@@ -120,6 +121,7 @@ func TestVersionCmd_Run_JSONStructure(t *testing.T) {
 
 	// Parse JSON
 	var result map[string]string
+
 	err = json.Unmarshal(output, &result)
 	assert.NoError(t, err)
 
@@ -284,6 +286,7 @@ func TestVersionCmd_Run_UtilsIntegration(t *testing.T) {
 			// Verify that utils constants are being used correctly
 			if tt.jsonOutput {
 				var info map[string]string
+
 				err := json.Unmarshal(output, &info)
 				assert.NoError(t, err)
 				assert.NotEmpty(t, info["app"])

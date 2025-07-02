@@ -279,6 +279,7 @@ func TestCreateMessageRequestFriendlyName(t *testing.T) {
 	assert.NoError(t, decodeErr)
 
 	var m map[string]interface{}
+
 	unmarshalErr := json.Unmarshal(decodedBytes, &m)
 	assert.NoError(t, unmarshalErr)
 	assert.Equal(t, m["friendlyName"], expectedName)
@@ -292,6 +293,7 @@ func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
 	assert.NoError(t, decodeErr)
 
 	var m map[string]interface{}
+
 	unmarshalErr := json.Unmarshal(decodedBytes, &m)
 	assert.NoError(t, unmarshalErr)
 

@@ -46,7 +46,6 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 
 	// TEST CONNECTION TO SEE IF LMS EXISTS
 	err := client.localManagement.Connect()
-
 	if err != nil {
 		if flags.LocalTlsEnforced {
 			return client, utils.LMSConnectionFailed

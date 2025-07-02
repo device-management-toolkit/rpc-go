@@ -295,8 +295,8 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 		ieee8021xConfig.ClientCert = ""
 		ieee8021xConfig.Username = reqResponse.Response.Username
 		ieee8021xConfig.Password = reqResponse.Response.Password
-		handles.rootCertHandle, err = service.GetTrustedRootCertHandle(securitySettings, reqResponse.Response.RootCert)
 
+		handles.rootCertHandle, err = service.GetTrustedRootCertHandle(securitySettings, reqResponse.Response.RootCert)
 		if err != nil {
 			return handles, ieee8021xConfig, utils.WSMANMessageError
 		}
@@ -348,8 +348,8 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 	}
 
 	ieee8021xConfig.Username = eaResponse.Response.Username
-	handles.clientCertHandle, err = service.GetClientCertHandle(securitySettings, eaResponse.Response.Certificate)
 
+	handles.clientCertHandle, err = service.GetClientCertHandle(securitySettings, eaResponse.Response.Certificate)
 	if err != nil {
 		return handles, ieee8021xConfig, utils.WSMANMessageError
 	}

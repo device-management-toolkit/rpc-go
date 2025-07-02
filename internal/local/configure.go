@@ -106,7 +106,6 @@ func (service *ProvisioningService) ClearCIRA() error {
 	}
 
 	results, err := service.interfacedWsmanMessage.GetMPSSAP()
-
 	if err != nil {
 		return err
 	}

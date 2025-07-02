@@ -127,8 +127,8 @@ func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout tim
 	}
 
 	payload.Client = utils.ClientName
-	hashes, err := p.AMT.GetCertificateHashes()
 
+	hashes, err := p.AMT.GetCertificateHashes()
 	if err != nil {
 		return payload, err
 	}
@@ -167,8 +167,8 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 		Message:         "ok",
 		TenantID:        flags.TenantID,
 	}
-	payload, err := p.createPayload(flags.DNS, flags.Hostname, flags.AMTTimeoutDuration)
 
+	payload, err := p.createPayload(flags.DNS, flags.Hostname, flags.AMTTimeoutDuration)
 	if err != nil {
 		return message, err
 	}

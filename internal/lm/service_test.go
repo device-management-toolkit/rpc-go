@@ -17,6 +17,7 @@ func TestNewLMSConnection(t *testing.T) {
 
 	lme := NewLMSConnection("::1", "16992", false, lmDataChannel, lmErrorChannel, 0, true)
 	defer lme.Close()
+
 	assert.Equal(t, lmDataChannel, lme.data)
 	assert.Equal(t, lmErrorChannel, lme.errors)
 	assert.Equal(t, "::1", lme.address)
@@ -28,6 +29,7 @@ func TestInitialize(t *testing.T) {
 	err := lms.Initialize()
 
 	defer lms.Close()
+
 	assert.Error(t, err)
 }
 
@@ -37,6 +39,7 @@ func TestConnect(t *testing.T) {
 	err := lms.Connect()
 
 	defer lms.Close()
+
 	assert.NoError(t, err)
 }
 
@@ -78,6 +81,7 @@ func TestListen(t *testing.T) {
 			data := <-lms.data
 			if len(data) > 0 {
 				assert.Equal(t, []byte("data"), data)
+
 				wait2 <- true
 
 				break

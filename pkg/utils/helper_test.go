@@ -352,7 +352,6 @@ func TestOrderCertsChain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ordered, err := OrderCertsChain(tt.certs)
-
 			if tt.wantErr != nil {
 				if err == nil || !contains(err.Error(), tt.wantErr.Error()) {
 					t.Errorf("expected error containing %q, got %v", tt.wantErr.Error(), err)

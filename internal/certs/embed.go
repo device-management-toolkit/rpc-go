@@ -51,8 +51,8 @@ func LoadRootCAPoolwithFS(fs FileSystem) (*x509.CertPool, error) {
 	for _, certFile := range certFiles {
 		if !certFile.IsDir() {
 			certPath := "trustedstore/" + certFile.Name()
-			certData, err := fs.ReadFile(certPath)
 
+			certData, err := fs.ReadFile(certPath)
 			if err != nil {
 				log.Error("Failed to read file: ", certPath, " Error: ", err)
 

@@ -509,7 +509,6 @@ func (s *InfoService) getOSIPAddress(macAddr string) string {
 		}
 
 		val, err := strconv.ParseUint(part, 16, 8)
-
 		if err != nil {
 			return notFoundIP
 		}

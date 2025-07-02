@@ -57,8 +57,9 @@ var (
 )
 
 func SetupDiGetClassDevs(class *windows.GUID, enum *uint16, parent syscall.Handle, flags uint32) (devInfoSet syscall.Handle, err error) {
-	r0, _, e1 := syscall.Syscall6(procSetupDiGetClassDevsW.Addr(), 4, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(enum)), uintptr(parent), uintptr(flags), 0, 0)
+	r0, _, e1 := syscall.SyscallN(procSetupDiGetClassDevsW.Addr(), uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(enum)), uintptr(parent), uintptr(flags))
 	devInfoSet = syscall.Handle(r0)
+
 	if devInfoSet == syscall.InvalidHandle {
 		if e1 != 0 {
 			err = error(e1)
@@ -66,6 +67,7 @@ func SetupDiGetClassDevs(class *windows.GUID, enum *uint16, parent syscall.Handl
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
@@ -74,7 +76,8 @@ func SetupDiGetDeviceRegistryProperty(devInfoSet syscall.Handle, diData *SpDevin
 	if len(buf) > 0 {
 		_p0 = &buf[0]
 	}
-	r1, _, e1 := syscall.Syscall9(procSetupDiGetDeviceRegistryPropertyW.Addr(), 7, uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(prop), uintptr(unsafe.Pointer(regDataType)), uintptr(unsafe.Pointer(_p0)), uintptr(len(buf)), uintptr(unsafe.Pointer(size)), 0, 0)
+
+	r1, _, e1 := syscall.SyscallN(procSetupDiGetDeviceRegistryPropertyW.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(prop), uintptr(unsafe.Pointer(regDataType)), uintptr(unsafe.Pointer(_p0)), uintptr(len(buf)), uintptr(unsafe.Pointer(size)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -82,11 +85,12 @@ func SetupDiGetDeviceRegistryProperty(devInfoSet syscall.Handle, diData *SpDevin
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiEnumDeviceInfo(devInfoSet syscall.Handle, index uint32, diData *SpDevinfoData) (err error) {
-	r1, _, e1 := syscall.Syscall(procSetupDiEnumDeviceInfo.Addr(), 3, uintptr(devInfoSet), uintptr(index), uintptr(unsafe.Pointer(diData)))
+	r1, _, e1 := syscall.SyscallN(procSetupDiEnumDeviceInfo.Addr(), uintptr(devInfoSet), uintptr(index), uintptr(unsafe.Pointer(diData)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -94,11 +98,12 @@ func SetupDiEnumDeviceInfo(devInfoSet syscall.Handle, index uint32, diData *SpDe
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiCreateDeviceInfo(devInfoSet syscall.Handle, devName *uint16, g *windows.GUID, devDesc *uint16, hwnd uintptr, cflags uint32, dataOut *SpDevinfoData) (err error) {
-	r1, _, e1 := syscall.Syscall9(procSetupDiCreateDeviceInfoW.Addr(), 7, uintptr(devInfoSet), uintptr(unsafe.Pointer(devName)), uintptr(unsafe.Pointer(g)), uintptr(unsafe.Pointer(devDesc)), uintptr(hwnd), uintptr(cflags), uintptr(unsafe.Pointer(dataOut)), 0, 0)
+	r1, _, e1 := syscall.SyscallN(procSetupDiCreateDeviceInfoW.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(devName)), uintptr(unsafe.Pointer(g)), uintptr(unsafe.Pointer(devDesc)), hwnd, uintptr(cflags), uintptr(unsafe.Pointer(dataOut)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -106,12 +111,14 @@ func SetupDiCreateDeviceInfo(devInfoSet syscall.Handle, devName *uint16, g *wind
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiCreateDeviceInfoList(g *windows.GUID, hwnd uintptr) (devInfoSet syscall.Handle, err error) {
-	r0, _, e1 := syscall.Syscall(procSetupDiCreateDeviceInfoList.Addr(), 2, uintptr(unsafe.Pointer(g)), uintptr(hwnd), 0)
+	r0, _, e1 := syscall.SyscallN(procSetupDiCreateDeviceInfoList.Addr(), uintptr(unsafe.Pointer(g)), hwnd)
 	devInfoSet = syscall.Handle(r0)
+
 	if devInfoSet == syscall.InvalidHandle {
 		if e1 != 0 {
 			err = error(e1)
@@ -119,11 +126,12 @@ func SetupDiCreateDeviceInfoList(g *windows.GUID, hwnd uintptr) (devInfoSet sysc
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiSetDeviceRegistryProperty(devInfoSet syscall.Handle, data *SpDevinfoData, prop uint32, buf *byte, sz uint32) (err error) {
-	r1, _, e1 := syscall.Syscall6(procSetupDiSetDeviceRegistryPropertyW.Addr(), 5, uintptr(devInfoSet), uintptr(unsafe.Pointer(data)), uintptr(prop), uintptr(unsafe.Pointer(buf)), uintptr(sz), 0)
+	r1, _, e1 := syscall.SyscallN(procSetupDiSetDeviceRegistryPropertyW.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(data)), uintptr(prop), uintptr(unsafe.Pointer(buf)), uintptr(sz))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -131,11 +139,12 @@ func SetupDiSetDeviceRegistryProperty(devInfoSet syscall.Handle, data *SpDevinfo
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiCallClassInstaller(installFn uintptr, devInfoSet syscall.Handle, data *SpDevinfoData) (err error) {
-	r1, _, e1 := syscall.Syscall(procSetupDiCallClassInstaller.Addr(), 3, uintptr(installFn), uintptr(devInfoSet), uintptr(unsafe.Pointer(data)))
+	r1, _, e1 := syscall.SyscallN(procSetupDiCallClassInstaller.Addr(), installFn, uintptr(devInfoSet), uintptr(unsafe.Pointer(data)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -143,11 +152,12 @@ func SetupDiCallClassInstaller(installFn uintptr, devInfoSet syscall.Handle, dat
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiDestroyDeviceInfoList(devInfoSet syscall.Handle) (err error) {
-	r1, _, e1 := syscall.Syscall(procSetupDiDestroyDeviceInfoList.Addr(), 1, uintptr(devInfoSet), 0, 0)
+	r1, _, e1 := syscall.SyscallN(procSetupDiDestroyDeviceInfoList.Addr(), uintptr(devInfoSet))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -155,6 +165,7 @@ func SetupDiDestroyDeviceInfoList(devInfoSet syscall.Handle) (err error) {
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
@@ -163,7 +174,8 @@ func SetupDiGetINFClass(infPath *uint16, guid *windows.GUID, className []uint16,
 	if len(className) > 0 {
 		_p0 = &className[0]
 	}
-	r1, _, e1 := syscall.Syscall6(procSetupDiGetINFClassW.Addr(), 5, uintptr(unsafe.Pointer(infPath)), uintptr(unsafe.Pointer(guid)), uintptr(unsafe.Pointer(_p0)), uintptr(len(className)), uintptr(unsafe.Pointer(reqSz)), 0)
+
+	r1, _, e1 := syscall.SyscallN(procSetupDiGetINFClassW.Addr(), uintptr(unsafe.Pointer(infPath)), uintptr(unsafe.Pointer(guid)), uintptr(unsafe.Pointer(_p0)), uintptr(len(className)), uintptr(unsafe.Pointer(reqSz)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -171,12 +183,14 @@ func SetupDiGetINFClass(infPath *uint16, guid *windows.GUID, className []uint16,
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiOpenDevRegKey(devInfoSet syscall.Handle, diData *SpDevinfoData, scope uint32, hwProfile uint32, keyType uint32, desiredAccess uint32) (h syscall.Handle, err error) {
-	r0, _, e1 := syscall.Syscall6(procSetupDiOpenDevRegKey.Addr(), 6, uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(scope), uintptr(hwProfile), uintptr(keyType), uintptr(desiredAccess))
+	r0, _, e1 := syscall.SyscallN(procSetupDiOpenDevRegKey.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(scope), uintptr(hwProfile), uintptr(keyType), uintptr(desiredAccess))
 	h = syscall.Handle(r0)
+
 	if h == syscall.InvalidHandle {
 		if e1 != 0 {
 			err = error(e1)
@@ -184,6 +198,7 @@ func SetupDiOpenDevRegKey(devInfoSet syscall.Handle, diData *SpDevinfoData, scop
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
@@ -192,7 +207,8 @@ func SetupDiGetDeviceInstanceId(devInfoSet syscall.Handle, diData *SpDevinfoData
 	if len(id) > 0 {
 		_p0 = &id[0]
 	}
-	r1, _, e1 := syscall.Syscall6(procSetupDiGetDeviceInstanceIdW.Addr(), 5, uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(unsafe.Pointer(_p0)), uintptr(len(id)), uintptr(unsafe.Pointer(reqSz)), 0)
+
+	r1, _, e1 := syscall.SyscallN(procSetupDiGetDeviceInstanceIdW.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(unsafe.Pointer(_p0)), uintptr(len(id)), uintptr(unsafe.Pointer(reqSz)))
 	if r1 == 0 {
 		if e1 != 0 {
 			err = error(e1)
@@ -200,12 +216,14 @@ func SetupDiGetDeviceInstanceId(devInfoSet syscall.Handle, diData *SpDevinfoData
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiEnumDeviceInterfaces(devInfoSet syscall.Handle, deviceInfoData *SpDevinfoData, class *windows.GUID, memberIndex uint32, deviceInterfaceData *SpDevInterfaceData) (idk syscall.Handle, err error) {
-	r0, _, e1 := syscall.Syscall6(procSetupDiEnumDeviceInterfaces.Addr(), 5, uintptr(devInfoSet), uintptr(unsafe.Pointer(deviceInfoData)), uintptr(unsafe.Pointer(class)), uintptr(memberIndex), uintptr(unsafe.Pointer(deviceInterfaceData)), 0)
+	r0, _, e1 := syscall.SyscallN(procSetupDiEnumDeviceInterfaces.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(deviceInfoData)), uintptr(unsafe.Pointer(class)), uintptr(memberIndex), uintptr(unsafe.Pointer(deviceInterfaceData)))
 	devInfoSet = syscall.Handle(r0)
+
 	if devInfoSet == syscall.InvalidHandle {
 		if e1 != 0 {
 			err = error(e1)
@@ -213,11 +231,12 @@ func SetupDiEnumDeviceInterfaces(devInfoSet syscall.Handle, deviceInfoData *SpDe
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
 
 func SetupDiGetDeviceInterfaceDetail(devInfoSet syscall.Handle, dintfdata *SpDevInterfaceData, detail *uint16, detailSize uint32, reqsize *uint32, devInfData *SpDevinfoData) (err error) {
-	r1, _, e1 := syscall.Syscall6(procSetupDiGetDeviceInterfaceDetailW.Addr(), 6, uintptr(devInfoSet), uintptr(unsafe.Pointer(dintfdata)), uintptr(unsafe.Pointer(detail)), uintptr(detailSize), uintptr(unsafe.Pointer(reqsize)), uintptr(unsafe.Pointer(devInfData)))
+	r1, _, e1 := syscall.SyscallN(procSetupDiGetDeviceInterfaceDetailW.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(dintfdata)), uintptr(unsafe.Pointer(detail)), uintptr(detailSize), uintptr(unsafe.Pointer(reqsize)), uintptr(unsafe.Pointer(devInfData)))
 
 	if r1 == 0 {
 		if e1 != 0 {
@@ -226,5 +245,6 @@ func SetupDiGetDeviceInterfaceDetail(devInfoSet syscall.Handle, dintfdata *SpDev
 			err = syscall.EINVAL
 		}
 	}
+
 	return
 }
