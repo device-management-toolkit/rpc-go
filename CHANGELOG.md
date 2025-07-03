@@ -1,3 +1,10 @@
+## [2.48.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.0...v2.48.1) (2025-07-03)
+
+
+### Reverts
+
+* leverage kong cli for better organization of cli commands ([2386bdb](https://github.com/device-management-toolkit/rpc-go/commit/2386bdb3e04cfb1b3476c29b49c27bde5b32be09))
+
 # [2.48.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.47.3...v2.48.0) (2025-07-01)
 
 
