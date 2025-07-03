@@ -228,7 +228,7 @@ func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, out
 	return nil
 }
 
-func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
+func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
@@ -253,9 +253,9 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 		return 0, err
 	}
 
-	return *done, nil
+	return int(*done), nil
 }
-func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
+func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
@@ -280,7 +280,7 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint3
 		return 0, err
 	}
 
-	return *done, nil
+	return int(*done), nil
 }
 
 func (heci *Driver) Close() {

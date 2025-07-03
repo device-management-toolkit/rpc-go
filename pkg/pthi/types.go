@@ -4,7 +4,7 @@
  **********************************************************************/
 package pthi
 
-const GET_REQUEST_SIZE uint32 = 12
+const GET_REQUEST_SIZE = 12
 const MAX_SUFFIX_LENGTH = 64
 const MAX_DNS_SUFFIXES = 5
 const CERT_HASH_MAX_LENGTH = 64

@@ -31,16 +31,16 @@ func (c *MockHECICommands) Init(useLME bool, useWD bool) error {
 }
 func (c *MockHECICommands) GetBufferSize() uint32 { return 5120 } // MaxMessageLength
 
-func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
-	return numBytes, nil
+func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
+	return int(numBytes), nil
 }
-func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
+func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
 	i := 0
 	for i = 0; i < len(message) && i < len(buffer); i++ {
 		buffer[i] = message[i]
 	}
 
-	return uint32(i), nil
+	return i, nil
 }
 func (c *MockHECICommands) Close() {}
 
@@ -90,7 +90,7 @@ func TestAMTOperationalState(t *testing.T) {
 func TestSend(t *testing.T) {
 	numBytes = 54
 	bin_buf := apf.ChannelOpen(1)
-	err := pthi.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
+	err := pthi.Send(bin_buf.Bytes())
 	assert.NoError(t, err)
 }
 func TestReceive(t *testing.T) {
@@ -108,7 +108,7 @@ func TestReceive(t *testing.T) {
 
 	result, n, err := pthi.Receive()
 	assert.NotNil(t, result)
-	assert.Greater(t, n, uint32(0))
+	assert.Greater(t, n, 0)
 	assert.NoError(t, err)
 }
 func TestGetGUID(t *testing.T) {

@@ -60,7 +60,7 @@ func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState)
 
 func (c MockPTHICommands) Close() {}
 
-func (c MockPTHICommands) Call([]byte, uint32) (result []byte, err error) {
+func (c MockPTHICommands) Call([]byte, int) (result []byte, err error) {
 	return []byte{}, nil
 }
 
@@ -339,7 +339,7 @@ func writeTestCfgFiles(t *testing.T, cfg *config.Config, ext string) (cfgFilePat
 	}
 
 	assert.Nil(t, err)
-	err = os.WriteFile(cfgFilePath, cfgBytes, 0644)
+	err = os.WriteFile(cfgFilePath, cfgBytes, 0600)
 	assert.Nil(t, err)
 
 	return cfgFilePath

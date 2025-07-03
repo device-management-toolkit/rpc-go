@@ -75,7 +75,7 @@ func (lme *LMEConnection) Connect() error {
 	lme.Session.WaitGroup.Add(1)
 	bin_buf := apf.ChannelOpen(lme.ourChannel)
 
-	err := lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
+	err := lme.Command.Send(bin_buf.Bytes())
 	if err != nil {
 		lme.retries = lme.retries + 1
 		if lme.retries < 3 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
@@ -113,7 +113,7 @@ func (lme *LMEConnection) Send(data []byte) error {
 
 	lme.Session.TXWindow -= lme.Session.TXWindow // hmmm
 
-	err := lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
+	err := lme.Command.Send(bin_buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (lme *LMEConnection) Send(data []byte) error {
 
 func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 	for {
-		result, err := lme.Command.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
+		result, err := lme.Command.Call(bin_buf.Bytes(), bin_buf.Len())
 		if err != nil && (err.Error() == "empty response from AMT" || err.Error() == "no such device") {
 			log.Warn("AMT Unavailable, retrying...")
 
@@ -161,7 +161,7 @@ func (lme *LMEConnection) Listen() {
 		binary.Write(&bin_buf, binary.BigEndian, channelData.MessageType)
 		binary.Write(&bin_buf, binary.BigEndian, channelData.RecipientChannel)
 
-		lme.Command.Send(bin_buf.Bytes(), uint32(bin_buf.Len()))
+		lme.Command.Send(bin_buf.Bytes())
 	}()
 
 	for {

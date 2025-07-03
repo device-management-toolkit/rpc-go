@@ -91,7 +91,7 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 
 	websocketDialer := websocket.Dialer{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: skipCertCheck,
+			InsecureSkipVerify: skipCertCheck, //nolint:gosec // self signed certs could be used
 		},
 	}
 

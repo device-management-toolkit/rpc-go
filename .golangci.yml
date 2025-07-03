@@ -54,6 +54,9 @@ linters:
         - style
     gocyclo:
       min-complexity: 15
+    gosec:
+      excludes:
+        - G115
     misspell:
       locale: US
     mnd:

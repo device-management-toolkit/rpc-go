@@ -21,7 +21,7 @@ type Interface interface {
 	Open(useLME bool) error
 	OpenWatchdog() error
 	Close()
-	Call(command []byte, commandSize uint32) (result []byte, err error)
+	Call(command []byte, commandSize int) (result []byte, err error)
 	GetCodeVersions() (GetCodeVersionsResponse, error)
 	GetUUID() (uuid string, err error)
 	GetControlMode() (state int, err error)
@@ -59,15 +59,21 @@ func (pthi Command) Close() {
 	pthi.Heci.Close()
 }
 
-func (pthi Command) Call(command []byte, commandSize uint32) (result []byte, err error) {
+func (pthi Command) Call(command []byte, commandSize int) (result []byte, err error) {
 	size := pthi.Heci.GetBufferSize()
 
-	bytesWritten, err := pthi.Heci.SendMessage(command, &commandSize)
+	if commandSize < 0 || commandSize > int(^uint32(0)) {
+		return nil, fmt.Errorf("buffer length exceeds uint32 maximum value")
+	}
+
+	commandSizeUint32 := uint32(commandSize)
+
+	bytesWritten, err := pthi.Heci.SendMessage(command, &commandSizeUint32)
 	if err != nil {
 		return nil, err
 	}
 
-	if bytesWritten != uint32(len(command)) {
+	if bytesWritten != len(command) {
 		return nil, errors.New("amt internal error")
 	}
 
@@ -84,19 +90,21 @@ func (pthi Command) Call(command []byte, commandSize uint32) (result []byte, err
 
 	return readBuffer, nil
 }
-func (pthi Command) Send(command []byte, commandSize uint32) (err error) {
-	bytesWritten, err := pthi.Heci.SendMessage(command, &commandSize)
+func (cmd Command) Send(command []byte) (err error) {
+	commandSize := (uint32)(len(command))
+
+	bytesWritten, err := cmd.Heci.SendMessage(command, &commandSize)
 	if err != nil {
 		return err
 	}
 
-	if bytesWritten != uint32(len(command)) {
+	if bytesWritten != len(command) {
 		return errors.New("amt internal error")
 	}
 
 	return nil
 }
-func (pthi Command) Receive() (result []byte, bytesRead uint32, err error) {
+func (pthi Command) Receive() (result []byte, bytesRead int, err error) {
 	size := pthi.Heci.GetBufferSize()
 
 	readBuffer := make([]byte, size)
@@ -206,7 +214,7 @@ func (pthi Command) GetIsAMTEnabled() (uint8, error) {
 
 	binary.Write(&bin_buf, binary.LittleEndian, command)
 
-	result, err := pthi.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
+	result, err := pthi.Call(bin_buf.Bytes(), bin_buf.Len())
 	if err != nil {
 		return uint8(0), err
 	}
@@ -233,7 +241,7 @@ func (pthi Command) SetAmtOperationalState(state AMTOperationalState) (Status, e
 
 	binary.Write(&bin_buf, binary.LittleEndian, command)
 	//result, err := pthi.Call(bin_buf.Bytes(), 32)
-	result, err := pthi.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
+	result, err := pthi.Call(bin_buf.Bytes(), bin_buf.Len())
 	if err != nil {
 		return Status(0), err
 	}
@@ -354,7 +362,7 @@ func (pthi Command) GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryL
 	}
 	// Request from the enumerated list and return cert hashes
 	for i := 0; i < int(hashHandles.Length); i++ {
-		commandSize := (uint32)(16)
+		commandSize := 16
 		command := GetCertHashEntryRequest{
 			Header:     CreateRequestHeader(GET_CERTHASH_ENTRY_REQUEST, 4),
 			HashHandle: hashHandles.Handles[i],
@@ -420,7 +428,7 @@ func (pthi Command) GetRemoteAccessConnectionStatus() (RAStatus GetRemoteAccessC
 }
 
 func (pthi Command) GetLANInterfaceSettings(useWireless bool) (LANInterface GetLANInterfaceSettingsResponse, err error) {
-	commandSize := (uint32)(16)
+	commandSize := 16
 
 	command := GetLANInterfaceSettingsRequest{
 		Header:         CreateRequestHeader(GET_LAN_INTERFACE_SETTINGS_REQUEST, 4),
@@ -457,7 +465,7 @@ func (pthi Command) GetLANInterfaceSettings(useWireless bool) (LANInterface GetL
 }
 
 func (pthi Command) GetLocalSystemAccount() (localAccount GetLocalSystemAccountResponse, err error) {
-	commandSize := (uint32)(52)
+	commandSize := 52
 	command := GetLocalSystemAccountRequest{
 		Header: CreateRequestHeader(GET_LOCAL_SYSTEM_ACCOUNT_REQUEST, 40),
 	}
@@ -489,7 +497,7 @@ func (pthi Command) StartConfigurationHBased(serverHashAlgorithm uint8, serverCe
 		return StartConfigurationHBasedResponse{}, errors.New("unsupported serverHashAlgorithm")
 	}
 
-	commandSize := (uint32)(402)
+	commandSize := 402
 	command := StartConfigurationHBasedRequest{
 		Header:               CreateRequestHeader(START_CONFIGURATION_HBASED_REQUEST, 390),
 		ServerHashAlgorithm:  serverHashAlgorithm,
