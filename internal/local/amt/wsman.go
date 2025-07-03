@@ -98,7 +98,7 @@ type WSMANer interface {
 
 	RequestRedirectionStateChange(requestedState redirection.RequestedState) (response redirection.Response, err error)
 	RequestKVMStateChange(requestedState kvm.KVMRedirectionSAPRequestStateChangeInput) (response kvm.Response, err error)
-	PutRedirectionState(requestedState redirection.RedirectionRequest) (response redirection.Response, err error)
+	PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error)
 	GetRedirectionService() (response redirection.Response, err error)
 	GetIpsOptInService() (response optin.Response, err error)
 	PutIpsOptInService(request optin.OptInServiceRequest) (response optin.Response, err error)
@@ -456,7 +456,7 @@ func (g *GoWSMANMessages) RequestKVMStateChange(requestedState kvm.KVMRedirectio
 	return g.wsmanMessages.CIM.KVMRedirectionSAP.RequestStateChange(requestedState)
 }
 
-func (g *GoWSMANMessages) PutRedirectionState(requestedState redirection.RedirectionRequest) (response redirection.Response, err error) {
+func (g *GoWSMANMessages) PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error) {
 	return g.wsmanMessages.AMT.RedirectionService.Put(requestedState)
 }
 

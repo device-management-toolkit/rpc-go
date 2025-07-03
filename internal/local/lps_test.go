@@ -170,7 +170,7 @@ func (m MockWSMAN) GetRedirectionService() (response redirection.Response, err e
 var mockPutRedirectionStateError error = nil
 var mockPutRedirectionStateResponse redirection.Response
 
-func (m MockWSMAN) PutRedirectionState(requestedState redirection.RedirectionRequest) (response redirection.Response, err error) {
+func (m MockWSMAN) PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error) {
 	return mockPutRedirectionStateResponse, mockPutRedirectionStateError
 }
 
