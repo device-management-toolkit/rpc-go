@@ -6,10 +6,8 @@ package main
 
 import (
 	"os"
-	"strings"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/cli"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/local"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
@@ -89,18 +87,6 @@ func parseCommandLine(args []string) (*flags.Flags, error) {
 }
 
 func main() {
-	// Check if this is a Kong command (amtinfo or version)
-	if len(os.Args) > 1 && isKongCommand(os.Args[1]) {
-		// Use Kong CLI for supported commands
-		err := cli.Execute(os.Args)
-		if err != nil {
-			handleErrorAndExit(err)
-		}
-
-		return
-	}
-
-	// Use original CLI for all other commands
 	err := checkAccess()
 	if err != nil {
 		log.Error(AccessErrMsg)
@@ -111,18 +97,6 @@ func main() {
 	if err != nil {
 		handleErrorAndExit(err)
 	}
-}
-
-func isKongCommand(cmd string) bool {
-	// Only run Kong for the commands we've implemented
-	kongCommands := []string{"amtinfo", "version"}
-	for _, kongCmd := range kongCommands {
-		if strings.EqualFold(cmd, kongCmd) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func updateConnectionSettings(flags *flags.Flags) error {
@@ -155,7 +129,6 @@ func updateConnectionSettings(flags *flags.Flags) error {
 
 	return nil
 }
-
 func handleErrorAndExit(err error) {
 	if customErr, ok := err.(utils.CustomError); ok {
 		if err != utils.HelpRequested {

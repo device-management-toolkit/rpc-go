@@ -214,12 +214,62 @@ func TestPrintUsage(t *testing.T) {
 	assert.Equal(t, usage, output)
 }
 
+func TestParseFlagsAMTInfo(t *testing.T) {
+	args := []string{"./rpc", "amtinfo"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
+	assert.Equal(t, false, flags.JsonOutput)
+}
+
+func TestParseFlagsAMTInfoBadParam(t *testing.T) {
+	args := []string{"./rpc", "amtinfo", "-help"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, utils.IncorrectCommandLineParameters, result)
+	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
+	assert.Equal(t, false, flags.JsonOutput)
+}
+
+func TestParseFlagsAMTInfoJSON(t *testing.T) {
+	args := []string{"./rpc", "amtinfo", "-json"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
+	assert.Equal(t, true, flags.JsonOutput)
+}
+func TestParseFlagsAMTInfoCert(t *testing.T) {
+	args := []string{"./rpc", "amtinfo", "-cert"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
+	assert.Equal(t, false, flags.JsonOutput)
+}
+func TestParseFlagsAMTInfoOSDNSSuffix(t *testing.T) {
+	args := []string{"./rpc", "amtinfo", "-dns"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
+	assert.Equal(t, false, flags.JsonOutput)
+}
 func TestParseFlagsActivate(t *testing.T) {
 	args := []string{"./rpc", "activate"}
 	flags := NewFlags(args, MockPRSuccess)
 	result := flags.ParseFlags()
 	assert.EqualValues(t, result, utils.IncorrectCommandLineParameters)
 	assert.Equal(t, flags.Command, utils.CommandActivate)
+}
+func TestParseFlagsVersion(t *testing.T) {
+	args := []string{"./rpc", "version"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandVersion)
+	assert.Equal(t, false, flags.JsonOutput)
 }
 func TestParseFlagsConfigure(t *testing.T) {
 	args := []string{"./rpc", "configure"}
@@ -244,6 +294,15 @@ func TestParseFlagsConfigureNoFile(t *testing.T) {
 	result := flags.ParseFlags()
 	assert.EqualValues(t, result, utils.IncorrectCommandLineParameters)
 	assert.Equal(t, "configure", flags.Command)
+}
+
+func TestParseFlagsVersionJSON(t *testing.T) {
+	args := []string{"./rpc", "version", "-json"}
+	flags := NewFlags(args, MockPRSuccess)
+	result := flags.ParseFlags()
+	assert.EqualValues(t, result, nil)
+	assert.Equal(t, flags.Command, utils.CommandVersion)
+	assert.Equal(t, true, flags.JsonOutput)
 }
 
 func TestParseFlagsNone(t *testing.T) {

@@ -89,6 +89,7 @@ type Flags struct {
 	UUID                                string
 	LocalConfig                         config.Config
 	LocalConfigV2                       configv2.Configuration
+	amtInfoCommand                      *flag.FlagSet
 	amtActivateCommand                  *flag.FlagSet
 	amtDeactivateCommand                *flag.FlagSet
 	amtMaintenanceSyncIPCommand         *flag.FlagSet
@@ -96,6 +97,7 @@ type Flags struct {
 	amtMaintenanceSyncHostnameCommand   *flag.FlagSet
 	amtMaintenanceChangePasswordCommand *flag.FlagSet
 	amtMaintenanceSyncDeviceInfoCommand *flag.FlagSet
+	versionCommand                      *flag.FlagSet
 	flagSetAddEthernetSettings          *flag.FlagSet
 	flagSetAddWifiSettings              *flag.FlagSet
 	flagSetEnableWifiPort               *flag.FlagSet
@@ -108,6 +110,7 @@ type Flags struct {
 	HostnameInfo                        HostnameInfo
 	AMTTimeoutDuration                  time.Duration
 	FriendlyName                        string
+	AmtInfo                             AmtInfoFlags
 	SkipIPRenew                         bool
 	SambaService                        smb.ServiceInterface
 	MEBxPassword                        string
@@ -125,6 +128,9 @@ func NewFlags(args []string, pr utils.PasswordReader) *Flags {
 	flags := &Flags{}
 	flags.passwordReader = pr
 	flags.commandLineArgs = args
+	flags.amtInfoCommand = flag.NewFlagSet(utils.CommandAMTInfo, flag.ContinueOnError)
+	flags.amtInfoCommand.BoolVar(&flags.SkipCertCheck, "n", false, "Skip server certificate verification")
+	flags.amtInfoCommand.BoolVar(&flags.JsonOutput, "json", false, "json output")
 
 	flags.amtActivateCommand = flag.NewFlagSet(utils.CommandActivate, flag.ContinueOnError)
 	flags.amtDeactivateCommand = flag.NewFlagSet(utils.CommandDeactivate, flag.ContinueOnError)
@@ -134,6 +140,9 @@ func NewFlags(args []string, pr utils.PasswordReader) *Flags {
 	flags.amtMaintenanceSyncHostnameCommand = flag.NewFlagSet(utils.SubCommandSyncHostname, flag.ContinueOnError)
 	flags.amtMaintenanceChangePasswordCommand = flag.NewFlagSet(utils.SubCommandChangePassword, flag.ContinueOnError)
 	flags.amtMaintenanceSyncDeviceInfoCommand = flag.NewFlagSet(utils.SubCommandSyncDeviceInfo, flag.ContinueOnError)
+
+	flags.versionCommand = flag.NewFlagSet(utils.CommandVersion, flag.ContinueOnError)
+	flags.versionCommand.BoolVar(&flags.JsonOutput, "json", false, "json output")
 
 	flags.flagSetAddEthernetSettings = flag.NewFlagSet(utils.SubCommandWired, flag.ContinueOnError)
 	flags.flagSetAddWifiSettings = flag.NewFlagSet(utils.SubCommandWireless, flag.ContinueOnError)
@@ -162,12 +171,16 @@ func (f *Flags) ParseFlags() error {
 	}
 
 	switch f.Command {
+	case utils.CommandAMTInfo:
+		err = f.handleAMTInfo(f.amtInfoCommand)
 	case utils.CommandActivate:
 		err = f.handleActivateCommand()
 	case utils.CommandDeactivate:
 		err = f.handleDeactivateCommand()
 	case utils.CommandMaintenance:
 		err = f.handleMaintenanceCommand()
+	case utils.CommandVersion:
+		err = f.handleVersionCommand()
 	case utils.CommandConfigure:
 		err = f.handleConfigureCommand()
 	default:

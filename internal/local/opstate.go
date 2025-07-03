@@ -6,7 +6,7 @@
 package local
 
 import (
-	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -71,27 +71,13 @@ func (service *ProvisioningService) RenewIP() error {
 	}
 
 	if log.IsLevelEnabled(log.DebugLevel) {
-		// Create simplified AMT info command for debug output
-		cmd := &commands.AmtInfoCmd{
+		amtInfoOrig := service.flags.AmtInfo
+		service.flags.AmtInfo = flags.AmtInfoFlags{
 			DNS: true,
 			Lan: true,
 		}
-
-		// Create service with AMT command
-		infoService := commands.NewInfoService(service.amtCommand)
-
-		result, err := infoService.GetAMTInfo(cmd)
-		if err != nil {
-			log.Warn("failed to get AMT info after IP renewal: ", err)
-
-			return nil
-		}
-
-		// Output in text format for debug
-		err = infoService.OutputText(result, cmd)
-		if err != nil {
-			log.Warn("failed to display AMT info after IP renewal: ", err)
-		}
+		service.DisplayAMTInfo()
+		service.flags.AmtInfo = amtInfoOrig
 	}
 
 	return nil

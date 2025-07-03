@@ -16,15 +16,11 @@ import (
 
 func (n *RealOSNetworker) RenewDHCPLease() error {
 	log.Debug("renewing DHCP lease")
-
 	cmd := exec.Command("ipconfig", "/renew")
-
 	err := cmd.Run()
 	if err != nil {
 		log.Error("Error renewing DHCP lease:", err)
-
 		return utils.WiredConfigurationFailed
 	}
-
 	return nil
 }
