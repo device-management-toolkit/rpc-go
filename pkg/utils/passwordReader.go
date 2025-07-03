@@ -13,7 +13,7 @@ import (
 
 const TestPassword = "test-password"
 
-var PR = new(RealPasswordReader)
+var PR PasswordReader = new(RealPasswordReader)
 
 type PasswordReader interface {
 	ReadPassword() (string, error)

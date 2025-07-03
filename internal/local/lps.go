@@ -57,8 +57,6 @@ func ExecuteCommand(flags *flags.Flags) error {
 	switch flags.Command {
 	case utils.CommandActivate:
 		err = service.Activate()
-	case utils.CommandDeactivate:
-		err = service.Deactivate()
 	case utils.CommandConfigure:
 		err = service.Configure()
 	}

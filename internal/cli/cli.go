@@ -25,11 +25,12 @@ type Globals struct {
 type CLI struct {
 	Globals
 
-	AmtInfo commands.AmtInfoCmd `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
-	Version commands.VersionCmd `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
+	AmtInfo    commands.AmtInfoCmd    `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Version    commands.VersionCmd    `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
+	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
 }
 
-// Run sets up the context and applies global settings
+// BeforeApply sets up the context and applies global settings
 func (g *Globals) BeforeApply(ctx *kong.Context) error {
 	// Configure logging based on flags
 	if g.Verbose {
@@ -110,8 +111,9 @@ func Execute(args []string) error {
 	kctx, cli, err := Parse(args, amtCommand)
 	if err != nil {
 		return err
-	} // Create shared context
+	}
 
+	// Create shared context
 	appCtx := &commands.Context{
 		AMTCommand:       amtCommand,
 		LogLevel:         cli.LogLevel,

@@ -115,7 +115,7 @@ func main() {
 
 func isKongCommand(cmd string) bool {
 	// Only run Kong for the commands we've implemented
-	kongCommands := []string{"amtinfo", "version"}
+	kongCommands := []string{"amtinfo", "version", "deactivate"}
 	for _, kongCmd := range kongCommands {
 		if strings.EqualFold(cmd, kongCmd) {
 			return true

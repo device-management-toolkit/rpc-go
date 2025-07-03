@@ -164,8 +164,6 @@ func (f *Flags) ParseFlags() error {
 	switch f.Command {
 	case utils.CommandActivate:
 		err = f.handleActivateCommand()
-	case utils.CommandDeactivate:
-		err = f.handleDeactivateCommand()
 	case utils.CommandMaintenance:
 		err = f.handleMaintenanceCommand()
 	case utils.CommandConfigure:
