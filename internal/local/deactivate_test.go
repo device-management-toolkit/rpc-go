@@ -14,6 +14,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var MockPRSuccess = new(MockPasswordReaderSuccess)
+var MockPRFail = new(MockPasswordReaderFail)
+
+type MockPasswordReaderSuccess struct{}
+
+func (mpr *MockPasswordReaderSuccess) ReadPassword() (string, error) {
+	return utils.TestPassword, nil
+}
+
+type MockPasswordReaderFail struct{}
+
+func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
+	return "", errors.New("Read password failed")
+}
+
 func TestDeactivation(t *testing.T) {
 	f := flags.NewFlags(nil, MockPRSuccess)
 	f.Command = utils.CommandDeactivate
