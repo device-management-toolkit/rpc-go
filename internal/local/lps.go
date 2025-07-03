@@ -57,10 +57,14 @@ func ExecuteCommand(flags *flags.Flags) error {
 	switch flags.Command {
 	case utils.CommandActivate:
 		err = service.Activate()
+	case utils.CommandAMTInfo:
+		err = service.DisplayAMTInfo()
 	case utils.CommandDeactivate:
 		err = service.Deactivate()
 	case utils.CommandConfigure:
 		err = service.Configure()
+	case utils.CommandVersion:
+		err = service.DisplayVersion()
 	}
 
 	if err != nil {
