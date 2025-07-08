@@ -11,3 +11,8 @@ coverage
 **/*.h
 **/launch.json
 .nextVersion
+.github/copilot-instructions.md
+*.md
+!README.md
+*.yaml
+!config.yaml
