@@ -26,12 +26,12 @@
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "activate",
-                "-local",
-                "-config",
+                "--local",
+                "--config",
                 "${workspaceFolder}/config.yaml",
                 "-n",
                 "-v",
-                "-acm"
+                "--acm"
             ],
             "console": "integratedTerminal"
         },

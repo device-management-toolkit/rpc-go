@@ -55,8 +55,6 @@ func ExecuteCommand(flags *flags.Flags) error {
 	service := NewProvisioningService(flags)
 
 	switch flags.Command {
-	case utils.CommandActivate:
-		err = service.Activate()
 	case utils.CommandConfigure:
 		err = service.Configure()
 	}

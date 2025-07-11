@@ -10,7 +10,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -25,20 +24,28 @@ type Executor struct {
 	errors          chan error
 	waitGroup       *sync.WaitGroup
 }
+type ExecutorConfig struct {
+	URL              string
+	Proxy            string
+	LocalTlsEnforced bool
+	SkipAmtCertCheck bool
+	ControlMode      int
+	SkipCertCheck    bool
+}
 
-func NewExecutor(flags flags.Flags) (Executor, error) {
+func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// these are closed in the close function for each lm implementation
 	lmDataChannel := make(chan []byte)
 	lmErrorChannel := make(chan error)
 
 	port := utils.LMSPort
-	if flags.LocalTlsEnforced {
+	if config.LocalTlsEnforced {
 		port = utils.LMSTLSPort
 	}
 
 	client := Executor{
-		server:          NewAMTActivationServer(&flags),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
+		server:          NewAMTActivationServer(config.URL, config.Proxy),
+		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
 		data:            lmDataChannel,
 		errors:          lmErrorChannel,
 		waitGroup:       &sync.WaitGroup{},
@@ -47,7 +54,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	// TEST CONNECTION TO SEE IF LMS EXISTS
 	err := client.localManagement.Connect()
 	if err != nil {
-		if flags.LocalTlsEnforced {
+		if config.LocalTlsEnforced {
 			return client, utils.LMSConnectionFailed
 		}
 		// client.localManagement.Close()
@@ -61,7 +68,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 		client.localManagement.Close()
 	}
 
-	err = client.server.Connect(flags.SkipCertCheck)
+	err = client.server.Connect(config.SkipCertCheck)
 	if err != nil {
 		// TODO: should the connection be closed?
 		// client.localManagement.Close()
