@@ -26,12 +26,12 @@
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "activate",
-                "-local",
-                "-config",
+                "--local",
+                "--config",
                 "${workspaceFolder}/config.yaml",
                 "-n",
                 "-v",
-                "-acm"
+                "--acm"
             ],
             "console": "integratedTerminal"
         },
@@ -63,7 +63,22 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Maintenance Task ",
+            "name": "Deactivate Device (local)",
+            "type": "go",
+            "asRoot": true,
+            "request": "launch",
+            "program": "${workspaceFolder}/cmd/rpc/main.go",
+            "args": [
+                "deactivate",
+                "--local",
+                "--config",
+                "${workspaceFolder}/config.yaml",
+                "-v"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Maintenance Task",
             "type": "go",
             "asRoot": true,
             "request": "launch",
@@ -79,7 +94,7 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Configuration Task ",
+            "name": "Configuration Task",
             "type": "go",
             "asRoot": true,
             "request": "launch",

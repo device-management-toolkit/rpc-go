@@ -149,7 +149,7 @@ func TestPrepareInitialMessage(t *testing.T) {
 }
 
 func TestConnect(t *testing.T) {
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -157,7 +157,7 @@ func TestConnect(t *testing.T) {
 	assert.NoError(t, err)
 }
 func TestSend(t *testing.T) {
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -170,7 +170,7 @@ func TestSend(t *testing.T) {
 	server.Send(message)
 }
 func TestListen(t *testing.T) {
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -203,7 +203,7 @@ func TestProcessMessageHeartbeat(t *testing.T) {
 	activation := `{
         "method": "heartbeat_request"
     }`
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.NotNil(t, decodedMessage)
@@ -213,7 +213,7 @@ func TestProcessMessageSuccess(t *testing.T) {
         "method": "success",
         "message": "{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"
     }`
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -223,7 +223,7 @@ func TestProcessMessageUnformattedSuccess(t *testing.T) {
         "method": "success",
         "message": "configured"
     }`
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -233,7 +233,7 @@ func TestProcessMessageError(t *testing.T) {
         "method": "error",
         "message": "can't do it"
     }`
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -244,7 +244,7 @@ func TestProcessMessageForLMS(t *testing.T) {
         "message": "ok",
         "payload": "eyJzdGF0dXMiOiJvayIsICJuZXR3b3JrIjoiY29uZmlndXJlZCIsICJjaXJhQ29ubmVjdGlvbiI6ImNvbmZpZ3VyZWQifQ=="
     }`
-	server := NewAMTActivationServer(testFlags)
+	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), decodedMessage)

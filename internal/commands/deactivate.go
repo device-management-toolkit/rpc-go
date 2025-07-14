@@ -112,12 +112,13 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 
 	// Create flags object for RPS
 	f := &flags.Flags{
-		Command:    utils.CommandDeactivate,
-		URL:        cmd.URL,
-		Password:   cmd.Password,
-		LogLevel:   ctx.LogLevel,
-		JsonOutput: ctx.JsonOutput,
-		Verbose:    ctx.Verbose,
+		Command:       utils.CommandDeactivate,
+		URL:           cmd.URL,
+		Password:      cmd.Password,
+		LogLevel:      ctx.LogLevel,
+		JsonOutput:    ctx.JsonOutput,
+		Verbose:       ctx.Verbose,
+		SkipCertCheck: ctx.SkipCertCheck,
 	}
 
 	// Execute via RPS

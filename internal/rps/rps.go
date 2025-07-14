@@ -21,7 +21,7 @@ import (
 type AMTActivationServer struct {
 	URL   string
 	Conn  *websocket.Conn
-	flags *flags.Flags
+	Proxy string
 }
 
 func ExecuteCommand(flags *flags.Flags) error {
@@ -32,7 +32,16 @@ func ExecuteCommand(flags *flags.Flags) error {
 		return err
 	}
 
-	executor, err := NewExecutor(*flags)
+	config := ExecutorConfig{
+		URL:              flags.URL,
+		Proxy:            flags.Proxy,
+		LocalTlsEnforced: flags.LocalTlsEnforced,
+		SkipAmtCertCheck: flags.SkipAmtCertCheck,
+		ControlMode:      flags.ControlMode,
+		SkipCertCheck:    flags.SkipCertCheck,
+	}
+
+	executor, err := NewExecutor(config)
 	if err != nil {
 		return err
 	}
@@ -68,10 +77,10 @@ func setCommandMethod(flags *flags.Flags) {
 }
 
 // TODO: suggest this be renamed to RemoteProvisioningService
-func NewAMTActivationServer(flags *flags.Flags) AMTActivationServer {
+func NewAMTActivationServer(URL, proxy string) AMTActivationServer {
 	amtactivationserver := AMTActivationServer{
-		URL:   flags.URL,
-		flags: flags,
+		URL:   URL,
+		Proxy: proxy,
 	}
 
 	return amtactivationserver
@@ -95,9 +104,9 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 		},
 	}
 
-	if amt.flags.Proxy != "" {
+	if amt.Proxy != "" {
 		// Parse the URL of the proxy.
-		proxyURL, err := url.Parse(amt.flags.Proxy)
+		proxyURL, err := url.Parse(amt.Proxy)
 		if err != nil {
 			panic(err)
 		}

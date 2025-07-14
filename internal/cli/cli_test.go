@@ -217,7 +217,7 @@ func TestGlobalsBeforeApply(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.globals.BeforeApply(nil)
+			err := tt.globals.AfterApply(nil)
 
 			if tt.wantErr {
 				assert.Error(t, err)
