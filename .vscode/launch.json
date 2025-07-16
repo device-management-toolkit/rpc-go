@@ -101,11 +101,7 @@
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "configure",
-                "mebx",
-                "-mebxpassword",
-                "P@ssw0rd",
-                "-password",
-                "P@ssw0rd"
+                "mebx"
             ],
             "console": "integratedTerminal"
         },

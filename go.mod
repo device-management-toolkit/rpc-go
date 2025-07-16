@@ -29,6 +29,7 @@ require (
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	go.uber.org/mock v0.5.2 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 )
 

@@ -86,7 +86,7 @@ func (f *Flags) handleMaintenanceCommand() error {
 	}
 
 	if f.UUID != "" {
-		err := f.validateUUIDOverride()
+		err := utils.ValidateUUID(f.UUID)
 		if err != nil {
 			f.printMaintenanceUsage()
 
