@@ -125,7 +125,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 	}{
 		{
 			name: "successful run with JSON output",
-			cmd:  &AmtInfoCmd{All: true, Password: "testpassword"},
+			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "testpassword"}, All: true},
 			ctx:  &Context{JsonOutput: true},
 			setupMock: func(m *MockAMTCommand) {
 				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
@@ -894,7 +894,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 	}{
 		{
 			name: "UserCert with password provided",
-			cmd:  &AmtInfoCmd{UserCert: true, Password: "test123"},
+			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "test123"}, UserCert: true},
 			setupMock: func(m *MockAMTCommand) {
 				// Mock GetControlMode call for UserCert check
 				m.On("GetControlMode").Return(1, nil) // Return "Admin Control Mode" (provisioned)

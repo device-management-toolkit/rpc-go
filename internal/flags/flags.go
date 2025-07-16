@@ -13,7 +13,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-	"github.com/google/uuid"
 	"github.com/ilyakaznacheev/cleanenv"
 	log "github.com/sirupsen/logrus"
 )
@@ -89,19 +87,11 @@ type Flags struct {
 	UUID                                string
 	LocalConfig                         config.Config
 	LocalConfigV2                       configv2.Configuration
-	amtActivateCommand                  *flag.FlagSet
-	amtDeactivateCommand                *flag.FlagSet
 	amtMaintenanceSyncIPCommand         *flag.FlagSet
 	amtMaintenanceSyncClockCommand      *flag.FlagSet
 	amtMaintenanceSyncHostnameCommand   *flag.FlagSet
 	amtMaintenanceChangePasswordCommand *flag.FlagSet
 	amtMaintenanceSyncDeviceInfoCommand *flag.FlagSet
-	flagSetAddEthernetSettings          *flag.FlagSet
-	flagSetAddWifiSettings              *flag.FlagSet
-	flagSetEnableWifiPort               *flag.FlagSet
-	flagSetCIRA                         *flag.FlagSet
-	flagSetMEBx                         *flag.FlagSet
-	flagSetAMTFeatures                  *flag.FlagSet
 	AmtCommand                          amt.AMTCommand
 	netEnumerator                       NetEnumerator
 	IpConfiguration                     IPConfiguration
@@ -110,13 +100,8 @@ type Flags struct {
 	FriendlyName                        string
 	SkipIPRenew                         bool
 	SambaService                        smb.ServiceInterface
-	MEBxPassword                        string
 	ConfigTLSInfo                       ConfigTLSInfo
 	passwordReader                      utils.PasswordReader
-	UserConsent                         string
-	KVM                                 bool
-	SOL                                 bool
-	IDER                                bool
 	LocalTlsEnforced                    bool
 	ControlMode                         int
 }
@@ -126,21 +111,11 @@ func NewFlags(args []string, pr utils.PasswordReader) *Flags {
 	flags.passwordReader = pr
 	flags.commandLineArgs = args
 
-	flags.amtActivateCommand = flag.NewFlagSet(utils.CommandActivate, flag.ContinueOnError)
-	flags.amtDeactivateCommand = flag.NewFlagSet(utils.CommandDeactivate, flag.ContinueOnError)
-
 	flags.amtMaintenanceSyncIPCommand = flag.NewFlagSet(utils.SubCommandSyncIP, flag.ContinueOnError)
 	flags.amtMaintenanceSyncClockCommand = flag.NewFlagSet(utils.SubCommandSyncClock, flag.ContinueOnError)
 	flags.amtMaintenanceSyncHostnameCommand = flag.NewFlagSet(utils.SubCommandSyncHostname, flag.ContinueOnError)
 	flags.amtMaintenanceChangePasswordCommand = flag.NewFlagSet(utils.SubCommandChangePassword, flag.ContinueOnError)
 	flags.amtMaintenanceSyncDeviceInfoCommand = flag.NewFlagSet(utils.SubCommandSyncDeviceInfo, flag.ContinueOnError)
-
-	flags.flagSetAddEthernetSettings = flag.NewFlagSet(utils.SubCommandWired, flag.ContinueOnError)
-	flags.flagSetAddWifiSettings = flag.NewFlagSet(utils.SubCommandWireless, flag.ContinueOnError)
-	flags.flagSetEnableWifiPort = flag.NewFlagSet(utils.SubCommandEnableWifiPort, flag.ContinueOnError)
-	flags.flagSetMEBx = flag.NewFlagSet(utils.SubCommandSetMEBx, flag.ContinueOnError)
-	flags.flagSetAMTFeatures = flag.NewFlagSet(utils.SubCommandSetAMTFeatures, flag.ContinueOnError)
-	flags.flagSetCIRA = flag.NewFlagSet(utils.SubCommandCIRA, flag.ContinueOnError)
 
 	flags.AmtCommand = amt.NewAMTCommand()
 	flags.netEnumerator = NetEnumerator{}
@@ -162,12 +137,8 @@ func (f *Flags) ParseFlags() error {
 	}
 
 	switch f.Command {
-	case utils.CommandActivate:
-		err = f.handleActivateCommand()
 	case utils.CommandMaintenance:
 		err = f.handleMaintenanceCommand()
-	case utils.CommandConfigure:
-		err = f.handleConfigureCommand()
 	default:
 		err = utils.IncorrectCommandLineParameters
 
@@ -202,8 +173,6 @@ func (f *Flags) printUsage() string {
 
 func (f *Flags) setupCommonFlags() {
 	for _, fs := range []*flag.FlagSet{
-		f.amtActivateCommand,
-		f.amtDeactivateCommand,
 		f.amtMaintenanceChangePasswordCommand,
 		f.amtMaintenanceSyncDeviceInfoCommand,
 		f.amtMaintenanceSyncClockCommand,
@@ -232,31 +201,6 @@ func (f *Flags) setupCommonFlags() {
 			fs.StringVar(&f.UUID, "uuid", "", "override AMT device uuid for use with non-CIRA workflow")
 		}
 	}
-}
-func (f *Flags) validateUUIDOverride() error {
-	_, err := uuid.Parse(f.UUID)
-	if err != nil {
-		fmt.Println("uuid provided does not follow proper uuid format:", err)
-
-		return err
-	}
-
-	return nil
-}
-
-func (f *Flags) lookupEnvOrBool(key string, defaultVal bool) bool {
-	if val, ok := os.LookupEnv(key); ok {
-		parsedVal, err := strconv.ParseBool(val)
-		if err != nil {
-			log.Error(err)
-
-			return false
-		}
-
-		return parsedVal
-	}
-
-	return defaultVal
 }
 
 func (f *Flags) PromptUserInput(prompt string, value *string) error {

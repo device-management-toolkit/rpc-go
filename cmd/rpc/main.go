@@ -11,7 +11,6 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/cli"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/local"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -44,11 +43,7 @@ func runRPC(args []string) error {
 		return err
 	}
 
-	if flags.Local {
-		err = local.ExecuteCommand(flags)
-	} else {
-		err = rps.ExecuteCommand(flags)
-	}
+	err = rps.ExecuteCommand(flags)
 
 	return err
 }
@@ -115,7 +110,7 @@ func main() {
 
 func isKongCommand(cmd string) bool {
 	// Only run Kong for the commands we've implemented
-	kongCommands := []string{"amtinfo", "version", "deactivate", "activate"}
+	kongCommands := []string{"amtinfo", "version", "deactivate", "activate", "configure"}
 	for _, kongCmd := range kongCommands {
 		if strings.EqualFold(cmd, kongCmd) {
 			return true

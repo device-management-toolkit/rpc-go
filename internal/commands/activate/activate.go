@@ -15,6 +15,8 @@ import (
 // ActivateCmd represents the activate command with automatic mode detection
 // Uses -u/--url for remote activation and -l/--local for explicit local activation
 type ActivateCmd struct {
+	commands.AMTBaseCmd
+
 	// Mode selection flags
 	Local bool   `help:"Force local activation mode" short:"l" name:"local"`
 	URL   string `help:"RPS server URL (enables remote activation)" short:"u" name:"url"`
@@ -34,14 +36,16 @@ type ActivateCmd struct {
 	ACM bool `help:"Activate in Admin Control Mode" name:"acm"`
 
 	// Local configuration flags that can be loaded from YAML
-	Config              string `help:"Config file or SMB share URL" name:"config"`
-	ConfigV2            string `help:"Config V2 file or SMB share URL" name:"configv2"`
-	ConfigKey           string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
-	AMTPassword         string `help:"AMT Password" env:"AMT_PASSWORD" name:"amtPassword"`
 	ProvisioningCert    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+}
+
+// RequiresAMTPassword indicates whether this command requires AMT password
+// For activate, password is only required for local activation with stopConfig
+func (cmd *ActivateCmd) RequiresAMTPassword() bool {
+	return cmd.Local && cmd.StopConfig
 }
 
 // Validate checks the command configuration and determines activation mode
@@ -70,19 +74,7 @@ func (cmd *ActivateCmd) Validate() error {
 			return fmt.Errorf("--stopConfig flag is only valid for local activation, not with --url")
 		}
 
-		if cmd.Config != "" {
-			return fmt.Errorf("--config flag is only valid for local activation, not with --url")
-		}
-
-		if cmd.ConfigV2 != "" {
-			return fmt.Errorf("--configv2 flag is only valid for local activation, not with --url")
-		}
-
-		if cmd.ConfigKey != "" {
-			return fmt.Errorf("--configencryptionkey flag is only valid for local activation, not with --url")
-		}
-
-		if cmd.AMTPassword != "" {
+		if cmd.GetPassword() != "" {
 			return fmt.Errorf("--amtPassword flag is only valid for local activation, not with --url")
 		}
 
@@ -118,6 +110,13 @@ func (cmd *ActivateCmd) Validate() error {
 			return fmt.Errorf("cannot specify both --ccm and --acm")
 		}
 
+		// Call base validation if password is required (for stopConfig)
+		if cmd.RequiresAMTPassword() {
+			if err := cmd.AMTBaseCmd.Validate(); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
@@ -128,8 +127,7 @@ func (cmd *ActivateCmd) Validate() error {
 // hasLocalActivationFlags checks if any local-specific flags are set
 func (cmd *ActivateCmd) hasLocalActivationFlags() bool {
 	return cmd.CCM || cmd.ACM || cmd.StopConfig ||
-		cmd.Config != "" || cmd.ConfigV2 != "" || cmd.ConfigKey != "" || cmd.AMTPassword != "" ||
-		cmd.ProvisioningCert != "" || cmd.ProvisioningCertPwd != "" || cmd.SkipIPRenew
+		cmd.GetPassword() != "" || cmd.ProvisioningCert != "" || cmd.ProvisioningCertPwd != "" || cmd.SkipIPRenew
 }
 
 // Run executes the activate command based on detected mode
@@ -173,15 +171,12 @@ func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 	// Create local activation command with current flags
 	localCmd := LocalActivateCmd{
-		LocalFlag:           cmd.Local, // Set for backwards compatibility
+		AMTBaseCmd:          cmd.AMTBaseCmd, // Copy the base command with password
+		LocalFlag:           cmd.Local,      // Set for backwards compatibility
 		CCM:                 cmd.CCM,
 		ACM:                 cmd.ACM,
 		DNS:                 cmd.DNS,
 		Hostname:            cmd.Hostname,
-		Config:              cmd.Config,
-		ConfigV2:            cmd.ConfigV2,
-		ConfigKey:           cmd.ConfigKey,
-		AMTPassword:         cmd.AMTPassword,
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
 		FriendlyName:        cmd.FriendlyName,

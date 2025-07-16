@@ -12,18 +12,26 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
 // Global flags that apply to all commands
 type Globals struct {
-	Config           string `help:"Path to configuration file" name:"config" type:"path" default:"config.yaml"`
-	LogLevel         string `help:"Set log level" name:"log-level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
+	// Configuration handling
+	Config    string `help:"Path to configuration file or SMB share URL" name:"config" type:"path" default:"config.yaml"`
+	ConfigV2  string `help:"Config V2 file or SMB share URL" name:"configv2"`
+	ConfigKey string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
+
+	LogLevel         string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
 	JsonOutput       bool   `help:"Output in JSON format" name:"json" short:"j"`
 	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
 	LocalTLSEnforced bool   `help:"Enforce local TLS for connections" name:"local-tls"`
 	SkipCertCheck    bool   `help:"Skip certificate verification (insecure)" name:"skip-cert-check" short:"n"`
+	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
+	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
 }
 
 // CLI represents the complete command line interface
@@ -34,6 +42,7 @@ type CLI struct {
 	Version    commands.VersionCmd    `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
+	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
 
 	// Configuration loaded from YAML file (not directly accessible via CLI)
 	Config config.Config `kong:"-"`
@@ -141,15 +150,28 @@ func Execute(args []string) error {
 		return err
 	}
 
+	return ExecuteWithAMT(args, amtCommand)
+}
+
+// ExecuteWithAMT runs the parsed command with a provided AMT command (useful for testing)
+func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 	// Parse command line with AMT command bound for validation
 	kctx, cli, err := Parse(args, amtCommand)
 	if err != nil {
 		return err
 	}
 
+	controlMode, err := amtCommand.GetControlMode()
+	if err != nil {
+		log.Error(err)
+
+		return utils.AMTConnectionFailed
+	}
+
 	// Create shared context
 	appCtx := &commands.Context{
 		AMTCommand:       amtCommand,
+		ControlMode:      controlMode,
 		LogLevel:         cli.LogLevel,
 		JsonOutput:       cli.JsonOutput,
 		Verbose:          cli.Verbose,

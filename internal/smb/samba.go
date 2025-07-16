@@ -6,6 +6,7 @@
 package smb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/hirochachacha/go-smb2"
@@ -62,7 +64,12 @@ func (s *Service) FetchFileContents(url string) ([]byte, error) {
 	log.Infof("fetching remote file server: %s:%s, user: %s, pwd: %s, domain: %s, share: %s, path: %s",
 		p.Host, p.Port, p.User, pwdOutput, p.Domain, p.ShareName, p.FilePath)
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", p.Host, p.Port))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	netDialer := &net.Dialer{}
+
+	conn, err := netDialer.DialContext(ctx, "tcp", fmt.Sprintf("%s:%s", p.Host, p.Port))
 	if err != nil {
 		return contents, err
 	}

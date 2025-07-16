@@ -7,6 +7,8 @@ package activate
 
 import (
 	"testing"
+
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 )
 
 func TestActivateCmd_Structure(t *testing.T) {
@@ -99,14 +101,6 @@ func TestActivateCmd_Validate_Local(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "implicit local with config file",
-			cmd: ActivateCmd{
-				CCM:    true,
-				Config: "/path/to/config.xml",
-			},
-			wantErr: false,
-		},
-		{
 			name: "local without mode selection",
 			cmd: ActivateCmd{
 				Local: true,
@@ -187,23 +181,8 @@ func TestActivateCmd_hasLocalActivationFlags(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "Config file",
-			cmd:  ActivateCmd{Config: "/path/to/config.xml"},
-			want: true,
-		},
-		{
-			name: "ConfigV2 file",
-			cmd:  ActivateCmd{ConfigV2: "/path/to/configv2.xml"},
-			want: true,
-		},
-		{
-			name: "Config key",
-			cmd:  ActivateCmd{ConfigKey: "key123"},
-			want: true,
-		},
-		{
 			name: "AMT Password",
-			cmd:  ActivateCmd{AMTPassword: "password123"},
+			cmd:  ActivateCmd{AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"}},
 			want: true,
 		},
 		{
@@ -276,15 +255,6 @@ func TestActivateCmd_ModeDetection(t *testing.T) {
 			expectRemote: false,
 			expectLocal:  true,
 		},
-		{
-			name: "Config file triggers local mode",
-			cmd: ActivateCmd{
-				ACM:    true,
-				Config: "/path/to/config.xml",
-			},
-			expectRemote: false,
-			expectLocal:  true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -342,21 +312,11 @@ func TestActivateCmd_Validate_ConflictingFlags(t *testing.T) {
 			errMsg:  "--stopConfig flag is only valid for local activation, not with --url",
 		},
 		{
-			name: "URL with config file should fail",
-			cmd: ActivateCmd{
-				URL:     "wss://rps.example.com/activate",
-				Profile: "test-profile",
-				Config:  "/path/to/config.xml",
-			},
-			wantErr: true,
-			errMsg:  "--config flag is only valid for local activation, not with --url",
-		},
-		{
 			name: "URL with AMT password should fail",
 			cmd: ActivateCmd{
-				URL:         "wss://rps.example.com/activate",
-				Profile:     "test-profile",
-				AMTPassword: "password123",
+				URL:        "wss://rps.example.com/activate",
+				Profile:    "test-profile",
+				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
 			},
 			wantErr: true,
 			errMsg:  "--amtPassword flag is only valid for local activation, not with --url",

@@ -9,10 +9,15 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 const unknown = "unknown"
@@ -99,6 +104,49 @@ func InterpretRemoteAccessTrigger(status int) string {
 	default:
 		return unknown
 	}
+}
+func ValidateURL(u string) error {
+	parsedURL, err := url.Parse(u)
+	if err != nil {
+		return err
+	}
+
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return errors.New("url is missing scheme or host")
+	}
+
+	return nil
+}
+
+func ValidateUUID(uuidStr string) error {
+	_, err := uuid.Parse(uuidStr)
+	if err != nil {
+		fmt.Println("uuid provided does not follow proper uuid format:", err)
+
+		return err
+	}
+
+	return nil
+}
+func Pause(howManySeconds int) {
+	if howManySeconds <= 0 {
+		return
+	}
+
+	log.Debugf("pausing %d seconds", howManySeconds)
+	time.Sleep(time.Duration(howManySeconds) * time.Second)
+}
+
+func GetTokenFromKeyValuePairs(kvList string, token string) string {
+	attributes := strings.Split(kvList, ",")
+	tokenMap := make(map[string]string)
+
+	for _, att := range attributes {
+		parts := strings.Split(att, "=")
+		tokenMap[parts[0]] = parts[1]
+	}
+
+	return tokenMap[token]
 }
 
 func ValidateMPSPassword(password string) error {

@@ -7,107 +7,11 @@ package cli
 
 import (
 	"testing"
-	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+	"go.uber.org/mock/gomock"
 )
-
-// MockAMTCommand is a mock implementation of amt.Interface
-type MockAMTCommand struct {
-	mock.Mock
-}
-
-func (m *MockAMTCommand) Initialize() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.ChangeEnabledResponse), args.Error(1)
-}
-
-func (m *MockAMTCommand) EnableAMT() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) DisableAMT() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
-	args := m.Called(key, amtTimeout)
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetUUID() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetControlMode() (int, error) {
-	args := m.Called()
-
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetOSDNSSuffix() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetDNSSuffix() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetCertificateHashes() ([]amt.CertHashEntry, error) {
-	args := m.Called()
-
-	return args.Get(0).([]amt.CertHashEntry), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetRemoteAccessConnectionStatus() (amt.RemoteAccessStatus, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.RemoteAccessStatus), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetLANInterfaceSettings(useWireless bool) (amt.InterfaceSettings, error) {
-	args := m.Called(useWireless)
-
-	return args.Get(0).(amt.InterfaceSettings), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.LocalSystemAccount), args.Error(1)
-}
-
-func (m *MockAMTCommand) Unprovision() (int, error) {
-	args := m.Called()
-
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
-	args := m.Called(params)
-
-	return args.Get(0).(amt.SecureHBasedResponse), args.Error(1)
-}
 
 func TestParse(t *testing.T) {
 	tests := []struct {
@@ -140,8 +44,18 @@ func TestParse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock AMT command for testing
-			mockAMT := &MockAMTCommand{}
+			// Create a mock controller and AMT command for testing
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+
+			// Set up mock expectations for commands that require AMT validation
+			if tt.expected == "amtinfo" {
+				// Mock GetControlMode to return a valid provisioned state (1) for amtinfo validation
+				mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+			}
+
 			ctx, cli, err := Parse(tt.args, mockAMT)
 
 			if tt.wantErr {

@@ -17,7 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -27,6 +27,8 @@ const notFoundIP = "Not Found"
 
 // AmtInfoCmd represents the amtinfo command with Kong CLI binding
 type AmtInfoCmd struct {
+	AMTBaseCmd
+
 	// Version information flags
 	Ver bool `help:"Show AMT Version" short:"r"`
 	Bld bool `help:"Show Build Number" short:"b"`
@@ -46,18 +48,23 @@ type AmtInfoCmd struct {
 	OpState bool `help:"Show AMT Operational State" name:"operationalState"`
 
 	// Certificate flags
-	Cert     bool   `help:"Show System Certificate Hashes" short:"c"`
-	UserCert bool   `help:"Show User Certificates only (AMT password required)" name:"userCert"`
-	Password string `help:"AMT Password" env:"AMT_PASSWORD" short:"p"`
+	Cert     bool `help:"Show System Certificate Hashes" short:"c"`
+	UserCert bool `help:"Show User Certificates only (AMT password required)" name:"userCert"`
 
 	// Special flags
 	All bool `help:"Show All AMT Information" short:"A"`
 }
 
+// RequiresAMTPassword indicates whether this command requires AMT password
+// For amtinfo, password is only required for user certificate operations
+func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
+	return cmd.IsUserCertRequested()
+}
+
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *AmtInfoCmd) Validate(kctx *kong.Context, amtCommand amt.Interface) error {
 	// Handle interactive password prompting for user certificates
-	if cmd.IsUserCertRequested() && cmd.Password == "" {
+	if cmd.IsUserCertRequested() {
 		// Check if device is provisioned before prompting for password
 		controlMode, err := amtCommand.GetControlMode()
 		if err != nil {
@@ -68,28 +75,10 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context, amtCommand amt.Interface) er
 			return fmt.Errorf("device is in pre-provisioning mode. User certificates are not available until device is provisioned")
 		}
 
-		// Prompt for password interactively
-		if utils.PR == nil {
-			return fmt.Errorf("password is required for user certificate operations but no password reader available")
+		// Call base validation to handle password prompting
+		if err := cmd.AMTBaseCmd.Validate(); err != nil {
+			return err
 		}
-
-		fmt.Printf("Please enter AMT Password (required for user certificates): ")
-
-		password, err := utils.PR.ReadPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-
-		if password == "" {
-			return fmt.Errorf("password is required for user certificate operations")
-		}
-
-		// Trim any newline characters that might come from non-terminal input
-		if len(password) > 0 && password[len(password)-1] == '\n' {
-			password = password[:len(password)-1]
-		}
-
-		cmd.Password = password
 	}
 
 	return nil
@@ -110,7 +99,7 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
-	service.password = cmd.Password
+	service.password = cmd.GetPassword()
 	service.localTLSEnforced = ctx.LocalTLSEnforced
 	service.skipCertCheck = ctx.SkipCertCheck
 
@@ -124,16 +113,6 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	return service.OutputText(result, cmd)
-}
-
-// Context holds shared dependencies injected into commands
-type Context struct {
-	AMTCommand       amt.Interface
-	LogLevel         string
-	JsonOutput       bool
-	Verbose          bool
-	LocalTLSEnforced bool
-	SkipCertCheck    bool
 }
 
 // InfoResult holds the complete AMT information result
@@ -577,21 +556,6 @@ func (s *InfoService) getMajorVersion(version string) (int, error) {
 	return majorVersion, nil
 }
 
-// GetTokenFromKeyValuePairs extracts a token value from a comma-separated key=value string
-func GetTokenFromKeyValuePairs(kvList string, token string) string {
-	attributes := strings.Split(kvList, ",")
-	tokenMap := make(map[string]string)
-
-	for _, att := range attributes {
-		parts := strings.Split(att, "=")
-		if len(parts) == 2 {
-			tokenMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-		}
-	}
-
-	return tokenMap[token]
-}
-
 // getUserCertificates retrieves public key certificates via WSMAN
 func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert, error) {
 	// Control mode is passed as parameter to avoid duplicate checks
@@ -605,7 +569,7 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 	// Setup TLS configuration
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
-		tlsConfig = config.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
 	} else {
 		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipCertCheck}
 	}
@@ -627,7 +591,7 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 
 	for _, cert := range publicKeyCerts {
 		// Get certificate name from CN in subject, fallback to InstanceID
-		name := GetTokenFromKeyValuePairs(cert.Subject, "CN")
+		name := utils.GetTokenFromKeyValuePairs(cert.Subject, "CN")
 		if name == "" {
 			name = cert.InstanceID
 		}

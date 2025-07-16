@@ -10,7 +10,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"net/http"
-	"testing"
 	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
@@ -37,9 +36,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	amt2 "github.com/device-management-toolkit/rpc-go/v2/internal/amt"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
-	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-	"github.com/stretchr/testify/assert"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/network"
 )
 
 type MockOSNetworker struct{}
@@ -49,6 +46,9 @@ var mockRenewDHCPLeaseerr error = nil
 func (m MockOSNetworker) RenewDHCPLease() error {
 	return mockRenewDHCPLeaseerr
 }
+
+// Ensure MockOSNetworker implements network.OSNetworker
+var _ network.OSNetworker = (*MockOSNetworker)(nil)
 
 // Mock the go-wsman-messages
 type MockWSMAN struct{}
@@ -819,35 +819,3 @@ func (c MockAMT) StartConfigurationHBased(amt2.SecureHBasedParameters) (amt2.Sec
 }
 
 type ResponseFuncArray []func(w http.ResponseWriter, r *http.Request)
-
-func setupService(f *flags.Flags) ProvisioningService {
-	service := NewProvisioningService(f)
-	service.amtCommand = MockAMT{}
-	service.networker = &MockOSNetworker{}
-	service.interfacedWsmanMessage = MockWSMAN{}
-
-	return service
-}
-
-func TestExecute(t *testing.T) {
-	f := &flags.Flags{}
-
-	t.Run("execute CommandAMTInfo should succeed", func(t *testing.T) {
-		f.Command = utils.CommandAMTInfo
-		rc := ExecuteCommand(f)
-		assert.Equal(t, nil, rc)
-	})
-
-	t.Run("execute CommandVersion should succeed", func(t *testing.T) {
-		f.Command = utils.CommandVersion
-		rc := ExecuteCommand(f)
-		assert.Equal(t, nil, rc)
-	})
-
-	t.Run("execute CommandConfigure with no SubCommand fails", func(t *testing.T) {
-		f.Command = utils.CommandConfigure
-		mockControlMode = 1
-		rc := ExecuteCommand(f)
-		assert.Equal(t, utils.UnableToConfigure, rc)
-	})
-}
