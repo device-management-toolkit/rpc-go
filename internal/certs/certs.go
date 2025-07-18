@@ -20,9 +20,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	log "github.com/sirupsen/logrus"
 	"software.sslmate.com/src/go-pkcs12"
 )
+
+// IEEE8021xCertHandles holds certificate and key handles for IEEE 802.1x configuration
+type IEEE8021xCertHandles struct {
+	PrivateKeyHandle string
+	KeyPairHandle    string
+	ClientCertHandle string
+	RootCertHandle   string
+}
 
 type Composite struct {
 	Cert        *x509.Certificate
@@ -270,4 +279,42 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 	chain.Pfxb64 = base64.StdEncoding.EncodeToString(chain.PfxData)
 
 	return chain, err
+}
+
+// ConfigureIEEE8021xCertificates handles adding certificates for IEEE 802.1x configuration
+// This function consolidates the common certificate handling logic for both wired and wireless
+func ConfigureIEEE8021xCertificates(wsmanClient interfaces.WSMANer, privateKey, clientCert, caCert string) (*IEEE8021xCertHandles, error) {
+	handles := &IEEE8021xCertHandles{}
+
+	// Get current security settings to check for existing certificates
+	securitySettings, err := GetCertificates(wsmanClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security settings: %w", err)
+	}
+
+	// Add Private Key (if provided)
+	if privateKey != "" {
+		handles.PrivateKeyHandle, err = GetPrivateKeyHandle(wsmanClient, securitySettings, privateKey, make(map[string]string))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get private key handle: %w", err)
+		}
+	}
+
+	// Add Client Certificate (if provided)
+	if clientCert != "" {
+		handles.ClientCertHandle, err = GetClientCertHandle(wsmanClient, securitySettings, clientCert, make(map[string]string))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client certificate handle: %w", err)
+		}
+	}
+
+	// Add Trusted Root Certificate (if provided)
+	if caCert != "" {
+		handles.RootCertHandle, err = GetTrustedRootCertHandle(wsmanClient, securitySettings, caCert, make(map[string]string))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get trusted root certificate handle: %w", err)
+		}
+	}
+
+	return handles, nil
 }
