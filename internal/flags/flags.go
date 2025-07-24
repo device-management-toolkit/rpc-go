@@ -100,7 +100,6 @@ type Flags struct {
 	FriendlyName                        string
 	SkipIPRenew                         bool
 	SambaService                        smb.ServiceInterface
-	ConfigTLSInfo                       ConfigTLSInfo
 	passwordReader                      utils.PasswordReader
 	LocalTlsEnforced                    bool
 	ControlMode                         int
