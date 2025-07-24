@@ -112,7 +112,7 @@ func (cmd *ActivateCmd) Validate() error {
 
 		// Call base validation if password is required (for stopConfig)
 		if cmd.RequiresAMTPassword() {
-			if err := cmd.AMTBaseCmd.ValidatePasswordIfNeeded(cmd); err != nil {
+			if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
 				return err
 			}
 		}

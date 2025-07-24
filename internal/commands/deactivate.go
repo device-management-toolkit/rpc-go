@@ -140,7 +140,7 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 			return utils.MissingOrIncorrectPassword
 		}
 
-		return cmd.deactivateACM(ctx)
+		return cmd.deactivateACM()
 	default:
 		log.Error("Deactivation failed. Device control mode: " + utils.InterpretControlMode(controlMode))
 
@@ -149,8 +149,7 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 }
 
 // deactivateACM handles ACM mode deactivation
-func (cmd *DeactivateCmd) deactivateACM(ctx *Context) error {
-
+func (cmd *DeactivateCmd) deactivateACM() error {
 	// Execute deactivation operation
 	if cmd.PartialUnprovision {
 		return cmd.executePartialUnprovision()

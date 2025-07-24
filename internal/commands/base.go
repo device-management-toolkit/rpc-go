@@ -67,7 +67,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	// Initialize WSMAN client if not already set up
 	if cmd.WSMan == nil {
 		// Check if TLS is Mandatory for LMS connection
-		resp, err := amtCommand.GetChangeEnabled()
+		resp, _ := amtCommand.GetChangeEnabled()
 		if resp.IsTlsEnforcedOnLocalPorts() {
 			cmd.LocalTLSEnforced = true
 

@@ -32,7 +32,7 @@ type ConfigureBaseCmd struct {
 func (cmd *ConfigureBaseCmd) Validate() error {
 	// Call base validation if password is required
 	if cmd.RequiresAMTPassword() {
-		if err := cmd.AMTBaseCmd.ValidatePasswordIfNeeded(cmd); err != nil {
+		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
 			return err
 		}
 	}
