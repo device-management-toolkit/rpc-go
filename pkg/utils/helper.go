@@ -121,7 +121,7 @@ func ValidateURL(u string) error {
 func ValidateUUID(uuidStr string) error {
 	_, err := uuid.Parse(uuidStr)
 	if err != nil {
-		fmt.Println("uuid provided does not follow proper uuid format:", err)
+		log.Errorf("uuid provided does not follow proper uuid format: %v", err)
 
 		return err
 	}
