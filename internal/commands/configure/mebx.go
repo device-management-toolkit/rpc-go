@@ -30,7 +30,7 @@ func (cmd *MEBxCmd) Validate() error {
 
 	// Validate MEBx password - prompt if not provided
 	if cmd.MEBxPassword == "" {
-		fmt.Print("New MEBx Password: ")
+		fmt.Print("\nNew MEBx Password: ")
 
 		password, err := utils.PR.ReadPassword()
 		if err != nil {

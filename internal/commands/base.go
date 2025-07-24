@@ -25,9 +25,10 @@ type PasswordRequirer interface {
 // for all commands that require AMT connectivity. This reduces code duplication
 // and ensures consistent password handling across all commands.
 type AMTBaseCmd struct {
-	WSMan       interfaces.WSMANer `kong:"-"`
-	Password    string             `help:"AMT password" env:"AMT_PASSWORD" name:"password" short:"p"`
-	ControlMode int                `kong:"-"` // Store the control mode for use by embedding commands
+	WSMan            interfaces.WSMANer `kong:"-"`
+	Password         string             `help:"AMT password" env:"AMT_PASSWORD" name:"password" short:"p"`
+	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
+	LocalTLSEnforced bool               `kong:"-"`
 }
 
 // Validate implements Kong's Validate interface for centralized password validation.
@@ -65,6 +66,14 @@ func (cmd *AMTBaseCmd) ValidatePasswordIfNeeded(requirer PasswordRequirer) error
 func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	// Initialize WSMAN client if not already set up
 	if cmd.WSMan == nil {
+		// Check if TLS is Mandatory for LMS connection
+		resp, err := amtCommand.GetChangeEnabled()
+		if resp.IsTlsEnforcedOnLocalPorts() {
+			cmd.LocalTLSEnforced = true
+
+			log.Trace("TLS is enforced on local ports")
+		}
+
 		// Get the current control mode using the injected AMT command
 		controlMode, err := amtCommand.GetControlMode()
 		if err != nil {
@@ -80,7 +89,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		// Use the centralized TLS config with proper certificate validation
 		tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
 
-		err = cmd.WSMan.SetupWsmanClient("admin", cmd.Password, true, log.GetLevel() == log.TraceLevel, tlsConfig)
+		err = cmd.WSMan.SetupWsmanClient("admin", cmd.Password, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {
 			log.Error("Failed to setup WSMAN client: ", err)
 
