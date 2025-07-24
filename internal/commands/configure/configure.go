@@ -6,8 +6,6 @@
 package configure
 
 import (
-	"fmt"
-
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 )
 
@@ -32,18 +30,21 @@ type ConfigureBaseCmd struct {
 
 // Validate implements Kong's Validate interface for configure commands
 func (cmd *ConfigureBaseCmd) Validate() error {
-	// First call the base AMTBaseCmd validation
-	if err := cmd.AMTBaseCmd.Validate(); err != nil {
-		return err
-	}
-
-	// Configure commands require an activated device (control mode 1 or 2)
-	controlMode := cmd.GetControlMode()
-	if controlMode == 0 {
-		return fmt.Errorf("device is not activated to configure. Please activate the device first")
+	// Call base validation if password is required
+	if cmd.RequiresAMTPassword() {
+		if err := cmd.AMTBaseCmd.ValidatePasswordIfNeeded(cmd); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+// RequiresAMTPassword indicates whether this command requires AMT password
+// For deactivate, password is required for both local and remote modes
+func (cmd *ConfigureBaseCmd) RequiresAMTPassword() bool {
+	// Password required for local mode or remote mode (when URL is provided)
+	return true
 }
 
 // ConfigureCmd is the main configure command that contains all subcommands
