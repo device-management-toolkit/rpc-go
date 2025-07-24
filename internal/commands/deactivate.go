@@ -11,7 +11,6 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
-	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -151,28 +150,18 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 
 // deactivateACM handles ACM mode deactivation
 func (cmd *DeactivateCmd) deactivateACM(ctx *Context) error {
-	// Setup TLS configuration
-	tlsConfig := cmd.setupTLSConfig(ctx)
-
-	// Create WSMAN client
-	wsmanMessage := localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-	err := wsmanMessage.SetupWsmanClient("admin", cmd.GetPassword(), ctx.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
-	if err != nil {
-		return err
-	}
 
 	// Execute deactivation operation
 	if cmd.PartialUnprovision {
-		return cmd.executePartialUnprovision(wsmanMessage)
+		return cmd.executePartialUnprovision()
 	}
 
-	return cmd.executeFullUnprovision(wsmanMessage)
+	return cmd.executeFullUnprovision()
 }
 
 // executePartialUnprovision performs partial unprovision operation
-func (cmd *DeactivateCmd) executePartialUnprovision(wsmanMessage *localamt.GoWSMANMessages) error {
-	_, err := wsmanMessage.PartialUnprovision()
+func (cmd *DeactivateCmd) executePartialUnprovision() error {
+	_, err := cmd.WSMan.PartialUnprovision()
 	if err != nil {
 		log.Error("Status: Unable to partially deactivate ", err)
 
@@ -185,8 +174,8 @@ func (cmd *DeactivateCmd) executePartialUnprovision(wsmanMessage *localamt.GoWSM
 }
 
 // executeFullUnprovision performs full unprovision operation
-func (cmd *DeactivateCmd) executeFullUnprovision(wsmanMessage *localamt.GoWSMANMessages) error {
-	_, err := wsmanMessage.Unprovision(1)
+func (cmd *DeactivateCmd) executeFullUnprovision() error {
+	_, err := cmd.WSMan.Unprovision(1)
 	if err != nil {
 		log.Error("Status: Unable to deactivate ", err)
 
