@@ -45,7 +45,7 @@ type CLI struct {
 	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
 
 	// Configuration loaded from YAML file (not directly accessible via CLI)
-	Config config.Config `kong:"-"`
+	YamlConfig config.Config `kong:"-"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed
