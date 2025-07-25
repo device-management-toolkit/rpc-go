@@ -21,8 +21,9 @@ import (
 	"strings"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -31,6 +32,8 @@ import (
 
 // LocalActivateCmd handles local AMT activation
 type LocalActivateCmd struct {
+	commands.AMTBaseCmd
+
 	// Legacy compatibility flag (hidden from main help but still functional)
 	LocalFlag bool `help:"[DEPRECATED] Command now defaults to local activation" hidden:"" name:"local"`
 
@@ -42,13 +45,7 @@ type LocalActivateCmd struct {
 	DNS      string `help:"DNS suffix override" env:"DNS_SUFFIX" short:"d"`
 	Hostname string `help:"Hostname override" env:"HOSTNAME" short:"h"`
 
-	// Configuration handling
-	Config    string `help:"Config file or SMB share URL" name:"config"`
-	ConfigV2  string `help:"Config V2 file or SMB share URL" name:"configv2"`
-	ConfigKey string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
-
 	// ACM/CCM specific settings
-	AMTPassword         string `help:"AMT Password" env:"AMT_PASSWORD" name:"amtPassword"`
 	ProvisioningCert    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 
@@ -71,6 +68,7 @@ type LocalActivationConfig struct {
 	ConfigFile          string
 	ConfigV2File        string
 	ConfigKey           string
+	ControlMode         int // Store the control mode from AMTBaseCmd
 }
 
 // ActivationMode represents the activation mode
@@ -94,7 +92,7 @@ func (m ActivationMode) String() string {
 
 // LocalActivationService handles the actual local activation logic
 type LocalActivationService struct {
-	wsman      localamt.WSMANer
+	wsman      interfaces.WSMANer
 	amtCommand amt.Interface
 	config     LocalActivationConfig
 	context    *commands.Context
@@ -118,10 +116,21 @@ func (cmd *LocalActivateCmd) BeforeApply() error {
 	return nil
 }
 
+// RequiresAMTPassword indicates whether this command requires AMT password
+// For local activate, password is required for stopConfig operations
+func (cmd *LocalActivateCmd) RequiresAMTPassword() bool {
+	return cmd.StopConfig
+}
+
 // Validate implements Kong's validation interface for local activation
 func (cmd *LocalActivateCmd) Validate() error {
 	// Stop configuration doesn't require mode selection
 	if cmd.StopConfig {
+		// Call base validation for password
+		if err := cmd.AMTBaseCmd.Validate(); err != nil {
+			return err
+		}
+
 		return nil
 	}
 
@@ -143,11 +152,6 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 	// Handle stop configuration first
 	if cmd.StopConfig {
 		return cmd.handleStopConfiguration(ctx)
-	}
-
-	// Ensure password is provided (prompt if necessary)
-	if err := cmd.ensurePasswordProvided(); err != nil {
-		return err
 	}
 
 	// Convert Kong CLI flags to activation config
@@ -213,14 +217,12 @@ func (cmd *LocalActivateCmd) toActivationConfig() LocalActivationConfig {
 		Mode:                mode,
 		DNS:                 cmd.DNS,
 		Hostname:            cmd.Hostname,
-		AMTPassword:         cmd.AMTPassword,
+		AMTPassword:         cmd.GetPassword(),
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
 		FriendlyName:        cmd.FriendlyName,
 		SkipIPRenew:         cmd.SkipIPRenew,
-		ConfigFile:          cmd.Config,
-		ConfigV2File:        cmd.ConfigV2,
-		ConfigKey:           cmd.ConfigKey,
+		ControlMode:         cmd.GetControlMode(), // Use the stored control mode from AMTBaseCmd
 	}
 }
 
@@ -256,14 +258,9 @@ func (service *LocalActivationService) Activate() error {
 
 // validateAMTState checks if AMT is in a valid state for activation
 func (service *LocalActivationService) validateAMTState() error {
-	// Check if device is already activated
-	controlMode, err := service.amtCommand.GetControlMode()
-	if err != nil {
-		return fmt.Errorf("failed to get control mode: %w", err)
-	}
-
-	if controlMode != 0 {
-		return fmt.Errorf("device is already activated (control mode: %d)", controlMode)
+	// Check if device is already activated using the stored control mode
+	if service.config.ControlMode != 0 {
+		return fmt.Errorf("device is already activated (control mode: %d)", service.config.ControlMode)
 	}
 
 	log.Debug("AMT is in pre-provisioning state, ready for activation")
@@ -343,8 +340,8 @@ func (service *LocalActivationService) activateCCM() error {
 	tlsConfig := &tls.Config{}
 
 	if service.context.LocalTLSEnforced {
-		controlMode := 0 // Pre-provisioning state
-		tlsConfig = config.GetTLSConfig(&controlMode, nil, service.context.SkipCertCheck)
+		controlMode := service.config.ControlMode // Use stored control mode
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipCertCheck)
 	}
 
 	// Create WSMAN client
@@ -498,20 +495,6 @@ func readPasswordFromUser() (string, error) {
 	return password, nil
 }
 
-// ensurePasswordProvided ensures a password is available, prompting if necessary
-func (cmd *LocalActivateCmd) ensurePasswordProvided() error {
-	if cmd.AMTPassword == "" {
-		password, err := readPasswordFromUser()
-		if err != nil {
-			return utils.MissingOrIncorrectPassword
-		}
-
-		cmd.AMTPassword = password
-	}
-
-	return nil
-}
-
 // Certificate types for ACM activation
 type CertsAndKeys struct {
 	certs []*x509.Certificate
@@ -547,8 +530,8 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 			return nil, err
 		}
 
-		controlMode := 0 // Pre-provisioning state
-		tlsConfig = config.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipCertCheck)
+		controlMode := service.config.ControlMode // Use stored control mode
+		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipCertCheck)
 
 		// Add client certificate to TLS config
 		tlsCert := tls.Certificate{
@@ -645,6 +628,8 @@ func (service *LocalActivationService) activateACMLegacy() error {
 	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature)
 	if err != nil {
 		// Check if activation was successful despite error
+		// We can check the stored control mode, but it won't reflect the new state
+		// So we still need to call GetControlMode() here to verify activation success
 		controlMode, controlErr := service.amtCommand.GetControlMode()
 		if controlErr != nil {
 			return utils.ActivationFailedGetControlMode

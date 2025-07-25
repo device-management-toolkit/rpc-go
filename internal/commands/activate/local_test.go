@@ -111,14 +111,11 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				CCM:                 true,
 				DNS:                 "test.dns",
 				Hostname:            "test-host",
-				AMTPassword:         "password123",
+				AMTBaseCmd:          commands.AMTBaseCmd{Password: "password123"},
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
 				FriendlyName:        "test-device",
 				SkipIPRenew:         true,
-				Config:              "/path/to/config",
-				ConfigV2:            "/path/to/configv2",
-				ConfigKey:           "32-byte-key",
 			},
 			want: LocalActivationConfig{
 				Mode:                ModeCCM,
@@ -129,9 +126,6 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				ProvisioningCertPwd: "cert-pwd",
 				FriendlyName:        "test-device",
 				SkipIPRenew:         true,
-				ConfigFile:          "/path/to/config",
-				ConfigV2File:        "/path/to/configv2",
-				ConfigKey:           "32-byte-key",
 			},
 		},
 		{
@@ -353,12 +347,6 @@ func TestLocalActivationService_validateAMTState(t *testing.T) {
 			controlMode: 1,
 			shouldError: true,
 		},
-		{
-			name:        "error getting control mode",
-			controlMode: 0,
-			shouldError: true,
-			errorOn:     "GetControlMode",
-		},
 	}
 
 	for _, tt := range tests {
@@ -370,6 +358,9 @@ func TestLocalActivationService_validateAMTState(t *testing.T) {
 
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
+				config: LocalActivationConfig{
+					ControlMode: tt.controlMode, // Set the control mode in the config
+				},
 			}
 
 			err := service.validateAMTState()
@@ -517,13 +508,13 @@ func TestLocalActivateCmd_ensurePasswordProvided(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &LocalActivateCmd{
-				AMTPassword: tt.password,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: tt.password},
 			}
 
 			// We can only test the case where password is already provided
 			// because testing the password prompt would require mocking stdin
 			if tt.password != "" {
-				err := cmd.ensurePasswordProvided()
+				err := cmd.AMTBaseCmd.Validate()
 				if err != nil {
 					t.Errorf("ensurePasswordProvided() with existing password should not error, got %v", err)
 				}
@@ -656,8 +647,8 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 		{
 			name: "error during AMT state validation",
 			cmd: LocalActivateCmd{
-				CCM:         true,
-				AMTPassword: "password123",
+				CCM:        true,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
 			},
 			controlMode:   0,
 			shouldErrorOn: "GetControlMode",
@@ -666,8 +657,8 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 		{
 			name: "CCM activation will fail during WSMAN setup (expected)",
 			cmd: LocalActivateCmd{
-				CCM:         true,
-				AMTPassword: "password123",
+				CCM:        true,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
 			},
 			controlMode: 0,
 			wantErr:     true, // Expect error due to missing WSMAN infrastructure
@@ -676,7 +667,7 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 			name: "ACM activation will fail during certificate processing (expected)",
 			cmd: LocalActivateCmd{
 				ACM:                 true,
-				AMTPassword:         "password123",
+				AMTBaseCmd:          commands.AMTBaseCmd{Password: "password123"},
 				ProvisioningCert:    "dGVzdC1jZXJ0", // base64 encoded "test-cert"
 				ProvisioningCertPwd: "cert-password",
 			},
@@ -1123,8 +1114,8 @@ func TestLocalActivateCmd_Run_PasswordPrompting(t *testing.T) {
 	// We can't easily test the actual prompting without mocking stdin,
 	// but we can test the logic path
 	cmd := &LocalActivateCmd{
-		CCM:         true,
-		AMTPassword: "", // Empty password
+		CCM:        true,
+		AMTBaseCmd: commands.AMTBaseCmd{Password: ""}, // Empty password
 	}
 
 	mockAMT := &MockAMTCommand{

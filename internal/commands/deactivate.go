@@ -9,9 +9,8 @@ import (
 	"crypto/tls"
 	"fmt"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
-	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -41,25 +40,11 @@ func readPasswordFromUser() (string, error) {
 	return password, nil
 }
 
-// ensurePasswordProvided ensures a password is available, prompting if necessary
-func (cmd *DeactivateCmd) ensurePasswordProvided() error {
-	if cmd.Password == "" {
-		password, err := readPasswordFromUser()
-		if err != nil {
-			return utils.MissingOrIncorrectPassword
-		}
-
-		cmd.Password = password
-	}
-
-	return nil
-}
-
 // setupTLSConfig creates TLS configuration if local TLS is enforced
-func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context, controlMode int) *tls.Config {
+func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 	tlsConfig := &tls.Config{}
 	if ctx.LocalTLSEnforced {
-		tlsConfig = config.GetTLSConfig(&controlMode, nil, ctx.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&ctx.ControlMode, nil, ctx.SkipCertCheck)
 	}
 
 	return tlsConfig
@@ -67,10 +52,17 @@ func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context, controlMode int) *tls.Con
 
 // DeactivateCmd represents the deactivate command
 type DeactivateCmd struct {
+	AMTBaseCmd
 	Local              bool   `help:"Execute command to AMT directly without cloud interaction" short:"l"`
 	PartialUnprovision bool   `help:"Partially unprovision the device. Only supported with -local flag" name:"partial"`
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
-	Password           string `help:"AMT Password" env:"AMT_PASSWORD" short:"p"`
+}
+
+// RequiresAMTPassword indicates whether this command requires AMT password
+// For deactivate, password is required for both local and remote modes
+func (cmd *DeactivateCmd) RequiresAMTPassword() bool {
+	// Password required for local mode or remote mode (when URL is provided)
+	return cmd.Local || cmd.URL != ""
 }
 
 // Validate implements Kong's extensible validation interface for business logic validation
@@ -90,6 +82,9 @@ func (cmd *DeactivateCmd) Validate() error {
 		return fmt.Errorf("partial unprovisioning is only supported with local flag")
 	}
 
+	// Don't validate password here - it will be validated when needed
+	// This allows CCM mode to work without password prompt
+
 	return nil
 }
 
@@ -106,15 +101,16 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 
 // executeRemoteDeactivate handles remote deactivation via RPS
 func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
-	if err := cmd.ensurePasswordProvided(); err != nil {
-		return err
+	// For remote deactivation, we need password
+	if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
+		return utils.MissingOrIncorrectPassword
 	}
 
 	// Create flags object for RPS
 	f := &flags.Flags{
 		Command:       utils.CommandDeactivate,
 		URL:           cmd.URL,
-		Password:      cmd.Password,
+		Password:      cmd.GetPassword(),
 		LogLevel:      ctx.LogLevel,
 		JsonOutput:    ctx.JsonOutput,
 		Verbose:       ctx.Verbose,
@@ -127,12 +123,8 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 
 // executeLocalDeactivate handles local deactivation
 func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
-	controlMode, err := ctx.AMTCommand.GetControlMode()
-	if err != nil {
-		log.Error(err)
-
-		return utils.AMTConnectionFailed
-	}
+	// Use the control mode already retrieved in AMTBaseCmd.AfterApply()
+	controlMode := cmd.GetControlMode()
 
 	// Deactivate based on the control mode
 	switch controlMode {
@@ -143,7 +135,12 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 
 		return cmd.deactivateCCM(ctx)
 	case ControlModeACM:
-		return cmd.deactivateACM(ctx, controlMode)
+		// For ACM mode, ensure we have password
+		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
+			return utils.MissingOrIncorrectPassword
+		}
+
+		return cmd.deactivateACM()
 	default:
 		log.Error("Deactivation failed. Device control mode: " + utils.InterpretControlMode(controlMode))
 
@@ -152,33 +149,18 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 }
 
 // deactivateACM handles ACM mode deactivation
-func (cmd *DeactivateCmd) deactivateACM(ctx *Context, controlMode int) error {
-	if err := cmd.ensurePasswordProvided(); err != nil {
-		return err
-	}
-
-	// Setup TLS configuration
-	tlsConfig := cmd.setupTLSConfig(ctx, controlMode)
-
-	// Create WSMAN client
-	wsmanMessage := localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-	err := wsmanMessage.SetupWsmanClient("admin", cmd.Password, ctx.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
-	if err != nil {
-		return err
-	}
-
+func (cmd *DeactivateCmd) deactivateACM() error {
 	// Execute deactivation operation
 	if cmd.PartialUnprovision {
-		return cmd.executePartialUnprovision(wsmanMessage)
+		return cmd.executePartialUnprovision()
 	}
 
-	return cmd.executeFullUnprovision(wsmanMessage)
+	return cmd.executeFullUnprovision()
 }
 
 // executePartialUnprovision performs partial unprovision operation
-func (cmd *DeactivateCmd) executePartialUnprovision(wsmanMessage *localamt.GoWSMANMessages) error {
-	_, err := wsmanMessage.PartialUnprovision()
+func (cmd *DeactivateCmd) executePartialUnprovision() error {
+	_, err := cmd.WSMan.PartialUnprovision()
 	if err != nil {
 		log.Error("Status: Unable to partially deactivate ", err)
 
@@ -191,8 +173,8 @@ func (cmd *DeactivateCmd) executePartialUnprovision(wsmanMessage *localamt.GoWSM
 }
 
 // executeFullUnprovision performs full unprovision operation
-func (cmd *DeactivateCmd) executeFullUnprovision(wsmanMessage *localamt.GoWSMANMessages) error {
-	_, err := wsmanMessage.Unprovision(1)
+func (cmd *DeactivateCmd) executeFullUnprovision() error {
+	_, err := cmd.WSMan.Unprovision(1)
 	if err != nil {
 		log.Error("Status: Unable to deactivate ", err)
 

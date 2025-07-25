@@ -5,6 +5,7 @@
 package lm
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -50,14 +51,21 @@ func (lms *LMSConnection) Connect() error {
 	var err error
 
 	if lms.Connection == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		if lms.useTls {
 			log.Debug("connecting to lms over tls...")
 
-			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck))
+			dialer := &tls.Dialer{
+				Config: certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
+			}
+			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
 		} else {
 			log.Debug("connecting to lms...")
 
-			lms.Connection, err = net.Dial("tcp4", lms.address+":"+lms.port)
+			dialer := &net.Dialer{}
+			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
 		}
 
 		if err != nil {

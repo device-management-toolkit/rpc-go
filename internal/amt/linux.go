@@ -9,9 +9,11 @@
 package amt
 
 import (
+	"context"
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
@@ -38,12 +40,17 @@ func getFQDN() (string, error) {
 		return hostname, nil
 	}
 
-	addrs, err := net.LookupHost(hostname)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resolver := &net.Resolver{}
+
+	addrs, err := resolver.LookupHost(ctx, hostname)
 	if err != nil {
 		return "", err
 	}
 
-	names, err := net.LookupAddr(addrs[0])
+	names, err := resolver.LookupAddr(ctx, addrs[0])
 	if err != nil {
 		return "", err
 	}

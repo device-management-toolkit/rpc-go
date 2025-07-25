@@ -262,36 +262,6 @@ func TestParseFlagsEmptyCommand(t *testing.T) {
 	assert.Equal(t, "", flags.Command)
 }
 
-func TestLookupEnvOrBool_Default(t *testing.T) {
-	args := []string{"./rpc", ""}
-	flags := NewFlags(args, MockPRSuccess)
-	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
-	assert.Equal(t, false, result)
-}
-func TestLookupEnvOrBool_Env(t *testing.T) {
-	args := []string{"./rpc", ""}
-
-	if err := os.Setenv("SKIP_CERT_CHECK", "true"); err != nil {
-		t.Error(err)
-	}
-
-	flags := NewFlags(args, MockPRSuccess)
-	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
-	assert.Equal(t, true, result)
-}
-
-func TestLookupEnvOrBool_EnvError(t *testing.T) {
-	args := []string{"./rpc", ""}
-
-	if err := os.Setenv("SKIP_CERT_CHECK", "notparsable"); err != nil {
-		t.Error(err)
-	}
-
-	flags := NewFlags(args, MockPRSuccess)
-	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
-	assert.Equal(t, false, result)
-}
-
 type MockSambaService struct {
 	contentsErr error
 }

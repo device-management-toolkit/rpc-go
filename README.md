@@ -90,7 +90,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 
 - Ensure code is formatted correctly with `gofmt -s -w ./`
 - Ensure all unit tests pass with `go test ./...`
-- Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:v1.52.2 golangci-lint run -v`
+- Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:latest golangci-lint run -v`
 
 ## Additional Resources
 
