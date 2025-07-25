@@ -137,6 +137,7 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 
 	if cmd.IEEE8021xProfileName == "" {
 		wifiEndpointSettings.PSKPassPhrase = cmd.PSKPassphrase
+		handles = &certs.IEEE8021xCertHandles{}
 	} else {
 		// Implement 802.1x configuration
 		var err error
