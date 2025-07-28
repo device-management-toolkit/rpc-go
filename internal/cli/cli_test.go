@@ -8,6 +8,7 @@ package cli
 import (
 	"testing"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -52,6 +53,8 @@ func TestParse(t *testing.T) {
 
 			// Set up mock expectations for commands that require AMT validation
 			if tt.expected == "amtinfo" {
+				// Mock GetChangeEnabled to return a response that doesn't enforce TLS on local ports
+				mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				// Mock GetControlMode to return a valid provisioned state (1) for amtinfo validation
 				mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 			}

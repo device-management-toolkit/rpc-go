@@ -8,6 +8,7 @@ package cli
 import (
 	"testing"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -49,6 +50,7 @@ func TestCLIIntegration(t *testing.T) {
 			setupMock: func(m *mock.MockInterface) {
 				// AmtInfo might trigger Initialize during parsing and needs GetControlMode for AfterApply
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
+				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 			},
 			expectError: false,
@@ -60,6 +62,7 @@ func TestCLIIntegration(t *testing.T) {
 			setupMock: func(m *mock.MockInterface) {
 				// AmtInfo might trigger Initialize during parsing and needs GetControlMode for AfterApply
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
+				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 			},
 			expectError: false,
@@ -76,6 +79,7 @@ func TestCLIIntegration(t *testing.T) {
 			setupMock: func(m *mock.MockInterface) {
 				// AmtInfo might trigger Initialize during parsing and needs GetControlMode for AfterApply
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
+				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 			},
 			expectError: false,
@@ -231,6 +235,8 @@ func TestCLIArgumentValidation(t *testing.T) {
 			mockAMT := mock.NewMockInterface(ctrl)
 			// Allow Initialize to be called for amtinfo commands during parsing
 			mockAMT.EXPECT().Initialize().Return(nil).AnyTimes()
+			// Allow GetChangeEnabled to be called during AfterApply for amtinfo commands
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 			// Allow GetControlMode to be called during AfterApply for amtinfo commands
 			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 

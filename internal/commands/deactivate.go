@@ -82,8 +82,9 @@ func (cmd *DeactivateCmd) Validate() error {
 		return fmt.Errorf("partial unprovisioning is only supported with local flag")
 	}
 
-	// Don't validate password here - it will be validated when needed
-	// This allows CCM mode to work without password prompt
+	if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
+		return utils.MissingOrIncorrectPassword
+	}
 
 	return nil
 }
@@ -101,11 +102,6 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 
 // executeRemoteDeactivate handles remote deactivation via RPS
 func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
-	// For remote deactivation, we need password
-	if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-		return utils.MissingOrIncorrectPassword
-	}
-
 	// Create flags object for RPS
 	f := &flags.Flags{
 		Command:       utils.CommandDeactivate,
@@ -135,11 +131,6 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 
 		return cmd.deactivateCCM(ctx)
 	case ControlModeACM:
-		// For ACM mode, ensure we have password
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return utils.MissingOrIncorrectPassword
-		}
-
 		return cmd.deactivateACM()
 	default:
 		log.Error("Deactivation failed. Device control mode: " + utils.InterpretControlMode(controlMode))

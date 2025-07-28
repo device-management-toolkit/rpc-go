@@ -13,133 +13,38 @@ import (
 	"net"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
+	"go.uber.org/mock/gomock"
 )
-
-// MockAMTCommand is a mock implementation of amt.Interface for testing
-type MockAMTCommand struct {
-	mock.Mock
-}
-
-func (m *MockAMTCommand) Initialize() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.ChangeEnabledResponse), args.Error(1)
-}
-
-func (m *MockAMTCommand) EnableAMT() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) DisableAMT() error {
-	args := m.Called()
-
-	return args.Error(0)
-}
-
-func (m *MockAMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
-	args := m.Called(key, amtTimeout)
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetUUID() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetControlMode() (int, error) {
-	args := m.Called()
-
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetOSDNSSuffix() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetDNSSuffix() (string, error) {
-	args := m.Called()
-
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetCertificateHashes() ([]amt.CertHashEntry, error) {
-	args := m.Called()
-
-	return args.Get(0).([]amt.CertHashEntry), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetRemoteAccessConnectionStatus() (amt.RemoteAccessStatus, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.RemoteAccessStatus), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetLANInterfaceSettings(useWireless bool) (amt.InterfaceSettings, error) {
-	args := m.Called(useWireless)
-
-	return args.Get(0).(amt.InterfaceSettings), args.Error(1)
-}
-
-func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error) {
-	args := m.Called()
-
-	return args.Get(0).(amt.LocalSystemAccount), args.Error(1)
-}
-
-func (m *MockAMTCommand) Unprovision() (mode int, err error) {
-	args := m.Called()
-
-	return args.Int(0), args.Error(1)
-}
-
-func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
-	args := m.Called(params)
-
-	return args.Get(0).(amt.SecureHBasedResponse), args.Error(1)
-}
 
 func TestAmtInfoCmd_Run(t *testing.T) {
 	tests := []struct {
 		name      string
 		cmd       *AmtInfoCmd
 		ctx       *Context
-		setupMock func(*MockAMTCommand)
+		setupMock func(*mock.MockInterface)
 		wantErr   bool
 	}{
 		{
 			name: "successful run with JSON output",
 			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "testpassword"}, All: true},
 			ctx:  &Context{JsonOutput: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
-				m.On("GetVersionDataFromME", "Build Number", mock.AnythingOfType("time.Duration")).Return("3425", nil)
-				m.On("GetVersionDataFromME", "Sku", mock.AnythingOfType("time.Duration")).Return("16392", nil)
-				m.On("GetUUID").Return("12345678-1234-1234-1234-123456789ABC", nil)
-				m.On("GetControlMode").Return(1, nil)
-				m.On("GetChangeEnabled").Return(amt.ChangeEnabledResponse(0), nil)
-				m.On("GetDNSSuffix").Return("example.com", nil)
-				m.On("GetOSDNSSuffix").Return("os.example.com", nil)
-				m.On("GetRemoteAccessConnectionStatus").Return(amt.RemoteAccessStatus{}, nil)
-				m.On("GetLANInterfaceSettings", false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
-				m.On("GetLANInterfaceSettings", true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
-				m.On("GetCertificateHashes").Return([]amt.CertHashEntry{}, nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
+				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
+				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
+				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+				m.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
 			},
 			wantErr: false,
 		},
@@ -147,8 +52,8 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			name: "successful run with text output",
 			cmd:  &AmtInfoCmd{Ver: true},
 			ctx:  &Context{JsonOutput: false},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 			},
 			wantErr: false,
 		},
@@ -156,8 +61,8 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			name: "error getting AMT info",
 			cmd:  &AmtInfoCmd{Ver: true},
 			ctx:  &Context{JsonOutput: false},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("", errors.New("connection failed"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("", errors.New("connection failed"))
 			},
 			wantErr: false, // Service logs errors but doesn't return them
 		},
@@ -165,10 +70,10 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			name: "GetAMTInfo returns error",
 			cmd:  &AmtInfoCmd{Ver: true},
 			ctx:  &Context{JsonOutput: false},
-			setupMock: func(m *MockAMTCommand) {
+			setupMock: func(m *mock.MockInterface) {
 				// Currently GetAMTInfo doesn't return errors, it logs them
 				// But we still need to mock the call that would be made
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 			},
 			wantErr: false, // GetAMTInfo currently doesn't return errors
 		},
@@ -176,7 +81,10 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockAMT := new(MockAMTCommand)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
 			tt.setupMock(mockAMT)
 			tt.ctx.AMTCommand = mockAMT
 
@@ -204,14 +112,15 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 
 				assert.NoError(t, json.Unmarshal(out, &result))
 			}
-
-			mockAMT.AssertExpectations(t)
 		})
 	}
 }
 
 func TestNewInfoService(t *testing.T) {
-	mockAMT := new(MockAMTCommand)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
 	service := NewInfoService(mockAMT)
 
 	assert.NotNil(t, service)
@@ -224,48 +133,48 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 	tests := []struct {
 		name      string
 		cmd       *AmtInfoCmd
-		setupMock func(*MockAMTCommand)
+		setupMock func(*mock.MockInterface)
 		wantErr   bool
 		validate  func(*testing.T, *InfoResult)
 	}{
 		{
 			name: "get all info successfully",
 			cmd:  &AmtInfoCmd{All: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
-				m.On("GetVersionDataFromME", "Build Number", mock.AnythingOfType("time.Duration")).Return("3425", nil)
-				m.On("GetVersionDataFromME", "Sku", mock.AnythingOfType("time.Duration")).Return("16392", nil)
-				m.On("GetUUID").Return("12345678-1234-1234-1234-123456789ABC", nil)
-				m.On("GetControlMode").Return(1, nil) // Called once (cached for UserCert check and Mode)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetControlMode().Return(1, nil) // Called once (cached for UserCert check and Mode)
 
 				// Mock ChangeEnabledResponse for operational state
 				// Bit 1 = AMT enabled, Bit 7 = new interface version
 				response := amt.ChangeEnabledResponse(0x82) // Both AMT enabled and new interface version
-				m.On("GetChangeEnabled").Return(response, nil)
+				m.EXPECT().GetChangeEnabled().Return(response, nil)
 
-				m.On("GetDNSSuffix").Return("example.com", nil)
-				m.On("GetOSDNSSuffix").Return("os.example.com", nil)
-				m.On("GetRemoteAccessConnectionStatus").Return(amt.RemoteAccessStatus{
+				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
+				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 					NetworkStatus: "connected",
 					RemoteStatus:  "connected",
 					RemoteTrigger: "user",
 					MPSHostname:   "mps.example.com",
 				}, nil)
-				m.On("GetLANInterfaceSettings", false).Return(amt.InterfaceSettings{
+				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{
 					MACAddress:  "00:11:22:33:44:55",
 					IPAddress:   "192.168.1.100",
 					DHCPEnabled: true,
 					DHCPMode:    "active",
 					LinkStatus:  "up",
 				}, nil)
-				m.On("GetLANInterfaceSettings", true).Return(amt.InterfaceSettings{
+				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{
 					MACAddress:  "00:AA:BB:CC:DD:EE",
 					IPAddress:   "192.168.1.101",
 					DHCPEnabled: true,
 					DHCPMode:    "active",
 					LinkStatus:  "up",
 				}, nil)
-				m.On("GetCertificateHashes").Return([]amt.CertHashEntry{
+				m.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{
 					{
 						Name:      "Intel AMT Certificate",
 						Algorithm: "SHA256",
@@ -293,8 +202,8 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 		{
 			name: "version only",
 			cmd:  &AmtInfoCmd{Ver: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -305,8 +214,8 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 		{
 			name: "UserCert with pre-provisioning mode",
 			cmd:  &AmtInfoCmd{UserCert: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetControlMode").Return(0, nil) // Pre-provisioning mode
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(0, nil) // Pre-provisioning mode
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -317,8 +226,8 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 		{
 			name: "UserCert with missing password",
 			cmd:  &AmtInfoCmd{UserCert: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetControlMode").Return(1, nil) // Provisioned mode
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(1, nil) // Provisioned mode
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -329,8 +238,8 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 		{
 			name: "operational state for AMT version 11 and below",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("11.8.55", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("11.8.55", nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -342,7 +251,10 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockAMT := new(MockAMTCommand)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
 			tt.setupMock(mockAMT)
 
 			service := NewInfoService(mockAMT)
@@ -358,8 +270,6 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 					tt.validate(t, result)
 				}
 			}
-
-			mockAMT.AssertExpectations(t)
 		})
 	}
 }
@@ -764,99 +674,99 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 	tests := []struct {
 		name      string
 		cmd       *AmtInfoCmd
-		setupMock func(*MockAMTCommand)
+		setupMock func(*mock.MockInterface)
 		wantErr   bool
 	}{
 		{
 			name: "GetVersionDataFromME error for version",
 			cmd:  &AmtInfoCmd{Ver: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("", errors.New("connection failed"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("", errors.New("connection failed"))
 			},
 			wantErr: false, // Service logs errors but doesn't return them
 		},
 		{
 			name: "GetUUID error",
 			cmd:  &AmtInfoCmd{UUID: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetUUID").Return("", errors.New("UUID not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetUUID().Return("", errors.New("UUID not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "GetControlMode error",
 			cmd:  &AmtInfoCmd{Mode: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetControlMode").Return(0, errors.New("control mode not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(0, errors.New("control mode not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "GetDNSSuffix error",
 			cmd:  &AmtInfoCmd{DNS: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetDNSSuffix").Return("", errors.New("DNS not available"))
-				m.On("GetOSDNSSuffix").Return("", errors.New("OS DNS not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetDNSSuffix().Return("", errors.New("DNS not available"))
+				m.EXPECT().GetOSDNSSuffix().Return("", errors.New("OS DNS not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "GetRemoteAccessConnectionStatus error",
 			cmd:  &AmtInfoCmd{Ras: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetRemoteAccessConnectionStatus").Return(amt.RemoteAccessStatus{}, errors.New("RAS not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, errors.New("RAS not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "GetLANInterfaceSettings error",
 			cmd:  &AmtInfoCmd{Lan: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetLANInterfaceSettings", false).Return(amt.InterfaceSettings{}, errors.New("wired interface not available"))
-				m.On("GetLANInterfaceSettings", true).Return(amt.InterfaceSettings{}, errors.New("wireless interface not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{}, errors.New("wired interface not available"))
+				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{}, errors.New("wireless interface not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "GetCertificateHashes error",
 			cmd:  &AmtInfoCmd{Cert: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetCertificateHashes").Return([]amt.CertHashEntry{}, errors.New("certificates not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, errors.New("certificates not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "UserCert control mode check error",
 			cmd:  &AmtInfoCmd{UserCert: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetControlMode").Return(0, errors.New("control mode check failed"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(0, errors.New("control mode check failed"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "OpState with version error",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("", errors.New("version not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("", errors.New("version not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "OpState with GetChangeEnabled error",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
-				m.On("GetChangeEnabled").Return(amt.ChangeEnabledResponse(0), errors.New("change enabled not available"))
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), errors.New("change enabled not available"))
 			},
 			wantErr: false,
 		},
 		{
 			name: "OpState with old interface version",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 				response := amt.ChangeEnabledResponse(0) // Old interface version (bit 7 = 0)
-				m.On("GetChangeEnabled").Return(response, nil)
+				m.EXPECT().GetChangeEnabled().Return(response, nil)
 			},
 			wantErr: false,
 		},
@@ -864,7 +774,7 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockAMT := new(MockAMTCommand)
+			mockAMT := mock.NewMockInterface(gomock.NewController(t))
 			tt.setupMock(mockAMT)
 
 			service := NewInfoService(mockAMT)
@@ -876,8 +786,6 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, result)
 			}
-
-			mockAMT.AssertExpectations(t)
 		})
 	}
 }
@@ -888,16 +796,16 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 	tests := []struct {
 		name      string
 		cmd       *AmtInfoCmd
-		setupMock func(*MockAMTCommand)
+		setupMock func(*mock.MockInterface)
 		wantErr   bool
 		validate  func(*testing.T, *InfoResult)
 	}{
 		{
 			name: "UserCert with password provided",
 			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "test123"}, UserCert: true},
-			setupMock: func(m *MockAMTCommand) {
+			setupMock: func(m *mock.MockInterface) {
 				// Mock GetControlMode call for UserCert check
-				m.On("GetControlMode").Return(1, nil) // Return "Admin Control Mode" (provisioned)
+				m.EXPECT().GetControlMode().Return(1, nil) // Return "Admin Control Mode" (provisioned)
 				// Note: WSMAN client setup will fail in tests since there's no real device
 				// This is expected behavior - the user cert retrieval will fail but the command should not error
 			},
@@ -912,9 +820,9 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "Features flag with both Ver and Sku",
 			cmd:  &AmtInfoCmd{Ver: true, Sku: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
-				m.On("GetVersionDataFromME", "Sku", mock.AnythingOfType("time.Duration")).Return("16392", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -926,11 +834,11 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "OpState with AMT disabled",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 				// AMT disabled (bit 1 = 0), new interface version (bit 7 = 1)
 				response := amt.ChangeEnabledResponse(0x80)
-				m.On("GetChangeEnabled").Return(response, nil)
+				m.EXPECT().GetChangeEnabled().Return(response, nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -940,7 +848,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "Hostname error handling",
 			cmd:  &AmtInfoCmd{Hostname: true},
-			setupMock: func(m *MockAMTCommand) {
+			setupMock: func(m *mock.MockInterface) {
 				// hostname is retrieved via os.Hostname() which we can't easily mock
 				// but the current implementation will still work
 			},
@@ -957,20 +865,20 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 				DNS: true, Hostname: true, Lan: true, Ras: true, OpState: true,
 				Cert: true,
 			},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("16.1.25", nil)
-				m.On("GetVersionDataFromME", "Build Number", mock.AnythingOfType("time.Duration")).Return("3425", nil)
-				m.On("GetVersionDataFromME", "Sku", mock.AnythingOfType("time.Duration")).Return("16392", nil)
-				m.On("GetUUID").Return("12345678-1234-1234-1234-123456789ABC", nil)
-				m.On("GetControlMode").Return(1, nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetControlMode().Return(1, nil)
 				response := amt.ChangeEnabledResponse(0x82) // AMT enabled and new interface
-				m.On("GetChangeEnabled").Return(response, nil)
-				m.On("GetDNSSuffix").Return("example.com", nil)
-				m.On("GetOSDNSSuffix").Return("os.example.com", nil)
-				m.On("GetRemoteAccessConnectionStatus").Return(amt.RemoteAccessStatus{}, nil)
-				m.On("GetLANInterfaceSettings", false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
-				m.On("GetLANInterfaceSettings", true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
-				m.On("GetCertificateHashes").Return([]amt.CertHashEntry{}, nil)
+				m.EXPECT().GetChangeEnabled().Return(response, nil)
+				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
+				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
+				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+				m.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -980,8 +888,8 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "Major version error handling",
 			cmd:  &AmtInfoCmd{OpState: true},
-			setupMock: func(m *MockAMTCommand) {
-				m.On("GetVersionDataFromME", "AMT", mock.AnythingOfType("time.Duration")).Return("invalid.version", nil)
+			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("invalid.version", nil)
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
@@ -992,7 +900,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockAMT := new(MockAMTCommand)
+			mockAMT := mock.NewMockInterface(gomock.NewController(t))
 			tt.setupMock(mockAMT)
 
 			service := NewInfoService(mockAMT)
@@ -1009,8 +917,6 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 					tt.validate(t, result)
 				}
 			}
-
-			mockAMT.AssertExpectations(t)
 		})
 	}
 }

@@ -6,10 +6,25 @@
 package activate
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
+
+// MockPasswordReader for testing password scenarios
+type MockPasswordReaderSuccess struct{}
+
+func (mpr *MockPasswordReaderSuccess) ReadPassword() (string, error) {
+	return utils.TestPassword, nil
+}
+
+type MockPasswordReaderFail struct{}
+
+func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
+	return "", errors.New("Read password failed")
+}
 
 func TestActivateCmd_Structure(t *testing.T) {
 	// Test that ActivateCmd has the correct structure
@@ -72,16 +87,18 @@ func TestActivateCmd_Validate_Local(t *testing.T) {
 		{
 			name: "valid local with CCM",
 			cmd: ActivateCmd{
-				Local: true,
-				CCM:   true,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
+				Local:      true,
+				CCM:        true,
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid local with ACM",
 			cmd: ActivateCmd{
-				Local: true,
-				ACM:   true,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
+				Local:      true,
+				ACM:        true,
 			},
 			wantErr: false,
 		},
@@ -96,7 +113,8 @@ func TestActivateCmd_Validate_Local(t *testing.T) {
 		{
 			name: "implicit local with CCM flag",
 			cmd: ActivateCmd{
-				CCM: true,
+				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
+				CCM:        true,
 			},
 			wantErr: false,
 		},

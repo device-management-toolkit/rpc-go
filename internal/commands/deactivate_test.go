@@ -9,8 +9,10 @@ import (
 	"errors"
 	"testing"
 
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 // MockPasswordReader for testing password scenarios
@@ -64,6 +66,9 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 		{
 			name: "valid local mode",
 			cmd: DeactivateCmd{
+				AMTBaseCmd: AMTBaseCmd{
+					Password: utils.TestPassword,
+				},
 				Local: true,
 			},
 			wantErr: "",
@@ -71,6 +76,9 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 		{
 			name: "valid remote mode",
 			cmd: DeactivateCmd{
+				AMTBaseCmd: AMTBaseCmd{
+					Password: utils.TestPassword,
+				},
 				URL: "https://example.com",
 			},
 			wantErr: "",
@@ -78,6 +86,9 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 		{
 			name: "valid local with partial",
 			cmd: DeactivateCmd{
+				AMTBaseCmd: AMTBaseCmd{
+					Password: utils.TestPassword,
+				},
 				Local:              true,
 				PartialUnprovision: true,
 			},
@@ -147,8 +158,11 @@ func TestDeactivateCmd_SetupTLSConfig(t *testing.T) {
 
 func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 	t.Run("successful CCM deactivation without password", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -157,12 +171,14 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 
 		err := cmd.Run(ctx)
 		assert.NoError(t, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("successful CCM deactivation with password (shows warning)", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true, AMTBaseCmd: AMTBaseCmd{Password: "test-password"}}
@@ -171,12 +187,14 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 
 		err := cmd.Run(ctx)
 		assert.NoError(t, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM deactivation fails on unprovision error", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, errors.New("unprovision failed"))
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, errors.New("unprovision failed"))
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -186,12 +204,14 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.DeactivationFailed, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM deactivation fails on non-zero status", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(1, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(1, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -201,11 +221,13 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.DeactivationFailed, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM partial unprovision not supported", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true, PartialUnprovision: true}
@@ -215,13 +237,15 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "partial unprovisioning is only supported in ACM mode")
-		mockAMT.AssertExpectations(t)
 	})
 }
 
 func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
 	t.Run("GetControlMode fails", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -231,13 +255,15 @@ func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 }
 
 func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 	t.Run("unsupported control mode", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -247,7 +273,6 @@ func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 }
 
@@ -260,17 +285,16 @@ func TestDeactivateCmd_Run_Local_ACM_PasswordHandling(t *testing.T) {
 
 		defer func() { utils.PR = originalPR }()
 
-		mockAMT := &MockAMTCommand{}
-
-		ctx := &Context{AMTCommand: mockAMT}
-		cmd := DeactivateCmd{Local: true}
+		cmd := DeactivateCmd{
+			Local: true,
+		}
 		// Set ACM control mode
 		cmd.ControlMode = ControlModeACM
 
-		err := cmd.Run(ctx)
+		// Call Validate to trigger password validation since Kong would call this
+		err := cmd.Validate()
 		assert.Error(t, err)
 		assert.Equal(t, utils.MissingOrIncorrectPassword, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("ACM mode fails when password is empty string", func(t *testing.T) {
@@ -278,25 +302,25 @@ func TestDeactivateCmd_Run_Local_ACM_PasswordHandling(t *testing.T) {
 
 		defer func() { utils.PR = originalPR }()
 
-		mockAMT := &MockAMTCommand{}
-
-		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
 		// Set ACM control mode
 		cmd.ControlMode = ControlModeACM
 
-		err := cmd.Run(ctx)
+		// Call Validate to trigger password validation since Kong would call this
+		err := cmd.Validate()
 		assert.Error(t, err)
 		// Should fail because empty password will fail validation in readPasswordFromUser
-		mockAMT.AssertExpectations(t)
 	})
 }
 
 // Test for Run function routing logic
 func TestDeactivateCmd_Run_Routing(t *testing.T) {
 	t.Run("routes to local when Local flag is true", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -305,73 +329,77 @@ func TestDeactivateCmd_Run_Routing(t *testing.T) {
 
 		err := cmd.Run(ctx)
 		assert.NoError(t, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	// Note: Remote execution testing requires RPS mocking which is complex
 	// For now, we focus on testing the routing logic and the parts we can control
 }
 
-// Test executeRemoteDeactivate password handling in isolation
-func TestDeactivateCmd_ExecuteRemoteDeactivate_PasswordHandling(t *testing.T) {
+// Test remote deactivate validation (password handling happens in Validate, not in executeRemoteDeactivate)
+func TestDeactivateCmd_RemoteDeactivate_Validation(t *testing.T) {
 	originalPR := utils.PR
 
-	t.Run("remote deactivation fails when password prompt fails", func(t *testing.T) {
+	t.Run("remote deactivation validation fails when password prompt fails", func(t *testing.T) {
 		utils.PR = &MockPasswordReaderFail{}
 
 		defer func() { utils.PR = originalPR }()
 
-		ctx := &Context{LogLevel: "info", JsonOutput: false, Verbose: false}
 		cmd := DeactivateCmd{URL: "https://example.com"}
 
-		err := cmd.executeRemoteDeactivate(ctx)
+		// Call Validate to trigger password validation since Kong would call this
+		err := cmd.Validate()
 		assert.Error(t, err)
 		assert.Equal(t, utils.MissingOrIncorrectPassword, err)
 	})
 
-	t.Run("remote deactivation with existing password", func(t *testing.T) {
-		ctx := &Context{LogLevel: "info", JsonOutput: false, Verbose: false}
+	t.Run("remote deactivation validation passes with existing password", func(t *testing.T) {
 		cmd := DeactivateCmd{URL: "https://example.com", AMTBaseCmd: AMTBaseCmd{Password: "existing-password"}}
 
-		// This will fail because it will try to call the actual RPS.ExecuteCommand
-		// But it will pass the password validation phase
-		err := cmd.executeRemoteDeactivate(ctx)
-		// We expect some error here since we can't mock RPS easily,
-		// but the password validation should pass
-		// The important thing is that it didn't fail with MissingOrIncorrectPassword
-		assert.NotEqual(t, utils.MissingOrIncorrectPassword, err)
+		// Call Validate - this should pass
+		err := cmd.Validate()
+		assert.NoError(t, err)
 	})
+
+	// Restore original password reader
+	defer func() { utils.PR = originalPR }()
 }
 
 // Test for deactivateCCM function in isolation
 func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 	t.Run("CCM deactivation with password shows warning but succeeds", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: "test-password"}}
 
 		err := cmd.deactivateCCM(ctx)
 		assert.NoError(t, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM deactivation without password succeeds", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, nil)
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{}
 
 		err := cmd.deactivateCCM(ctx)
 		assert.NoError(t, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM deactivation fails with unprovision error", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(0, errors.New("unprovision error"))
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, errors.New("unprovision error"))
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{}
@@ -379,12 +407,14 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		err := cmd.deactivateCCM(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.DeactivationFailed, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("CCM deactivation fails with non-zero status", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
-		mockAMT.On("Unprovision").Return(5, nil) // Non-zero status
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(5, nil) // Non-zero status
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{}
@@ -392,14 +422,16 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		err := cmd.deactivateCCM(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.DeactivationFailed, err)
-		mockAMT.AssertExpectations(t)
 	})
 }
 
 // Test for executeLocalDeactivate function logic
 func TestDeactivateCmd_ExecuteLocalDeactivate(t *testing.T) {
 	t.Run("handles control mode 3 (unknown mode)", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -409,11 +441,13 @@ func TestDeactivateCmd_ExecuteLocalDeactivate(t *testing.T) {
 		err := cmd.executeLocalDeactivate(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("handles negative control mode", func(t *testing.T) {
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{AMTCommand: mockAMT}
 		cmd := DeactivateCmd{Local: true}
@@ -423,7 +457,6 @@ func TestDeactivateCmd_ExecuteLocalDeactivate(t *testing.T) {
 		err := cmd.executeLocalDeactivate(ctx)
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 }
 
@@ -477,7 +510,10 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Set CCM control mode
 		cmd.ControlMode = ControlModeCCM
 
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{
 			AMTCommand: mockAMT,
@@ -489,7 +525,6 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Verify
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "partial unprovisioning is only supported in ACM mode")
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("local deactivation with unknown control mode", func(t *testing.T) {
@@ -498,7 +533,10 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Set unknown control mode
 		cmd.ControlMode = 999
 
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{
 			AMTCommand: mockAMT,
@@ -510,7 +548,6 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Verify
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 
 	t.Run("local deactivation with AMT connection failure", func(t *testing.T) {
@@ -519,7 +556,10 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Set zero control mode (pre-provisioning)
 		cmd.ControlMode = 0
 
-		mockAMT := &MockAMTCommand{}
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
 
 		ctx := &Context{
 			AMTCommand: mockAMT,
@@ -531,7 +571,6 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Verify
 		assert.Error(t, err)
 		assert.Equal(t, utils.UnableToDeactivate, err)
-		mockAMT.AssertExpectations(t)
 	})
 }
 

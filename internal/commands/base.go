@@ -54,6 +54,12 @@ func (cmd *AMTBaseCmd) ValidatePasswordIfNeeded(requirer PasswordRequirer) error
 			return fmt.Errorf("failed to read AMT password: %w", err)
 		}
 
+		fmt.Println() // Add newline after password input
+
+		if password == "" {
+			return fmt.Errorf("password cannot be empty")
+		}
+
 		cmd.Password = password
 	}
 
