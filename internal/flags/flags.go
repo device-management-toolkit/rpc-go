@@ -18,9 +18,9 @@ import (
 
 	configv2 "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/smb"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/ilyakaznacheev/cleanenv"
 	log "github.com/sirupsen/logrus"

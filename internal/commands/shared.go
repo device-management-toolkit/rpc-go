@@ -3,7 +3,7 @@ package commands
 import (
 	"crypto/tls"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 )
 
 // Context holds shared dependencies injected into commands

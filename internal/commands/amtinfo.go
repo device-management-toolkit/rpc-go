@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )

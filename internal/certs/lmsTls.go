@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	log "github.com/sirupsen/logrus"
 )
 

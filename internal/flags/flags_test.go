@@ -15,8 +15,8 @@ import (
 	"testing"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"

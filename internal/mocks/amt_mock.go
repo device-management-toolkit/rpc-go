@@ -13,7 +13,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	amt "github.com/device-management-toolkit/rpc-go/v2/internal/amt"
+	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	gomock "go.uber.org/mock/gomock"
 )
 

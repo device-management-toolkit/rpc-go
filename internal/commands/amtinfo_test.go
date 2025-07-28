@@ -14,8 +14,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
