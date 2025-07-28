@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -45,7 +45,7 @@ type CLI struct {
 	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
 
 	// Configuration loaded from YAML file (not directly accessible via CLI)
-	YamlConfig config.Config `kong:"-"`
+	YamlConfig config.Configuration `kong:"-"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed

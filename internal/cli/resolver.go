@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/alecthomas/kong"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,7 +50,7 @@ func ConfigResolver(configPath string) (kong.Resolver, error) {
 	}
 
 	// Parse the existing config.yaml structure
-	var config config.Config
+	var config config.Configuration
 
 	if err := yaml.Unmarshal(configData, &config); err != nil {
 		return nil, err
@@ -62,32 +62,23 @@ func ConfigResolver(configPath string) (kong.Resolver, error) {
 		switch flag.Name {
 		case "amtPassword":
 			// Use ACM password if available, fallback to CCM, then global password
-			if config.ACMSettings.AMTPassword != "" {
-				return config.ACMSettings.AMTPassword, nil
-			}
-
-			if config.CCMSettings.AMTPassword != "" {
-				return config.CCMSettings.AMTPassword, nil
-			}
-
-			if config.Password != "" {
-				return config.Password, nil
+			if config.Configuration.AMTSpecific.AdminPassword != "" {
+				return config.Configuration.AMTSpecific.AdminPassword, nil
 			}
 
 		case "provisioningCert":
-			if config.ACMSettings.ProvisioningCert != "" {
-				return config.ACMSettings.ProvisioningCert, nil
+			if config.Configuration.AMTSpecific.ProvisioningCert != "" {
+				return config.Configuration.AMTSpecific.ProvisioningCert, nil
 			}
 
 		case "provisioningCertPwd":
-			if config.ACMSettings.ProvisioningCertPwd != "" {
-				return config.ACMSettings.ProvisioningCertPwd, nil
+			if config.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
+				return config.Configuration.AMTSpecific.ProvisioningCertPwd, nil
 			}
 
 		case "skipIPRenew":
 			// Map from wiredConfig.ipsync (inverse logic)
-			// If ipsync is true, then skipIPRenew should be false
-			return !config.WiredConfig.IpSync, nil
+			return !config.Configuration.Network.Wired.IPSyncEnabled, nil
 		}
 
 		return nil, nil

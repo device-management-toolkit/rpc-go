@@ -100,8 +100,8 @@
             "request": "launch",
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
-                "configure",
-                "mebx"
+                "--profile",
+                "../../profile.yaml"
             ],
             "console": "integratedTerminal"
         },
