@@ -16,8 +16,8 @@ github.com/danieljoos/wincred v1.2.2/go.mod h1:w7w4Utbrz8lqeMbDAK0lkNJUv5sAOkFi7
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.28.0 h1:PV140uh9Wkd98nj7Xsr1MI09qYjVUMM72xeLGo9sNBk=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.28.0/go.mod h1:ECum6GBYResyzuD4CkNs5KMzJ/KmZoGf9ZoiC7Z7Rq4=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.29.0 h1:6pHtwOW4nWMlviQJLop42Lm4TPGeZPV3sGvc5RNnln0=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.29.0/go.mod h1:ECum6GBYResyzuD4CkNs5KMzJ/KmZoGf9ZoiC7Z7Rq4=
 github.com/dvsekhvalnov/jose2go v1.8.0 h1:LqkkVKAlHFfH9LOEl5fe4p/zL02OhWE7pCufMBG2jLA=
 github.com/dvsekhvalnov/jose2go v1.8.0/go.mod h1:QsHjhyTlD/lAVqn/NSbVZmSCGeDehTB/mPZadG+mhXU=
 github.com/geoffgarside/ber v1.1.0 h1:qTmFG4jJbwiSzSXoNJeHcOprVzZ8Ulde2Rrrifu5U9w=
