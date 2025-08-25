@@ -15,7 +15,7 @@ require (
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/sys v0.35.0
 )
