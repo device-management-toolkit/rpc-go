@@ -159,7 +159,7 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 
 	// Create and run the activation service
 	service := NewLocalActivationService(ctx.AMTCommand, config, ctx)
-
+	service.context.LocalTLSEnforced = cmd.LocalTLSEnforced
 	return service.Activate()
 }
 

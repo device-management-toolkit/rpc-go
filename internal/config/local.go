@@ -5,75 +5,28 @@
 
 package config
 
-type (
-	Config struct {
-		Password            string              `yaml:"password"`
-		TlsConfig           TlsConfig           `yaml:"tlsConfig"`
-		WiredConfig         EthernetConfig      `yaml:"wiredConfig"`
-		WifiConfigs         []WifiConfig        `yaml:"wifiConfigs"`
-		WiFiSyncEnabled     bool                `yaml:"wifiSyncEnabled"`
-		UEFIWiFiSyncEnabled bool                `yaml:"uefiWiFiSyncEnabled"`
-		Ieee8021xConfigs    []Ieee8021xConfig   `yaml:"ieee8021xConfigs"`
-		ACMSettings         ACMSettings         `yaml:"acmactivate"`
-		EnterpriseAssistant EnterpriseAssistant `yaml:"enterpriseAssistant"`
-		StopConfiguration   bool                `yaml:"stopConfig"`
-		CCMSettings         CCMSettings         `yaml:"ccmactivate"`
-	}
-	TlsConfig struct {
-		Delay int    `yaml:"delay" env-default:"3"`
-		Mode  string `yaml:"mode"`
-	}
-	WifiConfig struct {
-		ProfileName          string `yaml:"profileName"`
-		SSID                 string `yaml:"ssid"`
-		Priority             int    `yaml:"priority"`
-		AuthenticationMethod int    `yaml:"authenticationMethod"`
-		EncryptionMethod     int    `yaml:"encryptionMethod"`
-		PskPassphrase        string `yaml:"pskPassphrase"`
-		Ieee8021xProfileName string `yaml:"ieee8021xProfileName"`
-	}
-	EthernetConfig struct {
-		DHCP                 bool   `yaml:"dhcp"`
-		Static               bool   `yaml:"static"`
-		IpSync               bool   `yaml:"ipsync"`
-		IpAddress            string `yaml:"ipaddress"`
-		Subnetmask           string `yaml:"subnetmask"`
-		Gateway              string `yaml:"gateway"`
-		PrimaryDNS           string `yaml:"primarydns"`
-		SecondaryDNS         string `yaml:"secondarydns"`
-		Ieee8021xProfileName string `yaml:"ieee8021xProfileName"`
-	}
-	SecretConfig struct {
-		Secrets []Secret `yaml:"secrets"`
-	}
-	Secret struct {
-		ProfileName   string `yaml:"profileName"`
-		PskPassphrase string `yaml:"pskPassphrase"`
-		PrivateKey    string `yaml:"privateKey"`
-		Password      string `yaml:"password"`
-	}
-	Ieee8021xConfig struct {
-		ProfileName            string `yaml:"profileName"`
-		Username               string `yaml:"username"`
-		Password               string `yaml:"password"`
-		AuthenticationProtocol int    `yaml:"authenticationProtocol"`
-		ClientCert             string `yaml:"clientCert"`
-		CACert                 string `yaml:"caCert"`
-		PrivateKey             string `yaml:"privateKey"`
+import (
+	"os"
+
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	"gopkg.in/yaml.v3"
+)
+
+// LoadConfig loads a configuration from a YAML file
+func LoadConfig(path string) (config.Configuration, error) {
+	var config config.Configuration
+
+	// Read the file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return config, err
 	}
 
-	ACMSettings struct {
-		AMTPassword         string `yaml:"amtPassword"`
-		ProvisioningCert    string `yaml:"provisioningCert"`
-		ProvisioningCertPwd string `yaml:"provisioningCertPwd"`
+	// Parse YAML
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		return config, err
 	}
-	EnterpriseAssistant struct {
-		EAAddress    string `yaml:"eaAddress"`
-		EAUsername   string `yaml:"eaUsername"`
-		EAPassword   string `yaml:"eaPassword"`
-		EAConfigured bool   `yaml:"eaConfigured"`
-	}
-	CCMSettings struct {
-		AMTPassword string `yaml:"amtPassword"`
-	}
-)
+
+	return config, nil
+}

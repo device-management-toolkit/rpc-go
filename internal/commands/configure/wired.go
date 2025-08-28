@@ -21,12 +21,13 @@ type WiredCmd struct {
 	ConfigureBaseCmd
 
 	// Ethernet settings
-	DHCPEnabled  *bool  `help:"Enable DHCP" name:"dhcp"`
-	IPAddress    string `help:"Static IP address" name:"ipaddress"`
-	SubnetMask   string `help:"Subnet mask" name:"subnetmask"`
-	Gateway      string `help:"Default gateway" name:"gateway"`
-	PrimaryDNS   string `help:"Primary DNS server" name:"primarydns"`
-	SecondaryDNS string `help:"Secondary DNS server" name:"secondarydns"`
+	DHCPEnabled   *bool  `help:"Enable DHCP" name:"dhcp"`
+	IPSyncEnabled bool   `help:"Enable IP Sync with host OS" name:"ipsync"`
+	IPAddress     string `help:"Static IP address" name:"ipaddress"`
+	SubnetMask    string `help:"Subnet mask" name:"subnetmask"`
+	Gateway       string `help:"Default gateway" name:"gateway"`
+	PrimaryDNS    string `help:"Primary DNS server" name:"primarydns"`
+	SecondaryDNS  string `help:"Secondary DNS server" name:"secondarydns"`
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
@@ -172,22 +173,26 @@ func (cmd *WiredCmd) createEthernetSettingsRequest(getResponse ethernetport.Sett
 	// Determine configuration mode
 	dhcpEnabled := cmd.DHCPEnabled != nil && *cmd.DHCPEnabled
 	staticIPProvided := cmd.IPAddress != "" || cmd.SubnetMask != "" || cmd.Gateway != "" || cmd.PrimaryDNS != "" || cmd.SecondaryDNS != ""
-
+	/**
+	 * CONFIGURATION | DHCPEnabled | IpSyncEnabled | SharedStaticIp | IPAddress | SubnetMask | DefaultGwy | PrimaryDNS | SecondaryDNS
+	 * ------------------------------------------------------------------------------------------------------------------------------------------------
+	 *     DHCP      | TRUE        | TRUE          | FALSE          | NULL      | NULL       | NULL       | NULL       | NULL
+	 * ------------------------------------------------------------------------------------------------------------------------------------------------
+	 *   Static IP   | FALSE       | FALSE         | FALSE          | Required  | Required   | Optional   | Optional   | Optional
+	 *   Static IP   | FALSE       | TRUE          | TRUE           | NULL      | NULL       | NULL       | NULL       | NULL
+	 * ------------------------------------------------------------------------------------------------------------------------------------------------
+	 */
 	if dhcpEnabled {
 		// DHCP mode
 		settingsRequest.DHCPEnabled = true
 		settingsRequest.IpSyncEnabled = true
 		settingsRequest.SharedStaticIp = false
-		settingsRequest.IPAddress = ""
-		settingsRequest.SubnetMask = ""
-		settingsRequest.DefaultGateway = ""
-		settingsRequest.PrimaryDNS = ""
-		settingsRequest.SecondaryDNS = ""
 	} else if staticIPProvided {
 		// Static IP mode
 		settingsRequest.DHCPEnabled = false
-		settingsRequest.IpSyncEnabled = false
-		settingsRequest.SharedStaticIp = false
+		settingsRequest.IpSyncEnabled = cmd.IPSyncEnabled
+		// SharedStaticIp follows IpSyncEnabled
+		settingsRequest.SharedStaticIp = settingsRequest.IpSyncEnabled
 
 		// Set static IP settings
 		settingsRequest.IPAddress = cmd.IPAddress
@@ -195,6 +200,14 @@ func (cmd *WiredCmd) createEthernetSettingsRequest(getResponse ethernetport.Sett
 		settingsRequest.DefaultGateway = cmd.Gateway
 		settingsRequest.PrimaryDNS = cmd.PrimaryDNS
 		settingsRequest.SecondaryDNS = cmd.SecondaryDNS
+	}
+
+	if settingsRequest.IpSyncEnabled || settingsRequest.DHCPEnabled {
+		settingsRequest.IPAddress = ""
+		settingsRequest.SubnetMask = ""
+		settingsRequest.DefaultGateway = ""
+		settingsRequest.PrimaryDNS = ""
+		settingsRequest.SecondaryDNS = ""
 	}
 
 	return settingsRequest

@@ -5,21 +5,16 @@
 package flags
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/yaml.v3"
 )
 
 const trickyPassword string = "!@#$%^&*(()-+="
@@ -289,106 +284,6 @@ func (s *MockSambaService) ParseUrl(url string) (smb.Properties, error) {
 	prop := new(smb.Properties)
 
 	return *prop, nil
-}
-
-func writeTestCfgFiles(t *testing.T, cfg *config.Config, ext string) (cfgFilePath string) {
-	tempDir := t.TempDir()
-	cfgFilePath = filepath.Join(tempDir, "test-config."+ext)
-
-	var cfgBytes []byte
-
-	var err error = nil
-
-	switch ext {
-	case "json":
-		cfgBytes, err = json.MarshalIndent(cfg, "", "  ")
-	case "yaml":
-		cfgBytes, err = yaml.Marshal(cfg)
-	case "pfx":
-		cfgBytes, err = base64.StdEncoding.DecodeString(cfg.ACMSettings.ProvisioningCert)
-	}
-
-	assert.Nil(t, err)
-	err = os.WriteFile(cfgFilePath, cfgBytes, 0600)
-	assert.Nil(t, err)
-
-	return cfgFilePath
-}
-
-func TestHandleLocalConfig(t *testing.T) {
-	cfg := config.Config{
-		Password: "localTRICKYPWD-amt_(J!@#$$%^&",
-		ACMSettings: config.ACMSettings{
-			AMTPassword:         "amtTRICKypwd",
-			ProvisioningCert:    "c29tZSBkYXRhIHdpdGggACBhbmQg77u/",
-			ProvisioningCertPwd: "anotherstring",
-		},
-	}
-
-	tests := []string{"json", "yaml", "pfx"}
-	for _, ext := range tests {
-		cfgFilePath := writeTestCfgFiles(t, &cfg, ext)
-		t.Run(fmt.Sprintf("expect smb happy path with %s", ext), func(t *testing.T) {
-			args := []string{"./rpc"}
-			flags := NewFlags(args, MockPRSuccess)
-			flags.SambaService = NewMockSambaService(nil)
-			flags.configContent = "smb://localhost/xxx/" + cfgFilePath
-			rc := flags.handleLocalConfig()
-			assert.Equal(t, nil, rc)
-
-			if ext == "json" || ext == "yaml" {
-				assert.Equal(t, cfg.Password, flags.LocalConfig.Password)
-				assert.Equal(t, cfg.ACMSettings, flags.LocalConfig.ACMSettings)
-			}
-
-			if ext == "pfx" {
-				assert.Equal(t, cfg.ACMSettings.ProvisioningCert, flags.LocalConfig.ACMSettings.ProvisioningCert)
-			}
-		})
-
-		t.Run(fmt.Sprintf("expect local happy path with %s", ext), func(t *testing.T) {
-			args := []string{"./rpc"}
-			flags := NewFlags(args, MockPRSuccess)
-			flags.configContent = cfgFilePath
-			rc := flags.handleLocalConfig()
-			assert.Equal(t, nil, rc)
-
-			if ext == "json" || ext == "yaml" {
-				assert.Equal(t, cfg.Password, flags.LocalConfig.Password)
-				assert.Equal(t, cfg.ACMSettings, flags.LocalConfig.ACMSettings)
-			}
-
-			if ext == "pfx" {
-				assert.Equal(t, cfg.ACMSettings.ProvisioningCert, flags.LocalConfig.ACMSettings.ProvisioningCert)
-			}
-		})
-	}
-
-	t.Run("expect FailedReadingConfiguration for smb unsupported extension", func(t *testing.T) {
-		args := []string{"./rpc"}
-		flags := NewFlags(args, MockPRSuccess)
-		flags.configContent = "smb://localhost/xxx/nope.html"
-		flags.SambaService = NewMockSambaService(nil)
-		err := flags.handleLocalConfig()
-		assert.Equal(t, utils.FailedReadingConfiguration, err)
-	})
-
-	t.Run("expect FailedReadingConfiguration for smb fetch file error", func(t *testing.T) {
-		args := []string{"./rpc"}
-		flags := NewFlags(args, MockPRSuccess)
-		flags.configContent = "smb://localhost/xxx/yep.yaml"
-		flags.SambaService = NewMockSambaService(errors.New("test error"))
-		err := flags.handleLocalConfig()
-		assert.Equal(t, utils.FailedReadingConfiguration, err)
-	})
-
-	t.Run("expect FailedReadingConfiguration for local pfx ReadFile", func(t *testing.T) {
-		args := []string{"./rpc"}
-		flags := NewFlags(args, MockPRSuccess)
-		flags.configContent = "/tmp/thisfilebetterneverexist.pfx"
-		err := flags.handleLocalConfig()
-		assert.Equal(t, utils.FailedReadingConfiguration, err)
-	})
 }
 
 func TestReadNewPasswordTo(t *testing.T) {

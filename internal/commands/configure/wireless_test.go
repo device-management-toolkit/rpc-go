@@ -6,11 +6,19 @@
 package configure
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publicprivate"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func TestWirelessCmd_Validate(t *testing.T) {
@@ -29,7 +37,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: false,
@@ -43,7 +51,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: true,
@@ -57,7 +65,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				ProfileName:          "testprofile",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: true,
@@ -72,7 +80,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             0,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: true,
@@ -87,7 +95,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: true,
@@ -102,7 +110,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 			},
 			wantErr: true,
 		},
@@ -116,7 +124,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 			},
 			wantErr: true,
 		},
@@ -131,7 +139,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 				PSKPassphrase:        "shouldnotbeset",
 			},
 			wantErr: true,
@@ -147,7 +155,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 			},
 			wantErr: false,
 		},
@@ -161,7 +169,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodOther),
-				EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+				EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 			},
 			wantErr: true,
 		},
@@ -175,7 +183,7 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				SSID:                 "testssid",
 				Priority:             1,
 				AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-				EncryptionMethod:     int(wifi.EncryptionMethod_WEP),
+				EncryptionMethod:     int(wifi.EncryptionMethodWEP),
 				PSKPassphrase:        "testpassphrase",
 			},
 			wantErr: true,
@@ -235,7 +243,7 @@ func TestWirelessCmd_Run(t *testing.T) {
 			SSID:                 "testssid",
 			Priority:             1,
 			AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-			EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+			EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 		}
 
 		// Verify IEEE 802.1x fields are properly set
@@ -246,4 +254,147 @@ func TestWirelessCmd_Run(t *testing.T) {
 		assert.NotEmpty(t, cmd.IEEE8021xCACert)
 		assert.Equal(t, int(wifi.AuthenticationMethodWPA2IEEE8021x), cmd.AuthenticationMethod)
 	})
+}
+
+func TestWirelessCmd_ClearWirelessProfiles(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockSetup     func(*mock.MockWSMANer)
+		expectedError error
+		expectedCalls int
+	}{
+		{
+			name: "successfully clear profiles",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				// Mock GetWiFiSettings to return sample profiles
+				profiles := []wifi.WiFiEndpointSettingsResponse{
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile1"},
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile2"},
+				}
+				mockWSMan.EXPECT().GetWiFiSettings().Return(profiles, nil)
+
+				// Expect DeleteWiFiSetting to be called for each profile
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile1").Return(nil)
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile2").Return(nil)
+
+				// Mock PruneCerts dependencies
+				mockWSMan.EXPECT().GetConcreteDependencies().Return([]concrete.ConcreteDependency{}, nil)
+				mockWSMan.EXPECT().GetPublicKeyCerts().Return([]publickey.RefinedPublicKeyCertificateResponse{}, nil)
+				mockWSMan.EXPECT().GetPublicPrivateKeyPairs().Return([]publicprivate.RefinedPublicPrivateKeyPair{}, nil)
+				mockWSMan.EXPECT().GetCredentialRelationships().Return(credential.Items{}, nil)
+			},
+			expectedError: nil,
+			expectedCalls: 2,
+		},
+		{
+			name: "handle profiles with empty InstanceID",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				// Mock GetWiFiSettings to return profiles with some empty InstanceIDs
+				profiles := []wifi.WiFiEndpointSettingsResponse{
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile1"},
+					{InstanceID: ""}, // Empty InstanceID should be skipped
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile2"},
+				}
+				mockWSMan.EXPECT().GetWiFiSettings().Return(profiles, nil)
+
+				// Expect DeleteWiFiSetting to be called only for profiles with valid InstanceIDs
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile1").Return(nil)
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile2").Return(nil)
+
+				// Mock PruneCerts dependencies
+				mockWSMan.EXPECT().GetConcreteDependencies().Return([]concrete.ConcreteDependency{}, nil)
+				mockWSMan.EXPECT().GetPublicKeyCerts().Return([]publickey.RefinedPublicKeyCertificateResponse{}, nil)
+				mockWSMan.EXPECT().GetPublicPrivateKeyPairs().Return([]publicprivate.RefinedPublicPrivateKeyPair{}, nil)
+				mockWSMan.EXPECT().GetCredentialRelationships().Return(credential.Items{}, nil)
+			},
+			expectedError: nil,
+			expectedCalls: 2,
+		},
+		{
+			name: "handle GetWiFiSettings error",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				mockWSMan.EXPECT().GetWiFiSettings().Return(nil, errors.New("failed to get wifi settings"))
+			},
+			expectedError: errors.New("failed to get wifi settings"),
+			expectedCalls: 0,
+		},
+		{
+			name: "continue on delete errors",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				profiles := []wifi.WiFiEndpointSettingsResponse{
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile1"},
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile2"},
+				}
+				mockWSMan.EXPECT().GetWiFiSettings().Return(profiles, nil)
+
+				// First delete fails, second succeeds - both should be attempted
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile1").Return(errors.New("delete failed"))
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile2").Return(nil)
+
+				// Mock PruneCerts dependencies
+				mockWSMan.EXPECT().GetConcreteDependencies().Return([]concrete.ConcreteDependency{}, nil)
+				mockWSMan.EXPECT().GetPublicKeyCerts().Return([]publickey.RefinedPublicKeyCertificateResponse{}, nil)
+				mockWSMan.EXPECT().GetPublicPrivateKeyPairs().Return([]publicprivate.RefinedPublicPrivateKeyPair{}, nil)
+				mockWSMan.EXPECT().GetCredentialRelationships().Return(credential.Items{}, nil)
+			},
+			expectedError: nil,
+			expectedCalls: 2,
+		},
+		{
+			name: "handle PruneCerts error",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				profiles := []wifi.WiFiEndpointSettingsResponse{
+					{InstanceID: "Intel(r) AMT:WiFi Endpoint Settings profile1"},
+				}
+				mockWSMan.EXPECT().GetWiFiSettings().Return(profiles, nil)
+				mockWSMan.EXPECT().DeleteWiFiSetting("Intel(r) AMT:WiFi Endpoint Settings profile1").Return(nil)
+
+				// Mock PruneCerts to fail
+				mockWSMan.EXPECT().GetConcreteDependencies().Return(nil, errors.New("failed to get concrete dependencies"))
+			},
+			expectedError: utils.WiFiConfigurationFailed,
+			expectedCalls: 1,
+		},
+		{
+			name: "no profiles to delete",
+			mockSetup: func(mockWSMan *mock.MockWSMANer) {
+				// Mock GetWiFiSettings to return empty slice
+				profiles := []wifi.WiFiEndpointSettingsResponse{}
+				mockWSMan.EXPECT().GetWiFiSettings().Return(profiles, nil)
+
+				// Mock PruneCerts dependencies
+				mockWSMan.EXPECT().GetConcreteDependencies().Return([]concrete.ConcreteDependency{}, nil)
+				mockWSMan.EXPECT().GetPublicKeyCerts().Return([]publickey.RefinedPublicKeyCertificateResponse{}, nil)
+				mockWSMan.EXPECT().GetPublicPrivateKeyPairs().Return([]publicprivate.RefinedPublicPrivateKeyPair{}, nil)
+				mockWSMan.EXPECT().GetCredentialRelationships().Return(credential.Items{}, nil)
+			},
+			expectedError: nil,
+			expectedCalls: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockWSMan := mock.NewMockWSMANer(ctrl)
+			tt.mockSetup(mockWSMan)
+
+			cmd := &WirelessCmd{
+				ConfigureBaseCmd: ConfigureBaseCmd{
+					AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMan},
+				},
+			}
+
+			err := cmd.ClearWirelessProfiles()
+
+			if tt.expectedError != nil {
+				assert.Error(t, err)
+				assert.Equal(t, tt.expectedError, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

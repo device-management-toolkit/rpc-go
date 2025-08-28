@@ -144,13 +144,15 @@ func TestDeactivateCmd_SetupTLSConfig(t *testing.T) {
 	cmd := &DeactivateCmd{}
 
 	t.Run("TLS enforced", func(t *testing.T) {
-		ctx := &Context{LocalTLSEnforced: true, SkipCertCheck: true, ControlMode: ControlModeACM}
+		cmd.LocalTLSEnforced = true
+		ctx := &Context{SkipCertCheck: true, ControlMode: ControlModeACM}
 		tlsConfig := cmd.setupTLSConfig(ctx)
 		assert.NotNil(t, tlsConfig)
 	})
 
 	t.Run("TLS not enforced", func(t *testing.T) {
-		ctx := &Context{LocalTLSEnforced: false, ControlMode: ControlModeACM}
+		cmd.LocalTLSEnforced = false
+		ctx := &Context{ControlMode: ControlModeACM}
 		tlsConfig := cmd.setupTLSConfig(ctx)
 		assert.NotNil(t, tlsConfig)
 	})
@@ -578,7 +580,8 @@ func TestRunMethodEdgeCases(t *testing.T) {
 func TestSetupTLSConfig(t *testing.T) {
 	t.Run("TLS config with LocalTLSEnforced false", func(t *testing.T) {
 		cmd := &DeactivateCmd{}
-		ctx := &Context{LocalTLSEnforced: false, ControlMode: ControlModeACM}
+		cmd.LocalTLSEnforced = true
+		ctx := &Context{ControlMode: ControlModeACM}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
@@ -588,10 +591,10 @@ func TestSetupTLSConfig(t *testing.T) {
 
 	t.Run("TLS config with LocalTLSEnforced true", func(t *testing.T) {
 		cmd := &DeactivateCmd{}
+		cmd.LocalTLSEnforced = true
 		ctx := &Context{
-			LocalTLSEnforced: true,
-			SkipCertCheck:    true,
-			ControlMode:      ControlModeACM,
+			SkipCertCheck: true,
+			ControlMode:   ControlModeACM,
 		}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)

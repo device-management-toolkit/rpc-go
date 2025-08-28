@@ -100,7 +100,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
 	service.password = cmd.GetPassword()
-	service.localTLSEnforced = ctx.LocalTLSEnforced
+	service.localTLSEnforced = cmd.LocalTLSEnforced
 	service.skipCertCheck = ctx.SkipCertCheck
 
 	result, err := service.GetAMTInfo(cmd)

@@ -14,6 +14,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -96,16 +97,16 @@ func (cmd *WirelessCmd) Validate() error {
 	// Validate encryption method
 	encMethod := wifi.EncryptionMethod(cmd.EncryptionMethod)
 	switch encMethod {
-	case wifi.EncryptionMethod_TKIP:
+	case wifi.EncryptionMethodTKIP:
 		fallthrough
-	case wifi.EncryptionMethod_CCMP:
+	case wifi.EncryptionMethodCCMP:
 		// Valid encryption methods
 		break
-	case wifi.EncryptionMethod_Other:
+	case wifi.EncryptionMethodOther:
 		return fmt.Errorf("unsupported encryption method: Other (%d)", cmd.EncryptionMethod)
-	case wifi.EncryptionMethod_WEP:
+	case wifi.EncryptionMethodWEP:
 		return fmt.Errorf("unsupported encryption method: WEP (%d)", cmd.EncryptionMethod)
-	case wifi.EncryptionMethod_None:
+	case wifi.EncryptionMethodNone:
 		return fmt.Errorf("unsupported encryption method: None (%d)", cmd.EncryptionMethod)
 	default:
 		return fmt.Errorf("invalid encryption method: %d", cmd.EncryptionMethod)
@@ -128,7 +129,8 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 		EncryptionMethod:     wifi.EncryptionMethod(cmd.EncryptionMethod),
 	}
 
-	// For now, we'll implement basic WiFi configuration without 802.1x
+	cmd.ClearWirelessProfiles()
+
 	// If no 802.1x profile is specified, use PSK passphrase
 	var (
 		ieee8021xSettings models.IEEE8021xSettings
@@ -147,6 +149,8 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 			return fmt.Errorf("failed to configure IEEE 802.1x settings: %w", err)
 		}
 	}
+	// pause to allow amt to handle certs
+	utils.Pause(1)
 
 	// Add WiFi settings via WSMAN
 	_, err := cmd.WSMan.AddWiFiSettings(wifiEndpointSettings, ieee8021xSettings, "WiFi Endpoint 0", handles.ClientCertHandle, handles.RootCertHandle)
@@ -183,4 +187,39 @@ func (cmd *WirelessCmd) setIeee8021xConfig() (ieee8021xSettings models.IEEE8021x
 	}
 
 	return ieee8021xSettings, handles, nil
+}
+
+func (cmd *WirelessCmd) ClearWirelessProfiles() error {
+	// Get WiFi Profiles
+	wifiEndpointSettings, err := cmd.WSMan.GetWiFiSettings()
+	if err != nil {
+		return err
+	}
+
+	//Delete the existing WiFi profiles
+	for _, wifiSetting := range wifiEndpointSettings {
+		// Skip wifiSettings with no InstanceID
+		if wifiSetting.InstanceID == "" {
+			continue
+		}
+
+		log.Infof("deleting wifiSetting: %s", wifiSetting.InstanceID)
+
+		err := cmd.WSMan.DeleteWiFiSetting(wifiSetting.InstanceID)
+		if err != nil {
+			log.Infof("unable to delete: %s %s", wifiSetting.InstanceID, err)
+
+			continue
+		}
+
+		log.Infof("successfully deleted wifiSetting: %s", wifiSetting.InstanceID)
+	}
+
+	//Delete unused certificates
+	err = certs.PruneCerts(cmd.WSMan)
+	if err != nil {
+		return utils.WiFiConfigurationFailed
+	}
+
+	return nil
 }

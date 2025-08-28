@@ -84,6 +84,31 @@ func parseCommandLine(args []string) (*flags.Flags, error) {
 }
 
 func main() {
+	// Check for profile orchestration flag
+	if len(os.Args) > 1 && (os.Args[1] == "--profile" || os.Args[1] == "-profile") {
+		if len(os.Args) < 3 {
+			log.Error("Profile path required when using --profile flag")
+			os.Exit(1)
+		}
+
+		profilePath := os.Args[2]
+		log.Infof("Executing profile orchestration from: %s", profilePath)
+
+		err := checkAccess()
+		if err != nil {
+			log.Error(AccessErrMsg)
+			handleErrorAndExit(err)
+		}
+
+		err = cli.ExecuteProfile(profilePath)
+		if err != nil {
+			log.Errorf("Profile orchestration failed: %v", err)
+			handleErrorAndExit(err)
+		}
+
+		return
+	}
+
 	// Check if this is a Kong command (amtinfo or version)
 	if len(os.Args) > 1 && isKongCommand(os.Args[1]) {
 		// Use Kong CLI for supported commands

@@ -5,24 +5,19 @@
 package flags
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	configv2 "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/smb"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-	"github.com/ilyakaznacheev/cleanenv"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -85,7 +80,6 @@ type Flags struct {
 	configContentV2                     string
 	configV2Key                         string
 	UUID                                string
-	LocalConfig                         config.Config
 	LocalConfigV2                       configv2.Configuration
 	amtMaintenanceSyncIPCommand         *flag.FlagSet
 	amtMaintenanceSyncClockCommand      *flag.FlagSet
@@ -256,70 +250,6 @@ func (f *Flags) ReadPasswordFromUser() error {
 	}
 
 	f.Password = password
-
-	return nil
-}
-
-func (f *Flags) handleLocalConfig() error {
-	if f.configContent == "" {
-		return nil
-	}
-
-	err := utils.FailedReadingConfiguration
-	ext := filepath.Ext(strings.ToLower(f.configContent))
-	isPFX := ext == ".pfx"
-
-	if strings.HasPrefix(f.configContent, "smb:") {
-		isJSON := ext == ".json"
-		isYAML := ext == ".yaml" || ext == ".yml"
-
-		if !isPFX && !isJSON && !isYAML {
-			log.Error("remote config unsupported smb file extension: ", ext)
-
-			return err
-		}
-
-		configBytes, err := f.SambaService.FetchFileContents(f.configContent)
-		if err != nil {
-			log.Error("config error: ", err)
-
-			return utils.FailedReadingConfiguration
-		}
-
-		if isPFX {
-			f.LocalConfig.ACMSettings.ProvisioningCert = base64.StdEncoding.EncodeToString(configBytes)
-		}
-
-		if isJSON {
-			err = cleanenv.ParseJSON(bytes.NewReader(configBytes), &f.LocalConfig)
-		}
-
-		if isYAML {
-			err = cleanenv.ParseYAML(bytes.NewReader(configBytes), &f.LocalConfig)
-		}
-
-		if err != nil {
-			log.Error("config error: ", err)
-
-			return err
-		}
-	} else if isPFX {
-		pfxBytes, err := os.ReadFile(f.configContent)
-		if err != nil {
-			log.Error("config error: ", err)
-
-			return utils.FailedReadingConfiguration
-		}
-
-		f.LocalConfig.ACMSettings.ProvisioningCert = base64.StdEncoding.EncodeToString(pfxBytes)
-	} else {
-		err := cleanenv.ReadConfig(f.configContent, &f.LocalConfig)
-		if err != nil {
-			log.Error("config error: ", err)
-
-			return err
-		}
-	}
 
 	return nil
 }

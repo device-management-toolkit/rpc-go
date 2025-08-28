@@ -43,7 +43,7 @@ func readPasswordFromUser() (string, error) {
 // setupTLSConfig creates TLS configuration if local TLS is enforced
 func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 	tlsConfig := &tls.Config{}
-	if ctx.LocalTLSEnforced {
+	if cmd.LocalTLSEnforced {
 		tlsConfig = certs.GetTLSConfig(&ctx.ControlMode, nil, ctx.SkipCertCheck)
 	}
 
