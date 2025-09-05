@@ -19,6 +19,8 @@ on:
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 permissions:
   contents: read
+  checks: write
+  pull-requests: write
 
 jobs:
   formatting:
@@ -70,16 +72,26 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install Test Converter and run tests
+      - name: Run unit tests (JUnit report + coverage)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           export GOPATH="$HOME/go/"
           export PATH=$PATH:$GOPATH/bin
-          go install github.com/jstemmer/go-junit-report/v2@latest
-          go test -v 2>&1 ./... | go-junit-report -set-exit-code > rpc-go-unit.xml
+          go install gotest.tools/gotestsum@latest
+          gotestsum --junitfile rpc-go-unit.xml --format short-verbose -- -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: run the tests with coverage
+        if: ${{ matrix.os != 'ubuntu-24.04' }}
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Publish Unit Test Results
+        if: ${{ always() && matrix.os == 'ubuntu-24.04' }}
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: rpc-go-unit.xml
+          check_name: Unit tests (Go)
+          comment_mode: failures
+          report_individual_runs: true
 
       - uses: codecov/codecov-action@fdcc8476540edceab3de004e990f80d881c6cc00 # v5.5.0
         if: ${{ matrix.os == 'ubuntu-24.04' }}
@@ -95,9 +107,4 @@ jobs:
         if: ${{ matrix.os != 'windows-2022' }}
         run: go build -o rpc ./cmd/rpc
 
-      - name: GitHub Upload Release Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ always() && matrix.os == 'ubuntu-24.04' }}
-        with:
-          name: rpc-go-unit
-          path: rpc-go-unit.xml
+  # JUnit report is surfaced in PR Checks via the step above; artifact upload not needed.
