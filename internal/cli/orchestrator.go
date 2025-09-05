@@ -87,6 +87,8 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		return fmt.Errorf("TLS configuration failed: %w", err)
 	}
 
+	// Step 8: (reserved) HTTP Proxy configuration can be added when schema exposes proxy fields
+
 	log.Info("Profile orchestration completed successfully!")
 
 	return nil
@@ -420,6 +422,8 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	return Execute(args)
 }
+
+// (reserved) executeHTTPProxyConfiguration will be implemented when the v2 config schema adds proxy fields
 
 // ExecuteProfile is a helper function to execute a profile from a file path
 func ExecuteProfile(profilePath string) error {

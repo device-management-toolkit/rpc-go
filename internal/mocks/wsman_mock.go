@@ -33,6 +33,7 @@ import (
 	models "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	wifi "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	hostbasedsetup "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	ieee8021x "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	optin "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	gomock "go.uber.org/mock/gomock"
@@ -150,6 +151,21 @@ func (m *MockWSMANer) AddTrustedRootCert(caCert string) (string, error) {
 func (mr *MockWSMANerMockRecorder) AddTrustedRootCert(caCert any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTrustedRootCert", reflect.TypeOf((*MockWSMANer)(nil).AddTrustedRootCert), caCert)
+}
+
+// AddHTTPProxyAccessPoint mocks base method.
+func (m *MockWSMANer) AddHTTPProxyAccessPoint(accessInfo string, infoFormat int, port int, networkDnsSuffix string) (ipshttp.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddHTTPProxyAccessPoint", accessInfo, infoFormat, port, networkDnsSuffix)
+	ret0, _ := ret[0].(ipshttp.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddHTTPProxyAccessPoint indicates an expected call of AddHTTPProxyAccessPoint.
+func (mr *MockWSMANerMockRecorder) AddHTTPProxyAccessPoint(accessInfo, infoFormat, port, networkDnsSuffix any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHTTPProxyAccessPoint", reflect.TypeOf((*MockWSMANer)(nil).AddHTTPProxyAccessPoint), accessInfo, infoFormat, port, networkDnsSuffix)
 }
 
 // AddWiFiSettings mocks base method.
