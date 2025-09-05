@@ -43,7 +43,7 @@ func rpcExec(Input *C.char, Output **C.char) int {
 		return accessStatus
 	}
 
-	//create argument array from input string
+	// create argument array from input string
 	inputString := C.GoString(Input)
 	// Split string
 	r := csv.NewReader(strings.NewReader(inputString))

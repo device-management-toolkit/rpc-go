@@ -17,8 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var MockPRSuccess = new(MockPasswordReaderSuccess)
-var MockPRFail = new(MockPasswordReaderFail)
+var (
+	MockPRSuccess = new(MockPasswordReaderSuccess)
+	MockPRFail    = new(MockPasswordReaderFail)
+)
 
 type MockPasswordReaderSuccess struct{}
 
@@ -35,18 +37,22 @@ func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
 // Mock the AMT Hardware
 type MockAMT struct{}
 
-var mebxDNSSuffix string
-var osDNSSuffix string = "osdns"
-var controlMode int = 0
-var err error = nil
-var mode int = 0
+var (
+	mebxDNSSuffix string
+	osDNSSuffix   string = "osdns"
+	controlMode   int    = 0
+	err           error  = nil
+	mode          int    = 0
+)
 
 func (c MockAMT) Initialize() error {
 	return nil
 }
+
 func (c MockAMT) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
 	return "Version", nil
 }
+
 func (c MockAMT) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
 	return amt.ChangeEnabledResponse(0x01), nil
 }
@@ -61,15 +67,19 @@ func (c MockAMT) GetDNSSuffix() (string, error)   { return mebxDNSSuffix, nil }
 func (c MockAMT) GetCertificateHashes() ([]amt.CertHashEntry, error) {
 	return []amt.CertHashEntry{}, nil
 }
+
 func (c MockAMT) GetRemoteAccessConnectionStatus() (amt.RemoteAccessStatus, error) {
 	return amt.RemoteAccessStatus{}, nil
 }
+
 func (c MockAMT) GetLANInterfaceSettings(useWireless bool) (amt.InterfaceSettings, error) {
 	return amt.InterfaceSettings{}, nil
 }
+
 func (c MockAMT) GetLocalSystemAccount() (amt.LocalSystemAccount, error) {
 	return amt.LocalSystemAccount{Username: "Username", Password: "Password"}, nil
 }
+
 func (c MockAMT) Unprovision() (int, error) {
 	return mode, nil
 }
@@ -86,6 +96,7 @@ func init() {
 	p = Payload{}
 	p.AMT = MockAMT{}
 }
+
 func TestCreatePayload(t *testing.T) {
 	mebxDNSSuffix = "mebxdns"
 	result, err := p.createPayload("", "", 0)
@@ -102,12 +113,14 @@ func TestCreatePayload(t *testing.T) {
 	assert.Len(t, result.CertificateHashes, 0)
 	assert.NoError(t, err)
 }
+
 func TestCreatePayloadWithOSDNSSuffix(t *testing.T) {
 	mebxDNSSuffix = ""
 	result, err := p.createPayload("", "", 0)
 	assert.NoError(t, err)
 	assert.Equal(t, "osdns", result.FQDN)
 }
+
 func TestCreatePayloadWithDNSSuffix(t *testing.T) {
 	result, err := p.createPayload("vprodemo.com", "", 0)
 	assert.NoError(t, err)
@@ -137,6 +150,7 @@ func TestCreateActivationRequestNoDNSSuffixProvided(t *testing.T) {
 	assert.Equal(t, utils.ProtocolVersion, result.ProtocolVersion)
 	assert.Equal(t, utils.ProjectVersion, result.AppVersion)
 }
+
 func TestCreateActivationRequestNoPasswordShouldPrompt(t *testing.T) {
 	controlMode = 1
 	flags := flags.NewFlags(nil, MockPRSuccess)
@@ -145,6 +159,7 @@ func TestCreateActivationRequestNoPasswordShouldPrompt(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, result.Payload)
 }
+
 func TestCreateActivationRequestWithPasswordShouldNotPrompt(t *testing.T) {
 	controlMode = 1
 	flags := flags.Flags{
@@ -284,6 +299,7 @@ func TestCreateMessageRequestFriendlyName(t *testing.T) {
 	assert.NoError(t, unmarshalErr)
 	assert.Equal(t, m["friendlyName"], expectedName)
 }
+
 func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
 	flags := flags.Flags{}
 	result, createErr := p.CreateMessageRequest(flags)

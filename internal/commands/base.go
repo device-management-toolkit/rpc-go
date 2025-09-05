@@ -29,15 +29,9 @@ type AMTBaseCmd struct {
 	Password         string             `help:"AMT password" env:"AMT_PASSWORD" name:"password" short:"p"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
-}
-
-// Validate implements Kong's Validate interface for centralized password validation.
-// This method will be called automatically by Kong for any command that embeds AMTBaseCmd.
-func (cmd *AMTBaseCmd) Validate() error {
-	// Note: This base validation is intentionally minimal.
-	// Password validation should be handled by the embedding command's ValidatePasswordIfNeeded method
-	// when the command actually needs to use AMT functionality.
-	return nil
+	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
+	// to bypass LMS/WSMAN client initialization when it isn't required.
+	SkipWSMANSetup bool `kong:"-"`
 }
 
 // ValidatePasswordIfNeeded prompts for password if required and not already provided
@@ -70,6 +64,10 @@ func (cmd *AMTBaseCmd) ValidatePasswordIfNeeded(requirer PasswordRequirer) error
 // This method will be called automatically by Kong after command validation.
 // The AMT command is injected via Kong's dependency injection system.
 func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
+	// Some commands (like amtinfo without --userCert) don't need LMS/WSMAN.
+	if cmd.SkipWSMANSetup {
+		return nil
+	}
 	// Initialize WSMAN client if not already set up
 	if cmd.WSMan == nil {
 		// Check if TLS is Mandatory for LMS connection

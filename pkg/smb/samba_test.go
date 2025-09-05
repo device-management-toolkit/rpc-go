@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var MockPRSuccess = new(MockPasswordReaderSuccess)
-var MockPRFail = new(MockPasswordReaderFail)
+var (
+	MockPRSuccess = new(MockPasswordReaderSuccess)
+	MockPRFail    = new(MockPasswordReaderFail)
+)
 
 type MockPasswordReaderSuccess struct{}
 

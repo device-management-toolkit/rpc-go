@@ -109,7 +109,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 	}
 
 	if cmd.GetControlMode() == 2 {
-		//Get OptInService
+		// Get OptInService
 		getOptInServiceResponse, err := cmd.WSMan.GetIpsOptInService()
 		if err != nil {
 			log.Error("Error while getting the OptIn Service: ", err)
@@ -129,7 +129,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 		}
 
 		if getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired != optInRequired {
-			//Put OptInService
+			// Put OptInService
 			request := optin.OptInServiceRequest{
 				CanModifyOptInPolicy:    getOptInServiceResponse.Body.GetAndPutResponse.CanModifyOptInPolicy,
 				CreationClassName:       getOptInServiceResponse.Body.GetAndPutResponse.CreationClassName,
@@ -178,7 +178,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 func (cmd *AMTFeaturesCmd) setAMTRedirectionService() error {
 	var requestedState redirection.RequestedState
 
-	requestedState = 32768 //supported values in RequestedState are 32768-32771
+	requestedState = 32768 // supported values in RequestedState are 32768-32771
 	if cmd.IDER {
 		requestedState += 1
 	}
@@ -186,7 +186,7 @@ func (cmd *AMTFeaturesCmd) setAMTRedirectionService() error {
 	if cmd.SOL {
 		requestedState += 2
 	}
-	//32771 - enable IDER and SOL
+	// 32771 - enable IDER and SOL
 	_, err := cmd.WSMan.RequestRedirectionStateChange(requestedState)
 	if err != nil {
 		return err

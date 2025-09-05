@@ -215,7 +215,6 @@ func TestNewLocalActivationService(t *testing.T) {
 type MockAMTCommand struct {
 	controlMode     int
 	changeEnabled   MockChangeEnabled
-	shouldEnableAMT bool
 	shouldErrorOn   string
 	unProvisionMode int
 }
@@ -509,12 +508,13 @@ func TestLocalActivateCmd_ensurePasswordProvided(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &LocalActivateCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{Password: tt.password},
+				ACM:        true,
 			}
 
 			// We can only test the case where password is already provided
 			// because testing the password prompt would require mocking stdin
 			if tt.password != "" {
-				err := cmd.AMTBaseCmd.Validate()
+				err := cmd.Validate()
 				if err != nil {
 					t.Errorf("ensurePasswordProvided() with existing password should not error, got %v", err)
 				}
@@ -803,19 +803,7 @@ func TestLocalActivationService_activateACM(t *testing.T) {
 	}
 }
 
-// Test for readPasswordFromUser function coverage (mocked)
-func TestReadPasswordFromUser(t *testing.T) {
-	// Note: This function is difficult to test directly because it reads from stdin
-	// In a real scenario, we would need to mock the utils.PR.ReadPassword() function
-	// For now, we'll test that the function exists and has the expected behavior
-	// The actual password reading logic would require dependency injection for proper testing
-	t.Run("function exists and is callable", func(t *testing.T) {
-		// We can't easily test the actual password reading without mocking stdin
-		// But we can verify the function exists and is callable
-		// This test mainly serves to document that the function exists
-		t.Log("readPasswordFromUser function exists but requires mocked stdin for full testing")
-	})
-}
+// Removed readPasswordFromUser coverage test since password prompting is centralized elsewhere
 
 // Test for certificate-related functions with valid input
 func TestLocalActivationService_convertPfxToObject(t *testing.T) {
@@ -967,9 +955,8 @@ func TestLocalActivationService_setupACMTLSConfig(t *testing.T) {
 					ProvisioningCert:    tt.provisioningCert,
 					ProvisioningCertPwd: tt.provisioningCertPwd,
 				},
-				context: &commands.Context{
-					LocalTLSEnforced: tt.localTLSEnforced,
-				},
+				context:          &commands.Context{},
+				localTLSEnforced: tt.localTLSEnforced,
 			}
 
 			_, err := service.setupACMTLSConfig()
@@ -989,9 +976,8 @@ func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 		config: LocalActivationConfig{
 			AMTPassword: "password123",
 		},
-		context: &commands.Context{
-			LocalTLSEnforced: true,
-		},
+		context:          &commands.Context{},
+		localTLSEnforced: true,
 	}
 
 	// Test that calling with nil panics (as expected)
@@ -1030,9 +1016,8 @@ func TestLocalActivationService_commitCCMChanges(t *testing.T) {
 		config: LocalActivationConfig{
 			AMTPassword: "password123",
 		},
-		context: &commands.Context{
-			LocalTLSEnforced: true,
-		},
+		context:          &commands.Context{},
+		localTLSEnforced: true,
 	}
 
 	// Test that calling with nil panics (as expected)

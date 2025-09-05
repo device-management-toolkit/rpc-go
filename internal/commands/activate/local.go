@@ -92,18 +92,20 @@ func (m ActivationMode) String() string {
 
 // LocalActivationService handles the actual local activation logic
 type LocalActivationService struct {
-	wsman      interfaces.WSMANer
-	amtCommand amt.Interface
-	config     LocalActivationConfig
-	context    *commands.Context
+	wsman            interfaces.WSMANer
+	amtCommand       amt.Interface
+	config           LocalActivationConfig
+	context          *commands.Context
+	localTLSEnforced bool
 }
 
 // NewLocalActivationService creates a new local activation service
 func NewLocalActivationService(amtCommand amt.Interface, config LocalActivationConfig, ctx *commands.Context) *LocalActivationService {
 	return &LocalActivationService{
-		amtCommand: amtCommand,
-		config:     config,
-		context:    ctx,
+		amtCommand:       amtCommand,
+		config:           config,
+		context:          ctx,
+		localTLSEnforced: false,
 	}
 }
 
@@ -126,11 +128,6 @@ func (cmd *LocalActivateCmd) RequiresAMTPassword() bool {
 func (cmd *LocalActivateCmd) Validate() error {
 	// Stop configuration doesn't require mode selection
 	if cmd.StopConfig {
-		// Call base validation for password
-		if err := cmd.AMTBaseCmd.Validate(); err != nil {
-			return err
-		}
-
 		return nil
 	}
 
@@ -159,7 +156,8 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 
 	// Create and run the activation service
 	service := NewLocalActivationService(ctx.AMTCommand, config, ctx)
-	service.context.LocalTLSEnforced = cmd.LocalTLSEnforced
+	service.localTLSEnforced = cmd.LocalTLSEnforced
+
 	return service.Activate()
 }
 
@@ -339,7 +337,7 @@ func (service *LocalActivationService) activateCCM() error {
 	// Setup TLS configuration
 	tlsConfig := &tls.Config{}
 
-	if service.context.LocalTLSEnforced {
+	if service.localTLSEnforced {
 		controlMode := service.config.ControlMode // Use stored control mode
 		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipCertCheck)
 	}
@@ -347,7 +345,7 @@ func (service *LocalActivationService) activateCCM() error {
 	// Create WSMAN client
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.context.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
@@ -365,7 +363,7 @@ func (service *LocalActivationService) activateCCM() error {
 	}
 
 	// If TLS is enforced, commit changes with admin credentials
-	if service.context.LocalTLSEnforced {
+	if service.localTLSEnforced {
 		err := service.commitCCMChanges()
 		if err != nil {
 			return utils.ActivationFailed
@@ -417,13 +415,13 @@ func (service *LocalActivationService) activateACM() error {
 	// Create WSMAN client
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.context.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
 	// Perform ACM activation using the new TLS path (cleaner)
-	if service.context.LocalTLSEnforced {
+	if service.localTLSEnforced {
 		err = service.activateACMWithTLS()
 	} else {
 		err = service.activateACMLegacy()
@@ -477,24 +475,6 @@ func (service *LocalActivationService) commitCCMChanges() error {
 	return nil
 }
 
-// readPasswordFromUser prompts the user for a password
-func readPasswordFromUser() (string, error) {
-	fmt.Print("Please enter AMT Password: ")
-
-	password, err := utils.PR.ReadPassword()
-	if err != nil {
-		return "", err
-	}
-
-	fmt.Println() // Add newline after password input
-
-	if password == "" {
-		return "", fmt.Errorf("password cannot be empty")
-	}
-
-	return password, nil
-}
-
 // Certificate types for ACM activation
 type CertsAndKeys struct {
 	certs []*x509.Certificate
@@ -517,7 +497,7 @@ type ProvisioningCertObj struct {
 func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) {
 	tlsConfig := &tls.Config{}
 
-	if service.context.LocalTLSEnforced {
+	if service.localTLSEnforced {
 		// Convert certificate for TLS
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
@@ -554,7 +534,7 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 func (service *LocalActivationService) activateACMWithTLS() error {
 	// For TLS path, we just change the AMT password and commit
 	// Setup WSMAN client with admin credentials
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.context.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
@@ -649,7 +629,7 @@ func (service *LocalActivationService) activateACMLegacy() error {
 // Certificate handling methods for ACM activation
 
 // convertPfxToObject converts a base64 PFX certificate to a CertsAndKeys object
-func (service *LocalActivationService) convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) {
+func (service *LocalActivationService) convertPfxToObject(pfxb64, passphrase string) (CertsAndKeys, error) {
 	pfx, err := base64.StdEncoding.DecodeString(pfxb64)
 	if err != nil {
 		return CertsAndKeys{}, utils.ActivationFailedDecode64
@@ -843,7 +823,7 @@ func (service *LocalActivationService) signString(message []byte, privateKey cry
 }
 
 // createSignedString creates a signed string from nonces and private key
-func (service *LocalActivationService) createSignedString(nonce []byte, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {
+func (service *LocalActivationService) createSignedString(nonce, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {
 	arr := append(fwNonce, nonce...)
 
 	signature, err := service.signString(arr, privateKey)

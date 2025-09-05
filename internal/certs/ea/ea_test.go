@@ -73,6 +73,7 @@ func TestGetEAAuthToken(t *testing.T) {
 		})
 	}
 }
+
 func TestConfigureEACertificate(t *testing.T) {
 	tests := []struct {
 		name         string

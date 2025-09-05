@@ -17,6 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -58,25 +59,20 @@ type AmtInfoCmd struct {
 // RequiresAMTPassword indicates whether this command requires AMT password
 // For amtinfo, password is only required for user certificate operations
 func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
+	// Only require password when user explicitly requests user certificates.
 	return cmd.IsUserCertRequested()
 }
 
 // Validate implements Kong's extensible validation interface for business logic validation
-func (cmd *AmtInfoCmd) Validate(kctx *kong.Context, amtCommand amt.Interface) error {
-	// Handle interactive password prompting for user certificates
+func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
+	// For amtinfo, skip WSMAN setup unless user certificates are explicitly requested.
+	// Avoid any hardware/driver access during validation to keep tests hermetic.
+	cmd.SkipWSMANSetup = !cmd.UserCert
+
+	// Handle interactive password prompting only when explicitly requesting user certificates.
+	// Provisioning/control-mode checks are deferred to runtime where the injected AMT interface is used.
 	if cmd.IsUserCertRequested() {
-		// Check if device is provisioned before prompting for password
-		controlMode, err := amtCommand.GetControlMode()
-		if err != nil {
-			return fmt.Errorf("failed to get control mode for userCert validation: %w", err)
-		}
-
-		if controlMode == 0 {
-			return fmt.Errorf("device is in pre-provisioning mode. User certificates are not available until device is provisioned")
-		}
-
-		// Call base validation to handle password prompting
-		if err := cmd.AMTBaseCmd.Validate(); err != nil {
+		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
 			return err
 		}
 	}
@@ -97,11 +93,20 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 
 // Run executes the amtinfo command
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
+	// If user requested user certificates or --all, prompt for password at runtime.
+	if (cmd.UserCert || cmd.All) && cmd.GetPassword() == "" {
+		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
+			return err
+		}
+	}
+
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
 	service.password = cmd.GetPassword()
 	service.localTLSEnforced = cmd.LocalTLSEnforced
 	service.skipCertCheck = ctx.SkipCertCheck
+	// Reuse the already-initialized WSMAN client from AMTBaseCmd (initialized in AfterApply when userCert is requested)
+	service.wsman = cmd.GetWSManClient()
 
 	result, err := service.GetAMTInfo(cmd)
 	if err != nil {
@@ -149,6 +154,7 @@ type InfoService struct {
 	password         string
 	localTLSEnforced bool
 	skipCertCheck    bool
+	wsman            interfaces.WSMANer
 }
 
 // NewInfoService creates a new InfoService with the given AMT command
@@ -159,16 +165,17 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		password:         "",
 		localTLSEnforced: false,
 		skipCertCheck:    false,
+		wsman:            nil,
 	}
 }
 
 // GetAMTInfo retrieves AMT information based on the command flags
 func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	result := &InfoResult{}
-	showAll := cmd.All || s.hasNoFlagsSet(cmd)
+	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	// Track control mode for reuse across multiple operations
-	var controlMode = -1 // -1 indicates not checked yet
+	controlMode := -1 // -1 indicates not checked yet
 
 	var controlModeErr error
 
@@ -347,7 +354,7 @@ func (s *InfoService) OutputJSON(result *InfoResult) error {
 
 // OutputText outputs the result in human-readable text format
 func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
-	showAll := cmd.All || s.hasNoFlagsSet(cmd)
+	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	if (showAll || cmd.Ver) && result.AMT != "" {
 		fmt.Printf("Version\t\t\t: %s\n", result.AMT)
@@ -466,12 +473,6 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 	return nil
 }
 
-// hasNoFlagsSet checks if no specific flags are set (meaning show all)
-func (s *InfoService) hasNoFlagsSet(cmd *AmtInfoCmd) bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.DNS &&
-		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
-}
-
 // getOSIPAddress gets the OS IP address for a given MAC address
 func (s *InfoService) getOSIPAddress(macAddr string) string {
 	if macAddr == "00:00:00:00:00:00" {
@@ -563,21 +564,25 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 		return nil, fmt.Errorf("device is in pre-provisioning mode, user certificates are not available")
 	}
 
-	// Create WSMAN client
-	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-	// Setup TLS configuration
-	var tlsConfig *tls.Config
-	if s.localTLSEnforced {
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
+	// Prefer an existing, already-initialized WSMAN client to avoid duplicate LMS connections/logs
+	var wsmanClient interfaces.WSMANer
+	if s.wsman != nil {
+		wsmanClient = s.wsman
 	} else {
-		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipCertCheck}
-	}
+		// Create and setup a temporary client as a fallback
+		wsmanClient = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	// Setup WSMAN client with admin credentials
-	err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup WSMAN client: %w", err)
+		// Setup TLS configuration
+		var tlsConfig *tls.Config
+		if s.localTLSEnforced {
+			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
+		} else {
+			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipCertCheck}
+		}
+
+		if err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+			return nil, fmt.Errorf("failed to setup WSMAN client: %w", err)
+		}
 	}
 
 	// Get public key certificates

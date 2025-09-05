@@ -43,7 +43,8 @@ type ActivateCmd struct {
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
-// For activate, password is only required for local activation with stopConfig
+// For activate, password is required for local activation (to set the AMT password).
+// The stopConfig path does not require an AMT password.
 func (cmd *ActivateCmd) RequiresAMTPassword() bool {
 	return !cmd.StopConfig
 }
@@ -110,7 +111,7 @@ func (cmd *ActivateCmd) Validate() error {
 			return fmt.Errorf("cannot specify both --ccm and --acm")
 		}
 
-		// Call base validation if password is required (for stopConfig)
+		// Prompt for AMT password when required for local activation
 		if cmd.RequiresAMTPassword() {
 			if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
 				return err

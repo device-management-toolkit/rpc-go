@@ -68,7 +68,7 @@ func SetupDiGetClassDevs(class *windows.GUID, enum *uint16, parent syscall.Handl
 		}
 	}
 
-	return
+	return devInfoSet, err
 }
 
 func SetupDiGetDeviceRegistryProperty(devInfoSet syscall.Handle, diData *SpDevinfoData, prop uint32, regDataType *uint32, buf []byte, size *uint32) (err error) {
@@ -86,7 +86,7 @@ func SetupDiGetDeviceRegistryProperty(devInfoSet syscall.Handle, diData *SpDevin
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiEnumDeviceInfo(devInfoSet syscall.Handle, index uint32, diData *SpDevinfoData) (err error) {
@@ -99,7 +99,7 @@ func SetupDiEnumDeviceInfo(devInfoSet syscall.Handle, index uint32, diData *SpDe
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiCreateDeviceInfo(devInfoSet syscall.Handle, devName *uint16, g *windows.GUID, devDesc *uint16, hwnd uintptr, cflags uint32, dataOut *SpDevinfoData) (err error) {
@@ -112,7 +112,7 @@ func SetupDiCreateDeviceInfo(devInfoSet syscall.Handle, devName *uint16, g *wind
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiCreateDeviceInfoList(g *windows.GUID, hwnd uintptr) (devInfoSet syscall.Handle, err error) {
@@ -127,7 +127,7 @@ func SetupDiCreateDeviceInfoList(g *windows.GUID, hwnd uintptr) (devInfoSet sysc
 		}
 	}
 
-	return
+	return devInfoSet, err
 }
 
 func SetupDiSetDeviceRegistryProperty(devInfoSet syscall.Handle, data *SpDevinfoData, prop uint32, buf *byte, sz uint32) (err error) {
@@ -140,7 +140,7 @@ func SetupDiSetDeviceRegistryProperty(devInfoSet syscall.Handle, data *SpDevinfo
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiCallClassInstaller(installFn uintptr, devInfoSet syscall.Handle, data *SpDevinfoData) (err error) {
@@ -153,7 +153,7 @@ func SetupDiCallClassInstaller(installFn uintptr, devInfoSet syscall.Handle, dat
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiDestroyDeviceInfoList(devInfoSet syscall.Handle) (err error) {
@@ -166,7 +166,7 @@ func SetupDiDestroyDeviceInfoList(devInfoSet syscall.Handle) (err error) {
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiGetINFClass(infPath *uint16, guid *windows.GUID, className []uint16, reqSz *uint32) (err error) {
@@ -184,10 +184,10 @@ func SetupDiGetINFClass(infPath *uint16, guid *windows.GUID, className []uint16,
 		}
 	}
 
-	return
+	return err
 }
 
-func SetupDiOpenDevRegKey(devInfoSet syscall.Handle, diData *SpDevinfoData, scope uint32, hwProfile uint32, keyType uint32, desiredAccess uint32) (h syscall.Handle, err error) {
+func SetupDiOpenDevRegKey(devInfoSet syscall.Handle, diData *SpDevinfoData, scope, hwProfile, keyType, desiredAccess uint32) (h syscall.Handle, err error) {
 	r0, _, e1 := syscall.SyscallN(procSetupDiOpenDevRegKey.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(diData)), uintptr(scope), uintptr(hwProfile), uintptr(keyType), uintptr(desiredAccess))
 	h = syscall.Handle(r0)
 
@@ -199,7 +199,7 @@ func SetupDiOpenDevRegKey(devInfoSet syscall.Handle, diData *SpDevinfoData, scop
 		}
 	}
 
-	return
+	return h, err
 }
 
 func SetupDiGetDeviceInstanceId(devInfoSet syscall.Handle, diData *SpDevinfoData, id []uint16, reqSz *uint32) (err error) {
@@ -217,7 +217,7 @@ func SetupDiGetDeviceInstanceId(devInfoSet syscall.Handle, diData *SpDevinfoData
 		}
 	}
 
-	return
+	return err
 }
 
 func SetupDiEnumDeviceInterfaces(devInfoSet syscall.Handle, deviceInfoData *SpDevinfoData, class *windows.GUID, memberIndex uint32, deviceInterfaceData *SpDevInterfaceData) (idk syscall.Handle, err error) {
@@ -232,7 +232,7 @@ func SetupDiEnumDeviceInterfaces(devInfoSet syscall.Handle, deviceInfoData *SpDe
 		}
 	}
 
-	return
+	return idk, err
 }
 
 func SetupDiGetDeviceInterfaceDetail(devInfoSet syscall.Handle, dintfdata *SpDevInterfaceData, detail *uint16, detailSize uint32, reqsize *uint32, devInfData *SpDevinfoData) (err error) {
@@ -246,5 +246,5 @@ func SetupDiGetDeviceInterfaceDetail(devInfoSet syscall.Handle, dintfdata *SpDev
 		}
 	}
 
-	return
+	return err
 }

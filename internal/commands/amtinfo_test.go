@@ -500,39 +500,21 @@ func TestInfoService_OutputText(t *testing.T) {
 	}
 }
 
-func TestInfoService_hasNoFlagsSet(t *testing.T) {
-	service := NewInfoService(nil)
-
+func TestAmtInfoCmd_HasNoFlagsSet(t *testing.T) {
 	tests := []struct {
 		name string
 		cmd  *AmtInfoCmd
 		want bool
 	}{
-		{
-			name: "no flags set",
-			cmd:  &AmtInfoCmd{},
-			want: true,
-		},
-		{
-			name: "version flag set",
-			cmd:  &AmtInfoCmd{Ver: true},
-			want: false,
-		},
-		{
-			name: "multiple flags set",
-			cmd:  &AmtInfoCmd{Ver: true, Bld: true},
-			want: false,
-		},
-		{
-			name: "all flag set",
-			cmd:  &AmtInfoCmd{All: true},
-			want: true, // hasNoFlagsSet only checks individual flags, not All
-		},
+		{name: "no flags set", cmd: &AmtInfoCmd{}, want: true},
+		{name: "version flag set", cmd: &AmtInfoCmd{Ver: true}, want: false},
+		{name: "multiple flags set", cmd: &AmtInfoCmd{Ver: true, Bld: true}, want: false},
+		{name: "all flag set", cmd: &AmtInfoCmd{All: true}, want: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := service.hasNoFlagsSet(tt.cmd)
+			result := tt.cmd.HasNoFlagsSet()
 			assert.Equal(t, tt.want, result)
 		})
 	}
@@ -1102,8 +1084,6 @@ func TestInfoService_OutputJSON_MarshalError(t *testing.T) {
 
 // Test edge cases in hasNoFlagsSet
 func TestInfoService_hasNoFlagsSet_AllCombinations(t *testing.T) {
-	service := NewInfoService(nil)
-
 	// Test all individual flags
 	flags := []struct {
 		name string
@@ -1125,7 +1105,7 @@ func TestInfoService_hasNoFlagsSet_AllCombinations(t *testing.T) {
 
 	for _, flag := range flags {
 		t.Run(flag.name, func(t *testing.T) {
-			result := service.hasNoFlagsSet(flag.cmd)
+			result := flag.cmd.HasNoFlagsSet()
 			assert.False(t, result, "Should return false when %s flag is set", flag.name)
 		})
 	}

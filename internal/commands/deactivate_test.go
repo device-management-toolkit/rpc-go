@@ -605,39 +605,4 @@ func TestSetupTLSConfig(t *testing.T) {
 }
 
 // Test readPasswordFromUser function
-func TestReadPasswordFromUser(t *testing.T) {
-	originalPR := utils.PR
-
-	t.Run("successful password read", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderSuccess{}
-
-		password, err := readPasswordFromUser()
-
-		assert.NoError(t, err)
-		assert.Equal(t, "test-password", password)
-	})
-
-	t.Run("password read failure", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderFail{}
-
-		password, err := readPasswordFromUser()
-
-		assert.Error(t, err)
-		assert.Empty(t, password)
-	})
-
-	t.Run("empty password read", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderEmpty{}
-
-		password, err := readPasswordFromUser()
-
-		assert.Error(t, err)
-		assert.Empty(t, password)
-		assert.Contains(t, err.Error(), "password cannot be empty")
-	})
-
-	// Restore original password reader
-	defer func() {
-		utils.PR = originalPR
-	}()
-}
+// TestReadPasswordFromUser removed: password prompting now centralized in AMTBaseCmd.ValidatePasswordIfNeeded

@@ -15,7 +15,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
-//TODO: Ensure pointers are freed properly throughout this file
+// TODO: Ensure pointers are freed properly throughout this file
 
 // AMTUnicodeString ...
 type AMTUnicodeString struct {
@@ -42,7 +42,7 @@ type InterfaceSettings struct {
 	LinkStatus  string `json:"linkStatus"`
 	DHCPEnabled bool   `json:"dhcpEnabled"`
 	DHCPMode    string `json:"dhcpMode"`
-	IPAddress   string `json:"ipAddress"` //net.IP
+	IPAddress   string `json:"ipAddress"` // net.IP
 	OsIPAddress string `json:"osIpAddress"`
 	MACAddress  string `json:"macAddress"`
 }
@@ -99,12 +99,15 @@ type ChangeEnabledResponse uint8
 func (r ChangeEnabledResponse) IsTransitionAllowed() bool {
 	return (r & 1) == 1
 }
+
 func (r ChangeEnabledResponse) IsAMTEnabled() bool {
 	return ((r >> 1) & 1) == 1
 }
+
 func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
 	return ((r >> 7) & 1) == 1
 }
+
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {
 	return ((r >> 6) & 1) == 1
 }

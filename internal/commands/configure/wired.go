@@ -233,7 +233,7 @@ func (cmd *WiredCmd) disable8021xProfile() error {
 			return err
 		}
 
-		//Delete unused certificates
+		// Delete unused certificates
 		certs.PruneCerts(cmd.WSMan)
 	}
 
