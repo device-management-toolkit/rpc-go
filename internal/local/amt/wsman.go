@@ -56,7 +56,7 @@ func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
 	}
 }
 
-func (g *GoWSMANMessages) SetupWsmanClient(username string, password string, useTLS bool, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
 	clientParams := client.Parameters{
 		Target:         g.target,
 		Username:       username,
@@ -118,7 +118,7 @@ func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {
 	return g.wsmanMessages.AMT.GeneralSettings.Get()
 }
 
-func (g *GoWSMANMessages) HostBasedSetupService(digestRealm string, password string) (hostbasedsetup.Response, error) {
+func (g *GoWSMANMessages) HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.Setup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password)
 }
 
@@ -126,13 +126,14 @@ func (g *GoWSMANMessages) GetHostBasedSetupService() (hostbasedsetup.Response, e
 	return g.wsmanMessages.IPS.HostBasedSetupService.Get()
 }
 
-func (g *GoWSMANMessages) AddNextCertInChain(cert string, isLeaf bool, isRoot bool) (hostbasedsetup.Response, error) {
+func (g *GoWSMANMessages) AddNextCertInChain(cert string, isLeaf, isRoot bool) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.AddNextCertInChain(cert, isLeaf, isRoot)
 }
 
 func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.AdminSetup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password, base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
 }
+
 func (g *GoWSMANMessages) PartialUnprovision() (setupandconfiguration.Response, error) {
 	return g.wsmanMessages.AMT.SetupAndConfigurationService.PartialUnprovision()
 }
@@ -196,6 +197,7 @@ func (g *GoWSMANMessages) GetPublicPrivateKeyPairs() ([]publicprivate.RefinedPub
 
 	return response.Body.RefinedPullResponse.PublicPrivateKeyPairItems, nil
 }
+
 func (g *GoWSMANMessages) GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse, error) {
 	response, err := g.wsmanMessages.CIM.WiFiEndpointSettings.Enumerate()
 	if err != nil {
@@ -209,6 +211,7 @@ func (g *GoWSMANMessages) GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse
 
 	return response.Body.PullResponse.EndpointSettingsItems, nil
 }
+
 func (g *GoWSMANMessages) GetEthernetSettings() ([]ethernetport.SettingsResponse, error) {
 	response, err := g.wsmanMessages.AMT.EthernetPortSettings.Enumerate()
 	if err != nil {
@@ -222,19 +225,23 @@ func (g *GoWSMANMessages) GetEthernetSettings() ([]ethernetport.SettingsResponse
 
 	return response.Body.PullResponse.EthernetPortItems, nil
 }
+
 func (g *GoWSMANMessages) PutEthernetSettings(ethernetPortSettings ethernetport.SettingsRequest, instanceId string) (ethernetport.Response, error) {
 	return g.wsmanMessages.AMT.EthernetPortSettings.Put(instanceId, ethernetPortSettings)
 }
+
 func (g *GoWSMANMessages) DeletePublicPrivateKeyPair(instanceId string) error {
 	_, err := g.wsmanMessages.AMT.PublicPrivateKeyPair.Delete(instanceId)
 
 	return err
 }
+
 func (g *GoWSMANMessages) DeletePublicCert(instanceId string) error {
 	_, err := g.wsmanMessages.AMT.PublicKeyCertificate.Delete(instanceId)
 
 	return err
 }
+
 func (g *GoWSMANMessages) GetCredentialRelationships() (credential.Items, error) {
 	response, err := g.wsmanMessages.CIM.CredentialContext.Enumerate()
 	if err != nil {
@@ -248,6 +255,7 @@ func (g *GoWSMANMessages) GetCredentialRelationships() (credential.Items, error)
 
 	return response.Body.PullResponse.Items, nil
 }
+
 func (g *GoWSMANMessages) GetConcreteDependencies() ([]concrete.ConcreteDependency, error) {
 	response, err := g.wsmanMessages.CIM.ConcreteDependency.Enumerate()
 	if err != nil {
@@ -261,11 +269,13 @@ func (g *GoWSMANMessages) GetConcreteDependencies() ([]concrete.ConcreteDependen
 
 	return response.Body.PullResponse.Items, nil
 }
+
 func (g *GoWSMANMessages) DeleteWiFiSetting(instanceID string) error {
 	_, err := g.wsmanMessages.CIM.WiFiEndpointSettings.Delete(instanceID)
 
 	return err
 }
+
 func (g *GoWSMANMessages) AddTrustedRootCert(caCert string) (handle string, err error) {
 	response, err := g.wsmanMessages.AMT.PublicKeyManagementService.AddTrustedRootCertificate(caCert)
 	if err != nil {
@@ -278,6 +288,7 @@ func (g *GoWSMANMessages) AddTrustedRootCert(caCert string) (handle string, err 
 
 	return handle, nil
 }
+
 func (g *GoWSMANMessages) AddClientCert(clientCert string) (handle string, err error) {
 	response, err := g.wsmanMessages.AMT.PublicKeyManagementService.AddCertificate(clientCert)
 	if err != nil {
@@ -290,6 +301,7 @@ func (g *GoWSMANMessages) AddClientCert(clientCert string) (handle string, err e
 
 	return handle, nil
 }
+
 func (g *GoWSMANMessages) AddPrivateKey(privateKey string) (handle string, err error) {
 	response, err := g.wsmanMessages.AMT.PublicKeyManagementService.AddKey(privateKey)
 	if err != nil && response.Body.AddKey_OUTPUT.ReturnValue == 2058 {
@@ -310,7 +322,8 @@ func (g *GoWSMANMessages) DeleteKeyPair(instanceID string) error {
 
 	return err
 }
-func (g *GoWSMANMessages) EnableWiFi(enableSync bool, uefiWiFiSync bool) error {
+
+func (g *GoWSMANMessages) EnableWiFi(enableSync, uefiWiFiSync bool) error {
 	response, err := g.wsmanMessages.AMT.WiFiPortConfigurationService.Get()
 	if err != nil {
 		return err
@@ -364,21 +377,27 @@ func (g *GoWSMANMessages) EnableWiFi(enableSync bool, uefiWiFiSync bool) error {
 
 	return nil
 }
+
 func (g *GoWSMANMessages) AddWiFiSettings(wifiEndpointSettings wifi.WiFiEndpointSettingsRequest, ieee8021xSettings models.IEEE8021xSettings, wifiEndpoint, clientCredential, caCredential string) (response wifiportconfiguration.Response, err error) {
 	return g.wsmanMessages.AMT.WiFiPortConfigurationService.AddWiFiSettings(wifiEndpointSettings, ieee8021xSettings, wifiEndpoint, clientCredential, caCredential)
 }
+
 func (g *GoWSMANMessages) PUTTLSSettings(instanceID string, tlsSettingData tls.SettingDataRequest) (response tls.Response, err error) {
 	return g.wsmanMessages.AMT.TLSSettingData.Put(instanceID, tlsSettingData)
 }
+
 func (g *GoWSMANMessages) GetLowAccuracyTimeSynch() (response timesynchronization.Response, err error) {
 	return g.wsmanMessages.AMT.TimeSynchronizationService.GetLowAccuracyTimeSynch()
 }
-func (g *GoWSMANMessages) SetHighAccuracyTimeSynch(ta0 int64, tm1 int64, tm2 int64) (response timesynchronization.Response, err error) {
+
+func (g *GoWSMANMessages) SetHighAccuracyTimeSynch(ta0, tm1, tm2 int64) (response timesynchronization.Response, err error) {
 	return g.wsmanMessages.AMT.TimeSynchronizationService.SetHighAccuracyTimeSynch(ta0, tm1, tm2)
 }
+
 func (g *GoWSMANMessages) EnumerateTLSSettingData() (response tls.Response, err error) {
 	return g.wsmanMessages.AMT.TLSSettingData.Enumerate()
 }
+
 func (g *GoWSMANMessages) PullTLSSettingData(enumerationContext string) (response tls.Response, err error) {
 	return g.wsmanMessages.AMT.TLSSettingData.Pull(enumerationContext)
 }
@@ -441,7 +460,7 @@ func (g *GoWSMANMessages) GetMPSSAP() (response []managementpresence.ManagementR
 	return pullResult.Body.PullResponse.ManagementRemoteItems, nil
 }
 
-func (g *GoWSMANMessages) AddMPS(password string, server string, port int) (response remoteaccess.AddMpServerResponse, err error) {
+func (g *GoWSMANMessages) AddMPS(password, server string, port int) (response remoteaccess.AddMpServerResponse, err error) {
 	mpsServer := remoteaccess.AddMpServerRequest{
 		AccessInfo: server,
 		InfoFormat: remoteaccess.IPv4Address,
@@ -482,6 +501,7 @@ func (g *GoWSMANMessages) AddRemoteAccessPolicyRule(remoteAccessTrigger remoteac
 
 	return result.Body.AddRemotePolicyRuleResponse, nil
 }
+
 func (g *GoWSMANMessages) PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.RemoteAccessPolicyAppliesToMPSResponse) (response remoteaccess.Body, err error) {
 	remoteAccessPolicyAppliesToMPS := &remoteaccess.RemoteAccessPolicyAppliesToMPSRequest{
 		ManagedElement: remoteaccess.ManagedElement{
@@ -518,6 +538,7 @@ func (g *GoWSMANMessages) PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.
 
 	return result.Body, nil
 }
+
 func (g *GoWSMANMessages) RemoveMPSSAP(name string) (err error) {
 	_, err = g.wsmanMessages.AMT.ManagementPresenceRemoteSAP.Delete(name)
 	if err != nil {
@@ -540,6 +561,7 @@ func (g *GoWSMANMessages) GetRemoteAccessPolicies() (response []remoteaccess.Rem
 
 	return pullResult.Body.PullResponse.PolicyAppliesItems, nil
 }
+
 func (g *GoWSMANMessages) RemoveRemoteAccessPolicyRules() error {
 	_, err := g.wsmanMessages.AMT.RemoteAccessPolicyRule.Delete("User Initiated")
 	if err != nil && !strings.Contains(err.Error(), "DestinationUnreachable") {
@@ -558,6 +580,7 @@ func (g *GoWSMANMessages) RemoveRemoteAccessPolicyRules() error {
 
 	return nil
 }
+
 func (g *GoWSMANMessages) RequestStateChangeCIRA() (response userinitiatedconnection.RequestStateChange_OUTPUT, err error) {
 	result, err := g.wsmanMessages.AMT.UserInitiatedConnectionService.RequestStateChange(userinitiatedconnection.BIOSandOSInterfacesEnabled)
 	if err != nil {
@@ -566,6 +589,7 @@ func (g *GoWSMANMessages) RequestStateChangeCIRA() (response userinitiatedconnec
 
 	return result.Body.RequestStateChange_OUTPUT, nil
 }
+
 func (g *GoWSMANMessages) GetEnvironmentDetectionSettings() (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
 	result, err := g.wsmanMessages.AMT.EnvironmentDetectionSettingData.Get()
 	if err != nil {
@@ -574,6 +598,7 @@ func (g *GoWSMANMessages) GetEnvironmentDetectionSettings() (response environmen
 
 	return result.Body.GetAndPutResponse, nil
 }
+
 func (g *GoWSMANMessages) PutEnvironmentDetectionSettings(request environmentdetection.EnvironmentDetectionSettingDataRequest) (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error) {
 	result, err := g.wsmanMessages.AMT.EnvironmentDetectionSettingData.Put(request)
 	if err != nil {

@@ -53,7 +53,7 @@ func fetchProfile(flags *flags.Flags) error {
 }
 
 func parseCommandLine(args []string) (*flags.Flags, error) {
-	//process flags
+	// process flags
 	flags := flags.NewFlags(args, utils.PR)
 	err := flags.ParseFlags()
 

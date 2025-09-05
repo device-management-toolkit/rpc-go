@@ -52,7 +52,7 @@ func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
 			continue
 		}
 
-		var curMacAddr = make(net.HardwareAddr, aa.PhysicalAddressLength)
+		curMacAddr := make(net.HardwareAddr, aa.PhysicalAddressLength)
 		copy(curMacAddr, aa.PhysicalAddress[:])
 
 		if curMacAddr.String() == lanResult.MACAddress {

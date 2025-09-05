@@ -8,12 +8,11 @@ import (
 
 // Context holds shared dependencies injected into commands
 type Context struct {
-	AMTCommand       amt.Interface
-	ControlMode      int
-	LogLevel         string
-	JsonOutput       bool
-	Verbose          bool
-	LocalTLSEnforced bool
-	SkipCertCheck    bool
-	TLSConfig        *tls.Config
+	AMTCommand    amt.Interface
+	ControlMode   int
+	LogLevel      string
+	JsonOutput    bool
+	Verbose       bool
+	SkipCertCheck bool
+	TLSConfig     *tls.Config
 }

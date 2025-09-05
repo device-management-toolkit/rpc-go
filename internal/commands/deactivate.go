@@ -22,29 +22,13 @@ const (
 	ControlModeACM = 2
 )
 
-// readPasswordFromUser prompts the user for a password
-func readPasswordFromUser() (string, error) {
-	fmt.Print("Please enter AMT Password: ")
-
-	password, err := utils.PR.ReadPassword()
-	if err != nil {
-		return "", err
-	}
-
-	fmt.Println() // Add newline after password input
-
-	if password == "" {
-		return "", fmt.Errorf("password cannot be empty")
-	}
-
-	return password, nil
-}
-
 // setupTLSConfig creates TLS configuration if local TLS is enforced
 func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 	tlsConfig := &tls.Config{}
+
 	if cmd.LocalTLSEnforced {
-		tlsConfig = certs.GetTLSConfig(&ctx.ControlMode, nil, ctx.SkipCertCheck)
+		controlMode := cmd.GetControlMode()
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipCertCheck)
 	}
 
 	return tlsConfig

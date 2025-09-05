@@ -90,6 +90,7 @@ func (pthi Command) Call(command []byte, commandSize int) (result []byte, err er
 
 	return readBuffer, nil
 }
+
 func (cmd Command) Send(command []byte) (err error) {
 	commandSize := (uint32)(len(command))
 
@@ -104,6 +105,7 @@ func (cmd Command) Send(command []byte) (err error) {
 
 	return nil
 }
+
 func (pthi Command) Receive() (result []byte, bytesRead int, err error) {
 	size := pthi.Heci.GetBufferSize()
 
@@ -117,7 +119,7 @@ func (pthi Command) Receive() (result []byte, bytesRead int, err error) {
 	return readBuffer, bytesRead, nil
 }
 
-func CreateRequestHeader(command uint32, length uint32) MessageHeader {
+func CreateRequestHeader(command, length uint32) MessageHeader {
 	return MessageHeader{
 		Version: Version{
 			MajorNumber: 1,
@@ -240,7 +242,7 @@ func (pthi Command) SetAmtOperationalState(state AMTOperationalState) (Status, e
 	var bin_buf bytes.Buffer
 
 	binary.Write(&bin_buf, binary.LittleEndian, command)
-	//result, err := pthi.Call(bin_buf.Bytes(), 32)
+	// result, err := pthi.Call(bin_buf.Bytes(), 32)
 	result, err := pthi.Call(bin_buf.Bytes(), bin_buf.Len())
 	if err != nil {
 		return Status(0), err
@@ -353,6 +355,7 @@ func (pthi Command) enumerateHashHandles() (AMTHashHandles, error) {
 
 	return enumerateResponse.HashHandles, nil
 }
+
 func (pthi Command) GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryList []CertHashEntry, err error) {
 	if hashHandles.Length == 0 {
 		hashHandles, err = pthi.enumerateHashHandles()

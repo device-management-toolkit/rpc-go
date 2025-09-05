@@ -40,9 +40,11 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var testServer *httptest.Server
-var testUrl string
-var testFlags *flags.Flags
+var (
+	testServer *httptest.Server
+	testUrl    string
+	testFlags  *flags.Flags
+)
 
 func init() {
 	// Create test server with the echo handler.
@@ -156,6 +158,7 @@ func TestConnect(t *testing.T) {
 
 	assert.NoError(t, err)
 }
+
 func TestSend(t *testing.T) {
 	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	err := server.Connect(true)
@@ -169,6 +172,7 @@ func TestSend(t *testing.T) {
 	}
 	server.Send(message)
 }
+
 func TestListen(t *testing.T) {
 	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
 	err := server.Connect(true)
@@ -199,6 +203,7 @@ func TestListen(t *testing.T) {
 	server.Send(message)
 	wgAll.Wait()
 }
+
 func TestProcessMessageHeartbeat(t *testing.T) {
 	activation := `{
         "method": "heartbeat_request"
@@ -208,6 +213,7 @@ func TestProcessMessageHeartbeat(t *testing.T) {
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.NotNil(t, decodedMessage)
 }
+
 func TestProcessMessageSuccess(t *testing.T) {
 	activation := `{
         "method": "success",
@@ -218,6 +224,7 @@ func TestProcessMessageSuccess(t *testing.T) {
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
 }
+
 func TestProcessMessageUnformattedSuccess(t *testing.T) {
 	activation := `{
         "method": "success",
@@ -228,6 +235,7 @@ func TestProcessMessageUnformattedSuccess(t *testing.T) {
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
 }
+
 func TestProcessMessageError(t *testing.T) {
 	activation := `{
         "method": "error",
@@ -238,6 +246,7 @@ func TestProcessMessageError(t *testing.T) {
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
 }
+
 func TestProcessMessageForLMS(t *testing.T) {
 	activation := `{
         "method": "",

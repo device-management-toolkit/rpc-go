@@ -33,14 +33,14 @@ import (
 )
 
 type WSMANer interface {
-	SetupWsmanClient(username string, password string, useTLS bool, logAMTMessages bool, tlsConfig *cryptotls.Config) error
+	SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error
 	Unprovision(int) (setupandconfiguration.Response, error)
 	PartialUnprovision() (setupandconfiguration.Response, error)
 	GetGeneralSettings() (general.Response, error)
-	HostBasedSetupService(digestRealm string, password string) (hostbasedsetup.Response, error)
+	HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error)
 	GetHostBasedSetupService() (hostbasedsetup.Response, error)
-	AddNextCertInChain(cert string, isLeaf bool, isRoot bool) (hostbasedsetup.Response, error)
-	HostBasedSetupServiceAdmin(password string, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error)
+	AddNextCertInChain(cert string, isLeaf, isRoot bool) (hostbasedsetup.Response, error)
+	HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error)
 	SetupMEBX(string) (response setupandconfiguration.Response, err error)
 	GetSetupAndConfigurationService() (setupandconfiguration.Response, error)
 	GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error)
@@ -54,13 +54,13 @@ type WSMANer interface {
 	AddPrivateKey(privateKey string) (string, error)
 	DeleteKeyPair(instanceID string) error
 	GetLowAccuracyTimeSynch() (response timesynchronization.Response, err error)
-	SetHighAccuracyTimeSynch(ta0 int64, tm1 int64, tm2 int64) (response timesynchronization.Response, err error)
+	SetHighAccuracyTimeSynch(ta0, tm1, tm2 int64) (response timesynchronization.Response, err error)
 	GenerateKeyPair(keyAlgorithm publickey.KeyAlgorithm, keyLength publickey.KeyLength) (response publickey.Response, err error)
 	UpdateAMTPassword(passwordBase64 string) (authorization.Response, error)
 	// WiFi
 	GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse, error)
 	DeleteWiFiSetting(instanceId string) error
-	EnableWiFi(enableSync bool, enableWiFiSharing bool) error
+	EnableWiFi(enableSync, enableWiFiSharing bool) error
 	AddWiFiSettings(wifiEndpointSettings wifi.WiFiEndpointSettingsRequest, ieee8021xSettings models.IEEE8021xSettings, wifiEndpoint, clientCredential, caCredential string) (wifiportconfiguration.Response, error)
 	// Wired
 	GetEthernetSettings() ([]ethernetport.SettingsResponse, error)
@@ -78,7 +78,7 @@ type WSMANer interface {
 	GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error)
 	RemoveMPSSAP(name string) (err error)
 	GetRemoteAccessPolicies() (response []remoteaccess.RemoteAccessPolicyAppliesToMPSResponse, err error)
-	AddMPS(password string, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error)
+	AddMPS(password, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error)
 	AddRemoteAccessPolicyRule(remoteAccessTrigger remoteaccess.Trigger, selectorValue string) (response remoteaccess.AddRemoteAccessPolicyRuleResponse, err error)
 	PutRemoteAccessPolicyAppliesToMPS(policy remoteaccess.RemoteAccessPolicyAppliesToMPSResponse) (response remoteaccess.Body, err error)
 	RemoveRemoteAccessPolicyRules() error

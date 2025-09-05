@@ -19,12 +19,16 @@ import (
 
 const trickyPassword string = "!@#$%^&*(()-+="
 
-var mode = 0
-var result = 0
-var controlModeErr error = nil
+var (
+	mode                 = 0
+	result               = 0
+	controlModeErr error = nil
+)
 
-var MockPRSuccess = new(MockPasswordReaderSuccess)
-var MockPRFail = new(MockPasswordReaderFail)
+var (
+	MockPRSuccess = new(MockPasswordReaderSuccess)
+	MockPRFail    = new(MockPasswordReaderFail)
+)
 
 type MockPasswordReaderSuccess struct{}
 
@@ -43,12 +47,15 @@ type MockPTHICommands struct{}
 func (c MockPTHICommands) OpenWatchdog() error {
 	return nil
 }
+
 func (c MockPTHICommands) Open(bool) error {
 	return nil
 }
+
 func (c MockPTHICommands) GetIsAMTEnabled() (state uint8, err error) {
 	return uint8(0x41), nil
 }
+
 func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState) (pthi.Status, error) {
 	return 0, nil
 }
@@ -109,6 +116,7 @@ func (c MockPTHICommands) Unprovision() (mode int, err error) {
 func (c MockPTHICommands) StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [64]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [320]byte) (response pthi.StartConfigurationHBasedResponse, err error) {
 	return pthi.StartConfigurationHBasedResponse{}, nil
 }
+
 func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationResponse, err error) {
 	return pthi.StopConfigurationResponse{}, nil
 }
@@ -184,6 +192,7 @@ func TestNewFlags(t *testing.T) {
 	flags := NewFlags(args, MockPRSuccess)
 	assert.NotNil(t, flags)
 }
+
 func TestPrintUsage(t *testing.T) {
 	executable := filepath.Base(os.Args[0])
 	args := []string{executable}
@@ -216,6 +225,7 @@ func TestParseFlagsActivate(t *testing.T) {
 	assert.EqualValues(t, result, utils.IncorrectCommandLineParameters)
 	assert.Equal(t, flags.Command, utils.CommandActivate)
 }
+
 func TestParseFlagsConfigure(t *testing.T) {
 	args := []string{"./rpc", "configure"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -270,7 +280,7 @@ func NewMockSambaService(err error) smb.ServiceInterface {
 func (s *MockSambaService) FetchFileContents(url string) ([]byte, error) {
 	var contents []byte
 
-	var service = smb.NewSambaService(MockPRSuccess)
+	service := smb.NewSambaService(MockPRSuccess)
 
 	p, err := service.ParseUrl(url)
 	if err != nil {

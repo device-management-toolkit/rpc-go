@@ -16,14 +16,18 @@ import (
 
 type MockHECICommands struct{}
 
-var message []byte
-var numBytes uint32 = GET_REQUEST_SIZE
+var (
+	message  []byte
+	numBytes uint32 = GET_REQUEST_SIZE
+)
 
-var mockInitErr error = nil
-var mockInitUseLMEResult bool
-var mockInitUseWDResult bool
+var (
+	mockInitErr          error = nil
+	mockInitUseLMEResult bool
+	mockInitUseWDResult  bool
+)
 
-func (c *MockHECICommands) Init(useLME bool, useWD bool) error {
+func (c *MockHECICommands) Init(useLME, useWD bool) error {
 	mockInitUseLMEResult = useLME
 	mockInitUseWDResult = useWD
 
@@ -34,6 +38,7 @@ func (c *MockHECICommands) GetBufferSize() uint32 { return 5120 } // MaxMessageL
 func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
 	return int(numBytes), nil
 }
+
 func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
 	i := 0
 	for i = 0; i < len(message) && i < len(buffer); i++ {
@@ -82,6 +87,7 @@ func TestOpen(t *testing.T) {
 		mockInitErr = nil
 	})
 }
+
 func TestAMTOperationalState(t *testing.T) {
 	assert.Equal(t, "disabled", AmtDisabled.String())
 	assert.Equal(t, "enabled", AmtEnabled.String())
@@ -93,6 +99,7 @@ func TestSend(t *testing.T) {
 	err := pthi.Send(bin_buf.Bytes())
 	assert.NoError(t, err)
 }
+
 func TestReceive(t *testing.T) {
 	numBytes = 54
 	// Load byte array of response into message
@@ -111,6 +118,7 @@ func TestReceive(t *testing.T) {
 	assert.Greater(t, n, 0)
 	assert.NoError(t, err)
 }
+
 func TestGetGUID(t *testing.T) {
 	// Call function will check that numBytes equals the command size
 	numBytes = GET_REQUEST_SIZE
@@ -132,6 +140,7 @@ func TestGetGUID(t *testing.T) {
 	assert.NotEmpty(t, result)
 	assert.Equal(t, "\x01\x02\x03\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00", result)
 }
+
 func TestGetControlMode(t *testing.T) {
 	numBytes = GET_REQUEST_SIZE
 	prepareMessage := GetControlModeResponse{
@@ -164,6 +173,7 @@ func TestUnprovision(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 0, result)
 }
+
 func TestGetCodeVersions(t *testing.T) {
 	numBytes = GET_REQUEST_SIZE
 	prepareMessage := GetCodeVersionsResponse{

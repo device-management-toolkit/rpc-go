@@ -82,7 +82,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	var cli CLI
 
 	// First, do a preliminary parse to get the config file path
-	var configFile = "config.yaml" // default
+	configFile := "config.yaml" // default
 
 	// Check if --config is specified in args
 	for i, arg := range args {

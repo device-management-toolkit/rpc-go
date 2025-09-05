@@ -10,11 +10,25 @@ import (
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
 
+// prMockSuccess returns a stable password to avoid prompting failures in tests
+type prMockSuccess struct{}
+
+func (pr *prMockSuccess) ReadPassword() (string, error) {
+	return utils.TestPassword, nil
+}
+
 func TestCLIIntegration(t *testing.T) {
+	// Always mock password prompts in this test suite to avoid EOF on stdin.
+	oldPR := utils.PR
+	utils.PR = &prMockSuccess{}
+
+	t.Cleanup(func() { utils.PR = oldPR })
+
 	tests := []struct {
 		name           string
 		args           []string

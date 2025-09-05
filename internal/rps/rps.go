@@ -85,6 +85,7 @@ func NewAMTActivationServer(URL, proxy string) AMTActivationServer {
 
 	return amtactivationserver
 }
+
 func PrepareInitialMessage(flags *flags.Flags) (Message, error) {
 	payload := NewPayload()
 
@@ -244,6 +245,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 
 	return msgPayload
 }
+
 func (amt *AMTActivationServer) GenerateHeartbeatResponse(activation Message) ([]byte, error) {
 	activation.Method = "heartbeat_response"
 	activation.Status = "success"

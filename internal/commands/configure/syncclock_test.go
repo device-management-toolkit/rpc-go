@@ -40,7 +40,8 @@ func TestSyncClockCmd_Validate(t *testing.T) {
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
 						ControlMode: 1,
-						Password:    "test-test123"},
+						Password:    "test-test123",
+					},
 				},
 			},
 			wantErr:     false,

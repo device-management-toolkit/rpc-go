@@ -404,7 +404,6 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	args = append(args, "--mode", mode)
 
 	if po.config.Configuration.TLS.SigningAuthority == "SelfSigned" {
-
 	} else {
 		// Add Enterprise Assistant settings if configured
 		if po.config.Configuration.EnterpriseAssistant.URL != "" {

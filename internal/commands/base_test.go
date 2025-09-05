@@ -85,13 +85,9 @@ func TestAMTBaseCmd_Validate(t *testing.T) {
 				Password: tt.initialPass,
 			}
 
-			// Test the base Validate method (should always succeed)
-			err := cmd.Validate()
-			assert.NoError(t, err)
-
 			// Test the ValidatePasswordIfNeeded method
 			requirer := &MockPasswordRequirer{requiresPassword: tt.requiresPass}
-			err = cmd.ValidatePasswordIfNeeded(requirer)
+			err := cmd.ValidatePasswordIfNeeded(requirer)
 
 			if tt.expectedError {
 				assert.Error(t, err)

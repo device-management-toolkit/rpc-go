@@ -171,7 +171,8 @@ func TestTLSCmd_Run(t *testing.T) {
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
 						ControlMode: 1,
-						Password:    "test-test123"},
+						Password:    "test-test123",
+					},
 				},
 				Mode:  "None",
 				Delay: 0,
@@ -244,7 +245,8 @@ func TestTLSCmd_Run(t *testing.T) {
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
 						ControlMode: 1,
-						Password:    "test-test123"},
+						Password:    "test-test123",
+					},
 				},
 				Mode:  "None",
 				Delay: 0,
@@ -269,7 +271,8 @@ func TestTLSCmd_Run(t *testing.T) {
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
 						ControlMode: 1,
-						Password:    "test-test123"},
+						Password:    "test-test123",
+					},
 				},
 				Mode:  "None",
 				Delay: 0,

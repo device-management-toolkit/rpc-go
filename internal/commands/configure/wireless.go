@@ -52,7 +52,7 @@ func (cmd *WirelessCmd) Validate() error {
 	}
 
 	// Profile names can only be alphanumeric (not even dashes)
-	var reAlphaNum = regexp.MustCompile("[^a-zA-Z0-9]+")
+	reAlphaNum := regexp.MustCompile("[^a-zA-Z0-9]+")
 	if reAlphaNum.MatchString(cmd.ProfileName) {
 		return fmt.Errorf("invalid wifi profile name: %s (only alphanumeric allowed)", cmd.ProfileName)
 	}
@@ -196,7 +196,7 @@ func (cmd *WirelessCmd) ClearWirelessProfiles() error {
 		return err
 	}
 
-	//Delete the existing WiFi profiles
+	// Delete the existing WiFi profiles
 	for _, wifiSetting := range wifiEndpointSettings {
 		// Skip wifiSettings with no InstanceID
 		if wifiSetting.InstanceID == "" {
@@ -215,7 +215,7 @@ func (cmd *WirelessCmd) ClearWirelessProfiles() error {
 		log.Infof("successfully deleted wifiSetting: %s", wifiSetting.InstanceID)
 	}
 
-	//Delete unused certificates
+	// Delete unused certificates
 	err = certs.PruneCerts(cmd.WSMan)
 	if err != nil {
 		return utils.WiFiConfigurationFailed

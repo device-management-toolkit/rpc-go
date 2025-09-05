@@ -107,7 +107,7 @@ func GetAuthToken(url string, credentials AuthRequest) (string, error) {
 }
 
 // ConfigureCertificate requests certificate configuration from Enterprise Assistant
-func ConfigureCertificate(url string, token string, profileRequest Profile) (Profile, error) {
+func ConfigureCertificate(url, token string, profileRequest Profile) (Profile, error) {
 	requestBody, err := json.Marshal(profileRequest)
 	if err != nil {
 		return Profile{}, fmt.Errorf("marshaling profile request: %v", err)
