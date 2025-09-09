@@ -8,7 +8,9 @@ package configure
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
+	"strings"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -22,19 +24,24 @@ type CIRACmd struct {
 	ConfigureBaseCmd
 
 	MPSPassword          string   `help:"MPS Password" env:"MPS_PASSWORD" name:"mpspassword"`
-	MPSAddress           string   `help:"MPS Address" env:"MPS_ADDRESS" name:"mpsaddress"`
-	MPSCert              string   `help:"MPS Root Public Certificate" env:"MPS_CERT" name:"mpscert"`
+	MPSAddress           string   `help:"MPS Address" env:"MPS_ADDRESS" name:"mpsaddress" kong:"required"`
+	MPSCert              string   `help:"MPS Root Public Certificate" env:"MPS_CERT" name:"mpscert" kong:"required"`
 	EnvironmentDetection []string `help:"Environment Detection (comma separated)" env:"ENVIRONMENT_DETECTION" name:"envdetection"`
 }
 
 // BeforeApply validates the CIRA configuration command before execution
 func (cmd *CIRACmd) Validate() error {
-	// First call the base Validate to handle password validation
+	// 1. Validate required non-password inputs first so we can fail fast without prompting
+	if err := cmd.validateURL(cmd.MPSAddress); err != nil {
+		return fmt.Errorf("invalid MPS address format: %w", err)
+	}
+
+	// 2. Now call base validation (may prompt for AMT password). This happens only after critical args present.
 	if err := cmd.ConfigureBaseCmd.Validate(); err != nil {
 		return err
 	}
 
-	// Validate MPS password - prompt if not provided
+	// 3. Prompt for MPS password last (only if everything else is valid)
 	if cmd.MPSPassword == "" {
 		fmt.Print("MPS Password: ")
 
@@ -46,22 +53,7 @@ func (cmd *CIRACmd) Validate() error {
 		cmd.MPSPassword = password
 	}
 
-	// Validate MPS address is provided
-	if cmd.MPSAddress == "" {
-		return fmt.Errorf("MPS address is required for CIRA configuration")
-	}
-
-	// Validate MPS address format
-	if err := cmd.validateURL(cmd.MPSAddress); err != nil {
-		return fmt.Errorf("invalid MPS address format: %w", err)
-	}
-
-	// Validate MPS certificate is provided
-	if cmd.MPSCert == "" {
-		return fmt.Errorf("MPS certificate is required for CIRA configuration")
-	}
-
-	// Set default environment detection if not provided
+	// 4. Set default environment detection if not provided
 	if len(cmd.EnvironmentDetection) == 0 || cmd.EnvironmentDetection[0] == "" {
 		cmd.EnvironmentDetection = []string{uuid.NewString() + ".com"}
 		log.Info("Using generated environment detection string: ", cmd.EnvironmentDetection[0])
@@ -194,14 +186,70 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 
 // Helper methods for CIRA configuration
 
-func (cmd *CIRACmd) validateURL(u string) error {
-	parsedURL, err := url.Parse(u)
-	if err != nil {
-		return err
+func (cmd *CIRACmd) validateURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+
+	// If input contains scheme (http/https etc.) it's invalid for our purposes.
+	if strings.Contains(raw, "://") {
+		parsed, _ := url.Parse(raw)
+
+		sch := ""
+		if parsed != nil {
+			sch = parsed.Scheme
+		}
+
+		return fmt.Errorf("scheme '%s' not allowed; provide host or IP only", sch)
 	}
 
-	if parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return errors.New("url is missing scheme or host")
+	// For uniform handling append dummy scheme for parsing host & optional port
+	parsed, err := url.Parse("dummy://" + raw)
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	host := parsed.Host
+	if host == "" { // likely no scheme supplied; treat entire raw value as host
+		host = raw
+	}
+
+	host = strings.Trim(host, "/")
+
+	// Strip port if present
+	if h, _, errSplit := net.SplitHostPort(host); errSplit == nil && h != "" { // had a port
+		host = h
+	}
+
+	if host == "" { // Should not happen since caller checks for empty already
+		return fmt.Errorf("host portion is empty")
+	}
+
+	// Accept valid IP addresses directly
+	if ip := net.ParseIP(host); ip != nil {
+		return nil
+	}
+
+	// For domain names require at least one dot (reject single-label like 'invalid')
+	if !strings.Contains(host, ".") {
+		return fmt.Errorf("host '%s' must be a valid IP or multi-label domain", host)
+	}
+
+	labels := strings.Split(host, ".")
+	for _, l := range labels {
+		if l == "" {
+			return fmt.Errorf("domain contains empty label")
+		}
+
+		if strings.HasPrefix(l, "-") || strings.HasSuffix(l, "-") {
+			return fmt.Errorf("domain label '%s' cannot start or end with '-'", l)
+		}
+
+		for _, ch := range l {
+			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' {
+				continue
+			}
+
+			return fmt.Errorf("invalid character '%c' in domain label '%s'", ch, l)
+		}
 	}
 
 	return nil
