@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
-package cli
+package orchestrator
 
 import (
 	"fmt"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
-	internalconfig "github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -23,12 +22,16 @@ const (
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
 type ProfileOrchestrator struct {
-	config config.Configuration
+	config   config.Configuration
+	executor CommandExecutor
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator
 func NewProfileOrchestrator(cfg config.Configuration) *ProfileOrchestrator {
-	return &ProfileOrchestrator{config: cfg}
+	return &ProfileOrchestrator{
+		config:   cfg,
+		executor: &CLIExecutor{},
+	}
 }
 
 // ExecuteProfile orchestrates the execution of all commands based on the profile
@@ -129,7 +132,7 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 	args = append(args, "--local")
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeMEBxConfiguration performs MEBx password configuration
@@ -154,7 +157,7 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 
 	args = append(args, "--mebxpassword", po.config.Configuration.AMTSpecific.MEBXPassword)
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
@@ -203,7 +206,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 		}
 	}
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeWiredNetworkConfiguration performs wired network configuration
@@ -254,7 +257,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 		}
 	}
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeEnableWiFi enables WiFi port if needed
@@ -276,7 +279,7 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
 	}
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeWirelessConfigurations performs wireless profile configurations
@@ -362,7 +365,7 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 		}
 	}
 
-	return Execute(args)
+	return po.executor.Execute(args)
 }
 
 // executeTLSConfiguration performs TLS configuration
@@ -418,20 +421,5 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 		}
 	}
 
-	return Execute(args)
-}
-
-// ExecuteProfile is a helper function to execute a profile from a file path
-func ExecuteProfile(profilePath string) error {
-	// Load configuration from profile
-	cfg, err := internalconfig.LoadConfig(profilePath)
-	if err != nil {
-		return fmt.Errorf("failed to load profile: %w", err)
-	}
-
-	// Create profile orchestrator
-	orchestrator := NewProfileOrchestrator(cfg)
-
-	// Execute the profile
-	return orchestrator.ExecuteProfile()
+	return po.executor.Execute(args)
 }

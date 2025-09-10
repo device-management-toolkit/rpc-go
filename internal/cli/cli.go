@@ -13,6 +13,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -42,6 +43,7 @@ type CLI struct {
 	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
 	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	Profile    profile.ProfileCmd     `cmd:"profile" help:"Execute a profile to orchestrate AMT configuration from local file or HTTP/S endpoint"`
 
 	// Configuration loaded from YAML file (not directly accessible via CLI)
 	YamlConfig config.Configuration `kong:"-"`
