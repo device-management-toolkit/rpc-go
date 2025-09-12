@@ -15,24 +15,25 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
 
 func TestCIRACmd_Structure(t *testing.T) {
 	// Test that CIRACmd has the correct structure
-	cmd := &CIRACmd{}
-
-	// Test basic field access to ensure struct is correct
-	cmd.Password = "amt123"
-	cmd.MPSPassword = "mps123"
-	cmd.MPSAddress = "https://mps.example.com"
-	cmd.MPSCert = "test-cert"
+	cmd := CIRACmd{
+		ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
+		MPSPassword:          "mps123",
+		MPSAddress:           "mps.example.com",
+		MPSCert:              "test-cert",
+		EnvironmentDetection: []string{"example.com"},
+	}
 	cmd.EnvironmentDetection = []string{"example.com"}
 
 	assert.Equal(t, "amt123", cmd.Password)
 	assert.Equal(t, "mps123", cmd.MPSPassword)
-	assert.Equal(t, "https://mps.example.com", cmd.MPSAddress)
+	assert.Equal(t, "mps.example.com", cmd.MPSAddress)
 	assert.Equal(t, "test-cert", cmd.MPSCert)
 	assert.Equal(t, []string{"example.com"}, cmd.EnvironmentDetection)
 }
@@ -43,51 +44,38 @@ func TestCIRACmd_Validate(t *testing.T) {
 		cmd         CIRACmd
 		wantErr     bool
 		description string
+		mockPass    string
+		mockErr     error
 	}{
 		{
 			name: "all_fields_provided",
 			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
+				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
 				MPSPassword:          "mps123",
-				MPSAddress:           "https://mps.example.com",
+				MPSAddress:           "mps.example.com",
 				MPSCert:              "test-cert",
 				EnvironmentDetection: []string{"example.com"},
 			},
 			wantErr:     false,
 			description: "should succeed when all fields are provided",
 		},
-
 		{
-			name: "missing_mps_password",
+			name: "prompt_mps_password",
 			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
-				MPSPassword:          "", // Will be prompted
-				MPSAddress:           "https://mps.example.com",
+				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
+				MPSPassword:          "", // triggers prompt
+				MPSAddress:           "mps.example.com",
 				MPSCert:              "test-cert",
 				EnvironmentDetection: []string{"example.com"},
 			},
-			wantErr:     true, // Will fail in test since no interactive input
-			description: "should prompt for MPS password when missing",
+			wantErr:     false,
+			description: "should prompt and set MPS password when missing",
+			mockPass:    "prompted-mps",
 		},
 		{
 			name: "missing_mps_address",
 			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
+				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
 				MPSPassword:          "mps123",
 				MPSAddress:           "", // Required
 				MPSCert:              "test-cert",
@@ -99,14 +87,9 @@ func TestCIRACmd_Validate(t *testing.T) {
 		{
 			name: "invalid_mps_address",
 			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
+				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
 				MPSPassword:          "mps123",
-				MPSAddress:           "invalid-url", // Invalid format
+				MPSAddress:           "invalid-url",
 				MPSCert:              "test-cert",
 				EnvironmentDetection: []string{"example.com"},
 			},
@@ -114,53 +97,104 @@ func TestCIRACmd_Validate(t *testing.T) {
 			description: "should fail when MPS address is invalid",
 		},
 		{
-			name: "missing_mps_cert",
-			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
-				MPSPassword:          "mps123",
-				MPSAddress:           "https://mps.example.com",
-				MPSCert:              "", // Required
-				EnvironmentDetection: []string{"example.com"},
-			},
-			wantErr:     true,
-			description: "should fail when MPS certificate is missing",
-		},
-		{
 			name: "empty_environment_detection",
 			cmd: CIRACmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
+				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
 				MPSPassword:          "mps123",
-				MPSAddress:           "https://mps.example.com",
+				MPSAddress:           "mps.example.com",
 				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{}, // Will be auto-generated
+				EnvironmentDetection: []string{},
 			},
 			wantErr:     false,
 			description: "should succeed and auto-generate environment detection",
 		},
 	}
 
+	originalPR := utils.PR
+
+	defer func() { utils.PR = originalPR }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cmd.Validate()
+			// mock password reader if needed
+			utils.PR = &mockPasswordReader{password: tt.mockPass, err: tt.mockErr}
 
+			err := tt.cmd.Validate()
 			if tt.wantErr {
 				assert.Error(t, err, tt.description)
 			} else {
 				assert.NoError(t, err, tt.description)
+
+				if tt.name == "prompt_mps_password" {
+					assert.Equal(t, "prompted-mps", tt.cmd.MPSPassword)
+				}
+
+				if tt.name == "empty_environment_detection" {
+					assert.NotEmpty(t, tt.cmd.EnvironmentDetection)
+					assert.NotEmpty(t, tt.cmd.EnvironmentDetection[0])
+				}
 			}
 		})
 	}
 }
+
+// Additional Validate tests for AMT password prompt & failures
+func TestCIRACmd_Validate_PasswordPrompts(t *testing.T) {
+	originalPR := utils.PR
+
+	defer func() { utils.PR = originalPR }()
+
+	t.Run("amt_password_prompt_success", func(t *testing.T) {
+		utils.PR = &mockPasswordReader{password: "amtPrompt"}
+		cmd := CIRACmd{
+			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: ""}}, // triggers prompt
+			MPSPassword:          "mps123",
+			MPSAddress:           "mps.example.com",
+			MPSCert:              "test-cert",
+			EnvironmentDetection: []string{"example.com"},
+		}
+		err := cmd.Validate()
+		assert.NoError(t, err)
+		assert.Equal(t, "amtPrompt", cmd.Password)
+	})
+
+	t.Run("amt_password_prompt_error", func(t *testing.T) {
+		utils.PR = &mockPasswordReader{err: errors.New("read error")}
+		cmd := CIRACmd{
+			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: ""}},
+			MPSPassword:          "mps123",
+			MPSAddress:           "mps.example.com",
+			MPSCert:              "test-cert",
+			EnvironmentDetection: []string{"example.com"},
+		}
+		err := cmd.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read AMT password")
+	})
+
+	t.Run("mps_password_prompt_error", func(t *testing.T) {
+		// AMT password provided so base validation passes
+		utils.PR = &mockPasswordReader{err: errors.New("mps read error")}
+		cmd := CIRACmd{
+			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
+			MPSPassword:          "", // triggers prompt error
+			MPSAddress:           "mps.example.com",
+			MPSCert:              "test-cert",
+			EnvironmentDetection: []string{"example.com"},
+		}
+		err := cmd.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read MPS password")
+	})
+}
+
+// mockPasswordReader implements utils.PasswordReader for tests
+type mockPasswordReader struct {
+	password string
+	err      error
+}
+
+func (m *mockPasswordReader) ReadPassword() (string, error) { return m.password, m.err }
 
 func TestCIRACmd_Run(t *testing.T) {
 	t.Run("successful_cira_configuration", func(t *testing.T) {
@@ -179,7 +213,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -196,7 +230,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -249,7 +283,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -279,7 +313,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -312,7 +346,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -349,7 +383,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -366,7 +400,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("", errors.New("Root Certificate already exists and must be removed before continuing"))
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -419,7 +453,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -436,7 +470,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS to return an error
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, errors.New("add mps error"))
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, errors.New("add mps error"))
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -459,7 +493,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -476,7 +510,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS) - return empty list
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -502,7 +536,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -519,7 +553,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -550,7 +584,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -567,7 +601,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -614,7 +648,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"auto-generated.com"}, // Environment detection will be auto-generated in Validate
 		}
@@ -631,7 +665,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -684,7 +718,7 @@ func TestCIRACmd_Run(t *testing.T) {
 				},
 			},
 			MPSPassword:          "mps123",
-			MPSAddress:           "https://mps.example.com",
+			MPSAddress:           "mps.example.com",
 			MPSCert:              "test-cert",
 			EnvironmentDetection: []string{"example.com"},
 		}
@@ -701,7 +735,7 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
 
 		// Mock AddMPS
-		mockWSMAN.EXPECT().AddMPS("mps123", "https://mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
 
 		// Mock GetMPSSAP (after adding MPS)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
@@ -728,4 +762,210 @@ func TestCIRACmd_Run(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to enable CIRA")
 	})
+
+	// New tests for additional Run error branches and clearCIRA internals
+	t.Run("add_user_initiated_policy_rule_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "test-mps"}}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(2), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(0), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, errors.New("user rule error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to add user-initiated remote access policy rule")
+	})
+
+	t.Run("get_remote_access_policies_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "test-mps"}}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(2), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(0), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return(nil, errors.New("rap error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get remote access policies")
+	})
+
+	t.Run("put_user_initiated_policy_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "test-mps"}}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(2), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(0), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{{}, {}}, nil)
+		mockWSMAN.EXPECT().PutRemoteAccessPolicyAppliesToMPS(gomock.Any()).Return(remoteaccess.Body{}, errors.New("user policy put error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to configure MPS for user-initiated policy")
+	})
+
+	t.Run("put_periodic_policy_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "test-mps"}}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(2), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(0), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{{}, {}}, nil)
+		mockWSMAN.EXPECT().PutRemoteAccessPolicyAppliesToMPS(gomock.Any()).Return(remoteaccess.Body{}, nil) // user-initiated success
+		mockWSMAN.EXPECT().PutRemoteAccessPolicyAppliesToMPS(gomock.Any()).Return(remoteaccess.Body{}, errors.New("periodic policy put error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to configure MPS for periodic policy")
+	})
+
+	t.Run("put_environment_detection_settings_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "test-mps"}}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(2), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().AddRemoteAccessPolicyRule(remoteaccess.Trigger(0), "test-mps").Return(remoteaccess.AddRemoteAccessPolicyRuleResponse{}, nil)
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{{}, {}}, nil)
+		mockWSMAN.EXPECT().PutRemoteAccessPolicyAppliesToMPS(gomock.Any()).Return(remoteaccess.Body{}, nil).Times(2)
+		mockWSMAN.EXPECT().RequestStateChangeCIRA().Return(userinitiatedconnection.RequestStateChange_OUTPUT{}, nil)
+		mockWSMAN.EXPECT().GetEnvironmentDetectionSettings().Return(environmentdetection.EnvironmentDetectionSettingDataResponse{ElementName: "Environment Detection", InstanceID: "env-id", DetectionAlgorithm: 1}, nil)
+		mockWSMAN.EXPECT().PutEnvironmentDetectionSettings(gomock.Any()).Return(environmentdetection.EnvironmentDetectionSettingDataResponse{}, errors.New("env put error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to configure environment detection settings")
+	})
+
+	t.Run("get_mpssap_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+		mockWSMAN.EXPECT().AddTrustedRootCert("test-cert").Return("cert-handle", nil)
+		mockWSMAN.EXPECT().AddMPS("mps123", "mps.example.com", 4433).Return(remoteaccess.AddMpServerResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return(nil, errors.New("mpssap error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get MPS SAP")
+	})
+
+	t.Run("clear_cira_remove_policy_rules_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{{}}, nil)
+		mockWSMAN.EXPECT().RemoveRemoteAccessPolicyRules().Return(errors.New("remove rap rules error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to clear existing CIRA configuration")
+	})
+
+	t.Run("clear_cira_remove_mpssap_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT}
+
+		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "mps1"}}, nil)
+		mockWSMAN.EXPECT().RemoveMPSSAP("mps1").Return(errors.New("remove mps error"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to clear existing CIRA configuration")
+	})
+}
+
+func TestValidateURL_Strict(t *testing.T) {
+	cmd := &CIRACmd{}
+
+	cases := []struct {
+		in      string
+		wantErr bool
+	}{
+		{"invalid", true},
+		{"https://invalid", true},
+		{"192.168.10.1", false},
+		{"https://valid.net", true},
+		{"valid.net", false},
+		{"valid.net:443", false},
+		{"http://valid.net:443", true},
+		{"bad_char$.com", true},
+	}
+	for _, c := range cases {
+		err := cmd.validateURL(c.in)
+		if c.wantErr && err == nil {
+			t.Errorf("expected error for input %q", c.in)
+		}
+
+		if !c.wantErr && err != nil {
+			t.Errorf("unexpected error for input %q: %v", c.in, err)
+		}
+	}
 }

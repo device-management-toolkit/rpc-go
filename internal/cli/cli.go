@@ -81,10 +81,9 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error) {
 	var cli CLI
 
-	// First, do a preliminary parse to get the config file path
-	configFile := "config.yaml" // default
+	// Preliminary scan for --config
+	configFile := "config.yaml"
 
-	// Check if --config is specified in args
 	for i, arg := range args {
 		if arg == "--config" && i+1 < len(args) {
 			configFile = args[i+1]
@@ -99,41 +98,62 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 
 	log.Debugf("Using configuration file: %s", configFile)
 
-	// Create legacy resolver for backwards compatibility with existing config.yaml
 	legacyResolver, err := ConfigResolver(configFile)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	helpOpts := kong.HelpOptions{Compact: true}
+
 	parser, err := kong.New(&cli,
 		kong.Name("rpc"),
 		kong.Description("Remote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT"),
 		kong.UsageOnError(),
-		kong.Resolvers(legacyResolver), // Add legacy resolver for backwards compatibility
+		kong.Resolvers(legacyResolver),
 		kong.DefaultEnvars("RPC"),
-		kong.ConfigureHelp(kong.HelpOptions{
-			Compact: true,
-		}),
-		kong.BindToProvider(func() amt.Interface { return amtCommand }), // Bind AMTCommand using provider
+		kong.ConfigureHelp(helpOpts),
+		kong.BindToProvider(func() amt.Interface { return amtCommand }),
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Handle empty args case
+	// Slice off program name if present
 	var parseArgs []string
 	if len(args) > 1 {
-		parseArgs = args[1:] // Skip program name
+		parseArgs = args[1:]
 	} else {
-		parseArgs = []string{} // Empty slice for empty input
+		parseArgs = []string{}
 	}
 
-	ctx, err := parser.Parse(parseArgs)
+	ctx, perr := parser.Parse(parseArgs)
+	if perr == nil {
+		return ctx, &cli, nil
+	}
+
+	// Root invocation (no args) or errors unrelated to missing subcommand -> return error unchanged
+	if len(parseArgs) == 0 || strings.Contains(perr.Error(), "unexpected argument") || strings.Contains(perr.Error(), "unknown flag") {
+		return nil, nil, perr
+	}
+
+	// Only intercept classic missing subcommand scenario
+	if strings.Contains(perr.Error(), "expected one of") {
+		PrintHelp(parser, helpOpts, parseArgs)
+
+		return nil, &cli, nil
+	}
+
+	return nil, nil, perr
+}
+
+// PrintHelp prints contextual help without invoking the help flag exit path.
+func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
+	ctx, err := kong.Trace(parser, args)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
-	return ctx, &cli, nil
+	return kong.DefaultHelpPrinter(opts, ctx)
 }
 
 // Execute runs the parsed command with proper context
@@ -178,5 +198,9 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 	}
 
 	// Execute the selected command
+	if kctx == nil {
+		return nil
+	}
+
 	return kctx.Run(appCtx)
 }
