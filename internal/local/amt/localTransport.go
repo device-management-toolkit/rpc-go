@@ -52,7 +52,6 @@ func NewLocalTransport() *LocalTransport {
 func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// send channel open
 	err := l.local.Connect()
-
 	go l.local.Listen()
 
 	if err != nil {

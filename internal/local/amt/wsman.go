@@ -35,6 +35,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -606,4 +607,55 @@ func (g *GoWSMANMessages) PutEnvironmentDetectionSettings(request environmentdet
 	}
 
 	return result.Body.GetAndPutResponse, nil
+}
+
+// GetHTTPProxy retrieves the HTTP Proxy settings via enumerate/pull
+func (g *GoWSMANMessages) GetHTTPProxy() (response ipshttp.Response, err error) {
+	enumResult, err := g.wsmanMessages.IPS.HTTPProxyService.Enumerate()
+	if err != nil {
+		return response, err
+	}
+
+	pullResult, err := g.wsmanMessages.IPS.HTTPProxyService.Pull(enumResult.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return response, err
+	}
+
+	return pullResult, nil
+}
+
+// GetHTTPProxyAccessPoints retrieves all configured proxy access points
+func (g *GoWSMANMessages) GetHTTPProxyAccessPoints() (response []ipshttp.HTTPProxyAccessPointItem, err error) {
+	enumResult, err := g.wsmanMessages.IPS.HTTPProxyAccessPointService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	pullResult, err := g.wsmanMessages.IPS.HTTPProxyAccessPointService.Pull(enumResult.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return pullResult.Body.PullResponse.Items, nil
+}
+
+// DeleteHTTPProxyAccessPoint deletes an IPS HTTP Proxy Access Point by name
+func (g *GoWSMANMessages) DeleteHTTPProxyAccessPoint(name string) (response ipshttp.ProxyAccessPointResponse, err error) {
+	return g.wsmanMessages.IPS.HTTPProxyAccessPointService.Delete(name)
+}
+
+// AddHTTPProxyAccessPoint adds an IPS HTTP Proxy Access Point via IPS_HTTPProxyService
+func (g *GoWSMANMessages) AddHTTPProxyAccessPoint(accessInfo string, infoFormat, port int, networkDnsSuffix string) (response ipshttp.Response, err error) {
+	// Convert infoFormat int to the library enum
+	var fmtEnum ipshttp.InfoFormat
+	switch infoFormat {
+	case int(ipshttp.InfoFormatIPv4):
+		fmtEnum = ipshttp.InfoFormatIPv4
+	case int(ipshttp.InfoFormatIPv6):
+		fmtEnum = ipshttp.InfoFormatIPv6
+	default:
+		fmtEnum = ipshttp.InfoFormatFQDN
+	}
+
+	return g.wsmanMessages.IPS.HTTPProxyService.AddProxyAccessPoint(accessInfo, fmtEnum, port, networkDnsSuffix)
 }

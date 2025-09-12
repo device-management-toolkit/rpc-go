@@ -87,6 +87,11 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		return fmt.Errorf("TLS configuration failed: %w", err)
 	}
 
+	// Step 8: HTTP Proxy configuration
+	if err := po.executeHTTPProxyConfiguration(); err != nil {
+		return fmt.Errorf("HTTP proxy configuration failed: %w", err)
+	}
+
 	log.Info("Profile orchestration completed successfully!")
 
 	return nil
@@ -416,6 +421,51 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 				args = append(args, "--eaPassword", po.config.Configuration.EnterpriseAssistant.Password)
 			}
 		}
+	}
+
+	return Execute(args)
+}
+
+// executeHTTPProxyConfiguration performs HTTP proxy configuration
+func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
+	proxies := po.config.Configuration.Network.Proxies
+
+	if len(proxies) == 0 {
+		log.Info("No HTTP proxy configurations specified, skipping")
+
+		return nil
+	}
+
+	for i, proxy := range proxies {
+		log.Infof("Executing HTTP proxy configuration %d/%d: %s", i+1, len(proxies), proxy.Address)
+
+		if err := po.executeHTTPProxy(proxy); err != nil {
+			return fmt.Errorf("failed to configure HTTP proxy %s: %w", proxy.Address, err)
+		}
+	}
+
+	return nil
+}
+
+// executeHTTPProxy configures a single HTTP proxy
+func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
+	var args []string
+
+	args = append(args, "rpc")
+	args = append(args, "configure", "proxy")
+
+	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	}
+
+	args = append(args, "--address", proxy.Address)
+
+	if proxy.Port > 0 {
+		args = append(args, "--port", strconv.Itoa(proxy.Port))
+	}
+
+	if proxy.NetworkDnsSuffix != "" {
+		args = append(args, "--networkdnssuffix", proxy.NetworkDnsSuffix)
 	}
 
 	return Execute(args)

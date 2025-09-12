@@ -33,6 +33,7 @@ import (
 	models "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	wifi "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	hostbasedsetup "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
+	http "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	ieee8021x "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	optin "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	gomock "go.uber.org/mock/gomock"
@@ -75,6 +76,21 @@ func (m *MockWSMANer) AddClientCert(clientCert string) (string, error) {
 func (mr *MockWSMANerMockRecorder) AddClientCert(clientCert any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClientCert", reflect.TypeOf((*MockWSMANer)(nil).AddClientCert), clientCert)
+}
+
+// AddHTTPProxyAccessPoint mocks base method.
+func (m *MockWSMANer) AddHTTPProxyAccessPoint(accessInfo string, infoFormat, port int, networkDnsSuffix string) (http.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddHTTPProxyAccessPoint", accessInfo, infoFormat, port, networkDnsSuffix)
+	ret0, _ := ret[0].(http.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddHTTPProxyAccessPoint indicates an expected call of AddHTTPProxyAccessPoint.
+func (mr *MockWSMANerMockRecorder) AddHTTPProxyAccessPoint(accessInfo, infoFormat, port, networkDnsSuffix any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHTTPProxyAccessPoint", reflect.TypeOf((*MockWSMANer)(nil).AddHTTPProxyAccessPoint), accessInfo, infoFormat, port, networkDnsSuffix)
 }
 
 // AddMPS mocks base method.
@@ -195,6 +211,21 @@ func (m *MockWSMANer) CreateTLSCredentialContext(certHandle string) (tls0.Respon
 func (mr *MockWSMANerMockRecorder) CreateTLSCredentialContext(certHandle any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateTLSCredentialContext", reflect.TypeOf((*MockWSMANer)(nil).CreateTLSCredentialContext), certHandle)
+}
+
+// DeleteHTTPProxyAccessPoint mocks base method.
+func (m *MockWSMANer) DeleteHTTPProxyAccessPoint(name string) (http.ProxyAccessPointResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteHTTPProxyAccessPoint", name)
+	ret0, _ := ret[0].(http.ProxyAccessPointResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteHTTPProxyAccessPoint indicates an expected call of DeleteHTTPProxyAccessPoint.
+func (mr *MockWSMANerMockRecorder) DeleteHTTPProxyAccessPoint(name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteHTTPProxyAccessPoint", reflect.TypeOf((*MockWSMANer)(nil).DeleteHTTPProxyAccessPoint), name)
 }
 
 // DeleteKeyPair mocks base method.
@@ -385,6 +416,36 @@ func (m *MockWSMANer) GetGeneralSettings() (general.Response, error) {
 func (mr *MockWSMANerMockRecorder) GetGeneralSettings() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGeneralSettings", reflect.TypeOf((*MockWSMANer)(nil).GetGeneralSettings))
+}
+
+// GetHTTPProxy mocks base method.
+func (m *MockWSMANer) GetHTTPProxy() (http.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetHTTPProxy")
+	ret0, _ := ret[0].(http.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetHTTPProxy indicates an expected call of GetHTTPProxy.
+func (mr *MockWSMANerMockRecorder) GetHTTPProxy() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHTTPProxy", reflect.TypeOf((*MockWSMANer)(nil).GetHTTPProxy))
+}
+
+// GetHTTPProxyAccessPoints mocks base method.
+func (m *MockWSMANer) GetHTTPProxyAccessPoints() ([]http.HTTPProxyAccessPointItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetHTTPProxyAccessPoints")
+	ret0, _ := ret[0].([]http.HTTPProxyAccessPointItem)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetHTTPProxyAccessPoints indicates an expected call of GetHTTPProxyAccessPoints.
+func (mr *MockWSMANerMockRecorder) GetHTTPProxyAccessPoints() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHTTPProxyAccessPoints", reflect.TypeOf((*MockWSMANer)(nil).GetHTTPProxyAccessPoints))
 }
 
 // GetHostBasedSetupService mocks base method.

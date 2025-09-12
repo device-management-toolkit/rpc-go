@@ -28,6 +28,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 )
@@ -85,6 +86,12 @@ type WSMANer interface {
 	RequestStateChangeCIRA() (response userinitiatedconnection.RequestStateChange_OUTPUT, err error)
 	GetEnvironmentDetectionSettings() (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error)
 	PutEnvironmentDetectionSettings(environmentDetectionSettingData environmentdetection.EnvironmentDetectionSettingDataRequest) (response environmentdetection.EnvironmentDetectionSettingDataResponse, err error)
+
+	// HTTP Proxy (IPS_HTTPProxyService)
+	AddHTTPProxyAccessPoint(accessInfo string, infoFormat, port int, networkDnsSuffix string) (response ipshttp.Response, err error)
+	GetHTTPProxy() (response ipshttp.Response, err error)
+	GetHTTPProxyAccessPoints() (response []ipshttp.HTTPProxyAccessPointItem, err error)
+	DeleteHTTPProxyAccessPoint(name string) (response ipshttp.ProxyAccessPointResponse, err error)
 
 	CommitChanges() (response setupandconfiguration.Response, err error)
 	GeneratePKCS10RequestEx(keyPair, nullSignedCertificateRequest string, signingAlgorithm publickey.SigningAlgorithm) (response publickey.Response, err error)
