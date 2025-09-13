@@ -127,7 +127,7 @@ func CreateRequestHeader(command, length uint32) MessageHeader {
 		},
 		Reserved: 0,
 		Command: CommandFormat{
-			val: command,
+			Val: command,
 		},
 		Length: length,
 	}
@@ -149,7 +149,7 @@ func (pthi Command) GetCodeVersions() (GetCodeVersionsResponse, error) {
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetCodeVersionsResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 	binary.Read(buf2, binary.LittleEndian, &response.CodeVersion)
 
@@ -172,7 +172,7 @@ func (pthi Command) GetUUID() (uuid string, err error) {
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetUUIDResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.UUID)
@@ -196,7 +196,7 @@ func (pthi Command) GetControlMode() (state int, err error) {
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetControlModeResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.State)
@@ -280,7 +280,7 @@ func (pthi Command) Unprovision() (state int, err error) {
 
 	buf2 := bytes.NewBuffer(result)
 	response := UnprovisionResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.State)
@@ -288,13 +288,13 @@ func (pthi Command) Unprovision() (state int, err error) {
 	return int(response.State), nil
 }
 
-func readHeaderResponse(header *bytes.Buffer) ResponseMessageHeader {
+func ReadHeaderResponse(header *bytes.Buffer) ResponseMessageHeader {
 	response := ResponseMessageHeader{}
 
 	binary.Read(header, binary.LittleEndian, &response.Header.Version.MajorNumber)
 	binary.Read(header, binary.LittleEndian, &response.Header.Version.MinorNumber)
 	binary.Read(header, binary.LittleEndian, &response.Header.Reserved)
-	binary.Read(header, binary.LittleEndian, &response.Header.Command.val)
+	binary.Read(header, binary.LittleEndian, &response.Header.Command.Val)
 	binary.Read(header, binary.LittleEndian, &response.Header.Length)
 	binary.Read(header, binary.LittleEndian, &response.Status)
 
@@ -317,7 +317,7 @@ func (pthi Command) GetDNSSuffix() (suffix string, err error) {
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetPKIFQDNSuffixResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.Suffix.Length)
@@ -347,7 +347,7 @@ func (pthi Command) enumerateHashHandles() (AMTHashHandles, error) {
 
 	enumerateBuf2 := bytes.NewBuffer(enumerateResult)
 	enumerateResponse := GetHashHandlesResponse{
-		Header: readHeaderResponse(enumerateBuf2),
+		Header: ReadHeaderResponse(enumerateBuf2),
 	}
 
 	binary.Read(enumerateBuf2, binary.LittleEndian, &enumerateResponse.HashHandles.Length)
@@ -384,7 +384,7 @@ func (pthi Command) GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryL
 
 		buf2 := bytes.NewBuffer(result)
 		response := GetCertHashEntryResponse{
-			Header: readHeaderResponse(buf2),
+			Header: ReadHeaderResponse(buf2),
 		}
 
 		binary.Read(buf2, binary.LittleEndian, &response.Hash.IsDefault)
@@ -418,7 +418,7 @@ func (pthi Command) GetRemoteAccessConnectionStatus() (RAStatus GetRemoteAccessC
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetRemoteAccessConnectionStatusResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.NetworkStatus)
@@ -454,7 +454,7 @@ func (pthi Command) GetLANInterfaceSettings(useWireless bool) (LANInterface GetL
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetLANInterfaceSettingsResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.Enabled)
@@ -486,7 +486,7 @@ func (pthi Command) GetLocalSystemAccount() (localAccount GetLocalSystemAccountR
 
 	buf2 := bytes.NewBuffer(result)
 	response := GetLocalSystemAccountResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.Account.Username)
@@ -549,7 +549,7 @@ func (pthi Command) StartConfigurationHBased(serverHashAlgorithm uint8, serverCe
 
 	buf2 := bytes.NewBuffer(result)
 	response = StartConfigurationHBasedResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	binary.Read(buf2, binary.LittleEndian, &response.HashAlgorithm)
@@ -574,7 +574,7 @@ func (pthi Command) StopConfiguration() (response StopConfigurationResponse, err
 
 	buf2 := bytes.NewBuffer(result)
 	response = StopConfigurationResponse{
-		Header: readHeaderResponse(buf2),
+		Header: ReadHeaderResponse(buf2),
 	}
 
 	return response, nil

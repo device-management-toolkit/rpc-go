@@ -223,7 +223,7 @@ type CodeVersions struct {
 }
 
 type CommandFormat struct {
-	val uint32
+	Val uint32
 	// fields [3]uint32
 }
 type MessageHeader struct {
