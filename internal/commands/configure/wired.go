@@ -20,6 +20,20 @@ import (
 type WiredCmd struct {
 	ConfigureBaseCmd
 
+	// 802.1x settings
+	IEEE8021xProfileName            string `help:"802.1x profile name" name:"ieee8021xProfileName"`
+	IEEE8021xUsername               string `help:"802.1x username" alias:"username" name:"ieee8021xUsername"`
+	IEEE8021xPassword               string `help:"802.1x password" name:"ieee8021xPassword"`
+	IEEE8021xAuthenticationProtocol int    `help:"802.1x authentication protocol (0=EAP-TLS, 2=PEAPv0/EAP-MSCHAPv2)" alias:"authenticationprotocol" enum:"0,2" default:"0" name:"ieee8021xAuthenticationProtocol"`
+	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" alias:"privatekey" name:"ieee8021xPrivateKey"`
+	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" alias:"clientcert" name:"ieee8021xClientCert"`
+	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" alias:"cacert" name:"ieee8021xCACert"`
+
+	// Enterprise Assistant settings
+	EAAddress  string `help:"Enterprise Assistant address" name:"eaAddress"`
+	EAUsername string `help:"Enterprise Assistant username" name:"eaUsername"`
+	EAPassword string `help:"Enterprise Assistant password" name:"eaPassword"`
+
 	// Ethernet settings
 	DHCPEnabled   *bool  `help:"Enable DHCP" name:"dhcp"`
 	IPSyncEnabled bool   `help:"Enable IP Sync with host OS" name:"ipsync"`

@@ -132,9 +132,9 @@ func TestWirelessCmd_Validate(t *testing.T) {
 			name: "802.1x authentication with PSK passphrase",
 			cmd: &WirelessCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd:           commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
-					IEEE8021xProfileName: "8021xprofile",
+					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
 				},
+				IEEE8021xProfileName: "8021xprofile",
 				ProfileName:          "testprofile",
 				SSID:                 "testssid",
 				Priority:             1,
@@ -148,9 +148,9 @@ func TestWirelessCmd_Validate(t *testing.T) {
 			name: "valid 802.1x authentication",
 			cmd: &WirelessCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd:           commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
-					IEEE8021xProfileName: "8021xprofile",
+					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
 				},
+				IEEE8021xProfileName: "8021xprofile",
 				ProfileName:          "testprofile",
 				SSID:                 "testssid",
 				Priority:             1,
@@ -232,18 +232,18 @@ func TestWirelessCmd_Run(t *testing.T) {
 	t.Run("8021x_validation", func(t *testing.T) {
 		cmd := &WirelessCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd:                      commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
-				IEEE8021xProfileName:            "test8021x",
-				IEEE8021xUsername:               "testuser",
-				IEEE8021xPassword:               "testpass",
-				IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
-				IEEE8021xCACert:                 "test-ca-cert",
+				AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123", ControlMode: 1},
 			},
-			ProfileName:          "testprofile",
-			SSID:                 "testssid",
-			Priority:             1,
-			AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-			EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
+			IEEE8021xProfileName:            "test8021x",
+			IEEE8021xUsername:               "testuser",
+			IEEE8021xPassword:               "testpass",
+			IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
+			IEEE8021xCACert:                 "test-ca-cert",
+			ProfileName:                     "testprofile",
+			SSID:                            "testssid",
+			Priority:                        1,
+			AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
+			EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
 		}
 
 		// Verify IEEE 802.1x fields are properly set

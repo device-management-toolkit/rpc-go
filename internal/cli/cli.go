@@ -21,8 +21,7 @@ import (
 // Global flags that apply to all commands
 type Globals struct {
 	// Configuration handling
-	Config    string `help:"Path to configuration file or SMB share URL" name:"config" type:"path" default:"config.yaml"`
-	ConfigV2  string `help:"Config V2 file or SMB share URL" name:"configv2"`
+	Config    string `help:"Path to configuration file or SMB share URL. (previously --configv2)" name:"config" type:"path" default:"config.yaml"`
 	ConfigKey string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
 
 	LogLevel      string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
@@ -98,18 +97,12 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 
 	log.Debugf("Using configuration file: %s", configFile)
 
-	legacyResolver, err := ConfigResolver(configFile)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	helpOpts := kong.HelpOptions{Compact: true}
 
 	parser, err := kong.New(&cli,
 		kong.Name("rpc"),
 		kong.Description("Remote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT"),
 		kong.UsageOnError(),
-		kong.Resolvers(legacyResolver),
 		kong.DefaultEnvars("RPC"),
 		kong.ConfigureHelp(helpOpts),
 		kong.BindToProvider(func() amt.Interface { return amtCommand }),

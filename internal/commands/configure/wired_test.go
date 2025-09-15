@@ -108,12 +108,12 @@ func TestWiredCmd_Validate(t *testing.T) {
 						ControlMode: 1,
 						Password:    "test-test123",
 					},
-					IEEE8021xProfileName:            "test8021x",
-					IEEE8021xUsername:               "testuser",
-					IEEE8021xPassword:               "testpass",
-					IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
-					IEEE8021xCACert:                 "test-ca-cert",
 				},
+				IEEE8021xProfileName:            "test8021x",
+				IEEE8021xUsername:               "testuser",
+				IEEE8021xPassword:               "testpass",
+				IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
+				IEEE8021xCACert:                 "test-ca-cert",
 				DHCPEnabled: func() *bool {
 					b := true
 
@@ -130,17 +130,17 @@ func TestWiredCmd_Validate(t *testing.T) {
 						ControlMode: 1,
 						Password:    "test-test123",
 					},
-					IEEE8021xProfileName:            "test8021x",
-					IEEE8021xUsername:               "testuser",
-					IEEE8021xAuthenticationProtocol: 0, // EAP-TLS
-					IEEE8021xPrivateKey:             "test-private-key",
-					IEEE8021xClientCert:             "test-client-cert",
-					IEEE8021xCACert:                 "test-ca-cert",
 				},
-				IPAddress:  "192.168.1.100",
-				SubnetMask: "255.255.255.0",
-				Gateway:    "192.168.1.1",
-				PrimaryDNS: "8.8.8.8",
+				IEEE8021xProfileName:            "test8021x",
+				IEEE8021xUsername:               "testuser",
+				IEEE8021xAuthenticationProtocol: 0, // EAP-TLS
+				IEEE8021xPrivateKey:             "test-private-key",
+				IEEE8021xClientCert:             "test-client-cert",
+				IEEE8021xCACert:                 "test-ca-cert",
+				IPAddress:                       "192.168.1.100",
+				SubnetMask:                      "255.255.255.0",
+				Gateway:                         "192.168.1.1",
+				PrimaryDNS:                      "8.8.8.8",
 			},
 			wantErr: false,
 		},
@@ -190,13 +190,13 @@ func TestWiredCmd_Run(t *testing.T) {
 	t.Run("8021x_validation", func(t *testing.T) {
 		cmd := &WiredCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd:                      commands.AMTBaseCmd{Password: "test-test123"},
-				IEEE8021xProfileName:            "test8021x",
-				IEEE8021xUsername:               "testuser",
-				IEEE8021xPassword:               "testpass",
-				IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
-				IEEE8021xCACert:                 "test-ca-cert",
+				AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
 			},
+			IEEE8021xProfileName:            "test8021x",
+			IEEE8021xUsername:               "testuser",
+			IEEE8021xPassword:               "testpass",
+			IEEE8021xAuthenticationProtocol: 2, // PEAP-MSCHAPv2
+			IEEE8021xCACert:                 "test-ca-cert",
 			DHCPEnabled: func() *bool {
 				b := true
 

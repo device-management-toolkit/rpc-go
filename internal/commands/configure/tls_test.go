@@ -97,12 +97,12 @@ func TestTLSCmd_Validate(t *testing.T) {
 						ControlMode: 1,
 						Password:    "test-test123",
 					},
-					EAAddress:  "https://ea.example.com",
-					EAUsername: "testuser",
-					EAPassword: "testpass",
 				},
-				Mode:  "Mutual",
-				Delay: 5,
+				EAAddress:  "https://ea.example.com",
+				EAUsername: "testuser",
+				EAPassword: "testpass",
+				Mode:       "Mutual",
+				Delay:      5,
 			},
 			wantErr: false,
 		},
@@ -122,10 +122,10 @@ func TestTLSCmd_Validate(t *testing.T) {
 			cmd: &TLSCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-					EAAddress:  "https://ea.example.com",
-					EAUsername: "testuser",
-					// Missing EAPassword
 				},
+				EAAddress:  "https://ea.example.com",
+				EAUsername: "testuser",
+				// Missing EAPassword
 				Mode: "Server",
 			},
 			wantErr: true,
@@ -135,11 +135,11 @@ func TestTLSCmd_Validate(t *testing.T) {
 			cmd: &TLSCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-					EAAddress:  "invalid-url",
-					EAUsername: "testuser",
-					EAPassword: "testpass",
 				},
-				Mode: "Server",
+				Mode:       "Server",
+				EAAddress:  "invalid-url",
+				EAUsername: "testuser",
+				EAPassword: "testpass",
 			},
 			wantErr: true,
 		},
@@ -369,13 +369,12 @@ func TestTLSCmd_Run(t *testing.T) {
 		cmd := &TLSCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-
-				EAAddress:  "https://ea.example.com",
-				EAUsername: "testuser",
-				EAPassword: "testpass",
 			},
-			Mode:  "Mutual",
-			Delay: 5,
+			EAAddress:  "https://ea.example.com",
+			EAUsername: "testuser",
+			EAPassword: "testpass",
+			Mode:       "Mutual",
+			Delay:      5,
 		}
 
 		// Verify command has required fields

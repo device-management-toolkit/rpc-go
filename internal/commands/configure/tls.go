@@ -117,6 +117,11 @@ func DetermineTLSMode(mutualAuth, enabled, allowNonTLS bool) string {
 type TLSCmd struct {
 	ConfigureBaseCmd
 
+	// Enterprise Assistant settings
+	EAAddress  string `help:"Enterprise Assistant address" name:"eaAddress"`
+	EAUsername string `help:"Enterprise Assistant username" name:"eaUsername"`
+	EAPassword string `help:"Enterprise Assistant password" name:"eaPassword"`
+
 	Mode  string `help:"TLS authentication mode" enum:"Server,ServerAndNonTLS,Mutual,MutualAndNonTLS,None" default:"Server" name:"mode"`
 	Delay int    `help:"Delay time in seconds after putting remote TLS settings" default:"3" name:"delay"`
 }
