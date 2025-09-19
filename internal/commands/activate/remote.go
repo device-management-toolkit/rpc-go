@@ -30,6 +30,9 @@ type RemoteActivateCmd struct {
 	UUID         string `help:"UUID override (prevents MPS connection)" name:"uuid"`
 	FriendlyName string `help:"Friendly name to associate with this device" name:"name"`
 	Proxy        string `help:"Proxy server URL for RPS connection" env:"PROXY" name:"proxy"`
+
+	// Authentication to the remote server (optional for websockets today but reserved for future)
+	commands.ServerAuthFlags
 }
 
 // RemoteActivationConfig holds the configuration for remote activation

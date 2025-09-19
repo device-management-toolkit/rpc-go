@@ -119,6 +119,10 @@ func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {
 	return g.wsmanMessages.AMT.GeneralSettings.Get()
 }
 
+func (g *GoWSMANMessages) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
+	return g.wsmanMessages.AMT.GeneralSettings.Put(request)
+}
+
 func (g *GoWSMANMessages) HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.Setup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password)
 }

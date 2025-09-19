@@ -210,8 +210,6 @@ func TestPrintUsage(t *testing.T) {
 	usage = usage + "              Example: " + executable + " configure " + utils.SubCommandWireless + " ...\n"
 	usage = usage + "  deactivate  Deactivates this device. AMT password is required\n"
 	usage = usage + "              Example: " + executable + " deactivate -u wss://server/activate\n"
-	usage = usage + "  maintenance Execute a maintenance task for the device. AMT password is required\n"
-	usage = usage + "              Example: " + executable + " maintenance syncclock -u wss://server/activate \n"
 	usage = usage + "  version     Displays the current version of RPC and the RPC Protocol version\n"
 	usage = usage + "              Example: " + executable + " version\n"
 	usage = usage + "\nRun '" + executable + " COMMAND' for more information on a command.\n"

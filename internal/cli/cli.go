@@ -13,6 +13,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/maintenance"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -37,11 +38,12 @@ type Globals struct {
 type CLI struct {
 	Globals
 
-	AmtInfo    commands.AmtInfoCmd    `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
-	Version    commands.VersionCmd    `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
-	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
-	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
-	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
+	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
+	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
+	Configure   configure.ConfigureCmd     `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	Maintenance maintenance.MaintenanceCmd `cmd:"maintenance" help:"Maintenance operations: sync clock, IP, hostname, and device info"`
 
 	// Configuration loaded from YAML file (not directly accessible via CLI)
 	YamlConfig config.Configuration `kong:"-"`
@@ -195,6 +197,7 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		JsonOutput:    cli.JsonOutput,
 		Verbose:       cli.Verbose,
 		SkipCertCheck: cli.SkipCertCheck,
+		Extra:         map[string]any{},
 	}
 
 	// Execute the selected command

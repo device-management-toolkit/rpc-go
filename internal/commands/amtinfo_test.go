@@ -6,12 +6,16 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
@@ -114,6 +118,136 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	// Minimal calls required when All=true for sync data
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+
+	// Fake server to capture PATCH
+	var (
+		gotMethod, gotPath, gotContentType string
+		gotBody                            syncPayload
+	)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+
+		gotContentType = r.Header.Get("Content-Type")
+		defer r.Body.Close()
+
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Run command with --sync to test PATCH
+	cmd := &AmtInfoCmd{Sync: true, URL: server.URL}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+
+	err := cmd.Run(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, http.MethodPatch, gotMethod)
+	assert.Equal(t, "/api/v1/devices", gotPath)
+	assert.Equal(t, "application/json", gotContentType)
+	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
+	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
+	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
+}
+
+func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	// Minimal calls required when All=true for sync data
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+
+	var gotAuth string
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &AmtInfoCmd{Sync: true, URL: server.URL}
+	cmd.AuthToken = "mytoken"
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+
+	err := cmd.Run(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "Bearer mytoken", strings.TrimSpace(gotAuth))
+}
+
+func TestAmtInfoCmd_Run_WithSync_BasicAuth(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	// Minimal calls required when All=true for sync data
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+
+	var gotAuth string
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &AmtInfoCmd{Sync: true, URL: server.URL}
+	cmd.AuthUsername = "alice"
+	cmd.AuthPassword = "s3cr3t"
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+
+	err := cmd.Run(ctx)
+	assert.NoError(t, err)
+
+	expected := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:s3cr3t"))
+	assert.Equal(t, expected, strings.TrimSpace(gotAuth))
 }
 
 func TestNewInfoService(t *testing.T) {

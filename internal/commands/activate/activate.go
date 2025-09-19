@@ -40,6 +40,9 @@ type ActivateCmd struct {
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+
+	// Shared server authentication flags for remote flows (optional)
+	commands.ServerAuthFlags
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -151,13 +154,14 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 	// Create remote activation command with current flags
 	remoteCmd := RemoteActivateCmd{
-		URL:          cmd.URL,
-		Profile:      cmd.Profile,
-		DNS:          cmd.DNS,
-		Hostname:     cmd.Hostname,
-		UUID:         cmd.UUID,
-		FriendlyName: cmd.FriendlyName,
-		Proxy:        cmd.Proxy,
+		URL:             cmd.URL,
+		Profile:         cmd.Profile,
+		DNS:             cmd.DNS,
+		Hostname:        cmd.Hostname,
+		UUID:            cmd.UUID,
+		FriendlyName:    cmd.FriendlyName,
+		Proxy:           cmd.Proxy,
+		ServerAuthFlags: cmd.ServerAuthFlags,
 	}
 
 	// Validate and execute the remote command
