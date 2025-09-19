@@ -48,10 +48,6 @@ func runRPC(args []string) error {
 	return err
 }
 
-func fetchProfile(flags *flags.Flags) error {
-	return nil
-}
-
 func parseCommandLine(args []string) (*flags.Flags, error) {
 	// process flags
 	flags := flags.NewFlags(args, utils.PR)
@@ -135,7 +131,7 @@ func main() {
 
 func isKongCommand(cmd string) bool {
 	// Only run Kong for the commands we've implemented
-	kongCommands := []string{"amtinfo", "version", "deactivate", "activate", "configure"}
+	kongCommands := []string{"amtinfo", "version", "deactivate", "activate", "configure", "maintenance"}
 	for _, kongCmd := range kongCommands {
 		if strings.EqualFold(cmd, kongCmd) {
 			return true

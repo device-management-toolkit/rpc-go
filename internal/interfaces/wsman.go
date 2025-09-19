@@ -38,6 +38,7 @@ type WSMANer interface {
 	Unprovision(int) (setupandconfiguration.Response, error)
 	PartialUnprovision() (setupandconfiguration.Response, error)
 	GetGeneralSettings() (general.Response, error)
+	PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error)
 	HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error)
 	GetHostBasedSetupService() (hostbasedsetup.Response, error)
 	AddNextCertInChain(cert string, isLeaf, isRoot bool) (hostbasedsetup.Response, error)

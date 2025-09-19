@@ -6,10 +6,14 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
+	neturl "net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +29,7 @@ import (
 )
 
 const notFoundIP = "Not Found"
+const zeroIP = "0.0.0.0"
 
 // AmtInfoCmd represents the amtinfo command with Kong CLI binding
 type AmtInfoCmd struct {
@@ -54,6 +59,13 @@ type AmtInfoCmd struct {
 
 	// Special flags
 	All bool `help:"Show All AMT Information" short:"A"`
+
+	// Sync to server flags
+	Sync bool   `help:"Sync device info to remote server via HTTP PATCH"`
+	URL  string `help:"Base URL of the server (e.g., https://mps.example.com)" name:"url"`
+
+	// Shared server authentication flags (Bearer token or Basic auth)
+	ServerAuthFlags
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -73,6 +85,21 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	// Provisioning/control-mode checks are deferred to runtime where the injected AMT interface is used.
 	if cmd.IsUserCertRequested() {
 		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
+			return err
+		}
+	}
+
+	// Basic validation for sync mode
+	if cmd.Sync {
+		if strings.TrimSpace(cmd.URL) == "" {
+			return fmt.Errorf("--url is required when --sync is specified")
+		}
+
+		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
+			return fmt.Errorf("invalid --url: %w", err)
+		}
+		// Require some form of authentication when syncing
+		if err := cmd.ValidateRequired(true); err != nil {
 			return err
 		}
 	}
@@ -108,9 +135,25 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// Reuse the already-initialized WSMAN client from AMTBaseCmd (initialized in AfterApply when userCert is requested)
 	service.wsman = cmd.GetWSManClient()
 
-	result, err := service.GetAMTInfo(cmd)
+	// If syncing, ensure we collect full device info regardless of selective flags
+	effectiveCmd := cmd
+	if cmd.Sync {
+		// Make a copy with All=true to gather all needed fields (including LAN/UUID/features)
+		copied := *cmd
+		copied.All = true
+		effectiveCmd = &copied
+	}
+
+	result, err := service.GetAMTInfo(effectiveCmd)
 	if err != nil {
 		return err
+	}
+
+	// If requested, sync device info to remote server
+	if cmd.Sync {
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &cmd.ServerAuthFlags); err != nil {
+			return err
+		}
 	}
 
 	if ctx.JsonOutput {
@@ -167,6 +210,123 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		skipCertCheck:    false,
 		wsman:            nil,
 	}
+}
+
+// syncPayload mirrors the expected JSON body for the PATCH request
+type syncPayload struct {
+	GUID       string         `json:"guid"`
+	DeviceInfo syncDeviceInfo `json:"deviceInfo"`
+}
+
+type syncDeviceInfo struct {
+	FWVersion   string    `json:"fwVersion"`
+	FWBuild     string    `json:"fwBuild"`
+	FWSku       string    `json:"fwSku"`
+	CurrentMode string    `json:"currentMode"`
+	Features    string    `json:"features"`
+	IPAddress   string    `json:"ipAddress"`
+	LastUpdated time.Time `json:"lastUpdated"`
+}
+
+// SyncDeviceInfo sends a PATCH to {baseURL}/api/v1/devices with the device info payload
+func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, baseURL string, auth *ServerAuthFlags) error {
+	endpoint, err := joinURL(baseURL, "/api/v1/devices")
+	if err != nil {
+		return fmt.Errorf("failed to build sync URL: %w", err)
+	}
+
+	payload := syncPayload{
+		GUID: result.UUID,
+		DeviceInfo: syncDeviceInfo{
+			FWVersion:   result.AMT,
+			FWBuild:     result.BuildNumber,
+			FWSku:       result.SKU,
+			CurrentMode: result.ControlMode,
+			Features:    result.Features,
+			IPAddress:   bestIPAddress(result),
+			LastUpdated: time.Now(),
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync payload: %w", err)
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	// Respect skip-cert-check for HTTPS endpoints
+	if strings.HasPrefix(strings.ToLower(endpoint), "https://") && ctx.SkipCertCheck {
+		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	}
+
+	// Create a request with context to comply with lint noctx rule and allow cancellation., not to be confused with context of kong cli commands
+	reqCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create PATCH request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Apply Authorization header when provided
+	if auth != nil {
+		auth.ApplyToRequest(req)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("sync request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("sync failed with status %s", resp.Status)
+	}
+
+	return nil
+}
+
+// bestIPAddress chooses a reasonable IP address for reporting
+func bestIPAddress(res *InfoResult) string {
+	// Prefer OS IP from wired
+	if res.WiredAdapter != nil {
+		if ip := strings.TrimSpace(res.WiredAdapter.OsIPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+
+		if ip := strings.TrimSpace(res.WiredAdapter.IPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+	}
+
+	if res.WirelessAdapter != nil {
+		if ip := strings.TrimSpace(res.WirelessAdapter.OsIPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+
+		if ip := strings.TrimSpace(res.WirelessAdapter.IPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+	}
+
+	return zeroIP
+}
+
+// joinURL safely concatenates base URL and path
+func joinURL(base, path string) (string, error) {
+	u, err := neturl.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	// Ensure path joins correctly
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	u.Path = strings.TrimRight(u.Path, "/") + path
+
+	return u.String(), nil
 }
 
 // GetAMTInfo retrieves AMT information based on the command flags

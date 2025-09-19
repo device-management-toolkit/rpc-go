@@ -418,6 +418,21 @@ func (mr *MockWSMANerMockRecorder) GetGeneralSettings() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGeneralSettings", reflect.TypeOf((*MockWSMANer)(nil).GetGeneralSettings))
 }
 
+// PutGeneralSettings mocks base method.
+func (m *MockWSMANer) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PutGeneralSettings", request)
+	ret0, _ := ret[0].(general.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PutGeneralSettings indicates an expected call of PutGeneralSettings.
+func (mr *MockWSMANerMockRecorder) PutGeneralSettings(request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutGeneralSettings", reflect.TypeOf((*MockWSMANer)(nil).PutGeneralSettings), request)
+}
+
 // GetHTTPProxy mocks base method.
 func (m *MockWSMANer) GetHTTPProxy() (http.Response, error) {
 	m.ctrl.T.Helper()

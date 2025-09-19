@@ -11,7 +11,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
-	internalconfig "github.com/device-management-toolkit/rpc-go/v2/internal/config"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -23,12 +23,12 @@ const (
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
 type ProfileOrchestrator struct {
-	config config.Configuration
+	profile config.Configuration
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator
 func NewProfileOrchestrator(cfg config.Configuration) *ProfileOrchestrator {
-	return &ProfileOrchestrator{config: cfg}
+	return &ProfileOrchestrator{profile: cfg}
 }
 
 // ExecuteProfile orchestrates the execution of all commands based on the profile
@@ -99,37 +99,37 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 // executeActivation performs the activation step
 func (po *ProfileOrchestrator) executeActivation() error {
-	if po.config.Configuration.AMTSpecific.ControlMode == "" {
+	if po.profile.Configuration.AMTSpecific.ControlMode == "" {
 		log.Info("No activation mode specified, skipping activation")
 
 		return nil
 	}
 
-	log.Infof("Executing activation with control mode: %s", po.config.Configuration.AMTSpecific.ControlMode)
+	log.Infof("Executing activation with control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 
 	var args []string
 
 	args = append(args, "rpc")
 	args = append(args, "activate")
 
-	switch po.config.Configuration.AMTSpecific.ControlMode {
+	switch po.profile.Configuration.AMTSpecific.ControlMode {
 	case ACMMODE:
 		args = append(args, "--acm")
-		if po.config.Configuration.AMTSpecific.ProvisioningCert != "" {
-			args = append(args, "--provisioningCert", po.config.Configuration.AMTSpecific.ProvisioningCert)
+		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
+			args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 		}
 
-		if po.config.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
-			args = append(args, "--provisioningCertPwd", po.config.Configuration.AMTSpecific.ProvisioningCertPwd)
+		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
+			args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
 		}
 	case "ccmactivate":
 		args = append(args, "--ccm")
 	default:
-		return fmt.Errorf("unsupported control mode: %s", po.config.Configuration.AMTSpecific.ControlMode)
+		return fmt.Errorf("unsupported control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 	}
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	args = append(args, "--local")
@@ -139,8 +139,8 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 // executeMEBxConfiguration performs MEBx password configuration
 func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
-	if po.config.Configuration.AMTSpecific.MEBXPassword == "" ||
-		po.config.Configuration.AMTSpecific.ControlMode != ACMMODE {
+	if po.profile.Configuration.AMTSpecific.MEBXPassword == "" ||
+		po.profile.Configuration.AMTSpecific.ControlMode != ACMMODE {
 		log.Info("MEBx password not configured or not in ACM mode, skipping MEBx configuration")
 
 		return nil
@@ -153,18 +153,18 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "mebx")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
-	args = append(args, "--mebxpassword", po.config.Configuration.AMTSpecific.MEBXPassword)
+	args = append(args, "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
 	return Execute(args)
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
 func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
-	redirection := po.config.Configuration.Redirection
+	redirection := po.profile.Configuration.Redirection
 
 	// Check if any redirection features are configured
 	if !redirection.Services.KVM && !redirection.Services.SOL && !redirection.Services.IDER {
@@ -180,8 +180,8 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "amtfeatures")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	if redirection.Services.KVM {
@@ -197,7 +197,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 	}
 
 	// Set user consent if in ACM mode
-	if po.config.Configuration.AMTSpecific.ControlMode == ACMMODE {
+	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE {
 		switch redirection.UserConsent {
 		case "None":
 			args = append(args, "--userConsent", "none")
@@ -213,7 +213,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 
 // executeWiredNetworkConfiguration performs wired network configuration
 func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
-	wired := po.config.Configuration.Network.Wired
+	wired := po.profile.Configuration.Network.Wired
 
 	// Check if wired configuration is needed
 	if wired.IPAddress == "" && !wired.DHCPEnabled &&
@@ -230,8 +230,8 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "wired")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	if wired.DHCPEnabled {
@@ -264,7 +264,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 // executeEnableWiFi enables WiFi port if needed
 func (po *ProfileOrchestrator) executeEnableWiFi() error {
-	if !po.config.Configuration.Network.Wireless.WiFiSyncEnabled {
+	if !po.profile.Configuration.Network.Wireless.WiFiSyncEnabled {
 		log.Info("WiFi sync not enabled, skipping WiFi port enable")
 
 		return nil
@@ -277,8 +277,8 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "enablewifiport")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	return Execute(args)
@@ -286,14 +286,14 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 
 // executeWirelessConfigurations performs wireless profile configurations
 func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
-	if len(po.config.Configuration.Network.Wireless.Profiles) == 0 {
+	if len(po.profile.Configuration.Network.Wireless.Profiles) == 0 {
 		log.Info("No wireless profiles configured, skipping wireless configuration")
 
 		return nil
 	}
 
-	for i, profile := range po.config.Configuration.Network.Wireless.Profiles {
-		log.Infof("Executing wireless profile configuration %d/%d: %s", i+1, len(po.config.Configuration.Network.Wireless.Profiles), profile.ProfileName)
+	for i, profile := range po.profile.Configuration.Network.Wireless.Profiles {
+		log.Infof("Executing wireless profile configuration %d/%d: %s", i+1, len(po.profile.Configuration.Network.Wireless.Profiles), profile.ProfileName)
 
 		if err := po.executeWirelessProfile(profile); err != nil {
 			return fmt.Errorf("failed to configure wireless profile %s: %w", profile.ProfileName, err)
@@ -310,8 +310,8 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 	args = append(args, "rpc")
 	args = append(args, "configure", "wireless")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	args = append(args, "--profileName", profile.ProfileName)
@@ -372,7 +372,7 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 
 // executeTLSConfiguration performs TLS configuration
 func (po *ProfileOrchestrator) executeTLSConfiguration() error {
-	if !po.config.Configuration.TLS.Enabled {
+	if !po.profile.Configuration.TLS.Enabled {
 		log.Info("TLS not enabled, skipping TLS configuration")
 
 		return nil
@@ -385,21 +385,21 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "tls")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	// Determine TLS mode
 	var mode string
 
-	if po.config.Configuration.TLS.MutualAuthentication {
-		if po.config.Configuration.TLS.AllowNonTLS {
+	if po.profile.Configuration.TLS.MutualAuthentication {
+		if po.profile.Configuration.TLS.AllowNonTLS {
 			mode = "MutualAndNonTLS"
 		} else {
 			mode = "Mutual"
 		}
 	} else {
-		if po.config.Configuration.TLS.AllowNonTLS {
+		if po.profile.Configuration.TLS.AllowNonTLS {
 			mode = "ServerAndNonTLS"
 		} else {
 			mode = "Server"
@@ -408,17 +408,17 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	args = append(args, "--mode", mode)
 
-	if po.config.Configuration.TLS.SigningAuthority == "SelfSigned" {
+	if po.profile.Configuration.TLS.SigningAuthority == "SelfSigned" {
 	} else {
 		// Add Enterprise Assistant settings if configured
-		if po.config.Configuration.EnterpriseAssistant.URL != "" {
-			args = append(args, "--eaAddress", po.config.Configuration.EnterpriseAssistant.URL)
-			if po.config.Configuration.EnterpriseAssistant.Username != "" {
-				args = append(args, "--eaUsername", po.config.Configuration.EnterpriseAssistant.Username)
+		if po.profile.Configuration.EnterpriseAssistant.URL != "" {
+			args = append(args, "--eaAddress", po.profile.Configuration.EnterpriseAssistant.URL)
+			if po.profile.Configuration.EnterpriseAssistant.Username != "" {
+				args = append(args, "--eaUsername", po.profile.Configuration.EnterpriseAssistant.Username)
 			}
 
-			if po.config.Configuration.EnterpriseAssistant.Password != "" {
-				args = append(args, "--eaPassword", po.config.Configuration.EnterpriseAssistant.Password)
+			if po.profile.Configuration.EnterpriseAssistant.Password != "" {
+				args = append(args, "--eaPassword", po.profile.Configuration.EnterpriseAssistant.Password)
 			}
 		}
 	}
@@ -428,7 +428,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
 func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
-	proxies := po.config.Configuration.Network.Proxies
+	proxies := po.profile.Configuration.Network.Proxies
 
 	if len(proxies) == 0 {
 		log.Info("No HTTP proxy configurations specified, skipping")
@@ -454,8 +454,8 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 	args = append(args, "rpc")
 	args = append(args, "configure", "proxy")
 
-	if po.config.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.config.Configuration.AMTSpecific.AdminPassword)
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
 	args = append(args, "--address", proxy.Address)
@@ -474,7 +474,7 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 // ExecuteProfile is a helper function to execute a profile from a file path
 func ExecuteProfile(profilePath string) error {
 	// Load configuration from profile
-	cfg, err := internalconfig.LoadConfig(profilePath)
+	cfg, err := profile.LoadProfile(profilePath)
 	if err != nil {
 		return fmt.Errorf("failed to load profile: %w", err)
 	}
