@@ -7,6 +7,7 @@ package commands
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -32,6 +33,8 @@ type AMTBaseCmd struct {
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
+	// afterApplied ensures AfterApply runs its heavy init exactly once.
+	afterApplied bool `kong:"-"`
 }
 
 // ValidatePasswordIfNeeded prompts for password if required and not already provided
@@ -64,29 +67,71 @@ func (cmd *AMTBaseCmd) ValidatePasswordIfNeeded(requirer PasswordRequirer) error
 // This method will be called automatically by Kong after command validation.
 // The AMT command is injected via Kong's dependency injection system.
 func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
-	// Some commands (like amtinfo without --userCert) don't need LMS/WSMAN.
-	if cmd.SkipWSMANSetup {
+	if cmd.afterApplied {
+		// Idempotent: avoid duplicate work/logging if Kong calls AfterApply twice.
 		return nil
 	}
+
+	log.Trace("Running AfterApply for AMTBaseCmd")
+	// always have the control mode handy
+	// Get the current control mode using the injected AMT command, with retries if AMT is busy
+	var (
+		controlMode int
+		err         error
+	)
+
+	const (
+		maxAttempts = 4
+		backoff     = 4 * time.Second
+	)
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		controlMode, err = amtCommand.GetControlMode()
+		if err == nil {
+			break
+		}
+
+		if attempt < maxAttempts {
+			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
+			time.Sleep(backoff)
+
+			continue
+		}
+
+		log.Error("Failed to get control mode: ", err)
+
+		return fmt.Errorf("failed to get control mode: %w", err)
+	}
+
+	cmd.ControlMode = controlMode
+
+	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
+	resp, _ := amtCommand.GetChangeEnabled()
+	if resp.IsTlsEnforcedOnLocalPorts() {
+		cmd.LocalTLSEnforced = true
+
+		log.Trace("TLS is enforced on local ports")
+	}
+
+	// Some commands (like amtinfo) can lazily set up LMS/WSMAN later.
+	if cmd.SkipWSMANSetup {
+		cmd.afterApplied = true
+
+		return nil
+	}
+
+	log.Trace("Getting control mode and setting up WSMAN client if needed")
+
 	// Initialize WSMAN client if not already set up
 	if cmd.WSMan == nil {
-		// Check if TLS is Mandatory for LMS connection
-		resp, _ := amtCommand.GetChangeEnabled()
-		if resp.IsTlsEnforcedOnLocalPorts() {
-			cmd.LocalTLSEnforced = true
+		// Cannot set up WSMAN without AMT password
+		if cmd.Password == "" {
+			log.Debug("Skipping WSMAN setup: AMT password not provided yet")
 
-			log.Trace("TLS is enforced on local ports")
+			cmd.afterApplied = true
+
+			return nil
 		}
-
-		// Get the current control mode using the injected AMT command
-		controlMode, err := amtCommand.GetControlMode()
-		if err != nil {
-			log.Error("Failed to get control mode: ", err)
-
-			return fmt.Errorf("failed to get control mode: %w", err)
-		}
-
-		cmd.ControlMode = controlMode
 
 		cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
@@ -100,6 +145,8 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			return err
 		}
 	}
+
+	cmd.afterApplied = true
 
 	return nil
 }

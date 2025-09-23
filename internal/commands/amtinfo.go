@@ -49,7 +49,7 @@ type AmtInfoCmd struct {
 
 	// Network flags
 	DNS      bool `help:"Show Domain Name Suffix" short:"d"`
-	Hostname bool `help:"Show OS Hostname" short:"h"`
+	Hostname bool `help:"Show OS Hostname"`
 	Lan      bool `help:"Show LAN Settings" short:"l"`
 
 	// Status flags
@@ -74,23 +74,19 @@ type AmtInfoCmd struct {
 // RequiresAMTPassword indicates whether this command requires AMT password
 // For amtinfo, password is only required for user certificate operations
 func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
-	// Only require password when user explicitly requests user certificates.
-	return cmd.IsUserCertRequested()
+	log.Trace("Checking if amtinfo requires AMT password")
+	// Password is required for user cert operations when device is provisioned (control mode != 0).
+	return cmd.IsUserCertRequested() && cmd.GetControlMode() != 0
 }
 
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	// For amtinfo, skip WSMAN setup unless user certificates are explicitly requested.
 	// Avoid any hardware/driver access during validation to keep tests hermetic.
-	cmd.SkipWSMANSetup = !cmd.UserCert
+	cmd.SkipWSMANSetup = !cmd.UserCert && !cmd.All
 
-	// Handle interactive password prompting only when explicitly requesting user certificates.
-	// Provisioning/control-mode checks are deferred to runtime where the injected AMT interface is used.
-	if cmd.IsUserCertRequested() {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
-		}
-	}
+	log.Trace("Validating amtinfo command")
+	// Defer password prompting to Run(), where control mode is available (set in AfterApply).
 
 	// Basic validation for sync mode
 	if cmd.Sync {
@@ -124,7 +120,9 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 // Run executes the amtinfo command
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// If user requested user certificates or --all, prompt for password at runtime.
-	if (cmd.UserCert || cmd.All) && cmd.GetPassword() == "" {
+	log.Trace("Running amtinfo command")
+
+	if cmd.RequiresAMTPassword() && cmd.GetPassword() == "" {
 		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
 			return err
 		}
@@ -479,7 +477,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	}
 
 	// Get certificate hashes
-	if showAll || cmd.Cert {
+	if cmd.Cert || cmd.All {
 		certResult, err := s.amtCommand.GetCertificateHashes()
 		if err == nil {
 			result.CertificateHashes = make(map[string]amt.CertHashEntry)
@@ -494,6 +492,10 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		// Get control mode if not already retrieved
 		if controlMode == -1 {
 			controlMode, _ = s.amtCommand.GetControlMode()
+		}
+
+		if controlMode == 0 {
+			log.Debug("Device is in pre-provisioning mode, user certificates are not available")
 		}
 
 		if s.password != "" {
