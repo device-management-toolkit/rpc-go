@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -40,6 +39,7 @@ type DeactivateCmd struct {
 	Local              bool   `help:"Execute command to AMT directly without cloud interaction" short:"l"`
 	PartialUnprovision bool   `help:"Partially unprovision the device. Only supported with -local flag" name:"partial"`
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
+	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -86,8 +86,8 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 
 // executeRemoteDeactivate handles remote deactivation via RPS
 func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
-	// Create flags object for RPS
-	f := &flags.Flags{
+	// Create RPS request
+	req := &rps.Request{
 		Command:       utils.CommandDeactivate,
 		URL:           cmd.URL,
 		Password:      cmd.GetPassword(),
@@ -95,10 +95,11 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 		JsonOutput:    ctx.JsonOutput,
 		Verbose:       ctx.Verbose,
 		SkipCertCheck: ctx.SkipCertCheck,
+		Force:         cmd.Force,
 	}
 
 	// Execute via RPS
-	return rps.ExecuteCommand(f)
+	return rps.ExecuteCommand(req)
 }
 
 // executeLocalDeactivate handles local deactivation

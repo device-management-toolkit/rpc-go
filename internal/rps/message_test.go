@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -137,10 +136,10 @@ func TestCreatePayloadWithNODNSSuffix(t *testing.T) {
 }
 
 func TestCreateActivationRequestNoDNSSuffixProvided(t *testing.T) {
-	flags := flags.Flags{
+	req := Request{
 		Command: "method",
 	}
-	result, err := p.CreateMessageRequest(flags)
+	result, err := p.CreateMessageRequest(req)
 	assert.NoError(t, err)
 	assert.Equal(t, "method", result.Method)
 	assert.Equal(t, "key", result.APIKey)
@@ -151,18 +150,23 @@ func TestCreateActivationRequestNoDNSSuffixProvided(t *testing.T) {
 	assert.Equal(t, utils.ProjectVersion, result.AppVersion)
 }
 
-func TestCreateActivationRequestNoPasswordShouldPrompt(t *testing.T) {
+func TestCreateActivationRequestRequiresPasswordInConfiguredMode(t *testing.T) {
 	controlMode = 1
-	flags := flags.NewFlags(nil, MockPRSuccess)
-	flags.Command = "method"
-	result, err := p.CreateMessageRequest(*flags)
+	// No password provided -> should return MissingOrIncorrectPassword
+	req := Request{Command: "method"}
+	_, err := p.CreateMessageRequest(req)
+	assert.Equal(t, utils.MissingOrIncorrectPassword, err)
+
+	// Providing password succeeds
+	req.Password = "password"
+	result, err := p.CreateMessageRequest(req)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, result.Payload)
 }
 
 func TestCreateActivationRequestWithPasswordShouldNotPrompt(t *testing.T) {
 	controlMode = 1
-	flags := flags.Flags{
+	flags := Request{
 		Command:  "method",
 		Password: "password",
 	}
@@ -184,11 +188,11 @@ func TestCreateActivationRequestWithPasswordShouldNotPrompt(t *testing.T) {
 }
 
 func TestCreateActivationRequestWithDNSSuffix(t *testing.T) {
-	flags := flags.Flags{
+	req := Request{
 		Command: "method",
 		DNS:     "vprodemo.com",
 	}
-	result, err := p.CreateMessageRequest(flags)
+	result, err := p.CreateMessageRequest(req)
 	assert.NoError(t, err)
 	assert.Equal(t, "method", result.Method)
 	assert.Equal(t, "key", result.APIKey)
@@ -210,8 +214,8 @@ func TestCreateActivationResponse(t *testing.T) {
 }
 
 func TestCreateMessageRequestIPConfiguration(t *testing.T) {
-	flags := flags.Flags{
-		IpConfiguration: flags.IPConfiguration{
+	flags := Request{
+		IpConfiguration: IPConfiguration{
 			IpAddress:    "192.168.1.1",
 			Netmask:      "255.255.0.0",
 			Gateway:      "192.168.1.0",
@@ -232,7 +236,7 @@ func TestCreateMessageRequestIPConfiguration(t *testing.T) {
 }
 
 func TestCreateMessageRequestCustomUUID(t *testing.T) {
-	flags := flags.Flags{
+	flags := Request{
 		UUID: "12345678-1234-1234-1234-123456789012",
 	}
 	result, createErr := p.CreateMessageRequest(flags)
@@ -250,7 +254,7 @@ func TestCreateMessageRequestCustomUUID(t *testing.T) {
 func TestCreateMessageRequestNoUUID(t *testing.T) {
 	const expectedUUID = "123-456-789"
 
-	flags := flags.Flags{}
+	flags := Request{}
 	result, createErr := p.CreateMessageRequest(flags)
 	assert.NoError(t, createErr)
 	assert.NotEmpty(t, result.Payload)
@@ -264,8 +268,8 @@ func TestCreateMessageRequestNoUUID(t *testing.T) {
 }
 
 func TestCreateMessageRequestHostnameInfo(t *testing.T) {
-	flags := flags.Flags{
-		HostnameInfo: flags.HostnameInfo{
+	flags := Request{
+		HostnameInfo: HostnameInfo{
 			DnsSuffixOS: "os.test.com",
 			Hostname:    "test-hostname-012",
 		},
@@ -284,7 +288,7 @@ func TestCreateMessageRequestHostnameInfo(t *testing.T) {
 
 func TestCreateMessageRequestFriendlyName(t *testing.T) {
 	expectedName := "friendlyName01"
-	flags := flags.Flags{
+	flags := Request{
 		FriendlyName: expectedName,
 	}
 	result, createErr := p.CreateMessageRequest(flags)
@@ -301,7 +305,7 @@ func TestCreateMessageRequestFriendlyName(t *testing.T) {
 }
 
 func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
-	flags := flags.Flags{}
+	flags := Request{}
 	result, createErr := p.CreateMessageRequest(flags)
 	assert.NoError(t, createErr)
 	assert.NotEmpty(t, result.Payload)

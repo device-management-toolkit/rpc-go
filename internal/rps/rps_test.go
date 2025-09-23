@@ -11,7 +11,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -43,20 +42,19 @@ func echo(w http.ResponseWriter, r *http.Request) {
 var (
 	testServer *httptest.Server
 	testUrl    string
-	testFlags  *flags.Flags
+	testReq    *Request
 )
 
 func init() {
 	// Create test server with the echo handler.
 	testServer = httptest.NewServer(http.HandlerFunc(echo))
 	// Convert http to ws
-	testFlags = flags.NewFlags([]string{}, MockPRSuccess)
 	testUrl = "ws" + strings.TrimPrefix(testServer.URL, "http")
-	testFlags.URL = testUrl
+	testReq = &Request{URL: testUrl}
 }
 
 func TestExecuteCommand(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandActivate
 	f.Profile = "profile01"
 	f.Password = "testPw"
@@ -65,7 +63,7 @@ func TestExecuteCommand(t *testing.T) {
 }
 
 func TestSetCommandMethodActivate(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandActivate
 	f.Profile = "profile01"
 	expected := utils.CommandActivate + " --profile profile01"
@@ -75,7 +73,7 @@ func TestSetCommandMethodActivate(t *testing.T) {
 }
 
 func TestSetCommandMethodDeactivate(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandDeactivate
 	f.Password = "password"
 	expected := utils.CommandDeactivate + " --password password"
@@ -90,7 +88,7 @@ func TestSetCommandMethodDeactivate(t *testing.T) {
 }
 
 func TestSetCommandMethodMaintenanceSynctime(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandMaintenance
 	f.SubCommand = "syncclock"
 	f.Password = "password"
@@ -107,7 +105,7 @@ func TestSetCommandMethodMaintenanceSynctime(t *testing.T) {
 }
 
 func TestSetCommandMethodMaintenanceSyncHostname(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandMaintenance
 	f.SubCommand = "synchostname"
 	f.Password = "password"
@@ -118,7 +116,7 @@ func TestSetCommandMethodMaintenanceSyncHostname(t *testing.T) {
 }
 
 func TestSetCommandMethodMaintenanceSyncIP(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandMaintenance
 	f.SubCommand = "syncip"
 	f.Password = "password"
@@ -129,7 +127,7 @@ func TestSetCommandMethodMaintenanceSyncIP(t *testing.T) {
 }
 
 func TestSetCommandMethodMaintenanceChangePassword(t *testing.T) {
-	f := &flags.Flags{}
+	f := &Request{}
 	f.Command = utils.CommandMaintenance
 	f.Password = "password"
 	f.SubCommand = "changepassword"
@@ -146,12 +144,12 @@ func TestSetCommandMethodMaintenanceChangePassword(t *testing.T) {
 }
 
 func TestPrepareInitialMessage(t *testing.T) {
-	payload, payload1 := PrepareInitialMessage(testFlags)
+	payload, payload1 := PrepareInitialMessage(testReq)
 	assert.NotEqual(t, payload, payload1)
 }
 
 func TestConnect(t *testing.T) {
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -160,7 +158,7 @@ func TestConnect(t *testing.T) {
 }
 
 func TestSend(t *testing.T) {
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -174,7 +172,7 @@ func TestSend(t *testing.T) {
 }
 
 func TestListen(t *testing.T) {
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	err := server.Connect(true)
 
 	defer server.Close()
@@ -208,7 +206,7 @@ func TestProcessMessageHeartbeat(t *testing.T) {
 	activation := `{
         "method": "heartbeat_request"
     }`
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.NotNil(t, decodedMessage)
@@ -219,7 +217,7 @@ func TestProcessMessageSuccess(t *testing.T) {
         "method": "success",
         "message": "{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"
     }`
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -230,7 +228,7 @@ func TestProcessMessageUnformattedSuccess(t *testing.T) {
         "method": "success",
         "message": "configured"
     }`
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -241,7 +239,7 @@ func TestProcessMessageError(t *testing.T) {
         "method": "error",
         "message": "can't do it"
     }`
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
@@ -253,7 +251,7 @@ func TestProcessMessageForLMS(t *testing.T) {
         "message": "ok",
         "payload": "eyJzdGF0dXMiOiJvayIsICJuZXR3b3JrIjoiY29uZmlndXJlZCIsICJjaXJhQ29ubmVjdGlvbiI6ImNvbmZpZ3VyZWQifQ=="
     }`
-	server := NewAMTActivationServer(testFlags.URL, testFlags.Proxy)
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), decodedMessage)

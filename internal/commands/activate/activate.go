@@ -14,7 +14,6 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
-
 	log "github.com/sirupsen/logrus"
 )
 

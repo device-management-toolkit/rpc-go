@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/cli"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -58,7 +59,8 @@ func rpcExec(Input *C.char, Output **C.char) int {
 
 	args = append([]string{"rpc"}, args...)
 
-	err = runRPC(args)
+	// Use Kong-based CLI execution path
+	err = cli.Execute(args)
 	if err != nil {
 		*Output = C.CString("rpcExec failed: " + inputString)
 

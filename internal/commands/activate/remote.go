@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -166,31 +165,25 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 func (service *RemoteActivationService) requestActivation(deviceInfo map[string]interface{}) (map[string]interface{}, error) {
 	log.Info("Sending activation request to RPS...")
 
-	// Create flags object for RPS using the existing pattern
-	// IMPORTANT: Use flags.NewFlags to ensure internal dependencies
-	// like passwordReader are initialized to avoid nil dereference
-	// when prompting for AMT password during activated states.
-	f := flags.NewFlags([]string{}, utils.PR)
-
-	// Populate required fields
-	f.Command = utils.CommandActivate
-	f.URL = service.config.URL
-	f.Profile = service.config.Profile
-	f.DNS = service.config.DNS
-	f.Hostname = service.config.Hostname
-	f.UUID = service.config.UUID
-	f.FriendlyName = service.config.FriendlyName
-	f.Proxy = service.config.Proxy
-
-	// Carry over context/global settings
-	f.LogLevel = service.context.LogLevel
-	f.JsonOutput = service.context.JsonOutput
-	f.Verbose = service.context.Verbose
-	f.SkipCertCheck = service.context.SkipCertCheck
-	f.ControlMode = service.context.ControlMode
+	// Build RPS request directly (no internal/flags dependency)
+	req := &rps.Request{
+		Command:       utils.CommandActivate,
+		URL:           service.config.URL,
+		Profile:       service.config.Profile,
+		DNS:           service.config.DNS,
+		Hostname:      service.config.Hostname,
+		UUID:          service.config.UUID,
+		FriendlyName:  service.config.FriendlyName,
+		Proxy:         service.config.Proxy,
+		LogLevel:      service.context.LogLevel,
+		JsonOutput:    service.context.JsonOutput,
+		Verbose:       service.context.Verbose,
+		SkipCertCheck: service.context.SkipCertCheck,
+		ControlMode:   service.context.ControlMode,
+	}
 
 	// Execute activation via RPS
-	err := rps.ExecuteCommand(f)
+	err := rps.ExecuteCommand(req)
 	if err != nil {
 		return nil, fmt.Errorf("RPS activation failed: %w", err)
 	}
