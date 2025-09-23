@@ -14,7 +14,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/profilefetcher"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -243,7 +243,7 @@ func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 // runHttpProfileFullflow fetches a profile over HTTP(S) and runs the orchestrator
 func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	// Reuse ProfileFetcher
-	fetcher := &profilefetcher.ProfileFetcher{
+	fetcher := &profile.ProfileFetcher{
 		URL:           cmd.URL,
 		Token:         cmd.AuthToken,
 		Username:      cmd.AuthUsername,
