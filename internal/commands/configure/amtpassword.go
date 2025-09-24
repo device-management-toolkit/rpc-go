@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -62,7 +63,7 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	// Get general settings to obtain digest realm
 	generalSettings, err := cmd.WSMan.GetGeneralSettings()
 	if err != nil {
-		return fmt.Errorf("failed to get AMT general settings: %w", err)
+		return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))
 	}
 
 	// Create authentication challenge with new password
@@ -87,11 +88,30 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	// Update the AMT password
 	response, err := cmd.WSMan.UpdateAMTPassword(encodedMessage)
 	if err != nil {
-		return fmt.Errorf("failed to update AMT password: %w", err)
+		return fmt.Errorf("failed to update AMT password: %s", sanitizeAMTPassError(err))
 	}
 
 	log.Trace(response)
 	log.Info("Successfully updated AMT Password.")
 
 	return nil
+}
+
+// sanitizeAMTPassError converts noisy AMT/WSMAN errors (including raw HTML bodies)
+// into concise, user-friendly messages without leaking raw markup.
+func sanitizeAMTPassError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+
+	// Per request: stop being fancy. If we see a 401 anywhere, surface a concise message.
+	if strings.Contains(lower, "401") {
+		return "Received 401 unauthorized"
+	}
+
+	// Otherwise, just return the original error message.
+	return msg
 }

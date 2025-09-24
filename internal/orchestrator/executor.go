@@ -6,7 +6,10 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 )
@@ -39,12 +42,20 @@ func (e *CLIExecutor) Execute(args []string) error {
 	ctx := context.Background()
 
 	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Capture output while still streaming to the console
+	var buf bytes.Buffer
+
+	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
 	cmd.Stdin = os.Stdin
 
 	// Run the command
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		// Include captured output to allow callers to inspect for auth errors, etc.
+		return fmt.Errorf("%w: %s", err, buf.String())
+	}
+
+	return nil
 }
 
 // DirectExecutor executes commands directly (for testing or embedded use)

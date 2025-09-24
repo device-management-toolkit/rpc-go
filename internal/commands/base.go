@@ -133,6 +133,8 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			return nil
 		}
 
+		log.Trace("Setting up WSMAN client")
+
 		cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
 		// Use the centralized TLS config with proper certificate validation

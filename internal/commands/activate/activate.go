@@ -260,7 +260,9 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		return fmt.Errorf("failed to fetch profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg)
+	// Pass through the current AMT password (if provided) so orchestrator can
+	// rotate to the profile's AdminPassword without prompting.
+	orch := orchestrator.NewProfileOrchestrator(cfg, cmd.GetPassword())
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -279,7 +281,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow() error {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c)
+		orch := orchestrator.NewProfileOrchestrator(c, cmd.GetPassword())
 		if err := orch.ExecuteProfile(); err != nil {
 			return err
 		}
@@ -326,7 +328,7 @@ func (cmd *ActivateCmd) runLocalEncryptedProfile() error {
 		return fmt.Errorf("failed to decrypt profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg)
+	orch := orchestrator.NewProfileOrchestrator(cfg, cmd.GetPassword())
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}

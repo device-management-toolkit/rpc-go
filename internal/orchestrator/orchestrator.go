@@ -8,6 +8,7 @@ package orchestrator
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
@@ -24,13 +25,20 @@ const (
 type ProfileOrchestrator struct {
 	profile  config.Configuration
 	executor CommandExecutor
+	// cached control mode at start of orchestration
+	currentControlMode int
+	// optional current AMT password provided by caller (e.g., activate --password)
+	currentPassword string
 }
 
-// NewProfileOrchestrator creates a new profile orchestrator
-func NewProfileOrchestrator(cfg config.Configuration) *ProfileOrchestrator {
+// NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
+// is treated as the existing AMT admin password and will be used to rotate to the profile's
+// AdminPassword without prompting when provided.
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword string) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
-		profile:  cfg,
-		executor: &CLIExecutor{},
+		profile:         cfg,
+		executor:        &CLIExecutor{},
+		currentPassword: strings.TrimSpace(currentPassword),
 	}
 }
 
@@ -48,8 +56,28 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		return fmt.Errorf("failed to get current control mode: %w", err)
 	}
 
-	if currentControlMode == 0 {
-		// Step 1: Activation
+	po.currentControlMode = currentControlMode
+
+	// If the device is already activated and the profile supplies an AdminPassword,
+	// proactively verify that the provided password works. If not, prompt for the
+	// current AMT password and rotate it to the profile value before proceeding.
+	if po.currentControlMode != 0 {
+		if strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword) != "" {
+			if err := po.verifyAndAlignAMTPassword(); err != nil {
+				return fmt.Errorf("password verification/rotation failed: %w", err)
+			}
+		} else {
+			log.Debug("Device is activated but no AdminPassword provided in profile; skipping password alignment")
+		}
+	}
+
+	// Step 1: Activation or upgrade if needed
+	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == 1 {
+		// Upgrade CCM -> ACM using local activation path with provisioning cert
+		log.Info("Device in CCM and profile requests ACM; upgrade to ACM not supported yet. Please deactivate first and try again.")
+
+		return fmt.Errorf("ACM upgrade failed")
+	} else if currentControlMode == 0 {
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
@@ -100,6 +128,96 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	return nil
 }
 
+// executeWithPasswordFallback executes a CLI command and, on authentication failure,
+// prompts for the old AMT password to rotate it to the profile's new password, then retries.
+func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error {
+	err := po.executor.Execute(args)
+	if err == nil {
+		return nil
+	}
+
+	// Do not prompt/rotate when device is in pre-provisioning (control mode 0)
+	if po.currentControlMode == 0 {
+		return err
+	}
+
+	// Only attempt fallback if a new AdminPassword is provided in the profile.
+	newPass := strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword)
+	if newPass == "" {
+		return err
+	}
+
+	// Heuristically detect auth errors
+	lower := strings.ToLower(err.Error())
+	// Broaden detection to common AMT web UI messages and generic auth indicators
+	if !strings.Contains(lower, "401") &&
+		!strings.Contains(lower, "unauthorized") &&
+		!strings.Contains(lower, "incorrect user name") &&
+		!strings.Contains(lower, "log on failed") &&
+		!strings.Contains(lower, "auth") {
+		return err
+	}
+
+	log.Warn("Authentication failed with provided AMT password; attempting password rotation to profile value...")
+
+	// If caller supplied a currentPassword, try non-interactive rotation once
+	if po.currentPassword != "" {
+		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		if cerr := po.executor.Execute(change); cerr == nil {
+			log.Info("AMT password updated to profile value using provided current password; retrying previous operation")
+
+			return po.executeWithPasswordFallback(args)
+		}
+		// otherwise fall through to prompt loop
+	}
+
+	const maxTries = 3
+	for attempt := 1; attempt <= maxTries; attempt++ {
+		if attempt == 1 {
+			fmt.Print("Current AMT Password (to rotate to new profile password): ")
+		} else {
+			fmt.Print("Current AMT Password (try again): ")
+		}
+
+		oldPass, perr := utils.PR.ReadPassword()
+
+		fmt.Println()
+
+		if perr != nil {
+			return fmt.Errorf("failed to read current AMT password: %w", perr)
+		}
+
+		if strings.TrimSpace(oldPass) == "" {
+			if attempt < maxTries {
+				log.Warn("Password cannot be empty")
+
+				continue
+			}
+
+			return fmt.Errorf("current AMT password cannot be empty")
+		}
+
+		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
+		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+		if cerr := po.executor.Execute(change); cerr != nil {
+			lower := strings.ToLower(cerr.Error())
+			if attempt < maxTries && (strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "incorrect user name") || strings.Contains(lower, "log on failed") || strings.Contains(lower, "auth")) {
+				log.Warn("Incorrect AMT password. Please try again.")
+
+				continue
+			}
+
+			return fmt.Errorf("failed to update AMT password using provided current password: %w", cerr)
+		}
+
+		log.Info("AMT password updated to profile value; retrying previous operation")
+
+		return po.executeWithPasswordFallback(args)
+	}
+
+	return fmt.Errorf("failed to update AMT password after %d attempts", maxTries)
+}
+
 // executeActivation performs the activation step
 func (po *ProfileOrchestrator) executeActivation() error {
 	if po.profile.Configuration.AMTSpecific.ControlMode == "" {
@@ -140,6 +258,30 @@ func (po *ProfileOrchestrator) executeActivation() error {
 	return po.executor.Execute(args)
 }
 
+// executeACMUpgrade performs an in-place upgrade from CCM to ACM when already activated
+func (po *ProfileOrchestrator) executeACMUpgrade() error {
+	if po.profile.Configuration.AMTSpecific.ProvisioningCert == "" || po.profile.Configuration.AMTSpecific.ProvisioningCertPwd == "" {
+		return fmt.Errorf("ACM upgrade requires provisioning certificate and password")
+	}
+
+	var args []string
+
+	args = append(args, "rpc")
+	args = append(args, "activate")
+	args = append(args, "--acm")
+	args = append(args, "--local")
+	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
+
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	}
+
+	args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
+	args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
+
+	return po.executeWithPasswordFallback(args)
+}
+
 // executeMEBxConfiguration performs MEBx password configuration
 func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 	if po.profile.Configuration.AMTSpecific.MEBXPassword == "" ||
@@ -162,19 +304,16 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 
 	args = append(args, "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
 func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 	redirection := po.profile.Configuration.Redirection
 
-	// Check if any redirection features are configured
-	if !redirection.Services.KVM && !redirection.Services.SOL && !redirection.Services.IDER {
-		log.Info("No redirection services configured, skipping AMT features configuration")
-
-		return nil
-	}
+	// Intentionally always configure AMT features when profile provides Redirection section.
+	// This ensures features can be explicitly disabled when set to false.
+	// If Services fields are all false and section present, we still run to disable them.
 
 	log.Info("Executing AMT features configuration")
 
@@ -199,6 +338,11 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 		args = append(args, "--ider")
 	}
 
+	// If all features are explicitly false, request explicit disable behavior
+	if !redirection.Services.KVM && !redirection.Services.SOL && !redirection.Services.IDER {
+		args = append(args, "--disableAll")
+	}
+
 	// Set user consent if in ACM mode
 	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE {
 		switch redirection.UserConsent {
@@ -211,7 +355,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 		}
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeWiredNetworkConfiguration performs wired network configuration
@@ -262,7 +406,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 		}
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeEnableWiFi enables WiFi port if needed
@@ -284,13 +428,25 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeWirelessConfigurations performs wireless profile configurations
 func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
+	// Always purge existing Wi-Fi profiles before applying new ones
+	log.Info("Purging existing AMT wireless profiles before applying new configuration")
+
+	purgeArgs := []string{"rpc", "configure", "wireless", "--purge"}
+	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
+		purgeArgs = append(purgeArgs, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	}
+
+	if err := po.executeWithPasswordFallback(purgeArgs); err != nil {
+		return fmt.Errorf("wireless purge failed: %w", err)
+	}
+
 	if len(po.profile.Configuration.Network.Wireless.Profiles) == 0 {
-		log.Info("No wireless profiles configured, skipping wireless configuration")
+		log.Info("No wireless profiles specified in profile; nothing more to apply after purge")
 
 		return nil
 	}
@@ -370,7 +526,7 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 		}
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeTLSConfiguration performs TLS configuration
@@ -426,7 +582,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 		}
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
 }
 
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
@@ -471,5 +627,40 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 		args = append(args, "--networkdnssuffix", proxy.NetworkDnsSuffix)
 	}
 
-	return po.executor.Execute(args)
+	return po.executeWithPasswordFallback(args)
+}
+
+// verifyAndAlignAMTPassword ensures the AMT admin password matches the profile value.
+// It performs a harmless authenticated call (amtinfo). On auth failure it will prompt
+// for the current AMT password and rotate it to the profile-provided AdminPassword.
+func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
+	newPass := strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword)
+	if newPass == "" {
+		return nil
+	}
+
+	log.Info("Verifying AMT admin password matches profile; will prompt to rotate if needed")
+
+	// If a current password was supplied by the caller, try a direct non-interactive rotation first
+	if po.currentPassword != "" {
+		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		if err := po.executor.Execute(change); err == nil {
+			log.Info("AMT password aligned to profile value using provided current password")
+
+			return nil
+		}
+		// If it failed (e.g., wrong provided current), proceed to auth-probe and interactive fallback
+	}
+
+	// Use an idempotent password-change-to-same-value operation as an auth probe.
+	// If the provided password is already set, this succeeds and changes nothing.
+	// If authentication fails (wrong password), our fallback will prompt for the
+	// current password, rotate to the profile value, and retry.
+	args := []string{
+		"rpc", "configure", "amtpassword",
+		"--password", newPass,
+		"--newamtpassword", newPass,
+	}
+
+	return po.executeWithPasswordFallback(args)
 }

@@ -258,6 +258,14 @@ func (service *LocalActivationService) Activate() error {
 func (service *LocalActivationService) validateAMTState() error {
 	// Check if device is already activated using the stored control mode
 	if service.config.ControlMode != 0 {
+		// Always allow upgrade path CCM (1) -> ACM when ACM mode is requested.
+		// Provisioning certificate requirements are validated later in validateConfiguration.
+		if service.config.Mode == ModeACM && service.config.ControlMode == 1 {
+			log.Info("Upgrading device from Client Control Mode to Admin Control Mode")
+
+			return nil
+		}
+
 		return fmt.Errorf("device is already activated (control mode: %d)", service.config.ControlMode)
 	}
 
