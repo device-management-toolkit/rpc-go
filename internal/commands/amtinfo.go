@@ -132,7 +132,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	service.jsonOutput = ctx.JsonOutput
 	service.password = cmd.GetPassword()
 	service.localTLSEnforced = cmd.LocalTLSEnforced
-	service.skipCertCheck = ctx.SkipCertCheck
+	// Use AMT-specific skip flag for WSMAN/TLS to firmware
+	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
 	// Reuse the already-initialized WSMAN client from AMTBaseCmd (initialized in AfterApply when userCert is requested)
 	service.wsman = cmd.GetWSManClient()
 
@@ -197,7 +198,8 @@ type InfoService struct {
 	jsonOutput       bool
 	password         string
 	localTLSEnforced bool
-	skipCertCheck    bool
+	// skipAMTCertCheck controls TLS verification when connecting to AMT/LMS
+	skipAMTCertCheck bool
 	wsman            interfaces.WSMANer
 }
 
@@ -208,7 +210,7 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		jsonOutput:       false,
 		password:         "",
 		localTLSEnforced: false,
-		skipCertCheck:    false,
+		skipAMTCertCheck: false,
 		wsman:            nil,
 	}
 }
@@ -746,9 +748,9 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 		// Setup TLS configuration
 		var tlsConfig *tls.Config
 		if s.localTLSEnforced {
-			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
+			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
 		} else {
-			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipCertCheck}
+			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
 		}
 
 		if err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
