@@ -347,7 +347,7 @@ func (service *LocalActivationService) activateCCM() error {
 
 	if service.localTLSEnforced {
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 	}
 
 	// Create WSMAN client
@@ -519,7 +519,7 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		}
 
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck)
 
 		// Add client certificate to TLS config
 		tlsCert := tls.Certificate{

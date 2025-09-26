@@ -17,6 +17,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// DefaultSkipAMTCertCheck is set by CLI context to control AMT TLS verification at WSMAN setup time.
+// It is used in AMTBaseCmd.AfterApply where the CLI context isn't directly accessible.
+var DefaultSkipAMTCertCheck bool
+
 // PasswordRequirer interface to be implemented by commands that conditionally require passwords
 type PasswordRequirer interface {
 	RequiresAMTPassword() bool
@@ -138,7 +142,8 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
 		// Use the centralized TLS config with proper certificate validation
-		tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+		// Respect the AMT-specific skip flag instead of the generic RPS skip flag.
+		tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
 
 		err = cmd.WSMan.SetupWsmanClient("admin", cmd.Password, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {

@@ -145,7 +145,7 @@ func TestDeactivateCmd_SetupTLSConfig(t *testing.T) {
 
 	t.Run("TLS enforced", func(t *testing.T) {
 		cmd.LocalTLSEnforced = true
-		ctx := &Context{SkipCertCheck: true, ControlMode: ControlModeACM}
+		ctx := &Context{SkipCertCheck: true, SkipAMTCertCheck: true, ControlMode: ControlModeACM}
 		tlsConfig := cmd.setupTLSConfig(ctx)
 		assert.NotNil(t, tlsConfig)
 	})

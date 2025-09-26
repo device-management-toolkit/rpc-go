@@ -24,12 +24,13 @@ type Globals struct {
 	Config    string `help:"Path to configuration file or SMB share URL. (previously --configv2)" name:"config" type:"path" default:"config.yaml"`
 	ConfigKey string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
 
-	LogLevel      string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
-	JsonOutput    bool   `help:"Output in JSON format" name:"json" short:"j"`
-	Verbose       bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
-	SkipCertCheck bool   `help:"Skip certificate verification (insecure)" name:"skip-cert-check" short:"n"`
-	LMSAddress    string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
-	LMSPort       string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
+	LogLevel         string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
+	JsonOutput       bool   `help:"Output in JSON format" name:"json" short:"j"`
+	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
+	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections (insecure)" name:"skip-cert-check" short:"n"`
+	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS (insecure)" name:"skip-amt-cert-check"`
+	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
+	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
 }
 
 // CLI represents the complete command line interface
@@ -181,14 +182,18 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 	}
 
 	// Create shared context
+	// Propagate AMT TLS skip preference globally for AMTBaseCmd.AfterApply
+	commands.DefaultSkipAMTCertCheck = cli.SkipAMTCertCheck
+
 	appCtx := &commands.Context{
-		AMTCommand:    amtCommand,
-		ControlMode:   controlMode,
-		LogLevel:      cli.LogLevel,
-		JsonOutput:    cli.JsonOutput,
-		Verbose:       cli.Verbose,
-		SkipCertCheck: cli.SkipCertCheck,
-		Extra:         map[string]any{},
+		AMTCommand:       amtCommand,
+		ControlMode:      controlMode,
+		LogLevel:         cli.LogLevel,
+		JsonOutput:       cli.JsonOutput,
+		Verbose:          cli.Verbose,
+		SkipCertCheck:    cli.SkipCertCheck,
+		SkipAMTCertCheck: cli.SkipAMTCertCheck,
+		Extra:            map[string]any{},
 	}
 
 	// Execute the selected command
