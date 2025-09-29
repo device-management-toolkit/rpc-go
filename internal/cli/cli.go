@@ -28,6 +28,7 @@ type Globals struct {
 	JsonOutput    bool   `help:"Output in JSON format" name:"json" short:"j"`
 	Verbose       bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
 	SkipCertCheck bool   `help:"Skip certificate verification (insecure)" name:"skip-cert-check" short:"n"`
+	TenantID      string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
 	LMSAddress    string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
 	LMSPort       string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
 }
@@ -188,7 +189,7 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		JsonOutput:    cli.JsonOutput,
 		Verbose:       cli.Verbose,
 		SkipCertCheck: cli.SkipCertCheck,
-		Extra:         map[string]any{},
+		TenantID:      cli.TenantID,
 	}
 
 	// Execute the selected command

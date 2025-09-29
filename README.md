@@ -88,7 +88,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 
 # Dev tips for passing CI Checks
 
-- Ensure code is formatted correctly with `gofmt -s -w ./`
+- Ensure code is formatted correctly with `gofumpt -l -w -extra ./`
 - Ensure all unit tests pass with `go test ./...`
 - Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:latest golangci-lint run -v`
 
