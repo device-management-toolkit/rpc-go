@@ -15,6 +15,5 @@ type Context struct {
 	Verbose       bool
 	SkipCertCheck bool
 	TLSConfig     *tls.Config
-	// Extra allows commands to pass optional, non-core data between layers without expanding the struct frequently
-	Extra map[string]any
+	TenantID      string
 }
