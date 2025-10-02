@@ -180,6 +180,7 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 		Verbose:       service.context.Verbose,
 		SkipCertCheck: service.context.SkipCertCheck,
 		ControlMode:   service.context.ControlMode,
+		TenantID:      service.context.TenantID,
 	}
 
 	// Execute activation via RPS
