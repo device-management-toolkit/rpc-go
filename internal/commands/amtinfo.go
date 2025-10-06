@@ -66,9 +66,6 @@ type AmtInfoCmd struct {
 	// Sync to server flags
 	Sync bool   `help:"Sync device info to remote server via HTTP PATCH"`
 	URL  string `help:"Endpoint URL of the devices API (e.g., https://mps.example.com/api/v1/devices)" name:"url"`
-
-	// Shared server authentication flags (Bearer token or Basic auth)
-	ServerAuthFlags
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -97,10 +94,10 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
 			return fmt.Errorf("invalid --url: %w", err)
 		}
-		// Require some form of authentication when syncing
-		if err := cmd.ValidateRequired(true); err != nil {
-			return err
-		}
+		// // Require some form of authentication when syncing
+		// if err := cmd.ValidateRequired(true); err != nil {
+		// 	return err
+		// }
 	}
 
 	return nil
@@ -122,15 +119,17 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// If user requested user certificates or --all, prompt for password at runtime.
 	log.Trace("Running amtinfo command")
 
-	if cmd.RequiresAMTPassword() && cmd.GetPassword() == "" {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
-		}
+	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+		return err
+	}
+	// If password now present and user certs requested, build WSMAN client
+	if err := cmd.EnsureWSMAN(ctx); err != nil {
+		return err
 	}
 
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
-	service.password = cmd.GetPassword()
+	service.password = ctx.AMTPassword
 	service.localTLSEnforced = cmd.LocalTLSEnforced
 	// Use AMT-specific skip flag for WSMAN/TLS to firmware
 	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
@@ -140,7 +139,6 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
 	if cmd.Sync {
-		// Make a copy with All=true to gather all needed fields (including LAN/UUID/features)
 		copied := *cmd
 		copied.All = true
 		effectiveCmd = &copied
@@ -153,7 +151,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	// If requested, sync device info to remote server
 	if cmd.Sync {
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &cmd.ServerAuthFlags); err != nil {
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags); err != nil {
 			return err
 		}
 	}

@@ -165,6 +165,11 @@ func (cmd *TLSCmd) Validate() error {
 
 // Run executes the TLS configuration command
 func (cmd *TLSCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Configuring TLS settings...")
 
 	// Parse the TLS mode

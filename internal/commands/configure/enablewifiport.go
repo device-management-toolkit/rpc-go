@@ -19,6 +19,11 @@ type EnableWifiPortCmd struct {
 
 // Run executes the enable wifi port command
 func (cmd *EnableWifiPortCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Enabling WiFi port and local profile synchronization...")
 
 	// Enable WiFi port with sync and sharing enabled

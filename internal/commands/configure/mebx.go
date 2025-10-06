@@ -45,6 +45,11 @@ func (cmd *MEBxCmd) Validate() error {
 
 // Run executes the MEBx configuration command
 func (cmd *MEBxCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Configuring MEBx password...")
 
 	// Get control mode for validation

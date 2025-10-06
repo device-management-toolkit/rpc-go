@@ -66,15 +66,24 @@ func (cmd *DeactivateCmd) Validate() error {
 		return fmt.Errorf("partial unprovisioning is only supported with local flag")
 	}
 
-	if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-		return utils.MissingOrIncorrectPassword
-	}
-
 	return nil
 }
 
 // Run executes the deactivate command
 func (cmd *DeactivateCmd) Run(ctx *Context) error {
+	// Resolve AMT password (only when required)
+	if cmd.RequiresAMTPassword() {
+		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+			return err
+		}
+
+		if cmd.Local { // local path needs WSMAN
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				return err
+			}
+		}
+	}
+
 	if cmd.Local {
 		// For local deactivation
 		return cmd.executeLocalDeactivate(ctx)
@@ -90,7 +99,7 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 	req := &rps.Request{
 		Command:          utils.CommandDeactivate,
 		URL:              cmd.URL,
-		Password:         cmd.GetPassword(),
+		Password:         ctx.AMTPassword,
 		LogLevel:         ctx.LogLevel,
 		JsonOutput:       ctx.JsonOutput,
 		Verbose:          ctx.Verbose,
@@ -166,8 +175,8 @@ func (cmd *DeactivateCmd) executeFullUnprovision() error {
 
 // deactivateCCM handles CCM mode deactivation
 func (cmd *DeactivateCmd) deactivateCCM(ctx *Context) error {
-	if cmd.Password != "" {
-		log.Warn("Password not required for CCM deactivation")
+	if ctx.AMTPassword != "" {
+		log.Warn("AMT password not required for CCM deactivation")
 	}
 
 	status, err := ctx.AMTCommand.Unprovision()

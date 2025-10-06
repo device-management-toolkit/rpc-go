@@ -15,12 +15,16 @@ import (
 func TestRefactoredPasswordFunctionality(t *testing.T) {
 	t.Run("DeactivateCmd inherits password functionality", func(t *testing.T) {
 		cmd := &DeactivateCmd{
-			AMTBaseCmd: AMTBaseCmd{Password: "test-password"},
+			AMTBaseCmd: AMTBaseCmd{},
 			Local:      true,
 		}
 
+		ctx := &Context{
+			AMTPassword: "test-password",
+		}
+
 		// Test that password is accessible
-		assert.Equal(t, "test-password", cmd.GetPassword())
+		assert.Equal(t, "test-password", ctx.AMTPassword)
 
 		// Test that password requirement logic works
 		assert.True(t, cmd.RequiresAMTPassword(), "Local deactivate should require password")
@@ -33,11 +37,14 @@ func TestRefactoredPasswordFunctionality(t *testing.T) {
 	t.Run("AmtInfoCmd conditional password requirements", func(t *testing.T) {
 		// Start with control mode = 0 (pre-provisioning)
 		cmd := &AmtInfoCmd{
-			AMTBaseCmd: AMTBaseCmd{Password: "test-password", ControlMode: 0},
+			AMTBaseCmd: AMTBaseCmd{ControlMode: 0},
 		}
 
+		ctx := &Context{
+			AMTPassword: "test-password",
+		}
 		// Test that password is accessible
-		assert.Equal(t, "test-password", cmd.GetPassword())
+		assert.Equal(t, "test-password", ctx.AMTPassword)
 
 		// Test password requirement logic
 		// Without user certs, no password required
@@ -66,10 +73,14 @@ func TestRefactoredPasswordFunctionality(t *testing.T) {
 	})
 
 	t.Run("Base command provides common functionality", func(t *testing.T) {
-		cmd := &AMTBaseCmd{Password: "shared-password"}
+		cmd := &AMTBaseCmd{}
+
+		ctx := &Context{
+			AMTPassword: "shared-password",
+		}
 
 		// Test getter method
-		assert.Equal(t, "shared-password", cmd.GetPassword())
+		assert.Equal(t, "shared-password", ctx.AMTPassword)
 
 		// Test default password requirement
 		assert.True(t, cmd.RequiresAMTPassword(), "Base command should require password by default")
