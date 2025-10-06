@@ -37,7 +37,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi with sync and sharing enabled
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil)
@@ -60,7 +62,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("wifi enable failed"))
@@ -85,7 +89,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return a connection error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("connection timeout"))
@@ -110,7 +116,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an authentication error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("authentication failed"))
@@ -121,42 +129,12 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		assert.Contains(t, err.Error(), "authentication failed")
 	})
 
-	t.Run("nil_wsman_interface", func(t *testing.T) {
-		cmd := &EnableWifiPortCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					WSMan: nil, // Nil WSMAN interface
-				},
-			},
-		}
-
-		ctx := &commands.Context{}
-
-		// This should panic or return an error when trying to call EnableWiFi on nil
-		assert.Panics(t, func() {
-			cmd.Run(ctx)
-		})
-	})
-
-	t.Run("nil_context", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-
-		mockWSMAN := mock.NewMockWSMANer(ctrl)
-
-		cmd := &EnableWifiPortCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					WSMan: mockWSMAN,
-				},
-			},
-		}
-
-		// Mock EnableWiFi - context is not used in this command
-		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil)
-
-		err := cmd.Run(nil)    // Nil context
-		assert.NoError(t, err) // Should still work as context is not used
+	t.Run("nil_wsman_interface_returns_error", func(t *testing.T) {
+		cmd := &EnableWifiPortCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{WSMan: nil}}}
+		ctx := &commands.Context{AMTPassword: "test-pass"}
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to enable WiFi port")
 	})
 
 	t.Run("multiple_consecutive_calls", func(t *testing.T) {
@@ -173,7 +151,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to be called multiple times
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil).Times(3)
@@ -203,7 +183,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return a WiFi not available error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("WiFi hardware not available"))
@@ -228,7 +210,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an AMT not provisioned error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("AMT not provisioned"))

@@ -16,4 +16,6 @@ type Context struct {
 	SkipCertCheck bool
 	TLSConfig     *tls.Config
 	TenantID      string
+	AMTPassword   string // Centralized AMT admin password (from global flag/env or interactive prompt)
+	ServerAuthFlags
 }
