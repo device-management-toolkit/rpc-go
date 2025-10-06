@@ -167,19 +167,21 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 
 	// Build RPS request directly (no internal/flags dependency)
 	req := &rps.Request{
-		Command:       utils.CommandActivate,
-		URL:           service.config.URL,
-		Profile:       service.config.Profile,
-		DNS:           service.config.DNS,
-		Hostname:      service.config.Hostname,
-		UUID:          service.config.UUID,
-		FriendlyName:  service.config.FriendlyName,
-		Proxy:         service.config.Proxy,
-		LogLevel:      service.context.LogLevel,
-		JsonOutput:    service.context.JsonOutput,
-		Verbose:       service.context.Verbose,
-		SkipCertCheck: service.context.SkipCertCheck,
-		ControlMode:   service.context.ControlMode,
+		Command:          utils.CommandActivate,
+		URL:              service.config.URL,
+		Profile:          service.config.Profile,
+		DNS:              service.config.DNS,
+		Hostname:         service.config.Hostname,
+		UUID:             service.config.UUID,
+		FriendlyName:     service.config.FriendlyName,
+		Proxy:            service.config.Proxy,
+		LogLevel:         service.context.LogLevel,
+		JsonOutput:       service.context.JsonOutput,
+		Verbose:          service.context.Verbose,
+		SkipCertCheck:    service.context.SkipCertCheck,
+		SkipAmtCertCheck: service.context.SkipAMTCertCheck,
+		ControlMode:      service.context.ControlMode,
+		TenantID:         service.context.TenantID,
 	}
 
 	// Execute activation via RPS
