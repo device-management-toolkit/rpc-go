@@ -17,14 +17,14 @@ import (
 )
 
 // generates a TLS configuration based on the provided mode.
-func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipCertCheck bool) *tls.Config {
+func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
 	tlsConfig := &tls.Config{}
 
-	tlsConfig.InsecureSkipVerify = skipCertCheck
+	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
 
 	if *mode == 0 { // pre-provisioning mode
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			if skipCertCheck {
+			if skipAMTCertCheck {
 				return nil
 			}
 
