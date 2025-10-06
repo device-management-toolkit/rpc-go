@@ -29,6 +29,7 @@ type Globals struct {
 	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
 	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections (insecure)" name:"skip-cert-check" short:"n"`
 	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS (insecure)" name:"skip-amt-cert-check"`
+	TenantID         string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
 	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
 	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
 }
@@ -193,7 +194,7 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		Verbose:          cli.Verbose,
 		SkipCertCheck:    cli.SkipCertCheck,
 		SkipAMTCertCheck: cli.SkipAMTCertCheck,
-		Extra:            map[string]any{},
+		TenantID:         cli.TenantID,
 	}
 
 	// Execute the selected command

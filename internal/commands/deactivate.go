@@ -97,6 +97,7 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 		SkipCertCheck:    ctx.SkipCertCheck,
 		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
 		Force:            cmd.Force,
+		TenantID:         ctx.TenantID,
 	}
 
 	// Execute via RPS

@@ -18,6 +18,5 @@ type Context struct {
 	// This is distinct from SkipCertCheck which applies to remote RPS HTTPS/WSS connections.
 	SkipAMTCertCheck bool
 	TLSConfig        *tls.Config
-	// Extra allows commands to pass optional, non-core data between layers without expanding the struct frequently
-	Extra map[string]any
+	TenantID         string
 }

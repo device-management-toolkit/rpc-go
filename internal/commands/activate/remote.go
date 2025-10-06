@@ -181,6 +181,7 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 		SkipCertCheck:    service.context.SkipCertCheck,
 		SkipAmtCertCheck: service.context.SkipAMTCertCheck,
 		ControlMode:      service.context.ControlMode,
+		TenantID:         service.context.TenantID,
 	}
 
 	// Execute activation via RPS
