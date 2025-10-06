@@ -68,6 +68,7 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Configuring CIRA (Cloud-Initiated Remote Access)...")
 
 	// Validate that device is activated before configuring CIRA

@@ -27,7 +27,7 @@ func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 
 	if cmd.LocalTLSEnforced {
 		controlMode := cmd.GetControlMode()
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck)
 	}
 
 	return tlsConfig
@@ -76,6 +76,7 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 			return err
 		}
+
 		if cmd.Local { // local path needs WSMAN
 			if err := cmd.EnsureWSMAN(ctx); err != nil {
 				return err
@@ -96,15 +97,16 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 	// Create RPS request
 	req := &rps.Request{
-		Command:       utils.CommandDeactivate,
-		URL:           cmd.URL,
-		Password:      ctx.AMTPassword,
-		LogLevel:      ctx.LogLevel,
-		JsonOutput:    ctx.JsonOutput,
-		Verbose:       ctx.Verbose,
-		SkipCertCheck: ctx.SkipCertCheck,
-		Force:         cmd.Force,
-		TenantID:      ctx.TenantID,
+		Command:          utils.CommandDeactivate,
+		URL:              cmd.URL,
+		Password:         ctx.AMTPassword,
+		LogLevel:         ctx.LogLevel,
+		JsonOutput:       ctx.JsonOutput,
+		Verbose:          ctx.Verbose,
+		SkipCertCheck:    ctx.SkipCertCheck,
+		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
+		Force:            cmd.Force,
+		TenantID:         ctx.TenantID,
 	}
 
 	// Execute via RPS

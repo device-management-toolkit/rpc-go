@@ -142,6 +142,7 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := &commands.Context{AMTPassword: "password123"}
+
 			got := tt.cmd.toActivationConfig(ctx)
 			if got != tt.want {
 				t.Errorf("LocalActivateCmd.toActivationConfig() = %v, want %v", got, tt.want)

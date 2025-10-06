@@ -159,7 +159,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 
 	// Run command with --sync to test PATCH. Provide full endpoint URL.
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
@@ -201,7 +201,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	defer server.Close()
 
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthToken = "mytoken"
 
 	err := cmd.Run(ctx)
@@ -252,7 +252,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 
 	// Provide full devices endpoint; auth defaults will derive from this host
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "alice"
 	ctx.AuthPassword = "s3cr3t"
 
@@ -303,7 +303,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 
 	// Provide full devices endpoint; custom auth endpoint remains respected
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "bob"
 	ctx.AuthPassword = "hunter2"
 	ctx.AuthEndpoint = "/custom/login"

@@ -23,6 +23,7 @@ func (cmd *EnableWifiPortCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Enabling WiFi port and local profile synchronization...")
 
 	// Enable WiFi port with sync and sharing enabled

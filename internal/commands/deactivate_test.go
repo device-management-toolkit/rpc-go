@@ -101,7 +101,7 @@ func TestDeactivateCmd_SetupTLSConfig(t *testing.T) {
 
 	t.Run("TLS enforced", func(t *testing.T) {
 		cmd.LocalTLSEnforced = true
-		ctx := &Context{SkipCertCheck: true, ControlMode: ControlModeACM}
+		ctx := &Context{SkipCertCheck: true, SkipAMTCertCheck: true, ControlMode: ControlModeACM}
 		tlsConfig := cmd.setupTLSConfig(ctx)
 		assert.NotNil(t, tlsConfig)
 	})
@@ -240,6 +240,7 @@ func TestDeactivateCmd_Run_Local_ACM_PasswordHandling(t *testing.T) {
 
 	t.Run("ACM mode fails when password prompt fails (Run path)", func(t *testing.T) {
 		utils.PR = &MockPasswordReaderFail{}
+
 		defer func() { utils.PR = originalPR }()
 
 		ctrl := gomock.NewController(t)
@@ -259,10 +260,12 @@ func TestDeactivateCmd_Run_Local_ACM_PasswordHandling(t *testing.T) {
 
 	t.Run("ACM mode fails when password is empty string (Run path)", func(t *testing.T) {
 		utils.PR = &MockPasswordReaderEmpty{}
+
 		defer func() { utils.PR = originalPR }()
 
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
+
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
 		cmd := DeactivateCmd{Local: true}

@@ -22,14 +22,15 @@ import (
 type Globals struct {
 	// Configuration handling
 
-	LogLevel      string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
-	JsonOutput    bool   `help:"Output in JSON format" name:"json" short:"j"`
-	Verbose       bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
-	SkipCertCheck bool   `help:"Skip certificate verification (insecure)" name:"skip-cert-check" short:"n"`
-	TenantID      string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
-	LMSAddress    string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
-	LMSPort       string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
-	AMTPassword   string `help:"AMT admin password applied globally to all AMT operations" name:"password" env:"AMT_PASSWORD"`
+	LogLevel         string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
+	JsonOutput       bool   `help:"Output in JSON format" name:"json" short:"j"`
+	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
+	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections (insecure)" name:"skip-cert-check" short:"n"`
+	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS (insecure)" name:"skip-amt-cert-check"`
+	TenantID         string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
+	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
+	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
+	AMTPassword      string `help:"AMT admin password applied globally to all AMT operations" name:"password" env:"AMT_PASSWORD"`
 }
 
 // CLI represents the complete command line interface
@@ -116,6 +117,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 
 	if strings.Contains(perr.Error(), "expected one of") {
 		PrintHelp(parser, helpOpts, parseArgs)
+
 		return nil, &cli, nil
 	}
 
@@ -164,15 +166,19 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 	}
 
 	// Create shared context
+	// Propagate AMT TLS skip preference globally for AMTBaseCmd.AfterApply
+	commands.DefaultSkipAMTCertCheck = cli.SkipAMTCertCheck
+
 	appCtx := &commands.Context{
-		AMTCommand:    amtCommand,
-		ControlMode:   controlMode,
-		LogLevel:      cli.LogLevel,
-		JsonOutput:    cli.JsonOutput,
-		Verbose:       cli.Verbose,
-		SkipCertCheck: cli.SkipCertCheck,
-		TenantID:      cli.TenantID,
-		AMTPassword:   cli.AMTPassword,
+		AMTCommand:       amtCommand,
+		ControlMode:      controlMode,
+		LogLevel:         cli.LogLevel,
+		JsonOutput:       cli.JsonOutput,
+		Verbose:          cli.Verbose,
+		SkipCertCheck:    cli.SkipCertCheck,
+		SkipAMTCertCheck: cli.SkipAMTCertCheck,
+		TenantID:         cli.TenantID,
+		AMTPassword:      cli.AMTPassword,
 	}
 
 	// Execute the selected command

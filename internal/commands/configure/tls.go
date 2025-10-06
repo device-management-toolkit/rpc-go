@@ -169,6 +169,7 @@ func (cmd *TLSCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Configuring TLS settings...")
 
 	// Parse the TLS mode

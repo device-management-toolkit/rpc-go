@@ -26,6 +26,7 @@ func (cmd *ConfigureBaseCmd) EnsureRuntime(ctx *commands.Context) error {
 	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 		return err
 	}
+
 	return cmd.EnsureWSMAN(ctx)
 }
 

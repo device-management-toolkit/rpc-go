@@ -69,6 +69,7 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			originalPR := utils.PR
+
 			defer func() { utils.PR = originalPR }()
 
 			utils.PR = &MockPasswordReader{password: tt.mockPassword, err: tt.mockError}

@@ -52,6 +52,7 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Changing AMT password...")
 
 	// Validate that device is activated before changing password

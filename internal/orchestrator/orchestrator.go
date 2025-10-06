@@ -235,6 +235,7 @@ func (po *ProfileOrchestrator) executeActivation() error {
 	if po.globalPassword != "" { // add global password once
 		base = append(base, "--password", po.globalPassword)
 	}
+
 	base = append(base, "activate")
 
 	switch po.profile.Configuration.AMTSpecific.ControlMode {
@@ -254,6 +255,7 @@ func (po *ProfileOrchestrator) executeActivation() error {
 	}
 
 	base = append(base, "--local")
+
 	return po.executor.Execute(base)
 }
 
@@ -267,6 +269,7 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "activate", "--acm", "--local")
 	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
 
@@ -291,7 +294,9 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "mebx", "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
+
 	return po.executeWithPasswordFallback(args)
 }
 
@@ -309,6 +314,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "amtfeatures")
 
 	if redirection.Services.KVM {
@@ -361,6 +367,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "wired")
 
 	if wired.DHCPEnabled {
@@ -405,7 +412,9 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "enablewifiport")
+
 	return po.executeWithPasswordFallback(args)
 }
 
@@ -418,6 +427,7 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	if po.globalPassword != "" {
 		purgeArgs = append(purgeArgs, "--password", po.globalPassword)
 	}
+
 	purgeArgs = append(purgeArgs, "configure", "wireless", "--purge")
 
 	if err := po.executeWithPasswordFallback(purgeArgs); err != nil {
@@ -447,6 +457,7 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "wireless")
 
 	args = append(args, "--profileName", profile.ProfileName)
@@ -519,6 +530,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "tls")
 
 	// Determine TLS mode
@@ -585,6 +597,7 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "proxy")
 
 	args = append(args, "--address", proxy.Address)
@@ -630,6 +643,8 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
 	args = append(args, "configure", "amtpassword", "--password", newPass, "--newamtpassword", newPass)
+
 	return po.executeWithPasswordFallback(args)
 }

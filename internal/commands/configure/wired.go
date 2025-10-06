@@ -113,6 +113,7 @@ func (cmd *WiredCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Configuring wired ethernet settings...")
 
 	// Add defer for error cleanup similar to old code

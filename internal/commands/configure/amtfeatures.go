@@ -53,6 +53,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("configuring AMT Features")
 
 	// Device must be activated (not in pre-provisioning state)

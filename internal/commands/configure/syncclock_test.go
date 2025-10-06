@@ -374,5 +374,4 @@ func TestSyncClockCmd_Run(t *testing.T) {
 		err := cmd.Run(ctx)
 		assert.NoError(t, err)
 	})
-
 }

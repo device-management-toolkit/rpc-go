@@ -41,7 +41,10 @@ func TestWiredCmd_Validate(t *testing.T) {
 			name: "valid DHCP configuration",
 			cmd: &WiredCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
-				DHCPEnabled:      func() *bool { b := true; return &b }(),
+				DHCPEnabled: func() *bool {
+					b := true
+					return &b
+				}(),
 			},
 			wantErr: false,
 		},
@@ -49,8 +52,11 @@ func TestWiredCmd_Validate(t *testing.T) {
 			name: "invalid - DHCP with static IP",
 			cmd: &WiredCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{},
-				DHCPEnabled:      func() *bool { b := true; return &b }(),
-				IPAddress:        "192.168.1.100",
+				DHCPEnabled: func() *bool {
+					b := true
+					return &b
+				}(),
+				IPAddress: "192.168.1.100",
 			},
 			wantErr: true,
 		},
@@ -65,8 +71,11 @@ func TestWiredCmd_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "valid - DHCP with 802.1x",
-			cmd:     &WiredCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, IEEE8021xProfileName: "test8021x", IEEE8021xUsername: "testuser", IEEE8021xPassword: "testpass", IEEE8021xAuthenticationProtocol: 2, IEEE8021xCACert: "test-ca-cert", DHCPEnabled: func() *bool { b := true; return &b }()},
+			name: "valid - DHCP with 802.1x",
+			cmd: &WiredCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, IEEE8021xProfileName: "test8021x", IEEE8021xUsername: "testuser", IEEE8021xPassword: "testpass", IEEE8021xAuthenticationProtocol: 2, IEEE8021xCACert: "test-ca-cert", DHCPEnabled: func() *bool {
+				b := true
+				return &b
+			}()},
 			wantErr: false,
 		},
 		{
@@ -108,7 +117,10 @@ func TestWiredCmd_Run(t *testing.T) {
 	})
 
 	t.Run("8021x_validation", func(t *testing.T) {
-		cmd := &WiredCmd{ConfigureBaseCmd: ConfigureBaseCmd{}, IEEE8021xProfileName: "test8021x", IEEE8021xUsername: "testuser", IEEE8021xPassword: "testpass", IEEE8021xAuthenticationProtocol: 2, IEEE8021xCACert: "test-ca-cert", DHCPEnabled: func() *bool { b := true; return &b }()}
+		cmd := &WiredCmd{ConfigureBaseCmd: ConfigureBaseCmd{}, IEEE8021xProfileName: "test8021x", IEEE8021xUsername: "testuser", IEEE8021xPassword: "testpass", IEEE8021xAuthenticationProtocol: 2, IEEE8021xCACert: "test-ca-cert", DHCPEnabled: func() *bool {
+			b := true
+			return &b
+		}()}
 
 		// Verify IEEE 802.1x fields are properly set
 		assert.NotEmpty(t, cmd.IEEE8021xProfileName)

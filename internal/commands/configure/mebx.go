@@ -49,6 +49,7 @@ func (cmd *MEBxCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("Configuring MEBx password...")
 
 	// Get control mode for validation

@@ -178,7 +178,8 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 			return err
 		}
-		if err := cmd.AMTBaseCmd.EnsureWSMAN(ctx); err != nil {
+
+		if err := cmd.EnsureWSMAN(ctx); err != nil {
 			return err
 		}
 	}

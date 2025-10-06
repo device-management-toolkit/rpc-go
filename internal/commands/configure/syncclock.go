@@ -25,6 +25,7 @@ func (cmd *SyncClockCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	log.Info("synchronizing time")
 
 	// Validate that device is activated before synchronizing time

@@ -137,6 +137,7 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
 	}
+
 	if cmd.Purge {
 		log.Info("purging all AMT wireless profiles")
 

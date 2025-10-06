@@ -18,6 +18,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// DefaultSkipAMTCertCheck is set by CLI context to control AMT TLS verification at WSMAN setup time.
+// It is used in AMTBaseCmd.AfterApply where the CLI context isn't directly accessible.
+var DefaultSkipAMTCertCheck bool
+
 // PasswordRequirer interface to be implemented by commands that conditionally require passwords
 type PasswordRequirer interface {
 	RequiresAMTPassword() bool
@@ -43,19 +47,26 @@ func (cmd *AMTBaseCmd) EnsureAMTPassword(ctx *Context, requirer PasswordRequirer
 	if !requirer.RequiresAMTPassword() {
 		return nil
 	}
+
 	if strings.TrimSpace(ctx.AMTPassword) != "" {
 		return nil
 	}
+
 	fmt.Print("AMT Password: ")
+
 	pw, err := utils.PR.ReadPassword()
 	if err != nil {
 		return fmt.Errorf("failed to read AMT password: %w", err)
 	}
+
 	fmt.Println()
+
 	if pw == "" {
 		return fmt.Errorf("password cannot be empty")
 	}
+
 	ctx.AMTPassword = pw
+
 	return nil
 }
 
@@ -64,15 +75,20 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 	if cmd.WSMan != nil {
 		return nil
 	}
+
 	if strings.TrimSpace(ctx.AMTPassword) == "" {
 		log.Debug("WSMAN client not created: AMT password not yet available")
+
 		return nil
 	}
+
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
+
 	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
+
 	return nil
 }
 
@@ -128,6 +144,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 
 	// We no longer build WSMAN here. Control mode + TLS enforcement only.
 	cmd.afterApplied = true
+
 	return nil
 }
 
