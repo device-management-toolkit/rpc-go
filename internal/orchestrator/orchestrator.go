@@ -417,12 +417,12 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 		return nil
 	}
 
-	log.Info("Executing WiFi port enable")
+	log.Info("Executing WiFi sync enable")
 
 	var args []string
 
 	args = append(args, "rpc")
-	args = append(args, "configure", "enablewifiport")
+	args = append(args, "configure", "enablewifisync")
 
 	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
 		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
