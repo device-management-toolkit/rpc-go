@@ -78,7 +78,7 @@ jobs:
         run: |
           export GOPATH="$HOME/go/"
           export PATH=$PATH:$GOPATH/bin
-          go install gotest.tools/gotestsum@latest
+          go install gotest.tools/gotestsum@c4a0df2e75a225d979a444342dd3db752b53619f
           gotestsum --junitfile rpc-go-unit.xml --format short-verbose -- -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: run the tests with coverage
