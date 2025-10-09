@@ -35,15 +35,15 @@ func (cmd *ConfigureBaseCmd) RequiresAMTPassword() bool {
 
 // ConfigureCmd is the main configure command that contains all subcommands
 type ConfigureCmd struct {
-	MEBx           MEBxCmd           `cmd:"" name:"mebx" aliases:"setmebx" help:"Configure MEBx password"`
-	AMTPassword    AMTPasswordCmd    `cmd:"" aliases:"amtpassword,changeamtpassword" help:"Change AMT password"`
-	AMTFeatures    AMTFeaturesCmd    `cmd:"" aliases:"amtfeatures,setamtfeatures" help:"Configure AMT features (KVM, SOL, IDER, user consent)"`
-	CIRA           CIRACmd           `cmd:"cira" help:"Configure Cloud-Initiated Remote Access (CIRA)"`
-	SyncClock      SyncClockCmd      `cmd:"" aliases:"syncclock,synctime" help:"Synchronize host OS clock to AMT"`
-	EnableWiFiPort EnableWifiPortCmd `cmd:"" aliases:"enablewifiport,enablewifi" help:"Enable WiFi port and local profile synchronization"`
-	Wireless       WirelessCmd       `cmd:"" aliases:"wireless,wifi,addwifisettings" help:"Configure WiFi settings"`
-	Wired          WiredCmd          `cmd:"" aliases:"wired,ethernet,addethernetsettings" help:"Configure wired ethernet settings"`
-	TLS            TLSCmd            `cmd:"" aliases:"tls,configuretls" help:"Configure TLS settings"`
-	Proxy          ProxyCmd          `cmd:"" aliases:"proxy,httpproxy" help:"Configure HTTP proxy access point for firmware-initiated connections"`
-	Hostname       SyncHostnameCmd   `cmd:"" aliases:"synchostname,sethostname" help:"Synchronize host OS hostname and DNS suffix to AMT general settings"`
+	MEBx           MEBxCmd         `cmd:"" name:"mebx" aliases:"setmebx" help:"Configure MEBx password"`
+	AMTPassword    AMTPasswordCmd  `cmd:"" aliases:"amtpassword,changeamtpassword" help:"Change AMT password"`
+	AMTFeatures    AMTFeaturesCmd  `cmd:"" aliases:"amtfeatures,setamtfeatures" help:"Configure AMT features (KVM, SOL, IDER, user consent)"`
+	CIRA           CIRACmd         `cmd:"cira" help:"Configure Cloud-Initiated Remote Access (CIRA)"`
+	SyncClock      SyncClockCmd    `cmd:"" aliases:"syncclock,synctime" help:"Synchronize host OS clock to AMT"`
+	EnableWiFiSync EnableWifiCmd   `cmd:"" aliases:"enablewifisync,enablewifi" help:"Enable WiFi and local profile synchronization"`
+	Wireless       WirelessCmd     `cmd:"" aliases:"wireless,wifi,addwifisettings" help:"Configure WiFi settings"`
+	Wired          WiredCmd        `cmd:"" aliases:"wired,ethernet,addethernetsettings" help:"Configure wired ethernet settings"`
+	TLS            TLSCmd          `cmd:"" aliases:"tls,configuretls" help:"Configure TLS settings"`
+	Proxy          ProxyCmd        `cmd:"" aliases:"proxy,httpproxy" help:"Configure HTTP proxy access point for firmware-initiated connections"`
+	Hostname       SyncHostnameCmd `cmd:"" aliases:"synchostname,sethostname" help:"Synchronize host OS hostname and DNS suffix to AMT general settings"`
 }

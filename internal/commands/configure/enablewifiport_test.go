@@ -16,7 +16,7 @@ import (
 )
 
 func TestEnableWifiPortCmd_Structure(t *testing.T) {
-	cmd := &EnableWifiPortCmd{}
+	cmd := &EnableWifiCmd{}
 
 	// Verify struct embeds ConfigureBaseCmd
 	assert.IsType(t, ConfigureBaseCmd{}, cmd.ConfigureBaseCmd)
@@ -29,7 +29,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -52,7 +52,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -77,7 +77,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -102,7 +102,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -122,7 +122,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 	})
 
 	t.Run("nil_wsman_interface", func(t *testing.T) {
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: nil, // Nil WSMAN interface
@@ -144,7 +144,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -165,7 +165,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -195,7 +195,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -220,7 +220,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &EnableWifiPortCmd{
+		cmd := &EnableWifiCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					WSMan: mockWSMAN,
@@ -240,7 +240,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 	})
 
 	t.Run("structure_validation", func(t *testing.T) {
-		cmd := &EnableWifiPortCmd{}
+		cmd := &EnableWifiCmd{}
 
 		// Test that the struct has the expected fields
 		assert.NotNil(t, cmd)

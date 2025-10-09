@@ -12,13 +12,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// EnableWifiPortCmd represents WiFi port enablement
-type EnableWifiPortCmd struct {
+// EnableWifiCmd represents WiFi port enablement
+type EnableWifiCmd struct {
 	ConfigureBaseCmd
 }
 
 // Run executes the enable wifi port command
-func (cmd *EnableWifiPortCmd) Run(ctx *commands.Context) error {
+func (cmd *EnableWifiCmd) Run(ctx *commands.Context) error {
 	log.Info("Enabling WiFi port and local profile synchronization...")
 
 	// Enable WiFi port with sync and sharing enabled
