@@ -15,7 +15,6 @@ import (
 )
 
 func TestInit(t *testing.T) {
-
 	pthiguid, err := windows.GUIDFromString("{12F80028-B4B7-4B2D-ACA8-46E0FF65814C}")
 	assert.NoError(t, err)
 	lmeguid, err := windows.GUIDFromString("{6733A4DB-0476-4E7B-B3AF-BCFC29BEE7A7}")

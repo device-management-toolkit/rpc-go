@@ -29,6 +29,7 @@ var getRedirectionResponse = redirection.Response{
 		},
 	},
 }
+
 var requestRedirectionStateChangeResponse = redirection.Response{
 	Body: redirection.Body{
 		RequestStateChange_OUTPUT: redirection.RequestStateChange_OUTPUT{

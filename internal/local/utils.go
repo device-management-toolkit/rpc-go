@@ -12,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func GetTokenFromKeyValuePairs(kvList string, token string) string {
+func GetTokenFromKeyValuePairs(kvList, token string) string {
 	attributes := strings.Split(kvList, ",")
 	tokenMap := make(map[string]string)
 

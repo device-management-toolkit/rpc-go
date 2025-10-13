@@ -178,7 +178,14 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 	}
 
 	if service.flags.AmtInfo.OpState {
-		majorVersion, err := GetMajorVersion(dataStruct["amt"].(string))
+		result, err := cmd.GetVersionDataFromME("AMT", service.flags.AMTTimeoutDuration)
+		if err != nil {
+			log.Error(err)
+
+			return err
+		}
+
+		majorVersion, err := GetMajorVersion(result)
 		if err != nil {
 			log.Error(err)
 		}
@@ -401,11 +408,13 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 
 	return nil
 }
+
 func (service *ProvisioningService) PrintOutput(message string) {
 	if !service.flags.JsonOutput {
 		fmt.Println(message)
 	}
 }
+
 func DecodeAMT(version, SKU string) string {
 	amtParts := strings.Split(version, ".")
 	if len(amtParts) <= 1 {
@@ -491,6 +500,7 @@ func DecodeAMT(version, SKU string) string {
 
 	return result
 }
+
 func GetMajorVersion(version string) (int, error) {
 	amtParts := strings.Split(version, ".")
 	if len(amtParts) <= 1 {

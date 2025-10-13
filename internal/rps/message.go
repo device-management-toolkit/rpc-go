@@ -68,7 +68,7 @@ func NewPayload() Payload {
 }
 
 // createPayload gathers data from ME to assemble required information for sending to the server
-func (p Payload) createPayload(dnsSuffix string, hostname string, amtTimeout time.Duration) (MessagePayload, error) {
+func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Duration) (MessagePayload, error) {
 	payload := MessagePayload{}
 
 	var err error
@@ -194,7 +194,7 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 	}
 
 	payload.FriendlyName = flags.FriendlyName
-	//convert struct to json
+	// convert struct to json
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return message, err

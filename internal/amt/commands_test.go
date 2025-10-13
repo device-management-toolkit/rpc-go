@@ -27,9 +27,11 @@ func (c MockPTHICommands) OpenWatchdog() error {
 	}
 }
 
-var flag bool = false
-var flag1 bool = false
-var returnError bool = false
+var (
+	flag        bool = false
+	flag1       bool = false
+	returnError bool = false
+)
 
 func (c MockPTHICommands) Open(useLME bool) error {
 	if flag == true {
@@ -44,6 +46,7 @@ func (c MockPTHICommands) Close() {}
 func (c MockPTHICommands) Call(command []byte, commandSize uint32) (result []byte, err error) {
 	return nil, nil
 }
+
 func (c MockPTHICommands) GetCodeVersions() (pthi.GetCodeVersionsResponse, error) {
 	if returnError == true {
 		return pthi.GetCodeVersionsResponse{
@@ -90,8 +93,10 @@ func (c MockPTHICommands) GetIsAMTEnabled() (state uint8, err error) {
 	return uint8(0x83), nil
 }
 
-var SetOperationsStateStatus = pthi.Status(0)
-var SetOperationsStateError error = nil
+var (
+	SetOperationsStateStatus       = pthi.Status(0)
+	SetOperationsStateError  error = nil
+)
 
 func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState) (pthi.Status, error) {
 	return SetOperationsStateStatus, SetOperationsStateError
@@ -108,6 +113,7 @@ func (c MockPTHICommands) GetCertificateHashes(hashHandles pthi.AMTHashHandles) 
 		IsDefault:       1,
 	}}, nil
 }
+
 func (c MockPTHICommands) GetRemoteAccessConnectionStatus() (RAStatus pthi.GetRemoteAccessConnectionStatusResponse, err error) {
 	return pthi.GetRemoteAccessConnectionStatusResponse{
 		NetworkStatus: 2,
@@ -116,6 +122,7 @@ func (c MockPTHICommands) GetRemoteAccessConnectionStatus() (RAStatus pthi.GetRe
 		MPSHostname:   pthi.AMTANSIString{Length: 4, Buffer: [1000]uint8{84, 101, 115, 116}},
 	}, nil
 }
+
 func (c MockPTHICommands) GetLANInterfaceSettings(useWireless bool) (LANInterface pthi.GetLANInterfaceSettingsResponse, err error) {
 	if useWireless {
 		return pthi.GetLANInterfaceSettingsResponse{
@@ -137,6 +144,7 @@ func (c MockPTHICommands) GetLANInterfaceSettings(useWireless bool) (LANInterfac
 		}, nil
 	}
 }
+
 func (c MockPTHICommands) GetLocalSystemAccount() (localAccount pthi.GetLocalSystemAccountResponse, err error) {
 	return pthi.GetLocalSystemAccountResponse{
 		Account: pthi.LocalSystemAccount{
@@ -150,6 +158,7 @@ func (c MockPTHICommands) Unprovision() (state int, err error) { return 0, nil }
 func (c MockPTHICommands) StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [64]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [320]byte) (response pthi.StartConfigurationHBasedResponse, err error) {
 	return pthi.StartConfigurationHBasedResponse{}, nil
 }
+
 func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationResponse, err error) {
 	return pthi.StopConfigurationResponse{}, nil
 }
@@ -160,10 +169,12 @@ func init() {
 	amt = AMTCommand{}
 	amt.PTHI = MockPTHICommands{}
 }
+
 func TestInitializeNoError(t *testing.T) {
 	err := amt.Initialize()
 	assert.NoError(t, err)
 }
+
 func TestInitializeMEIError(t *testing.T) {
 	flag = true
 	err := amt.Initialize()
@@ -171,6 +182,7 @@ func TestInitializeMEIError(t *testing.T) {
 
 	flag = false
 }
+
 func TestInitializeError(t *testing.T) {
 	flag1 = true
 	err := amt.Initialize()
@@ -178,11 +190,13 @@ func TestInitializeError(t *testing.T) {
 
 	flag1 = false
 }
+
 func TestGetVersionDataFromME(t *testing.T) {
 	result, err := amt.GetVersionDataFromME("Flash", 1*time.Second)
 	assert.NoError(t, err)
 	assert.Equal(t, "11.8.55", result)
 }
+
 func TestGetVersionDataFromMEError(t *testing.T) {
 	result, err := amt.GetVersionDataFromME("", 1*time.Second)
 	assert.Error(t, err)
@@ -207,6 +221,7 @@ func TestGetIsAMTEnabled(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.IsAMTEnabled())
 }
+
 func TestGetIsAMTEnabledError(t *testing.T) {
 	flag1 = true
 	result, err := amt.GetChangeEnabled()
@@ -247,6 +262,7 @@ func TestAmtOperationalState(t *testing.T) {
 		SetOperationsStateStatus = pthi.Status(0)
 	})
 }
+
 func TestEnableAMT(t *testing.T) {
 	err := amt.EnableAMT()
 	assert.NoError(t, err)

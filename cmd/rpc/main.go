@@ -56,7 +56,7 @@ func fetchProfile(flags *flags.Flags) error {
 }
 
 func parseCommandLine(args []string) (*flags.Flags, error) {
-	//process flags
+	// process flags
 	flags := flags.NewFlags(args, utils.PR)
 	err := flags.ParseFlags()
 
@@ -129,6 +129,7 @@ func updateConnectionSettings(flags *flags.Flags) error {
 
 	return nil
 }
+
 func handleErrorAndExit(err error) {
 	if customErr, ok := err.(utils.CustomError); ok {
 		if err != utils.HelpRequested {

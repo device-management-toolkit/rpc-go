@@ -69,7 +69,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 	}
 
 	if service.flags.ControlMode == 2 {
-		//Get OptInService
+		// Get OptInService
 		getOptInServiceResponse, err := service.interfacedWsmanMessage.GetIpsOptInService()
 		if err != nil {
 			log.Error("Error while getting the OptIn Service: ", err)
@@ -89,7 +89,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 		}
 
 		if getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired != optInRequired {
-			//Put OptInService
+			// Put OptInService
 			request := optin.OptInServiceRequest{
 				CanModifyOptInPolicy:    getOptInServiceResponse.Body.GetAndPutResponse.CanModifyOptInPolicy,
 				CreationClassName:       getOptInServiceResponse.Body.GetAndPutResponse.CreationClassName,
@@ -136,7 +136,7 @@ func (service *ProvisioningService) SetAMTFeatures() error {
 func (service *ProvisioningService) setAMTRedirectionService() error {
 	var requestedState redirection.RequestedState
 
-	requestedState = 32768 //supported values in RequestedState are 32768-32771
+	requestedState = 32768 // supported values in RequestedState are 32768-32771
 	if service.flags.IDER {
 		requestedState += 1
 	}
@@ -144,7 +144,7 @@ func (service *ProvisioningService) setAMTRedirectionService() error {
 	if service.flags.SOL {
 		requestedState += 2
 	}
-	//32771 - enable IDER and SOL
+	// 32771 - enable IDER and SOL
 	_, err := service.interfacedWsmanMessage.RequestRedirectionStateChange(requestedState)
 	if err != nil {
 		return err
@@ -175,6 +175,7 @@ func (service *ProvisioningService) putRedirectionService(getResponse redirectio
 
 	return nil
 }
+
 func (service *ProvisioningService) isISMSystem() (bool, error) {
 	dataStruct := make(map[string]interface{})
 

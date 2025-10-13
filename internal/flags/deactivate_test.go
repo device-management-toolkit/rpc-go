@@ -19,6 +19,7 @@ func TestHandleDeactivateCommandNoFlags(t *testing.T) {
 	success := flags.handleDeactivateCommand()
 	assert.EqualValues(t, success, utils.IncorrectCommandLineParameters)
 }
+
 func TestHandleDeactivateInvalidFlag(t *testing.T) {
 	args := []string{"./rpc", "deactivate", "-x"}
 
@@ -35,12 +36,14 @@ func TestHandleDeactivateCommandNoPasswordPrompt(t *testing.T) {
 	assert.Equal(t, utils.CommandDeactivate, flags.Command)
 	assert.Equal(t, utils.TestPassword, flags.Password)
 }
+
 func TestHandleDeactivateCommandNoPasswordPromptEmpy(t *testing.T) {
 	args := []string{"./rpc", "deactivate", "-u", "wss://localhost"}
 	flags := NewFlags(args, MockPRFail)
 	success := flags.handleDeactivateCommand()
 	assert.EqualValues(t, success, utils.MissingOrIncorrectPassword)
 }
+
 func TestHandleDeactivateCommandNoURL(t *testing.T) {
 	args := []string{"./rpc", "deactivate", "--password", "password"}
 
@@ -48,6 +51,7 @@ func TestHandleDeactivateCommandNoURL(t *testing.T) {
 	success := flags.handleDeactivateCommand()
 	assert.EqualValues(t, success, utils.MissingOrIncorrectURL)
 }
+
 func TestHandleDeactivateCommand(t *testing.T) {
 	args := []string{"./rpc", "deactivate", "-u", "wss://localhost", "--password", "password"}
 	expected := utils.CommandDeactivate
@@ -65,6 +69,7 @@ func TestHandleDeactivateCommandWithURLAndLocal(t *testing.T) {
 	assert.EqualValues(t, success, utils.InvalidParameterCombination)
 	assert.Equal(t, "wss://localhost", flags.URL)
 }
+
 func TestHandleDeactivateCommandWithForce(t *testing.T) {
 	args := []string{"./rpc", "deactivate", "-u", "wss://localhost", "--password", "password", "-f"}
 	expected := utils.CommandDeactivate

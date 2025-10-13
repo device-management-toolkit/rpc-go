@@ -74,7 +74,7 @@ func (c *Composite) GenerateCert(template, parent *x509.Certificate, pub, priv a
 
 func GetRootCATemplate() x509.Certificate {
 	// subject and issuer are the same
-	//template.Issuer = template.Subject
+	// template.Issuer = template.Subject
 	sharedName := pkix.Name{
 		Organization:       []string{"vPro"},
 		OrganizationalUnit: []string{"Remote Provisioning Client"},
@@ -265,7 +265,8 @@ func NewCompositeChain(password string) (CompositeChain, error) {
 		chain.Leaf.Cert,
 		[]*x509.Certificate{
 			chain.Intermediate.Cert,
-			chain.Root.Cert},
+			chain.Root.Cert,
+		},
 		chain.PfxPassword)
 	chain.Pfxb64 = base64.StdEncoding.EncodeToString(chain.PfxData)
 

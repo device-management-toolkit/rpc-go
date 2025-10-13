@@ -27,7 +27,7 @@ type LMSConnection struct {
 	skipCertCheck bool
 }
 
-func NewLMSConnection(address string, port string, useTls bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) *LMSConnection {
+func NewLMSConnection(address, port string, useTls bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) *LMSConnection {
 	lms := &LMSConnection{
 		address:       address,
 		port:          port,

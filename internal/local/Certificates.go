@@ -231,7 +231,7 @@ func (service *ProvisioningService) GetPrivateKeyHandle(securitySettings Securit
 			key := securitySettings.Keys.([]publicprivate.RefinedPublicPrivateKeyPair)[i]
 			if key.DERKey == privateKey {
 				privateKeyHandle = key.InstanceID
-				service.handlesWithCerts[privateKeyHandle] = privateKey //TODO: remove if not necessary
+				service.handlesWithCerts[privateKeyHandle] = privateKey // TODO: remove if not necessary
 
 				return privateKeyHandle, nil
 			}
@@ -244,7 +244,7 @@ func (service *ProvisioningService) GetPrivateKeyHandle(securitySettings Securit
 		return "", err
 	}
 
-	service.handlesWithCerts[privateKeyHandle] = privateKey //TODO: remove if not necessary
+	service.handlesWithCerts[privateKeyHandle] = privateKey // TODO: remove if not necessary
 
 	return privateKeyHandle, nil
 }
@@ -256,7 +256,7 @@ func (service *ProvisioningService) GetClientCertHandle(securitySettings Securit
 			cert := securitySettings.Certificates.([]publickey.RefinedPublicKeyCertificateResponse)[i]
 			if !cert.TrustedRootCertificate && cert.X509Certificate == clientCert {
 				clientCertHandle = cert.InstanceID
-				service.handlesWithCerts[clientCertHandle] = clientCert //TODO: remove if not necessary
+				service.handlesWithCerts[clientCertHandle] = clientCert // TODO: remove if not necessary
 
 				return clientCertHandle, nil
 			}
@@ -269,7 +269,7 @@ func (service *ProvisioningService) GetClientCertHandle(securitySettings Securit
 		return "", err
 	}
 
-	service.handlesWithCerts[clientCertHandle] = clientCert //TODO: remove if not necessary
+	service.handlesWithCerts[clientCertHandle] = clientCert // TODO: remove if not necessary
 
 	return clientCertHandle, err
 }
@@ -281,7 +281,7 @@ func (service *ProvisioningService) GetTrustedRootCertHandle(securitySettings Se
 			cert := securitySettings.Certificates.([]publickey.RefinedPublicKeyCertificateResponse)[i]
 			if cert.TrustedRootCertificate && cert.X509Certificate == caCert {
 				rootCertHandle = cert.InstanceID
-				service.handlesWithCerts[rootCertHandle] = caCert //TODO: remove if not necessary
+				service.handlesWithCerts[rootCertHandle] = caCert // TODO: remove if not necessary
 
 				return rootCertHandle, nil
 			}
@@ -294,7 +294,7 @@ func (service *ProvisioningService) GetTrustedRootCertHandle(securitySettings Se
 		return "", err
 	}
 
-	service.handlesWithCerts[rootCertHandle] = caCert //TODO: remove if not necessary
+	service.handlesWithCerts[rootCertHandle] = caCert // TODO: remove if not necessary
 
 	return rootCertHandle, nil
 }

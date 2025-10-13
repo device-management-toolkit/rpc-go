@@ -20,7 +20,7 @@ import (
 func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
 	lanResult, _ := amt.GetLANInterfaceSettings(false)
 
-	var primarySuffix = ""
+	primarySuffix := ""
 	var b []byte
 	l := uint32(15000) // recommended initial size
 	for {
@@ -43,7 +43,7 @@ func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
 		if aa.PhysicalAddressLength <= 0 {
 			continue
 		}
-		var curMacAddr = make(net.HardwareAddr, aa.PhysicalAddressLength)
+		curMacAddr := make(net.HardwareAddr, aa.PhysicalAddressLength)
 		copy(curMacAddr, aa.PhysicalAddress[:])
 		if curMacAddr.String() == lanResult.MACAddress {
 			primarySuffix = windows.UTF16PtrToString(aa.DnsSuffix)

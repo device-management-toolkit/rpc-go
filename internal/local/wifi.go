@@ -28,7 +28,7 @@ type Handles struct {
 
 func (service *ProvisioningService) AddWifiSettings() (err error) {
 	// start with fresh map
-	service.handlesWithCerts = make(map[string]string) //TODO: Remove if not required
+	service.handlesWithCerts = make(map[string]string) // TODO: Remove if not required
 
 	// Get WiFi Profiles
 	wifiEndpointSettings, err := service.interfacedWsmanMessage.GetWiFiSettings()
@@ -36,7 +36,7 @@ func (service *ProvisioningService) AddWifiSettings() (err error) {
 		return err
 	}
 
-	//Delete the existing WiFi profiles
+	// Delete the existing WiFi profiles
 	for _, wifiSetting := range wifiEndpointSettings {
 		// Skip wifiSettings with no InstanceID
 		if wifiSetting.InstanceID == "" {
@@ -55,7 +55,7 @@ func (service *ProvisioningService) AddWifiSettings() (err error) {
 		log.Infof("successfully deleted wifiSetting: %s", wifiSetting.InstanceID)
 	}
 
-	//Delete unused certificates
+	// Delete unused certificates
 	err = service.PruneCerts()
 	if err != nil {
 		return utils.WiFiConfigurationFailed
@@ -106,7 +106,7 @@ func (service *ProvisioningService) ProcessWifiConfigs() error {
 
 func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig) (err error) {
 	// profile names can only be alphanumeric (not even dashes)
-	var reAlphaNum = regexp.MustCompile("[^a-zA-Z0-9]+")
+	reAlphaNum := regexp.MustCompile("[^a-zA-Z0-9]+")
 	if reAlphaNum.MatchString(wifiCfg.ProfileName) {
 		log.Errorf("invalid wifi profile name: %s (only alphanumeric allowed)", wifiCfg.ProfileName)
 
@@ -235,7 +235,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 
 	reqProfile := EAProfile{NodeID: guid, Domain: "", ReqID: "", AuthProtocol: ieee8021xConfig.AuthenticationProtocol, OSName: "win11", DevName: devName, Icon: 1, Ver: ""}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/profile/" + guid
 
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
@@ -272,7 +272,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	reqProfile.DERKey = derKey
 	reqProfile.KeyInstanceId = handles.keyPairHandle
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/keypair/" + guid

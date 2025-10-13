@@ -16,8 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var MockPRSuccess = new(MockPasswordReaderSuccess)
-var MockPRFail = new(MockPasswordReaderFail)
+var (
+	MockPRSuccess = new(MockPasswordReaderSuccess)
+	MockPRFail    = new(MockPasswordReaderFail)
+)
 
 type MockPasswordReaderSuccess struct{}
 
@@ -82,9 +84,8 @@ func TestDisplayAMTInfo(t *testing.T) {
 		assert.Equal(t, nil, err)
 	})
 
-	t.Run("returns Success but logs errors on error conditions", func(t *testing.T) {
+	t.Run("returns Success but logs errors on error conditions (without OpState)", func(t *testing.T) {
 		mockUUIDErr = errMockStandard
-		mockVersionDataErr = errMockStandard
 		mockControlModeErr = errMockStandard
 		mockDNSSuffixErr = errMockStandard
 		mockOSDNSSuffixErr = errMockStandard
@@ -93,7 +94,19 @@ func TestDisplayAMTInfo(t *testing.T) {
 		mockCertHashesErr = errMockStandard
 
 		f := flags.NewFlags(nil, MockPRSuccess)
-		f.AmtInfo = defaultFlags
+		// Create flags without OpState to test error logging without early return
+		f.AmtInfo = flags.AmtInfoFlags{
+			Ver:      true,
+			Bld:      true,
+			Sku:      true,
+			UUID:     true,
+			Mode:     true,
+			DNS:      true,
+			Ras:      true,
+			Lan:      true,
+			Hostname: true,
+			OpState:  false, // Explicitly disable OpState
+		}
 		f.JsonOutput = true
 
 		lps := setupService(f)
@@ -104,13 +117,27 @@ func TestDisplayAMTInfo(t *testing.T) {
 		f.JsonOutput = false
 
 		mockUUIDErr = nil
-		mockVersionDataErr = nil
 		mockControlModeErr = nil
 		mockDNSSuffixErr = nil
 		mockOSDNSSuffixErr = nil
 		mockRemoteAcessConnectionStatusErr = nil
 		mockLANInterfaceSettingsErr = nil
 		mockCertHashesErr = nil
+	})
+
+	t.Run("returns error when OpState is enabled and GetVersionDataFromME fails", func(t *testing.T) {
+		mockVersionDataErr = errMockStandard
+
+		f := flags.NewFlags(nil, MockPRSuccess)
+		f.AmtInfo = defaultFlags // includes OpState: true
+		f.JsonOutput = true
+
+		lps := setupService(f)
+		err := lps.DisplayAMTInfo()
+		assert.Error(t, err)
+		assert.Equal(t, errMockStandard, err)
+
+		mockVersionDataErr = nil
 	})
 
 	t.Run("resets UserCert on GetControlMode failure", func(t *testing.T) {

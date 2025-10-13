@@ -42,7 +42,7 @@ func NewDriver() *Driver {
 	return &Driver{}
 }
 
-func (heci *Driver) Init(useLME bool, useWD bool) error {
+func (heci *Driver) Init(useLME, useWD bool) error {
 	var err error
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
@@ -87,13 +87,15 @@ func (heci *Driver) Init(useLME bool, useWD bool) error {
 	}
 
 	heci.bufferSize = t.MaxMessageLength
-	heci.protocolVersion = t.ProtocolVersion //should be 4?
+	heci.protocolVersion = t.ProtocolVersion // should be 4?
 
 	return nil
 }
+
 func (heci *Driver) GetBufferSize() uint32 {
 	return heci.bufferSize
 }
+
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
 	size, err := syscall.Write(int(heci.meiDevice.Fd()), buffer)
 	if err != nil {
@@ -102,6 +104,7 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 
 	return uint32(size), nil
 }
+
 func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
 	read, err := unix.Read(int(heci.meiDevice.Fd()), buffer)
 	if err != nil {

@@ -288,7 +288,7 @@ func (service *ProvisioningService) GetProvisioningCertObj() (CertsAndKeys, Prov
 	return certsAndKeys, result, fingerprint, nil
 }
 
-func convertPfxToObject(pfxb64 string, passphrase string) (CertsAndKeys, error) {
+func convertPfxToObject(pfxb64, passphrase string) (CertsAndKeys, error) {
 	pfx, err := base64.StdEncoding.DecodeString(pfxb64)
 	if err != nil {
 		return CertsAndKeys{}, utils.ActivationFailedDecode64
@@ -435,7 +435,7 @@ func (service *ProvisioningService) signString(message []byte, privateKey crypto
 	return signatureBase64, nil
 }
 
-func (service *ProvisioningService) createSignedString(nonce []byte, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {
+func (service *ProvisioningService) createSignedString(nonce, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {
 	arr := append(fwNonce, nonce...)
 
 	signature, err := service.signString(arr, privateKey)

@@ -19,8 +19,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const FILE_DEVICE_HECI = 0x8000
-const METHOD_BUFFERED = 0
+const (
+	FILE_DEVICE_HECI = 0x8000
+	METHOD_BUFFERED  = 0
+)
 
 func ctl_code(device_type, function, method, access uint32) uint32 {
 	return (device_type << 16) | (access << 14) | (function << 2) | method
@@ -50,7 +52,7 @@ func NewDriver() *Driver {
 	return &Driver{}
 }
 
-func (heci *Driver) Init(useLME bool, useWD bool) error {
+func (heci *Driver) Init(useLME, useWD bool) error {
 	var err, err2 error
 
 	heci.LMEGUID, err = windows.GUIDFromString("{6733A4DB-0476-4E7B-B3AF-BCFC29BEE7A7}")
@@ -255,6 +257,7 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 
 	return *done, nil
 }
+
 func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
 	var overlapped windows.Overlapped
 

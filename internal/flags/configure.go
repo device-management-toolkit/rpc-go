@@ -1084,25 +1084,25 @@ func (f *Flags) verifyWifiConfigurations() error {
 	priorities := make(map[int]bool)
 
 	for _, cfg := range f.LocalConfig.WifiConfigs {
-		//Check profile name is not empty
+		// Check profile name is not empty
 		if cfg.ProfileName == "" {
 			log.Error("missing profile name")
 
 			return utils.MissingOrInvalidConfiguration
 		}
-		//Check ssid is not empty
+		// Check ssid is not empty
 		if cfg.SSID == "" {
 			log.Error("missing ssid for config: ", cfg.ProfileName)
 
 			return utils.MissingOrInvalidConfiguration
 		}
-		//Check priority is not empty
+		// Check priority is not empty
 		if cfg.Priority <= 0 {
 			log.Error("invalid priority for config: ", cfg.ProfileName)
 
 			return utils.MissingOrInvalidConfiguration
 		}
-		//Check priority is unique
+		// Check priority is unique
 		if priorities[cfg.Priority] {
 			log.Error("priority was specified previously: ", cfg.ProfileName)
 

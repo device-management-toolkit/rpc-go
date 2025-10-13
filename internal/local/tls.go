@@ -18,8 +18,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const RemoteTLSInstanceId = `Intel(r) AMT 802.3 TLS Settings`
-const LocalTLSInstanceId = `Intel(r) AMT LMS TLS Settings`
+const (
+	RemoteTLSInstanceId = `Intel(r) AMT 802.3 TLS Settings`
+	LocalTLSInstanceId  = `Intel(r) AMT LMS TLS Settings`
+)
 
 func (service *ProvisioningService) ConfigureTLS() error {
 	var err error
@@ -110,7 +112,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 
 	reqProfile := EAProfile{NodeID: guid, Domain: "", ReqID: "", AuthProtocol: 0, OSName: "win11", DevName: devName, Icon: 1, Ver: ""}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	url = service.flags.ConfigTLSInfo.EAAddress + "/api/configure/profile/" + guid
 
 	_, err = service.EAConfigureRequest(url, token, reqProfile)
@@ -136,7 +138,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 		return utils.TLSConfigurationFailed
 	}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	reqProfile.DERKey = derKey
 	reqProfile.KeyInstanceId = handles.keyPairHandle
 	url = service.flags.ConfigTLSInfo.EAAddress + "/api/configure/keypair/" + guid

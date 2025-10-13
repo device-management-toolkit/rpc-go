@@ -17,7 +17,7 @@ import (
 )
 
 func TestCheckAndEnableAMT(t *testing.T) {
-	var errMockTimeout = errors.New("wait timeout while sending data")
+	errMockTimeout := errors.New("wait timeout while sending data")
 
 	tests := []struct {
 		name             string

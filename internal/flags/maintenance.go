@@ -41,7 +41,7 @@ func (f *Flags) printMaintenanceUsage() string {
 }
 
 func (f *Flags) handleMaintenanceCommand() error {
-	//validation section
+	// validation section
 	if len(f.commandLineArgs) == 2 {
 		f.printMaintenanceUsage()
 

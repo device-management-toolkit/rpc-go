@@ -100,7 +100,7 @@ func (service *ProvisioningService) GetAuthToken(url string, credentials AuthReq
 	return authResponse.Token, nil
 }
 
-func (service *ProvisioningService) EAConfigureRequest(url string, token string, profileRequest EAProfile) (EAProfile, error) {
+func (service *ProvisioningService) EAConfigureRequest(url, token string, profileRequest EAProfile) (EAProfile, error) {
 	requestBody, err := json.Marshal(profileRequest)
 	if err != nil {
 		return EAProfile{}, fmt.Errorf("marshaling profile request: %v", err)

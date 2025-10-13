@@ -228,6 +228,7 @@ func TestConfigureTLSWithSelfSignedCert(t *testing.T) {
 		})
 	}
 }
+
 func TestGenerateKeyPair(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -285,6 +286,7 @@ func TestGenerateKeyPair(t *testing.T) {
 		})
 	}
 }
+
 func TestGetDERKey(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -337,6 +339,7 @@ func TestGetDERKey(t *testing.T) {
 		})
 	}
 }
+
 func TestCreateTLSCredentialContext(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -380,6 +383,7 @@ func TestCreateTLSCredentialContext(t *testing.T) {
 		})
 	}
 }
+
 func TestEnableTLS(t *testing.T) {
 	tests := []struct {
 		name          string

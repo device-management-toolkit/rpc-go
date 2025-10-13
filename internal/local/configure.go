@@ -66,17 +66,17 @@ func (service *ProvisioningService) Configure() (err error) {
 	return utils.IncorrectCommandLineParameters
 }
 
-func (service *ProvisioningService) EnableWifiPort(enableSync bool, enableWiFiSharing bool) (err error) {
+func (service *ProvisioningService) EnableWifiPort(enableSync, enableWiFiSharing bool) (err error) {
 	err = service.interfacedWsmanMessage.EnableWiFi(enableSync, enableWiFiSharing)
 	if err != nil {
 		log.Error("Failed to enable wifi port and local profile synchronization.")
 
-		return
+		return err
 	}
 
 	log.Info("Successfully enabled wifi port and local profile synchronization.")
 
-	return
+	return err
 }
 
 func (service *ProvisioningService) ValidateURL(u string) error {
@@ -119,6 +119,7 @@ func (service *ProvisioningService) ClearCIRA() error {
 
 	return nil
 }
+
 func (service *ProvisioningService) EnableCIRA() error {
 	err := service.ClearCIRA()
 	if err != nil {

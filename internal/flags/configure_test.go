@@ -382,51 +382,63 @@ func TestHandleAddWifiSettings(t *testing.T) {
 		cmdLine        string
 		expectedResult error
 	}{
-		{description: "Missing Ieee8021xProfileName value",
+		{
+			description:    "Missing Ieee8021xProfileName value",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename cliprofname -authenticationMethod 6 -encryptionMethod 4 -ssid \"myclissid\" -priority 1 -PskPassphrase \"mypassword\" -Ieee8021xProfileName",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing PskPassphrase value",
+		{
+			description:    "Missing PskPassphrase value",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename cliprofname -authenticationMethod 6 -encryptionMethod 4 -ssid \"myclissid\" -priority 1 -PskPassphrase",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing priority value",
+		{
+			description:    "Missing priority value",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename cliprofname -authenticationMethod 6 -encryptionMethod 4 -ssid \"myclissid\" -priority",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing ssid value",
+		{
+			description:    "Missing ssid value",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename cliprofname -authenticationMethod 6 -encryptionMethod 4 -ssid",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing authenticationMethod value",
+		{
+			description:    "Missing authenticationMethod value",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename cliprofname -authenticationMethod",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing profile name",
+		{
+			description:    "Missing profile name",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -profilename",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing filename",
+		{
+			description:    "Missing filename",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -config",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing password",
+		{
+			description:    "Missing password",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -config",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Missing all params",
+		{
+			description:    "Missing all params",
 			cmdLine:        "rpc configure wireless",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Unknown param",
+		{
+			description:    "Unknown param",
 			cmdLine:        "rpc configure wireless -h",
 			expectedResult: utils.IncorrectCommandLineParameters,
 		},
-		{description: "Basic wifi config command line",
+		{
+			description:    "Basic wifi config command line",
 			cmdLine:        `rpc configure wireless -password Passw0rd! -profileName cliprofname -authenticationMethod 6 -encryptionMethod 4 -ssid "myclissid" -priority 1 -pskPassphrase "mypassword"`,
 			expectedResult: nil,
 		},
-		{description: "Valid with reading from file",
+		{
+			description:    "Valid with reading from file",
 			cmdLine:        "rpc configure wireless -password Passw0rd! -config ../../config.yaml -secrets ../../secrets.yaml",
 			expectedResult: nil,
 		},
@@ -669,6 +681,7 @@ func TestVerifyMatchingIeee8021xConfig(t *testing.T) {
 		assert.Equal(t, utils.MissingOrInvalidConfiguration, rc)
 	})
 }
+
 func TestVerifyWiredIeee8021xConfig(t *testing.T) {
 	name := "test8021xProfile"
 	secrets := config.SecretConfig{
@@ -720,6 +733,7 @@ func TestVerifyWiredIeee8021xConfig(t *testing.T) {
 		assert.Equal(t, nil, rc)
 	})
 }
+
 func TestInvalidAuthenticationMethods(t *testing.T) {
 	f := Flags{}
 	f.LocalConfig.WifiConfigs = append(f.LocalConfig.WifiConfigs, wifiCfgWPA)
@@ -800,31 +814,38 @@ func TestHandleAddEthernetSettings(t *testing.T) {
 		cmdLine        string
 		expectedResult error
 	}{
-		{description: "fail - dchp without ipsync",
+		{
+			description:    "fail - dchp without ipsync",
 			cmdLine:        "rpc configure wired -dhcp -password Passw0rd!",
 			expectedResult: utils.InvalidParameterCombination,
 		},
-		{description: "fail - no flags",
+		{
+			description:    "fail - no flags",
 			cmdLine:        "rpc configure wired -password Passw0rd!",
 			expectedResult: utils.InvalidParameterCombination,
 		},
-		{description: "fail - static missing subnetmask",
+		{
+			description:    "fail - static missing subnetmask",
 			cmdLine:        "rpc configure wired -static -ipaddress 192.168.1.7 -password Passw0rd!",
 			expectedResult: utils.MissingOrIncorrectNetworkMask,
 		},
-		{description: "dhcp and ipsync",
+		{
+			description:    "dhcp and ipsync",
 			cmdLine:        "rpc configure wired -dhcp -ipsync -password Passw0rd!",
 			expectedResult: nil,
 		},
-		{description: "static and ipsync",
+		{
+			description:    "static and ipsync",
 			cmdLine:        "rpc configure wired -static -ipsync -password Passw0rd!",
 			expectedResult: nil,
 		},
-		{description: "static and params",
+		{
+			description:    "static and params",
 			cmdLine:        "rpc configure wired -static -ipaddress 192.168.1.7 -subnetmask 255.255.255.0 -gateway 192.168.1.1 -primarydns 8.8.8.8 -password Passw0rd!",
 			expectedResult: nil,
 		},
-		{description: "config",
+		{
+			description:    "config",
 			cmdLine:        "rpc configure wired -config ../../config.yaml -password Passw0rd!",
 			expectedResult: nil,
 		},

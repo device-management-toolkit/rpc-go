@@ -24,12 +24,16 @@ import (
 
 const trickyPassword string = "!@#$%^&*(()-+="
 
-var mode = 0
-var result = 0
-var controlModeErr error = nil
+var (
+	mode                 = 0
+	result               = 0
+	controlModeErr error = nil
+)
 
-var MockPRSuccess = new(MockPasswordReaderSuccess)
-var MockPRFail = new(MockPasswordReaderFail)
+var (
+	MockPRSuccess = new(MockPasswordReaderSuccess)
+	MockPRFail    = new(MockPasswordReaderFail)
+)
 
 type MockPasswordReaderSuccess struct{}
 
@@ -48,12 +52,15 @@ type MockPTHICommands struct{}
 func (c MockPTHICommands) OpenWatchdog() error {
 	return nil
 }
+
 func (c MockPTHICommands) Open(bool) error {
 	return nil
 }
+
 func (c MockPTHICommands) GetIsAMTEnabled() (state uint8, err error) {
 	return uint8(0x41), nil
 }
+
 func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState) (pthi.Status, error) {
 	return 0, nil
 }
@@ -114,6 +121,7 @@ func (c MockPTHICommands) Unprovision() (mode int, err error) {
 func (c MockPTHICommands) StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [64]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [320]byte) (response pthi.StartConfigurationHBasedResponse, err error) {
 	return pthi.StartConfigurationHBasedResponse{}, nil
 }
+
 func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationResponse, err error) {
 	return pthi.StopConfigurationResponse{}, nil
 }
@@ -189,6 +197,7 @@ func TestNewFlags(t *testing.T) {
 	flags := NewFlags(args, MockPRSuccess)
 	assert.NotNil(t, flags)
 }
+
 func TestPrintUsage(t *testing.T) {
 	executable := filepath.Base(os.Args[0])
 	args := []string{executable}
@@ -240,6 +249,7 @@ func TestParseFlagsAMTInfoJSON(t *testing.T) {
 	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
 	assert.Equal(t, true, flags.JsonOutput)
 }
+
 func TestParseFlagsAMTInfoCert(t *testing.T) {
 	args := []string{"./rpc", "amtinfo", "-cert"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -248,6 +258,7 @@ func TestParseFlagsAMTInfoCert(t *testing.T) {
 	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
 	assert.Equal(t, false, flags.JsonOutput)
 }
+
 func TestParseFlagsAMTInfoOSDNSSuffix(t *testing.T) {
 	args := []string{"./rpc", "amtinfo", "-dns"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -256,6 +267,7 @@ func TestParseFlagsAMTInfoOSDNSSuffix(t *testing.T) {
 	assert.Equal(t, flags.Command, utils.CommandAMTInfo)
 	assert.Equal(t, false, flags.JsonOutput)
 }
+
 func TestParseFlagsActivate(t *testing.T) {
 	args := []string{"./rpc", "activate"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -263,6 +275,7 @@ func TestParseFlagsActivate(t *testing.T) {
 	assert.EqualValues(t, result, utils.IncorrectCommandLineParameters)
 	assert.Equal(t, flags.Command, utils.CommandActivate)
 }
+
 func TestParseFlagsVersion(t *testing.T) {
 	args := []string{"./rpc", "version"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -271,6 +284,7 @@ func TestParseFlagsVersion(t *testing.T) {
 	assert.Equal(t, flags.Command, utils.CommandVersion)
 	assert.Equal(t, false, flags.JsonOutput)
 }
+
 func TestParseFlagsConfigure(t *testing.T) {
 	args := []string{"./rpc", "configure"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -327,6 +341,7 @@ func TestLookupEnvOrBool_Default(t *testing.T) {
 	result := flags.lookupEnvOrBool("SKIP_CERT_CHECK", false)
 	assert.Equal(t, false, result)
 }
+
 func TestLookupEnvOrBool_Env(t *testing.T) {
 	args := []string{"./rpc", ""}
 
@@ -364,7 +379,7 @@ func NewMockSambaService(err error) smb.ServiceInterface {
 func (s *MockSambaService) FetchFileContents(url string) ([]byte, error) {
 	var contents []byte
 
-	var service = smb.NewSambaService(MockPRSuccess)
+	service := smb.NewSambaService(MockPRSuccess)
 
 	p, err := service.ParseUrl(url)
 	if err != nil {
@@ -398,7 +413,7 @@ func writeTestCfgFiles(t *testing.T, cfg *config.Config, ext string) (cfgFilePat
 	}
 
 	assert.Nil(t, err)
-	err = os.WriteFile(cfgFilePath, cfgBytes, 0644)
+	err = os.WriteFile(cfgFilePath, cfgBytes, 0o644)
 	assert.Nil(t, err)
 
 	return cfgFilePath

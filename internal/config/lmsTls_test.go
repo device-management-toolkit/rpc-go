@@ -22,7 +22,7 @@ import (
 )
 
 // Helper function to create test certificates with proper chain of trust
-func createTestCert(t *testing.T, template *x509.Certificate, parent *x509.Certificate, parentKey *rsa.PrivateKey) (*x509.Certificate, *rsa.PrivateKey) {
+func createTestCert(t *testing.T, template, parent *x509.Certificate, parentKey *rsa.PrivateKey) (*x509.Certificate, *rsa.PrivateKey) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)

@@ -21,6 +21,7 @@ func TestHandleActivateCommandNoFlags(t *testing.T) {
 	success := flags.ParseFlags()
 	assert.Equal(t, success, utils.IncorrectCommandLineParameters)
 }
+
 func TestHandleActivateCommand(t *testing.T) {
 	args := []string{"./rpc", "activate", "-u", "wss://localhost", "-profile", "profileName", "-password", "Password"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -56,6 +57,7 @@ func TestHandleActivateCommandWithTimeOut(t *testing.T) {
 	assert.Equal(t, "16992", flags.LMSPort)
 	assert.Equal(t, AMTTimeoutDuration, flags.AMTTimeoutDuration)
 }
+
 func TestHandleActivateCommandWithLMS(t *testing.T) {
 	args := []string{"./rpc", "activate", "-u", "wss://localhost", "-profile", "profileName", "-lmsaddress", "1.1.1.1", "-lmsport", "99"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -67,6 +69,7 @@ func TestHandleActivateCommandWithLMS(t *testing.T) {
 	assert.Equal(t, "1.1.1.1", flags.LMSAddress)
 	assert.Equal(t, "99", flags.LMSPort)
 }
+
 func TestHandleActivateCommandWithFriendlyName(t *testing.T) {
 	args := []string{"./rpc", "activate", "-u", "wss://localhost", "-profile", "profileName", "-name", "friendlyName"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -77,6 +80,7 @@ func TestHandleActivateCommandWithFriendlyName(t *testing.T) {
 	assert.Equal(t, utils.CommandActivate, flags.Command)
 	assert.Equal(t, "friendlyName", flags.FriendlyName)
 }
+
 func TestHandleActivateCommandWithENV(t *testing.T) {
 	if err := os.Setenv("DNS_SUFFIX", "envdnssuffix.com"); err != nil {
 		t.Error(err)

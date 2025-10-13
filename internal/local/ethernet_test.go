@@ -15,26 +15,29 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var mockauthResponse = AuthResponse{Token: "someToken"}
-var mockconfigResponse = EAProfile{
-	NodeID:       "someID",
-	Domain:       "someDomain",
-	ReqID:        "someReqID",
-	AuthProtocol: 0,
+var (
+	mockauthResponse   = AuthResponse{Token: "someToken"}
+	mockconfigResponse = EAProfile{
+		NodeID:       "someID",
+		Domain:       "someDomain",
+		ReqID:        "someReqID",
+		AuthProtocol: 0,
 
-	OSName:  "win11",
-	DevName: "someDevName",
-	Icon:    1,
-	Ver:     "someVer",
-	Response: Response{
-		CSR:           "someCSR",
-		KeyInstanceId: "someKeyInstanceID",
-		AuthProtocol:  0,
-		Certificate:   "someCertificate",
-		Domain:        "someDomain",
-		Username:      "someUsername",
-	},
-}
+		OSName:  "win11",
+		DevName: "someDevName",
+		Icon:    1,
+		Ver:     "someVer",
+		Response: Response{
+			CSR:           "someCSR",
+			KeyInstanceId: "someKeyInstanceID",
+			AuthProtocol:  0,
+			Certificate:   "someCertificate",
+			Domain:        "someDomain",
+			Username:      "someUsername",
+		},
+	}
+)
+
 var Ieee8021xConfigs = []config.Ieee8021xConfig{
 	{
 		ProfileName:            "testProfile",

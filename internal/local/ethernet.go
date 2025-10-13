@@ -123,7 +123,7 @@ func (service *ProvisioningService) Disable8021xProfile() (err error) {
 			return err
 		}
 
-		//Delete unused certificates
+		// Delete unused certificates
 		service.PruneCerts()
 	}
 
@@ -222,19 +222,19 @@ func (service *ProvisioningService) AddCerts(ieee8021xConfig config.Ieee8021xCon
 		return handles, utils.WiredConfigurationFailed
 	}
 
-	//Add PrivateKey
+	// Add PrivateKey
 	handles.privateKeyHandle, err = service.GetPrivateKeyHandle(securitySettings, ieee8021xConfig.PrivateKey)
 	if err != nil {
 		return handles, utils.WiredConfigurationFailed
 	}
 
-	//Add Client Certificate
+	// Add Client Certificate
 	handles.clientCertHandle, err = service.GetClientCertHandle(securitySettings, ieee8021xConfig.ClientCert)
 	if err != nil {
 		return handles, utils.WiredConfigurationFailed
 	}
 
-	//Add Trusted Root Certificate
+	// Add Trusted Root Certificate
 	handles.rootCertHandle, err = service.GetTrustedRootCertHandle(securitySettings, ieee8021xConfig.CACert)
 	if err != nil {
 		return handles, utils.WiredConfigurationFailed
@@ -280,7 +280,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 
 	reqProfile := EAProfile{NodeID: guid, Domain: "", ReqID: "", AuthProtocol: ieee8021xConfig.AuthenticationProtocol, OSName: "win11", DevName: devName, Icon: 1, Ver: ""}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/profile/" + guid
 
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
@@ -320,7 +320,7 @@ func (service *ProvisioningService) AddCertsUsingEnterpriseAssistant(ieee8021xCo
 		return handles, ieee8021xConfig, err
 	}
 
-	//Request Profile from Microsoft EA
+	// Request Profile from Microsoft EA
 	reqProfile.DERKey = derKey
 	reqProfile.KeyInstanceId = handles.keyPairHandle
 	url = service.config.EnterpriseAssistant.EAAddress + "/api/configure/keypair/" + guid

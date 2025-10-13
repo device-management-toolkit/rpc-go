@@ -92,7 +92,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 		select {
 		case dataFromServer := <-rpsDataChannel:
 			shallIReturn := e.HandleDataFromRPS(dataFromServer)
-			if shallIReturn { //quits the loop -- we're either done or reached a point where we need to stop
+			if shallIReturn { // quits the loop -- we're either done or reached a point where we need to stop
 				close(e.data)
 				close(e.errors)
 
@@ -150,7 +150,7 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		e.waitGroup.Wait()
 		log.Trace("Channel open confirmation received")
 	} else {
-		//with LMS we open/close websocket on every request, so setup close for when we're done handling LMS data
+		// with LMS we open/close websocket on every request, so setup close for when we're done handling LMS data
 		defer e.localManagement.Close()
 	}
 

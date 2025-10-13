@@ -23,6 +23,7 @@ func TestNewLMSConnection(t *testing.T) {
 	assert.Equal(t, "::1", lme.address)
 	assert.Equal(t, "16992", lme.port)
 }
+
 func TestInitialize(t *testing.T) {
 	_, client := net.Pipe()
 	lms := LMSConnection{address: "", port: "", Connection: client}

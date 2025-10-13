@@ -54,7 +54,7 @@ func (m MockOSNetworker) RenewDHCPLease() error {
 type MockWSMAN struct{}
 
 // AddMPS implements amt.WSMANer.
-func (m MockWSMAN) AddMPS(password string, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error) {
+func (m MockWSMAN) AddMPS(password, mpsAddress string, port int) (response remoteaccess.AddMpServerResponse, err error) {
 	panic("unimplemented")
 }
 
@@ -72,6 +72,7 @@ func (m MockWSMAN) GetEnvironmentDetectionSettings() (response environmentdetect
 func (m MockWSMAN) GetMPSSAP() (response []managementpresence.ManagementRemoteResponse, err error) {
 	panic("unimplemented")
 }
+
 func (g MockWSMAN) GetSetupAndConfigurationService() (setupandconfiguration.Response, error) {
 	panic("unimplemented")
 }
@@ -106,17 +107,21 @@ func (m MockWSMAN) RemoveMPSSAP(name string) (err error) {
 	panic("unimplemented")
 }
 
-var mockPutIPSIEEE8021xError error = nil
-var mockPutIPSIEEE8021xResponse ieee8021x.Response
+var (
+	mockPutIPSIEEE8021xError    error = nil
+	mockPutIPSIEEE8021xResponse ieee8021x.Response
+)
 
 func (m MockWSMAN) PutIPSIEEE8021xSettings(ieee8021xSettings ieee8021x.IEEE8021xSettingsRequest) (response ieee8021x.Response, err error) {
 	return mockPutIPSIEEE8021xResponse, mockPutIPSIEEE8021xError
 }
 
-var mockSetIPSIEEE8021xError error = nil
-var mockSetIPSIEEE8021xResponse ieee8021x.Response
+var (
+	mockSetIPSIEEE8021xError    error = nil
+	mockSetIPSIEEE8021xResponse ieee8021x.Response
+)
 
-func (m MockWSMAN) SetIPSIEEE8021xCertificates(serverCertificateIssuer string, clientCertificate string) (response ieee8021x.Response, err error) {
+func (m MockWSMAN) SetIPSIEEE8021xCertificates(serverCertificateIssuer, clientCertificate string) (response ieee8021x.Response, err error) {
 	return mockSetIPSIEEE8021xResponse, mockSetIPSIEEE8021xError
 }
 
@@ -146,57 +151,73 @@ func (MockWSMAN) UpdateAMTPassword(passwordBase64 string) (authorization.Respons
 	}, nil
 }
 
-var mockGetIpsOptInServiceError error = nil
-var mockGetIpsOptInServiceResponse optin.Response
+var (
+	mockGetIpsOptInServiceError    error = nil
+	mockGetIpsOptInServiceResponse optin.Response
+)
 
 func (m MockWSMAN) GetIpsOptInService() (response optin.Response, err error) {
 	return mockGetIpsOptInServiceResponse, mockGetIpsOptInServiceError
 }
 
-var PutIpsOptInServiceError error = nil
-var PutIpsOptInServiceResponse optin.Response
+var (
+	PutIpsOptInServiceError    error = nil
+	PutIpsOptInServiceResponse optin.Response
+)
 
 func (m MockWSMAN) PutIpsOptInService(request optin.OptInServiceRequest) (response optin.Response, err error) {
 	return PutIpsOptInServiceResponse, PutIpsOptInServiceError
 }
 
-var mockGetRedirectionServiceError error = nil
-var mockGetRedirectionServiceResponse redirection.Response
+var (
+	mockGetRedirectionServiceError    error = nil
+	mockGetRedirectionServiceResponse redirection.Response
+)
 
 func (m MockWSMAN) GetRedirectionService() (response redirection.Response, err error) {
 	return mockGetRedirectionServiceResponse, mockGetRedirectionServiceError
 }
 
-var mockPutRedirectionStateError error = nil
-var mockPutRedirectionStateResponse redirection.Response
+var (
+	mockPutRedirectionStateError    error = nil
+	mockPutRedirectionStateResponse redirection.Response
+)
 
 func (m MockWSMAN) PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error) {
 	return mockPutRedirectionStateResponse, mockPutRedirectionStateError
 }
 
-var mockRequestKVMStateChangeError error = nil
-var mockRequestKVMStateChangeResponse kvm.Response
+var (
+	mockRequestKVMStateChangeError    error = nil
+	mockRequestKVMStateChangeResponse kvm.Response
+)
 
 func (m MockWSMAN) RequestKVMStateChange(requestedState kvm.KVMRedirectionSAPRequestStateChangeInput) (response kvm.Response, err error) {
 	return mockRequestKVMStateChangeResponse, mockRequestKVMStateChangeError
 }
 
-var mockRequestRedirectionStateChangeError error = nil
-var mockRequestRedirectionStateChangeResponse redirection.Response
+var (
+	mockRequestRedirectionStateChangeError    error = nil
+	mockRequestRedirectionStateChangeResponse redirection.Response
+)
 
 func (m MockWSMAN) RequestRedirectionStateChange(requestedState redirection.RequestedState) (response redirection.Response, err error) {
 	return mockRequestRedirectionStateChangeResponse, mockRequestRedirectionStateChangeError
 }
 
-var PKCS10RequestError error = nil
-var PKCS10Response publickey.Response
+var (
+	PKCS10RequestError error = nil
+	PKCS10Response     publickey.Response
+)
 
-func (MockWSMAN) GeneratePKCS10RequestEx(keyPair string, nullSignedCertificateRequest string, signingAlgorithm publickey.SigningAlgorithm) (response publickey.Response, err error) {
+func (MockWSMAN) GeneratePKCS10RequestEx(keyPair, nullSignedCertificateRequest string, signingAlgorithm publickey.SigningAlgorithm) (response publickey.Response, err error) {
 	return PKCS10Response, PKCS10RequestError
 }
 
-var mockCommitChangesErr error = nil
-var mockCommitChangesReturnValue int = 0
+var (
+	mockCommitChangesErr         error = nil
+	mockCommitChangesReturnValue int   = 0
+)
 
 func (m MockWSMAN) CommitChanges() (response setupandconfiguration.Response, err error) {
 	return setupandconfiguration.Response{
@@ -208,22 +229,28 @@ func (m MockWSMAN) CommitChanges() (response setupandconfiguration.Response, err
 	}, mockCommitChangesErr
 }
 
-var mockCreateTLSCredentialContextErr error = nil
-var mockCreateTLSCredentialContextResponse tls.Response
+var (
+	mockCreateTLSCredentialContextErr      error = nil
+	mockCreateTLSCredentialContextResponse tls.Response
+)
 
 func (m MockWSMAN) CreateTLSCredentialContext(certHandle string) (response tls.Response, err error) {
 	return mockCreateTLSCredentialContextResponse, mockCreateTLSCredentialContextErr
 }
 
-var mockPutTLSCredentialContextErr error = nil
-var mockPutTLSCredentialContextResponse tls.Response
+var (
+	mockPutTLSCredentialContextErr      error = nil
+	mockPutTLSCredentialContextResponse tls.Response
+)
 
 func (m MockWSMAN) PutTLSCredentialContext(certHandle string) (response tls.Response, err error) {
 	return mockPutTLSCredentialContextResponse, mockPutTLSCredentialContextErr
 }
 
-var mockEnumerateTLSSettingDataErr error = nil
-var mockTLSSettingDataContext string
+var (
+	mockEnumerateTLSSettingDataErr error = nil
+	mockTLSSettingDataContext      string
+)
 
 func (m MockWSMAN) EnumerateTLSSettingData() (response tls.Response, err error) {
 	return tls.Response{
@@ -235,9 +262,11 @@ func (m MockWSMAN) EnumerateTLSSettingData() (response tls.Response, err error) 
 	}, mockEnumerateTLSSettingDataErr
 }
 
-var mockGenKeyPairErr error = nil
-var mockGenKeyPairReturnValue int
-var mockGenKeyPairSelectors []publickey.SelectorResponse
+var (
+	mockGenKeyPairErr         error = nil
+	mockGenKeyPairReturnValue int
+	mockGenKeyPairSelectors   []publickey.SelectorResponse
+)
 
 func (m MockWSMAN) GenerateKeyPair(keyAlgorithm publickey.KeyAlgorithm, keyLength publickey.KeyLength) (response publickey.Response, err error) {
 	return publickey.Response{
@@ -256,8 +285,10 @@ func (m MockWSMAN) GenerateKeyPair(keyAlgorithm publickey.KeyAlgorithm, keyLengt
 	}, mockGenKeyPairErr
 }
 
-var mockPullTLSSettingDataErr error = nil
-var mockPullTLSSettingDataItems []tls.SettingDataResponse
+var (
+	mockPullTLSSettingDataErr   error = nil
+	mockPullTLSSettingDataItems []tls.SettingDataResponse
+)
 
 func (m MockWSMAN) PullTLSSettingData(enumerationContext string) (response tls.Response, err error) {
 	return tls.Response{
@@ -292,7 +323,7 @@ var mockSetHighAccuracyTimeSynchRsp = timesynchronization.Response{
 }
 var mockSetHighAccuracyTimeSynchErr error = nil
 
-func (m MockWSMAN) SetHighAccuracyTimeSynch(ta0 int64, tm1 int64, tm2 int64) (response timesynchronization.Response, err error) {
+func (m MockWSMAN) SetHighAccuracyTimeSynch(ta0, tm1, tm2 int64) (response timesynchronization.Response, err error) {
 	return mockSetHighAccuracyTimeSynchRsp, mockSetHighAccuracyTimeSynchErr
 }
 
@@ -302,15 +333,19 @@ func (MockWSMAN) DeleteKeyPair(instanceID string) error {
 	return mockDeleteKeyPairErr
 }
 
-var mockPutTLSSettingErr error = nil
-var mockPutTLSSettingDataResponse tls.Response
+var (
+	mockPutTLSSettingErr          error = nil
+	mockPutTLSSettingDataResponse tls.Response
+)
 
 func (MockWSMAN) PUTTLSSettings(instanceID string, tlsSettingData tls.SettingDataRequest) (response tls.Response, err error) {
 	return mockPutTLSSettingDataResponse, mockPutTLSSettingErr
 }
 
-var mockACMUnprovisionValue = 0
-var mockACMUnprovisionErr error = nil
+var (
+	mockACMUnprovisionValue       = 0
+	mockACMUnprovisionErr   error = nil
+)
 
 func (m MockWSMAN) Unprovision(int) (setupandconfiguration.Response, error) {
 	return setupandconfiguration.Response{
@@ -321,6 +356,7 @@ func (m MockWSMAN) Unprovision(int) (setupandconfiguration.Response, error) {
 		},
 	}, mockACMUnprovisionErr
 }
+
 func (m MockWSMAN) PartialUnprovision() (setupandconfiguration.Response, error) {
 	return setupandconfiguration.Response{
 		Body: setupandconfiguration.Body{
@@ -345,54 +381,68 @@ func (m MockWSMAN) SetupMEBX(password string) (setupandconfiguration.Response, e
 
 var mockSetupWsmanClientErr error = nil
 
-func (m MockWSMAN) SetupWsmanClient(username string, password string, useTLS bool, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+func (m MockWSMAN) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
 	return mockSetupWsmanClientErr
 }
 
-var mockGeneralSettings = general.Response{}
-var errMockGeneralSettings error = nil
+var (
+	mockGeneralSettings          = general.Response{}
+	errMockGeneralSettings error = nil
+)
 
 func (m MockWSMAN) GetGeneralSettings() (general.Response, error) {
 	return mockGeneralSettings, errMockGeneralSettings
 }
 
-var mockHostBasedSetupService = hostbasedsetup.Response{}
-var errHostBasedSetupService error = nil
+var (
+	mockHostBasedSetupService       = hostbasedsetup.Response{}
+	errHostBasedSetupService  error = nil
+)
 
-func (m MockWSMAN) HostBasedSetupService(digestRealm string, password string) (hostbasedsetup.Response, error) {
+func (m MockWSMAN) HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error) {
 	return mockHostBasedSetupService, errHostBasedSetupService
 }
 
-var mockGetHostBasedSetupService = hostbasedsetup.Response{}
-var errGetHostBasedSetupService error = nil
+var (
+	mockGetHostBasedSetupService       = hostbasedsetup.Response{}
+	errGetHostBasedSetupService  error = nil
+)
 
 func (m MockWSMAN) GetHostBasedSetupService() (hostbasedsetup.Response, error) {
 	return mockGetHostBasedSetupService, errGetHostBasedSetupService
 }
 
-var mockAddNextCertInChain = hostbasedsetup.Response{}
-var errAddNextCertInChain error = nil
+var (
+	mockAddNextCertInChain       = hostbasedsetup.Response{}
+	errAddNextCertInChain  error = nil
+)
 
-func (m MockWSMAN) AddNextCertInChain(cert string, isLeaf bool, isRoot bool) (hostbasedsetup.Response, error) {
+func (m MockWSMAN) AddNextCertInChain(cert string, isLeaf, isRoot bool) (hostbasedsetup.Response, error) {
 	return mockAddNextCertInChain, errAddNextCertInChain
 }
 
-var mockHostBasedSetupServiceAdmin = hostbasedsetup.Response{}
-var errHostBasedSetupServiceAdmin error = nil
+var (
+	mockHostBasedSetupServiceAdmin       = hostbasedsetup.Response{}
+	errHostBasedSetupServiceAdmin  error = nil
+)
 
-func (m MockWSMAN) HostBasedSetupServiceAdmin(password string, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
+func (m MockWSMAN) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
 	return mockHostBasedSetupServiceAdmin, errHostBasedSetupServiceAdmin
 }
 
-var mockGetPublicKeyCertsResponse = []publickey.RefinedPublicKeyCertificateResponse{}
-var errGetPublicKeyCerts error = nil
+var (
+	mockGetPublicKeyCertsResponse       = []publickey.RefinedPublicKeyCertificateResponse{}
+	errGetPublicKeyCerts          error = nil
+)
 
 func (m MockWSMAN) GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error) {
 	return mockGetPublicKeyCertsResponse, errGetPublicKeyCerts
 }
 
-var errGetPublicPrivateKeyPairs error = nil
-var PublicPrivateKeyPairResponse []publicprivate.RefinedPublicPrivateKeyPair = nil
+var (
+	errGetPublicPrivateKeyPairs  error                                       = nil
+	PublicPrivateKeyPairResponse []publicprivate.RefinedPublicPrivateKeyPair = nil
+)
 
 func (m MockWSMAN) GetPublicPrivateKeyPairs() ([]publicprivate.RefinedPublicPrivateKeyPair, error) {
 	return PublicPrivateKeyPairResponse, errGetPublicPrivateKeyPairs
@@ -621,32 +671,34 @@ func (m MockWSMAN) GetConcreteDependencies() ([]concrete.ConcreteDependency, err
 	}, errGetConcreteDependencies
 }
 
-var errGetWiFiSettings error = nil
-var getWiFiSettingsResponse = []wifi.WiFiEndpointSettingsResponse{{
-	AuthenticationMethod: 0,
-	BSSType:              0,
-	ElementName:          "",
-	EncryptionMethod:     0,
-	InstanceID:           "Config1",
-	Priority:             0,
-	SSID:                 "",
-}, {
-	AuthenticationMethod: 0,
-	BSSType:              0,
-	ElementName:          "",
-	EncryptionMethod:     0,
-	InstanceID:           "Config2",
-	Priority:             0,
-	SSID:                 "",
-}, {
-	AuthenticationMethod: 0,
-	BSSType:              0,
-	ElementName:          "",
-	EncryptionMethod:     0,
-	InstanceID:           "",
-	Priority:             0,
-	SSID:                 "",
-}}
+var (
+	errGetWiFiSettings      error = nil
+	getWiFiSettingsResponse       = []wifi.WiFiEndpointSettingsResponse{{
+		AuthenticationMethod: 0,
+		BSSType:              0,
+		ElementName:          "",
+		EncryptionMethod:     0,
+		InstanceID:           "Config1",
+		Priority:             0,
+		SSID:                 "",
+	}, {
+		AuthenticationMethod: 0,
+		BSSType:              0,
+		ElementName:          "",
+		EncryptionMethod:     0,
+		InstanceID:           "Config2",
+		Priority:             0,
+		SSID:                 "",
+	}, {
+		AuthenticationMethod: 0,
+		BSSType:              0,
+		ElementName:          "",
+		EncryptionMethod:     0,
+		InstanceID:           "",
+		Priority:             0,
+		SSID:                 "",
+	}}
+)
 
 func (m MockWSMAN) GetWiFiSettings() ([]wifi.WiFiEndpointSettingsResponse, error) {
 	return getWiFiSettingsResponse, errGetWiFiSettings
@@ -678,7 +730,7 @@ func (m MockWSMAN) AddPrivateKey(privateKey string) (string, error) {
 
 var errEnableWiFi error = nil
 
-func (m MockWSMAN) EnableWiFi(enableSync bool, enableWiFiSharing bool) error {
+func (m MockWSMAN) EnableWiFi(enableSync, enableWiFiSharing bool) error {
 	return errEnableWiFi
 }
 
@@ -688,15 +740,19 @@ func (m MockWSMAN) AddWiFiSettings(wifiEndpointSettings wifi.WiFiEndpointSetting
 	return wifiportconfiguration.Response{}, errAddWiFiSettings
 }
 
-var errGetEthernetSettings error = nil
-var getEthernetSettingsResponse = []ethernetport.SettingsResponse{{}}
+var (
+	errGetEthernetSettings      error = nil
+	getEthernetSettingsResponse       = []ethernetport.SettingsResponse{{}}
+)
 
 func (m MockWSMAN) GetEthernetSettings() ([]ethernetport.SettingsResponse, error) {
 	return getEthernetSettingsResponse, errGetEthernetSettings
 }
 
-var putEthernetResponse ethernetport.Response = ethernetport.Response{}
-var errPutEthernetSettings error = nil
+var (
+	putEthernetResponse    ethernetport.Response = ethernetport.Response{}
+	errPutEthernetSettings error                 = nil
+)
 
 func (m MockWSMAN) PutEthernetSettings(ethernetport.SettingsRequest, string) (ethernetport.Response, error) {
 	if errPutEthernetSettings != nil {
@@ -709,15 +765,19 @@ func (m MockWSMAN) PutEthernetSettings(ethernetport.SettingsRequest, string) (et
 // Mock the AMT Hardware
 type MockAMT struct{}
 
-const ChangeEnabledResponseNewEnabled = 0x82
-const ChangeEnabledResponseNewDisabled = 0x80
-const ChangeEnabledResponseNotNew = 0x00
-const ChangeEnabledResponseNewTLSEnforcedEnabled = 0xC2
-const ChangeEnabledResponseNewTLSEnforcedDisabled = 0xC0
+const (
+	ChangeEnabledResponseNewEnabled             = 0x82
+	ChangeEnabledResponseNewDisabled            = 0x80
+	ChangeEnabledResponseNotNew                 = 0x00
+	ChangeEnabledResponseNewTLSEnforcedEnabled  = 0xC2
+	ChangeEnabledResponseNewTLSEnforcedDisabled = 0xC0
+)
 
-var mockChangeEnabledResponse = amt2.ChangeEnabledResponse(ChangeEnabledResponseNewEnabled)
-var errMockChangeEnabled error = nil
-var errMockStandard = errors.New("failed")
+var (
+	mockChangeEnabledResponse       = amt2.ChangeEnabledResponse(ChangeEnabledResponseNewEnabled)
+	errMockChangeEnabled      error = nil
+	errMockStandard                 = errors.New("failed")
+)
 
 func (c MockAMT) Initialize() error {
 	return nil
@@ -728,6 +788,7 @@ var mockVersionDataErr error = nil
 func (c MockAMT) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
 	return "Version", mockVersionDataErr
 }
+
 func (c MockAMT) GetChangeEnabled() (amt2.ChangeEnabledResponse, error) {
 	return mockChangeEnabledResponse, errMockChangeEnabled
 }
@@ -740,23 +801,31 @@ var mockDisableAMTErr error = nil
 
 func (c MockAMT) DisableAMT() error { return mockDisableAMTErr }
 
-var mockUUID = "123-456-789"
-var mockUUIDErr error = nil
+var (
+	mockUUID          = "123-456-789"
+	mockUUIDErr error = nil
+)
 
 func (c MockAMT) GetUUID() (string, error) { return mockUUID, mockUUIDErr }
 
-var mockControlMode = 0
-var mockControlModeErr error = nil
+var (
+	mockControlMode          = 0
+	mockControlModeErr error = nil
+)
 
 func (c MockAMT) GetControlMode() (int, error) { return mockControlMode, mockControlModeErr }
 
-var mockDNSSuffix = "dns.org"
-var mockDNSSuffixErr error = nil
+var (
+	mockDNSSuffix          = "dns.org"
+	mockDNSSuffixErr error = nil
+)
 
 func (c MockAMT) GetDNSSuffix() (string, error) { return mockDNSSuffix, mockDNSSuffixErr }
 
-var mockOSDNSSuffix = "os.dns.org"
-var mockOSDNSSuffixErr error = nil
+var (
+	mockOSDNSSuffix          = "os.dns.org"
+	mockOSDNSSuffixErr error = nil
+)
 
 func (c MockAMT) GetOSDNSSuffix() (string, error) { return mockOSDNSSuffix, mockOSDNSSuffixErr }
 
@@ -781,22 +850,29 @@ var mockCertHashesDefault = []amt2.CertHashEntry{
 		IsDefault: true,
 	},
 }
-var mockCertHashes []amt2.CertHashEntry
-var mockCertHashesErr error = nil
+
+var (
+	mockCertHashes    []amt2.CertHashEntry
+	mockCertHashesErr error = nil
+)
 
 func (c MockAMT) GetCertificateHashes() ([]amt2.CertHashEntry, error) {
 	return mockCertHashes, mockCertHashesErr
 }
 
-var mockRemoteAcessConnectionStatus = amt2.RemoteAccessStatus{}
-var mockRemoteAcessConnectionStatusErr error = nil
+var (
+	mockRemoteAcessConnectionStatus          = amt2.RemoteAccessStatus{}
+	mockRemoteAcessConnectionStatusErr error = nil
+)
 
 func (c MockAMT) GetRemoteAccessConnectionStatus() (amt2.RemoteAccessStatus, error) {
 	return mockRemoteAcessConnectionStatus, mockRemoteAcessConnectionStatusErr
 }
 
-var mockLANInterfaceSettings = amt2.InterfaceSettings{}
-var mockLANInterfaceSettingsErr error = nil
+var (
+	mockLANInterfaceSettings          = amt2.InterfaceSettings{}
+	mockLANInterfaceSettingsErr error = nil
+)
 
 func (c MockAMT) GetLANInterfaceSettings(useWireless bool) (amt2.InterfaceSettings, error) {
 	return mockLANInterfaceSettings, mockLANInterfaceSettingsErr
@@ -808,8 +884,10 @@ func (c MockAMT) GetLocalSystemAccount() (amt2.LocalSystemAccount, error) {
 	return amt2.LocalSystemAccount{Username: "Username", Password: "Password"}, mockLocalSystemAccountErr
 }
 
-var mockUnprovisionCode = 0
-var mockUnprovisionErr error = nil
+var (
+	mockUnprovisionCode       = 0
+	mockUnprovisionErr  error = nil
+)
 
 func (c MockAMT) Unprovision() (int, error)        { return mockUnprovisionCode, mockUnprovisionErr }
 func (c MockAMT) PartialUnprovision() (int, error) { return 0, nil }

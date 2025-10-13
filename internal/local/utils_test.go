@@ -18,6 +18,7 @@ var mpsCert = publickey.PublicKeyCertificateResponse{
 	Subject:                "C=unknown,O=unknown,CN=MPSRoot-5bb511",
 	ReadOnlyCertificate:    true,
 }
+
 var caCert = publickey.PublicKeyCertificateResponse{
 	ElementName:            "Intel(r) AMT Certificate",
 	InstanceID:             "Intel(r) AMT Certificate: Handle: 1",
@@ -26,6 +27,7 @@ var caCert = publickey.PublicKeyCertificateResponse{
 	Issuer:                 `C=US,S=Arizona,L=Chandler,CN=Unit Tests Are Us`,
 	Subject:                `C=US,S=Arizona,L=Chandler,CN=Unit Test CA Root Certificate`,
 }
+
 var clientCert = publickey.PublicKeyCertificateResponse{
 	ElementName:            "Intel(r) AMT Certificate",
 	InstanceID:             "Intel(r) AMT Certificate: Handle: 3",
