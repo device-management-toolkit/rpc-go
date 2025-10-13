@@ -1,6 +1,11 @@
 {
   "branches": [
     "main",
+    {
+      "name": "2.x.x",
+      "range": "2.x",
+      "channel": "2.x"
+    },
     "next"
   ],
   "plugins": [
