@@ -21,17 +21,7 @@ import (
 )
 
 func TestCIRACmd_Structure(t *testing.T) {
-	// Test that CIRACmd has the correct structure
-	cmd := CIRACmd{
-		ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-		MPSPassword:          "mps123",
-		MPSAddress:           "mps.example.com",
-		MPSCert:              "test-cert",
-		EnvironmentDetection: []string{"example.com"},
-	}
-	cmd.EnvironmentDetection = []string{"example.com"}
-
-	assert.Equal(t, "amt123", cmd.Password)
+	cmd := CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
 	assert.Equal(t, "mps123", cmd.MPSPassword)
 	assert.Equal(t, "mps.example.com", cmd.MPSAddress)
 	assert.Equal(t, "test-cert", cmd.MPSCert)
@@ -48,63 +38,33 @@ func TestCIRACmd_Validate(t *testing.T) {
 		mockErr     error
 	}{
 		{
-			name: "all_fields_provided",
-			cmd: CIRACmd{
-				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-				MPSPassword:          "mps123",
-				MPSAddress:           "mps.example.com",
-				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{"example.com"},
-			},
+			name:        "all_fields_provided",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}},
 			wantErr:     false,
 			description: "should succeed when all fields are provided",
 		},
 		{
-			name: "prompt_mps_password",
-			cmd: CIRACmd{
-				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-				MPSPassword:          "", // triggers prompt
-				MPSAddress:           "mps.example.com",
-				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{"example.com"},
-			},
+			name:        "prompt_mps_password",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}},
 			wantErr:     false,
 			description: "should prompt and set MPS password when missing",
 			mockPass:    "prompted-mps",
 		},
 		{
-			name: "missing_mps_address",
-			cmd: CIRACmd{
-				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-				MPSPassword:          "mps123",
-				MPSAddress:           "", // Required
-				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{"example.com"},
-			},
+			name:        "missing_mps_address",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}},
 			wantErr:     true,
 			description: "should fail when MPS address is missing",
 		},
 		{
-			name: "invalid_mps_address",
-			cmd: CIRACmd{
-				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-				MPSPassword:          "mps123",
-				MPSAddress:           "invalid-url",
-				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{"example.com"},
-			},
+			name:        "invalid_mps_address",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "invalid-url", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}},
 			wantErr:     true,
 			description: "should fail when MPS address is invalid",
 		},
 		{
-			name: "empty_environment_detection",
-			cmd: CIRACmd{
-				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-				MPSPassword:          "mps123",
-				MPSAddress:           "mps.example.com",
-				MPSCert:              "test-cert",
-				EnvironmentDetection: []string{},
-			},
+			name:        "empty_environment_detection",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{}},
 			wantErr:     false,
 			description: "should succeed and auto-generate environment detection",
 		},
@@ -139,54 +99,7 @@ func TestCIRACmd_Validate(t *testing.T) {
 }
 
 // Additional Validate tests for AMT password prompt & failures
-func TestCIRACmd_Validate_PasswordPrompts(t *testing.T) {
-	originalPR := utils.PR
-
-	defer func() { utils.PR = originalPR }()
-
-	t.Run("amt_password_prompt_success", func(t *testing.T) {
-		utils.PR = &mockPasswordReader{password: "amtPrompt"}
-		cmd := CIRACmd{
-			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: ""}}, // triggers prompt
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
-		err := cmd.Validate()
-		assert.NoError(t, err)
-		assert.Equal(t, "amtPrompt", cmd.Password)
-	})
-
-	t.Run("amt_password_prompt_error", func(t *testing.T) {
-		utils.PR = &mockPasswordReader{err: errors.New("read error")}
-		cmd := CIRACmd{
-			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: ""}},
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
-		err := cmd.Validate()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to read AMT password")
-	})
-
-	t.Run("mps_password_prompt_error", func(t *testing.T) {
-		// AMT password provided so base validation passes
-		utils.PR = &mockPasswordReader{err: errors.New("mps read error")}
-		cmd := CIRACmd{
-			ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123"}},
-			MPSPassword:          "", // triggers prompt error
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
-		err := cmd.Validate()
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to read MPS password")
-	})
-}
+// Password prompt logic for AMT now resides in global EnsureAMTPassword tests; only MPS password prompting retained elsewhere.
 
 // mockPasswordReader implements utils.PasswordReader for tests
 type mockPasswordReader struct {
@@ -206,11 +119,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -219,7 +128,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (existing policies and MPS)
@@ -274,22 +184,11 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &CIRACmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 0,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 0, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		err := cmd.Run(ctx)
@@ -306,11 +205,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -319,7 +214,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations - simulate error
@@ -339,11 +235,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -352,7 +244,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -376,11 +269,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -389,7 +278,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -446,11 +336,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -459,7 +345,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -486,11 +373,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -499,7 +382,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -529,11 +413,7 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		cmd := &CIRACmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN},
 			},
 			MPSPassword:          "mps123",
 			MPSAddress:           "mps.example.com",
@@ -542,7 +422,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -575,22 +456,11 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &CIRACmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -639,22 +509,11 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &CIRACmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"auto-generated.com"}, // Environment detection will be auto-generated in Validate
-		}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"auto-generated.com"}}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -709,22 +568,11 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &CIRACmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MPSPassword:          "mps123",
-			MPSAddress:           "mps.example.com",
-			MPSCert:              "test-cert",
-			EnvironmentDetection: []string{"example.com"},
-		}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock clearCIRA operations (successful)
@@ -771,8 +619,8 @@ func TestCIRACmd_Run(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -793,8 +641,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -816,8 +664,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -840,8 +688,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -865,8 +713,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -892,8 +740,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
@@ -912,8 +760,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{{}}, nil)
 		mockWSMAN.EXPECT().RemoveRemoteAccessPolicyRules().Return(errors.New("remove rap rules error"))
@@ -929,8 +777,8 @@ func TestCIRACmd_Run(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockWSMAN := mock.NewMockWSMANer(ctrl)
-		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, Password: "amt123", WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
-		ctx := &commands.Context{AMTCommand: mockAMT}
+		cmd := &CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{"example.com"}}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
 		mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{{Name: "mps1"}}, nil)

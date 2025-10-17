@@ -21,6 +21,11 @@ type SyncClockCmd struct {
 
 // Run executes the sync clock command
 func (cmd *SyncClockCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("synchronizing time")
 
 	// Validate that device is activated before synchronizing time

@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+
+	"github.com/sirupsen/logrus"
 )
 
 // ServerAuthFlags provides common auth options for server communications
@@ -24,6 +26,7 @@ type ServerAuthFlags struct {
 // ValidateRequired enforces that some form of auth is present when required.
 // If required is false, this performs no validation.
 func (a *ServerAuthFlags) ValidateRequired(required bool) error {
+	logrus.Debugf("validating server auth flags")
 	if !required {
 		return nil
 	}

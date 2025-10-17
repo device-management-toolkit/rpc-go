@@ -49,6 +49,11 @@ func (cmd *AMTFeaturesCmd) Validate() error {
 
 // Run executes the AMT features configuration command
 func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("configuring AMT Features")
 
 	// Device must be activated (not in pre-provisioning state)

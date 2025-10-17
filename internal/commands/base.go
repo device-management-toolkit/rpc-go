@@ -7,6 +7,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
@@ -31,7 +32,6 @@ type PasswordRequirer interface {
 // and ensures consistent password handling across all commands.
 type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
-	Password         string             `help:"AMT password" env:"AMT_PASSWORD" name:"password" short:"p"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
@@ -42,26 +42,51 @@ type AMTBaseCmd struct {
 }
 
 // ValidatePasswordIfNeeded prompts for password if required and not already provided
-func (cmd *AMTBaseCmd) ValidatePasswordIfNeeded(requirer PasswordRequirer) error {
+// EnsureAMTPassword prompts (once) if the command requires an AMT password and ctx.AMTPassword is empty.
+func (cmd *AMTBaseCmd) EnsureAMTPassword(ctx *Context, requirer PasswordRequirer) error {
 	if !requirer.RequiresAMTPassword() {
 		return nil
 	}
 
-	if cmd.Password == "" {
-		fmt.Print("AMT Password: ")
+	if strings.TrimSpace(ctx.AMTPassword) != "" {
+		return nil
+	}
 
-		password, err := utils.PR.ReadPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read AMT password: %w", err)
-		}
+	fmt.Print("AMT Password: ")
 
-		fmt.Println() // Add newline after password input
+	pw, err := utils.PR.ReadPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read AMT password: %w", err)
+	}
 
-		if password == "" {
-			return fmt.Errorf("password cannot be empty")
-		}
+	fmt.Println()
 
-		cmd.Password = password
+	if pw == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
+
+	ctx.AMTPassword = pw
+
+	return nil
+}
+
+// EnsureWSMAN sets up the WSMAN client lazily if not already created and a password is available.
+func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
+	if cmd.WSMan != nil {
+		return nil
+	}
+
+	if strings.TrimSpace(ctx.AMTPassword) == "" {
+		log.Debug("WSMAN client not created: AMT password not yet available")
+
+		return nil
+	}
+
+	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
 	return nil
@@ -117,50 +142,10 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		log.Trace("TLS is enforced on local ports")
 	}
 
-	// Some commands (like amtinfo) can lazily set up LMS/WSMAN later.
-	if cmd.SkipWSMANSetup {
-		cmd.afterApplied = true
-
-		return nil
-	}
-
-	log.Trace("Getting control mode and setting up WSMAN client if needed")
-
-	// Initialize WSMAN client if not already set up
-	if cmd.WSMan == nil {
-		// Cannot set up WSMAN without AMT password
-		if cmd.Password == "" {
-			log.Debug("Skipping WSMAN setup: AMT password not provided yet")
-
-			cmd.afterApplied = true
-
-			return nil
-		}
-
-		log.Trace("Setting up WSMAN client")
-
-		cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-		// Use the centralized TLS config with proper certificate validation
-		// Respect the AMT-specific skip flag instead of the generic RPS skip flag.
-		tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
-
-		err = cmd.WSMan.SetupWsmanClient("admin", cmd.Password, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
-		if err != nil {
-			log.Error("Failed to setup WSMAN client: ", err)
-
-			return err
-		}
-	}
-
+	// We no longer build WSMAN here. Control mode + TLS enforcement only.
 	cmd.afterApplied = true
 
 	return nil
-}
-
-// GetPassword returns the AMT password, ensuring it's available
-func (cmd *AMTBaseCmd) GetPassword() string {
-	return cmd.Password
 }
 
 // GetWSManClient returns the WSMAN client instance

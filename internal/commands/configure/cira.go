@@ -64,6 +64,11 @@ func (cmd *CIRACmd) Validate() error {
 
 // Run executes the CIRA configuration command
 func (cmd *CIRACmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Configuring CIRA (Cloud-Initiated Remote Access)...")
 
 	// Validate that device is activated before configuring CIRA

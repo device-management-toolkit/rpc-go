@@ -84,6 +84,10 @@ func (cmd *ProxyCmd) Validate() error {
 
 // Run executes the proxy configuration command
 func (cmd *ProxyCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
 	// Device must be activated
 	if cmd.GetControlMode() == 0 {
 		log.Error(ErrDeviceNotActivated)

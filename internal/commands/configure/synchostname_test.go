@@ -28,12 +28,11 @@ func TestSyncHostnameCmd_Run_Success(t *testing.T) {
 			AMTBaseCmd: commands.AMTBaseCmd{
 				ControlMode: 1,
 				WSMan:       mockWSMAN,
-				Password:    "testpassword",
 			},
 		},
 	}
 
-	ctx := &commands.Context{AMTCommand: mockAMT}
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 	// Mock dependencies
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
@@ -54,12 +53,11 @@ func TestSyncHostnameCmd_Run_NotActivated(t *testing.T) {
 		ConfigureBaseCmd: ConfigureBaseCmd{
 			AMTBaseCmd: commands.AMTBaseCmd{
 				ControlMode: 0,
-				Password:    "testpassword",
 			},
 		},
 	}
 
-	ctx := &commands.Context{AMTCommand: mockAMT}
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
@@ -77,12 +75,11 @@ func TestSyncHostnameCmd_Run_GetGeneralSettingsError(t *testing.T) {
 			AMTBaseCmd: commands.AMTBaseCmd{
 				ControlMode: 1,
 				WSMan:       mockWSMAN,
-				Password:    "testpassword",
 			},
 		},
 	}
 
-	ctx := &commands.Context{AMTCommand: mockAMT}
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 	mockWSMAN.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("boom"))

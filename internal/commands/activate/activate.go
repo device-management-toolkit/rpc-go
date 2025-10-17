@@ -50,9 +50,6 @@ type ActivateCmd struct {
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
-
-	// Shared server authentication flags for remote flows (optional)
-	commands.ServerAuthFlags
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -64,6 +61,7 @@ func (cmd *ActivateCmd) RequiresAMTPassword() bool {
 
 // Validate checks the command configuration and determines activation mode
 func (cmd *ActivateCmd) Validate() error {
+	log.Trace("Entering Validate method of ActivateCmd")
 	// Check for conflicting mode specifications
 	if cmd.Local && cmd.URL != "" {
 		return fmt.Errorf("cannot specify both --local and --url flags")
@@ -90,9 +88,7 @@ func (cmd *ActivateCmd) Validate() error {
 				return fmt.Errorf("--stopConfig flag is only valid for local activation, not with --url")
 			}
 
-			if cmd.GetPassword() != "" {
-				return fmt.Errorf("--amtPassword flag is only valid for local activation, not with --url")
-			}
+			// Password not applicable for remote legacy path; ignore global/local presence silently.
 
 			if cmd.ProvisioningCert != "" {
 				return fmt.Errorf("--provisioningCert flag is only valid for local activation, not with --url")
@@ -106,9 +102,9 @@ func (cmd *ActivateCmd) Validate() error {
 				return fmt.Errorf("--skipIPRenew flag is only valid for local activation, not with --url")
 			}
 
-			if cmd.AuthToken != "" || cmd.AuthUsername != "" || cmd.AuthPassword != "" || cmd.Key != "" {
-				return fmt.Errorf("HTTP auth/decryption flags are not valid with ws/wss --url")
-			}
+			// if cmd.AuthToken != "" || cmd.AuthUsername != "" || cmd.AuthPassword != "" || cmd.Key != "" {
+			// 	return fmt.Errorf("HTTP auth/decryption flags are not valid with ws/wss --url")
+			// }
 
 			// Warn about UUID override
 			if cmd.UUID != "" {
@@ -163,13 +159,6 @@ func (cmd *ActivateCmd) Validate() error {
 			return fmt.Errorf("cannot specify both --ccm and --acm")
 		}
 
-		// Prompt for AMT password when required for local activation
-		if cmd.RequiresAMTPassword() {
-			if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-				return err
-			}
-		}
-
 		return nil
 	}
 
@@ -180,11 +169,23 @@ func (cmd *ActivateCmd) Validate() error {
 // hasLocalActivationFlags checks if any local-specific flags are set
 func (cmd *ActivateCmd) hasLocalActivationFlags() bool {
 	return cmd.CCM || cmd.ACM || cmd.StopConfig ||
-		cmd.GetPassword() != "" || cmd.ProvisioningCert != "" || cmd.ProvisioningCertPwd != "" || cmd.SkipIPRenew
+		cmd.ProvisioningCert != "" || cmd.ProvisioningCertPwd != "" || cmd.SkipIPRenew
 }
 
 // Run executes the activate command based on detected mode
 func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
+	log.Tracef("Entering Run method of ActivateCmd. Context: %s", ctx.AuthEndpoint)
+
+	// Local activation paths require AMT password unless stopConfig.
+	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
+		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+			return err
+		}
+
+		if err := cmd.EnsureWSMAN(ctx); err != nil {
+			return err
+		}
+	}
 	// Determine activation mode based on flags
 	if cmd.URL != "" {
 		// Remote URL provided: choose path by scheme
@@ -208,7 +209,7 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	if cmd.Profile != "" && looksLikeFilePath(cmd.Profile) {
 		log.Debugf("Running local profile fullflow from file: %s", cmd.Profile)
 
-		return cmd.runLocalProfileFullflow()
+		return cmd.runLocalProfileFullflow(ctx)
 	}
 
 	// Local activation mode (either explicit --local or local flags present)
@@ -228,7 +229,7 @@ func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 		UUID:            cmd.UUID,
 		FriendlyName:    cmd.FriendlyName,
 		Proxy:           cmd.Proxy,
-		ServerAuthFlags: cmd.ServerAuthFlags,
+		ServerAuthFlags: ctx.ServerAuthFlags,
 	}
 
 	// Validate and execute the remote command
@@ -244,12 +245,13 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	// Reuse ProfileFetcher
 	fetcher := &profile.ProfileFetcher{
 		URL:           cmd.URL,
-		Token:         cmd.AuthToken,
-		Username:      cmd.AuthUsername,
-		Password:      cmd.AuthPassword,
-		AuthEndpoint:  cmd.AuthEndpoint,
+		Token:         ctx.AuthToken,
+		Username:      ctx.AuthUsername,
+		Password:      ctx.AuthPassword,
+		AuthEndpoint:  ctx.AuthEndpoint,
 		SkipCertCheck: ctx.SkipCertCheck,
 	}
+
 	// Allow client-provided key for HTTP bodies or envelopes missing key
 	if cmd.Key != "" {
 		fetcher.ClientKey = cmd.Key
@@ -262,7 +264,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
-	orch := orchestrator.NewProfileOrchestrator(cfg, cmd.GetPassword())
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -273,7 +275,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 }
 
 // runLocalProfileFullflow loads a local profile file (optionally decrypt) and runs the orchestrator
-func (cmd *ActivateCmd) runLocalProfileFullflow() error {
+func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	// Prefer existing loader for plaintext YAML
 	if cmd.Key == "" {
 		c, err := profile.LoadProfile(cmd.Profile)
@@ -281,7 +283,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow() error {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c, cmd.GetPassword())
+		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword)
 		if err := orch.ExecuteProfile(); err != nil {
 			return err
 		}
@@ -292,7 +294,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow() error {
 	}
 
 	// Encrypted file path handling using go-wsman security helper
-	return cmd.runLocalEncryptedProfile()
+	return cmd.runLocalEncryptedProfile(ctx)
 }
 
 // looksLikeFilePath determines if the provided string looks like a file path (absolute, relative, UNC, or has an extension)
@@ -316,7 +318,7 @@ func looksLikeFilePath(p string) bool {
 }
 
 // runLocalEncryptedProfile decrypts a local profile file using the provided key and runs orchestrator
-func (cmd *ActivateCmd) runLocalEncryptedProfile() error {
+func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
 	if cmd.Key == "" {
 		return fmt.Errorf("missing --key for encrypted profile file")
 	}
@@ -328,7 +330,7 @@ func (cmd *ActivateCmd) runLocalEncryptedProfile() error {
 		return fmt.Errorf("failed to decrypt profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, cmd.GetPassword())
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}

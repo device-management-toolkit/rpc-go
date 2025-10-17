@@ -22,6 +22,10 @@ type SyncHostnameCmd struct {
 
 // Run executes the hostname sync command
 func (cmd *SyncHostnameCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
 	// Require activated device
 	if cmd.GetControlMode() == 0 {
 		log.Error(ErrDeviceNotActivated)

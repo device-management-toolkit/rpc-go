@@ -20,6 +20,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -62,12 +63,15 @@ func (f *ProfileFetcher) FetchProfile() (config.Configuration, error) {
 
 	token := f.Token
 	if token == "" && f.Username != "" && f.Password != "" {
+		logrus.Debug("no token provided, attempting authentication with username/password")
 		t, err := f.authenticate()
 		if err != nil {
 			return cfg, fmt.Errorf("authentication failed: %w", err)
 		}
 
 		token = t
+	} else {
+		logrus.Debug("using provided token for profile fetch" + token)
 	}
 
 	body, err := f.fetchData(f.URL, token)
@@ -97,6 +101,7 @@ func (f *ProfileFetcher) authenticate() (string, error) {
 	var last error
 
 	for _, ep := range endpoints {
+		logrus.Debugf("attempting authentication at endpoint: %s", ep)
 		// Allow absolute URL for flexibility; otherwise treat as path on baseURL
 		loginURL := ep
 		if !strings.HasPrefix(ep, "http://") && !strings.HasPrefix(ep, "https://") {

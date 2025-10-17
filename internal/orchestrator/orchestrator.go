@@ -29,6 +29,8 @@ type ProfileOrchestrator struct {
 	currentControlMode int
 	// optional current AMT password provided by caller (e.g., activate --password)
 	currentPassword string
+	// global password argument to pass once to root rpc invocation
+	globalPassword string
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
@@ -39,6 +41,7 @@ func NewProfileOrchestrator(cfg config.Configuration, currentPassword string) *P
 		profile:         cfg,
 		executor:        &CLIExecutor{},
 		currentPassword: strings.TrimSpace(currentPassword),
+		globalPassword:  strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
 	}
 }
 
@@ -228,34 +231,32 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 	log.Infof("Executing activation with control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 
-	var args []string
+	base := []string{"rpc"}
+	if po.globalPassword != "" { // add global password once
+		base = append(base, "--password", po.globalPassword)
+	}
 
-	args = append(args, "rpc")
-	args = append(args, "activate")
+	base = append(base, "activate")
 
 	switch po.profile.Configuration.AMTSpecific.ControlMode {
 	case ACMMODE:
-		args = append(args, "--acm")
+		base = append(base, "--acm")
 		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
-			args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
+			base = append(base, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 		}
 
 		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
-			args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
+			base = append(base, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
 		}
 	case "ccmactivate":
-		args = append(args, "--ccm")
+		base = append(base, "--ccm")
 	default:
 		return fmt.Errorf("unsupported control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 	}
 
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
-	}
+	base = append(base, "--local")
 
-	args = append(args, "--local")
-
-	return po.executor.Execute(args)
+	return po.executor.Execute(base)
 }
 
 // executeACMUpgrade performs an in-place upgrade from CCM to ACM when already activated
@@ -264,17 +265,13 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 		return fmt.Errorf("ACM upgrade requires provisioning certificate and password")
 	}
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "activate")
-	args = append(args, "--acm")
-	args = append(args, "--local")
-	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "activate", "--acm", "--local")
+	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
 
 	args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 	args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
@@ -293,16 +290,12 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 
 	log.Info("Executing MEBx password configuration")
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "mebx")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
 
-	args = append(args, "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
+	args = append(args, "configure", "mebx", "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
 	return po.executeWithPasswordFallback(args)
 }
@@ -317,14 +310,12 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 
 	log.Info("Executing AMT features configuration")
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "amtfeatures")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "amtfeatures")
 
 	if redirection.Services.KVM {
 		args = append(args, "--kvm")
@@ -372,14 +363,12 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	log.Info("Executing wired network configuration")
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "wired")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "wired")
 
 	if wired.DHCPEnabled {
 		args = append(args, "--dhcp")
@@ -419,14 +408,12 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 
 	log.Info("Executing WiFi sync enable")
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "enablewifisync")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "enablewifisync")
 
 	return po.executeWithPasswordFallback(args)
 }
@@ -436,10 +423,12 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	// Always purge existing Wi-Fi profiles before applying new ones
 	log.Info("Purging existing AMT wireless profiles before applying new configuration")
 
-	purgeArgs := []string{"rpc", "configure", "wireless", "--purge"}
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		purgeArgs = append(purgeArgs, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	purgeArgs := []string{"rpc"}
+	if po.globalPassword != "" {
+		purgeArgs = append(purgeArgs, "--password", po.globalPassword)
 	}
+
+	purgeArgs = append(purgeArgs, "configure", "wireless", "--purge")
 
 	if err := po.executeWithPasswordFallback(purgeArgs); err != nil {
 		return fmt.Errorf("wireless purge failed: %w", err)
@@ -464,14 +453,12 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 
 // executeWirelessProfile configures a single wireless profile
 func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessProfile) error {
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "wireless")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "wireless")
 
 	args = append(args, "--profileName", profile.ProfileName)
 	args = append(args, "--ssid", profile.SSID)
@@ -539,14 +526,12 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	log.Info("Executing TLS configuration")
 
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "tls")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "tls")
 
 	// Determine TLS mode
 	var mode string
@@ -608,14 +593,12 @@ func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
 
 // executeHTTPProxy configures a single HTTP proxy
 func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
-	var args []string
-
-	args = append(args, "rpc")
-	args = append(args, "configure", "proxy")
-
-	if po.profile.Configuration.AMTSpecific.AdminPassword != "" {
-		args = append(args, "--password", po.profile.Configuration.AMTSpecific.AdminPassword)
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "proxy")
 
 	args = append(args, "--address", proxy.Address)
 
@@ -656,11 +639,12 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// If the provided password is already set, this succeeds and changes nothing.
 	// If authentication fails (wrong password), our fallback will prompt for the
 	// current password, rotate to the profile value, and retry.
-	args := []string{
-		"rpc", "configure", "amtpassword",
-		"--password", newPass,
-		"--newamtpassword", newPass,
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
 	}
+
+	args = append(args, "configure", "amtpassword", "--password", newPass, "--newamtpassword", newPass)
 
 	return po.executeWithPasswordFallback(args)
 }

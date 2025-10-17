@@ -133,6 +133,11 @@ func (cmd *WirelessCmd) Validate() error {
 
 // Run executes the wireless configuration command
 func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	if cmd.Purge {
 		log.Info("purging all AMT wireless profiles")
 

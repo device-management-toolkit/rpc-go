@@ -9,7 +9,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
@@ -85,21 +84,13 @@ func TestActivateCmd_Validate_Local(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid local with CCM",
-			cmd: ActivateCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
-				Local:      true,
-				CCM:        true,
-			},
+			name:    "valid local with CCM",
+			cmd:     ActivateCmd{Local: true, CCM: true},
 			wantErr: false,
 		},
 		{
-			name: "valid local with ACM",
-			cmd: ActivateCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
-				Local:      true,
-				ACM:        true,
-			},
+			name:    "valid local with ACM",
+			cmd:     ActivateCmd{Local: true, ACM: true},
 			wantErr: false,
 		},
 		{
@@ -111,11 +102,8 @@ func TestActivateCmd_Validate_Local(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "implicit local with CCM flag",
-			cmd: ActivateCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: utils.TestPassword},
-				CCM:        true,
-			},
+			name:    "implicit local with CCM flag",
+			cmd:     ActivateCmd{CCM: true},
 			wantErr: false,
 		},
 		{
@@ -198,11 +186,7 @@ func TestActivateCmd_hasLocalActivationFlags(t *testing.T) {
 			cmd:  ActivateCmd{StopConfig: true},
 			want: true,
 		},
-		{
-			name: "AMT Password",
-			cmd:  ActivateCmd{AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"}},
-			want: true,
-		},
+		// Password flag removed from per-command scope; omit this test.
 		{
 			name: "Provisioning cert",
 			cmd:  ActivateCmd{ProvisioningCert: "cert123"},
@@ -328,16 +312,6 @@ func TestActivateCmd_Validate_ConflictingFlags(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "--stopConfig flag is only valid for local activation, not with --url",
-		},
-		{
-			name: "URL with AMT password should fail",
-			cmd: ActivateCmd{
-				URL:        "wss://rps.example.com/activate",
-				Profile:    "test-profile",
-				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
-			},
-			wantErr: true,
-			errMsg:  "--amtPassword flag is only valid for local activation, not with --url",
 		},
 		{
 			name: "URL with provisioning cert should fail",

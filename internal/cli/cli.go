@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
-	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	kongyaml "github.com/alecthomas/kong-yaml"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
@@ -21,8 +21,6 @@ import (
 // Global flags that apply to all commands
 type Globals struct {
 	// Configuration handling
-	Config    string `help:"Path to configuration file or SMB share URL. (previously --configv2)" name:"config" type:"path" default:"config.yaml"`
-	ConfigKey string `help:"32 byte key to decrypt config file" env:"CONFIG_ENCRYPTION_KEY" name:"configencryptionkey"`
 
 	LogLevel         string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
 	JsonOutput       bool   `help:"Output in JSON format" name:"json" short:"j"`
@@ -32,20 +30,20 @@ type Globals struct {
 	TenantID         string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
 	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
 	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`
+	AMTPassword      string `help:"AMT admin password applied globally to all AMT operations" name:"password" env:"AMT_PASSWORD"`
 }
 
 // CLI represents the complete command line interface
 type CLI struct {
 	Globals
+	// Shared server authentication flags for remote flows (optional)
+	commands.ServerAuthFlags
 
 	AmtInfo    commands.AmtInfoCmd    `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
 	Version    commands.VersionCmd    `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
 	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
-
-	// Configuration loaded from YAML file (not directly accessible via CLI)
-	YamlConfig config.Configuration `kong:"-"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed
@@ -82,38 +80,25 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error) {
 	var cli CLI
 
-	// Preliminary scan for --config
-	configFile := "config.yaml"
-
-	for i, arg := range args {
-		if arg == "--config" && i+1 < len(args) {
-			configFile = args[i+1]
-
-			break
-		} else if strings.HasPrefix(arg, "--config=") {
-			configFile = strings.TrimPrefix(arg, "--config=")
-
-			break
-		}
-	}
-
-	log.Debugf("Using configuration file: %s", configFile)
-
 	helpOpts := kong.HelpOptions{Compact: true}
 
-	parser, err := kong.New(&cli,
+	// Build kong options with YAML configuration resolver (if file exists)
+	kongOpts := []kong.Option{
 		kong.Name("rpc"),
 		kong.Description("Remote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT"),
 		kong.UsageOnError(),
 		kong.DefaultEnvars("RPC"),
 		kong.ConfigureHelp(helpOpts),
+		kong.Configuration(kongyaml.Loader, "config.yaml"),
 		kong.BindToProvider(func() amt.Interface { return amtCommand }),
-	)
+	}
+
+	parser, err := kong.New(&cli, kongOpts...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Slice off program name if present
+	// Slice off program name if present (os.Args style)
 	var parseArgs []string
 	if len(args) > 1 {
 		parseArgs = args[1:]
@@ -126,12 +111,10 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 		return ctx, &cli, nil
 	}
 
-	// Root invocation (no args) or errors unrelated to missing subcommand -> return error unchanged
 	if len(parseArgs) == 0 || strings.Contains(perr.Error(), "unexpected argument") || strings.Contains(perr.Error(), "unknown flag") {
 		return nil, nil, perr
 	}
 
-	// Only intercept classic missing subcommand scenario
 	if strings.Contains(perr.Error(), "expected one of") {
 		PrintHelp(parser, helpOpts, parseArgs)
 
@@ -195,6 +178,8 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		SkipCertCheck:    cli.SkipCertCheck,
 		SkipAMTCertCheck: cli.SkipAMTCertCheck,
 		TenantID:         cli.TenantID,
+		AMTPassword:      cli.AMTPassword,
+		ServerAuthFlags:  cli.ServerAuthFlags,
 	}
 
 	// Execute the selected command

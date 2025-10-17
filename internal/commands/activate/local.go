@@ -152,7 +152,7 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Convert Kong CLI flags to activation config
-	config := cmd.toActivationConfig()
+	config := cmd.toActivationConfig(ctx)
 
 	// Create and run the activation service
 	service := NewLocalActivationService(ctx.AMTCommand, config, ctx)
@@ -203,7 +203,7 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 }
 
 // toActivationConfig converts Kong CLI flags to LocalActivationConfig
-func (cmd *LocalActivateCmd) toActivationConfig() LocalActivationConfig {
+func (cmd *LocalActivateCmd) toActivationConfig(ctx *commands.Context) LocalActivationConfig {
 	var mode ActivationMode
 	if cmd.CCM {
 		mode = ModeCCM
@@ -215,7 +215,7 @@ func (cmd *LocalActivateCmd) toActivationConfig() LocalActivationConfig {
 		Mode:                mode,
 		DNS:                 cmd.DNS,
 		Hostname:            cmd.Hostname,
-		AMTPassword:         cmd.GetPassword(),
+		AMTPassword:         ctx.AMTPassword,
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
 		FriendlyName:        cmd.FriendlyName,

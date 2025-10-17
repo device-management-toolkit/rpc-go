@@ -33,8 +33,8 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 	}{
 		{
 			name: "successful run with JSON output",
-			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "testpassword"}, All: true},
-			ctx:  &Context{JsonOutput: true},
+			cmd:  &AmtInfoCmd{All: true},
+			ctx:  &Context{JsonOutput: true, AMTPassword: "testpassword"},
 			setupMock: func(m *mock.MockInterface) {
 				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
@@ -201,8 +201,8 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	defer server.Close()
 
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	cmd.AuthToken = "mytoken"
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+	ctx.AuthToken = "mytoken"
 
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
@@ -252,9 +252,9 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 
 	// Provide full devices endpoint; auth defaults will derive from this host
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	cmd.AuthUsername = "alice"
-	cmd.AuthPassword = "s3cr3t"
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+	ctx.AuthUsername = "alice"
+	ctx.AuthPassword = "s3cr3t"
 
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
@@ -303,10 +303,10 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 
 	// Provide full devices endpoint; custom auth endpoint remains respected
 	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
-	cmd.AuthUsername = "bob"
-	cmd.AuthPassword = "hunter2"
-	cmd.AuthEndpoint = "/custom/login"
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+	ctx.AuthUsername = "bob"
+	ctx.AuthPassword = "hunter2"
+	ctx.AuthEndpoint = "/custom/login"
 
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
@@ -944,6 +944,7 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 			cmd:  &AmtInfoCmd{OpState: true},
 			setupMock: func(m *mock.MockInterface) {
 				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+
 				response := amt.ChangeEnabledResponse(0) // Old interface version (bit 7 = 0)
 				m.EXPECT().GetChangeEnabled().Return(response, nil)
 			},
@@ -981,7 +982,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 	}{
 		{
 			name: "UserCert with password provided",
-			cmd:  &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{Password: "test123"}, UserCert: true},
+			cmd:  &AmtInfoCmd{UserCert: true},
 			setupMock: func(m *mock.MockInterface) {
 				// Mock GetControlMode call for UserCert check
 				m.EXPECT().GetControlMode().Return(1, nil) // Return "Admin Control Mode" (provisioned)
@@ -1050,6 +1051,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
+
 				response := amt.ChangeEnabledResponse(0x82) // AMT enabled and new interface
 				m.EXPECT().GetChangeEnabled().Return(response, nil)
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
@@ -1083,7 +1085,6 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 			tt.setupMock(mockAMT)
 
 			service := NewInfoService(mockAMT)
-			service.password = tt.cmd.Password
 			result, err := service.GetAMTInfo(tt.cmd)
 
 			if tt.wantErr {

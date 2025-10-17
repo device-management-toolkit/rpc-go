@@ -17,16 +17,6 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func TestSyncClockCmd_Structure(t *testing.T) {
-	// Test that SyncClockCmd has the correct structure
-	cmd := &SyncClockCmd{}
-
-	// Test basic field access to ensure struct is correct
-	cmd.Password = "test123"
-
-	assert.Equal(t, "test123", cmd.Password)
-}
-
 func TestSyncClockCmd_Validate(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -40,23 +30,13 @@ func TestSyncClockCmd_Validate(t *testing.T) {
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
 						ControlMode: 1,
-						Password:    "test-test123",
 					},
 				},
 			},
 			wantErr:     false,
 			description: "should succeed when password is provided",
 		},
-		{
-			name: "missing password",
-			cmd: SyncClockCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{Password: ""},
-				},
-			},
-			wantErr:     true, // Will fail in test since no interactive input
-			description: "should prompt for password when missing",
-		},
+		// Missing password case removed: Validate no longer prompts; password ensured at Run.
 	}
 
 	for _, tt := range tests {
@@ -85,13 +65,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch
@@ -126,13 +106,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 0,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		err := cmd.Run(ctx)
@@ -146,13 +126,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch to return an error
@@ -169,13 +149,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch with non-zero return value
@@ -201,13 +181,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch successfully
@@ -236,13 +216,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch successfully
@@ -279,13 +259,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch
@@ -320,13 +300,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 2,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch
@@ -361,13 +341,13 @@ func TestSyncClockCmd_Run(t *testing.T) {
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
 					WSMan:       mockWSMAN,
-					Password:    "test-test123",
 				},
 			},
 		}
 
 		ctx := &commands.Context{
-			AMTCommand: mockAMT,
+			AMTCommand:  mockAMT,
+			AMTPassword: "test-pass",
 		}
 
 		// Mock GetLowAccuracyTimeSynch with Ta0 = 0
@@ -393,16 +373,5 @@ func TestSyncClockCmd_Run(t *testing.T) {
 
 		err := cmd.Run(ctx)
 		assert.NoError(t, err)
-	})
-
-	t.Run("structure_validation", func(t *testing.T) {
-		cmd := &SyncClockCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-			},
-		}
-
-		// Verify command has required fields
-		assert.NotEmpty(t, cmd.Password)
 	})
 }
