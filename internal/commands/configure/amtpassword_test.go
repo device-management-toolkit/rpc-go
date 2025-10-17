@@ -22,10 +22,8 @@ func TestAMTPasswordCmd_Structure(t *testing.T) {
 	cmd := &AMTPasswordCmd{}
 
 	// Test basic field access to ensure struct is correct
-	cmd.Password = "test123"
 	cmd.NewPassword = "newtest456"
 
-	assert.Equal(t, "test123", cmd.Password)
 	assert.Equal(t, "newtest456", cmd.NewPassword)
 }
 
@@ -37,47 +35,23 @@ func TestAMTPasswordCmd_Validate(t *testing.T) {
 		description string
 	}{
 		{
-			name: "both_passwords_provided",
-			cmd: AMTPasswordCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "current123",
-					},
-				},
-				NewPassword: "new456",
-			},
+			name:        "new password provided",
+			cmd:         AMTPasswordCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, NewPassword: "new456"},
 			wantErr:     false,
-			description: "should succeed when both passwords are provided",
+			description: "should succeed when new password is provided",
 		},
 
 		{
-			name: "missing_new_password",
-			cmd: AMTPasswordCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "current123",
-					},
-				},
-				NewPassword: "", // Will be prompted
-			},
+			name:        "missing_new_password",
+			cmd:         AMTPasswordCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, NewPassword: ""},
 			wantErr:     true, // Will fail in test since no interactive input
 			description: "should prompt for new password when missing",
 		},
 		{
-			name: "both_passwords_missing",
-			cmd: AMTPasswordCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "",
-					},
-				},
-				NewPassword: "",
-			},
+			name:        "new password still missing",
+			cmd:         AMTPasswordCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, NewPassword: ""},
 			wantErr:     true,
-			description: "should fail when both passwords are missing",
+			description: "should fail when new password is missing",
 		},
 	}
 
@@ -102,20 +76,9 @@ func TestAMTPasswordCmd_Run(t *testing.T) {
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
 
 	t.Run("successful_password_change", func(t *testing.T) {
-		cmd := &AMTPasswordCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "current123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			NewPassword: "new456",
-		}
+		cmd := &AMTPasswordCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, NewPassword: "new456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock GetGeneralSettings
 		generalResponse := general.Response{
@@ -139,16 +102,13 @@ func TestAMTPasswordCmd_Run(t *testing.T) {
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 0, // Not activated
-					Password:    "current123",
 					WSMan:       mockWSMAN,
 				},
 			},
 			NewPassword: "new456",
 		}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -160,16 +120,13 @@ func TestAMTPasswordCmd_Run(t *testing.T) {
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1, // Set control mode to 1 (activated)
-					Password:    "current123",
 					WSMan:       mockWSMAN,
 				},
 			},
 			NewPassword: "new456",
 		}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock GetGeneralSettings to return an error
 		mockWSMAN.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("general settings error"))
@@ -184,16 +141,13 @@ func TestAMTPasswordCmd_Run(t *testing.T) {
 			ConfigureBaseCmd: ConfigureBaseCmd{
 				AMTBaseCmd: commands.AMTBaseCmd{
 					ControlMode: 1,
-					Password:    "current123",
 					WSMan:       mockWSMAN,
 				},
 			},
 			NewPassword: "new456",
 		}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock GetGeneralSettings
 		generalResponse := general.Response{
@@ -216,15 +170,12 @@ func TestAMTPasswordCmd_Run(t *testing.T) {
 	t.Run("structure_validation", func(t *testing.T) {
 		cmd := &AMTPasswordCmd{
 			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					Password: "current123",
-				},
+				AMTBaseCmd: commands.AMTBaseCmd{},
 			},
 			NewPassword: "new456",
 		}
 
 		// Verify command has required fields
-		assert.NotEmpty(t, cmd.Password)
 		assert.NotEmpty(t, cmd.NewPassword)
 	})
 }

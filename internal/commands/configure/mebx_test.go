@@ -18,14 +18,7 @@ import (
 )
 
 func TestMEBxCmd_Structure(t *testing.T) {
-	// Test that MEBxCmd has the correct structure
-	cmd := &MEBxCmd{}
-
-	// Test basic field access to ensure struct is correct
-	cmd.Password = "test123"
-	cmd.MEBxPassword = "mebx456"
-
-	assert.Equal(t, "test123", cmd.Password)
+	cmd := &MEBxCmd{MEBxPassword: "mebx456"}
 	assert.Equal(t, "mebx456", cmd.MEBxPassword)
 }
 
@@ -37,47 +30,23 @@ func TestMEBxCmd_Validate(t *testing.T) {
 		description string
 	}{
 		{
-			name: "both passwords provided",
-			cmd: MEBxCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
-				MEBxPassword: "mebx456",
-			},
+			name:        "mebx password provided",
+			cmd:         MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MEBxPassword: "mebx456"},
 			wantErr:     false,
-			description: "should succeed when both passwords are provided",
+			description: "should succeed when mebx password provided (AMT password now global)",
 		},
 
 		{
-			name: "missing MEBx password",
-			cmd: MEBxCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "amt123",
-					},
-				},
-				MEBxPassword: "", // Will be prompted
-			},
-			wantErr:     true, // Will fail in test since no interactive input
-			description: "should prompt for MEBx password when missing",
+			name:        "missing MEBx password",
+			cmd:         MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MEBxPassword: ""},
+			wantErr:     true,
+			description: "should fail when MEBx password missing",
 		},
 		{
-			name: "both passwords missing",
-			cmd: MEBxCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "",
-					},
-				},
-				MEBxPassword: "",
-			},
+			name:        "mebx password missing still fails",
+			cmd:         MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MEBxPassword: ""},
 			wantErr:     true,
-			description: "should fail when both passwords are missing",
+			description: "duplicate case to ensure consistency",
 		},
 	}
 
@@ -102,20 +71,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
 
 	t.Run("successful_mebx_configuration", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 2, // ACM mode
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock SetupMEBX
 		setupResponse := setupandconfiguration.Response{
@@ -132,20 +90,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("device_not_in_acm_mode", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 1,
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -153,20 +100,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("device_not_activated", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 0, // Not activated
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 0, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -174,20 +110,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("setupmebx_wsman_error", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 2, // ACM mode
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock SetupMEBX to return an error
 		mockWSMAN.EXPECT().SetupMEBX("mebx456").Return(setupandconfiguration.Response{}, errors.New("setup mebx error"))
@@ -198,20 +123,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("setupmebx_return_value_error", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 2, // ACM mode
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock SetupMEBX with non-zero return value indicating failure
 		setupResponse := setupandconfiguration.Response{
@@ -228,20 +142,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("control_mode_3_unsupported", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 3, // Unsupported mode
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 3, WSMan: mockWSMAN}}, MEBxPassword: "mebx456"}
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -249,20 +152,9 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("empty_mebx_password", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					ControlMode: 2, // ACM mode
-					Password:    "amt123",
-					WSMan:       mockWSMAN,
-				},
-			},
-			MEBxPassword: "", // Empty password
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2, WSMan: mockWSMAN}}, MEBxPassword: ""} // Empty password
 
-		ctx := &commands.Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Mock SetupMEBX with empty password
 		setupResponse := setupandconfiguration.Response{
@@ -279,17 +171,10 @@ func TestMEBxCmd_Run(t *testing.T) {
 	})
 
 	t.Run("structure_validation", func(t *testing.T) {
-		cmd := &MEBxCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{
-					Password: "amt123",
-				},
-			},
-			MEBxPassword: "mebx456",
-		}
+		cmd := &MEBxCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{}}, MEBxPassword: "mebx456"}
 
 		// Verify command has required fields
-		assert.NotEmpty(t, cmd.Password)
+		// Global AMT password no longer stored on command struct
 		assert.NotEmpty(t, cmd.MEBxPassword)
 	})
 }

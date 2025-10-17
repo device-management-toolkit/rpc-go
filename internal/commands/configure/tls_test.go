@@ -50,18 +50,8 @@ func addTimeSyncMocks(mockWSMan *mock.MockWSMANer) {
 }
 
 func TestTLSCmd_Structure(t *testing.T) {
-	// Test that TLSCmd has the correct structure
-	cmd := &TLSCmd{}
-
-	// Test basic field access to ensure struct is correct
-	cmd.Password = "test123"
-	cmd.Mode = "Server"
-	cmd.Delay = 5
-	cmd.EAAddress = "https://ea.example.com"
-	cmd.EAUsername = "testuser"
-	cmd.EAPassword = "testpass"
-
-	assert.Equal(t, "test123", cmd.Password)
+	// Password field removed from command struct (now global). Validate other fields.
+	cmd := &TLSCmd{Mode: "Server", Delay: 5, EAAddress: "https://ea.example.com", EAUsername: "testuser", EAPassword: "testpass"}
 	assert.Equal(t, "Server", cmd.Mode)
 	assert.Equal(t, 5, cmd.Delay)
 	assert.Equal(t, "https://ea.example.com", cmd.EAAddress)
@@ -76,71 +66,28 @@ func TestTLSCmd_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid command with password",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "Server",
-				Delay: 3,
-			},
+			name:    "valid command",
+			cmd:     &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "Server", Delay: 3},
 			wantErr: false,
 		},
 		{
-			name: "valid Enterprise Assistant configuration",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				EAAddress:  "https://ea.example.com",
-				EAUsername: "testuser",
-				EAPassword: "testpass",
-				Mode:       "Mutual",
-				Delay:      5,
-			},
+			name:    "valid Enterprise Assistant configuration",
+			cmd:     &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, EAAddress: "https://ea.example.com", EAUsername: "testuser", EAPassword: "testpass", Mode: "Mutual", Delay: 5},
 			wantErr: false,
 		},
 		{
-			name: "invalid - negative delay",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-				},
-				Mode:  "Server",
-				Delay: -1,
-			},
+			name:    "invalid - negative delay",
+			cmd:     &TLSCmd{Mode: "Server", Delay: -1},
 			wantErr: true,
 		},
 		{
-			name: "invalid - incomplete EA configuration",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-				},
-				EAAddress:  "https://ea.example.com",
-				EAUsername: "testuser",
-				// Missing EAPassword
-				Mode: "Server",
-			},
+			name:    "invalid - incomplete EA configuration",
+			cmd:     &TLSCmd{EAAddress: "https://ea.example.com", EAUsername: "testuser", Mode: "Server"},
 			wantErr: true,
 		},
 		{
-			name: "invalid - bad EA URL",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-				},
-				Mode:       "Server",
-				EAAddress:  "invalid-url",
-				EAUsername: "testuser",
-				EAPassword: "testpass",
-			},
+			name:    "invalid - bad EA URL",
+			cmd:     &TLSCmd{Mode: "Server", EAAddress: "invalid-url", EAUsername: "testuser", EAPassword: "testpass"},
 			wantErr: true,
 		},
 	}
@@ -167,16 +114,7 @@ func TestTLSCmd_Run(t *testing.T) {
 	}{
 		{
 			name: "successful_TLS_disabled_mode",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "None",
-				Delay: 0,
-			},
+			cmd:  &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "None", Delay: 0},
 			setupMocks: func(m *mock.MockWSMANer) {
 				// Mock successful TLS configuration for disabled mode
 				enumerateResp := tls.Response{
@@ -223,16 +161,7 @@ func TestTLSCmd_Run(t *testing.T) {
 		},
 		{
 			name: "enumerate_TLS_settings_error",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "None",
-				Delay: 0,
-			},
+			cmd:  &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "None", Delay: 0},
 			setupMocks: func(m *mock.MockWSMANer) {
 				m.EXPECT().EnumerateTLSSettingData().Return(tls.Response{}, errors.New("enumerate error"))
 			},
@@ -241,16 +170,7 @@ func TestTLSCmd_Run(t *testing.T) {
 		},
 		{
 			name: "pull_TLS_settings_error",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "None",
-				Delay: 0,
-			},
+			cmd:  &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "None", Delay: 0},
 			setupMocks: func(m *mock.MockWSMANer) {
 				enumerateResp := tls.Response{
 					Body: tls.Body{
@@ -267,16 +187,7 @@ func TestTLSCmd_Run(t *testing.T) {
 		},
 		{
 			name: "commit_changes_error",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "None",
-				Delay: 0,
-			},
+			cmd:  &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "None", Delay: 0},
 			setupMocks: func(m *mock.MockWSMANer) {
 				enumerateResp := tls.Response{
 					Body: tls.Body{
@@ -313,16 +224,7 @@ func TestTLSCmd_Run(t *testing.T) {
 		},
 		{
 			name: "invalid_TLS_mode",
-			cmd: &TLSCmd{
-				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						ControlMode: 1,
-						Password:    "test-test123",
-					},
-				},
-				Mode:  "InvalidMode",
-				Delay: 0,
-			},
+			cmd:  &TLSCmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, Mode: "InvalidMode", Delay: 0},
 			setupMocks: func(m *mock.MockWSMANer) {
 				// No mocks needed as validation should fail early
 			},
@@ -348,7 +250,8 @@ func TestTLSCmd_Run(t *testing.T) {
 
 			tt.cmd.WSMan = mockWSMan
 			ctx := &commands.Context{
-				AMTCommand: mockAMT,
+				AMTCommand:  mockAMT,
+				AMTPassword: "test-pass",
 			}
 
 			err := tt.cmd.Run(ctx)
@@ -366,19 +269,9 @@ func TestTLSCmd_Run(t *testing.T) {
 	}
 
 	t.Run("structure_validation", func(t *testing.T) {
-		cmd := &TLSCmd{
-			ConfigureBaseCmd: ConfigureBaseCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: "test-test123"},
-			},
-			EAAddress:  "https://ea.example.com",
-			EAUsername: "testuser",
-			EAPassword: "testpass",
-			Mode:       "Mutual",
-			Delay:      5,
-		}
+		cmd := &TLSCmd{EAAddress: "https://ea.example.com", EAUsername: "testuser", EAPassword: "testpass", Mode: "Mutual", Delay: 5}
 
-		// Verify command has required fields
-		assert.NotEmpty(t, cmd.Password)
+		// Verify command has required fields (password now global)
 		assert.NotEmpty(t, cmd.Mode)
 		assert.Equal(t, 5, cmd.Delay)
 		assert.NotEmpty(t, cmd.EAAddress)

@@ -111,7 +111,6 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				CCM:                 true,
 				DNS:                 "test.dns",
 				Hostname:            "test-host",
-				AMTBaseCmd:          commands.AMTBaseCmd{Password: "password123"},
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
 				FriendlyName:        "test-device",
@@ -134,14 +133,17 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				ACM: true,
 			},
 			want: LocalActivationConfig{
-				Mode: ModeACM,
+				Mode:        ModeACM,
+				AMTPassword: "password123",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.cmd.toActivationConfig()
+			ctx := &commands.Context{AMTPassword: "password123"}
+
+			got := tt.cmd.toActivationConfig(ctx)
 			if got != tt.want {
 				t.Errorf("LocalActivateCmd.toActivationConfig() = %v, want %v", got, tt.want)
 			}
@@ -486,42 +488,8 @@ func TestLocalActivationService_enableAMT(t *testing.T) {
 	}
 }
 
-func TestLocalActivateCmd_ensurePasswordProvided(t *testing.T) {
-	tests := []struct {
-		name     string
-		password string
-		wantCall bool
-	}{
-		{
-			name:     "password already provided",
-			password: "existing-password",
-			wantCall: false,
-		},
-		{
-			name:     "password empty",
-			password: "",
-			wantCall: true, // Would call password reader, but we can't test that easily
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &LocalActivateCmd{
-				AMTBaseCmd: commands.AMTBaseCmd{Password: tt.password},
-				ACM:        true,
-			}
-
-			// We can only test the case where password is already provided
-			// because testing the password prompt would require mocking stdin
-			if tt.password != "" {
-				err := cmd.Validate()
-				if err != nil {
-					t.Errorf("ensurePasswordProvided() with existing password should not error, got %v", err)
-				}
-			}
-		})
-	}
-}
+// Removed password prompt test: password now supplied via global context (EnsureAMTPassword),
+// interactive prompt behavior covered in base tests.
 
 func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 	tests := []struct {
@@ -645,32 +613,21 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name: "error during AMT state validation",
-			cmd: LocalActivateCmd{
-				CCM:        true,
-				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
-			},
+			name:          "error during AMT state validation",
+			cmd:           LocalActivateCmd{CCM: true},
 			controlMode:   0,
 			shouldErrorOn: "GetControlMode",
 			wantErr:       true,
 		},
 		{
-			name: "CCM activation will fail during WSMAN setup (expected)",
-			cmd: LocalActivateCmd{
-				CCM:        true,
-				AMTBaseCmd: commands.AMTBaseCmd{Password: "password123"},
-			},
+			name:        "CCM activation will fail during WSMAN setup (expected)",
+			cmd:         LocalActivateCmd{CCM: true},
 			controlMode: 0,
 			wantErr:     true, // Expect error due to missing WSMAN infrastructure
 		},
 		{
-			name: "ACM activation will fail during certificate processing (expected)",
-			cmd: LocalActivateCmd{
-				ACM:                 true,
-				AMTBaseCmd:          commands.AMTBaseCmd{Password: "password123"},
-				ProvisioningCert:    "dGVzdC1jZXJ0", // base64 encoded "test-cert"
-				ProvisioningCertPwd: "cert-password",
-			},
+			name:        "ACM activation will fail during certificate processing (expected)",
+			cmd:         LocalActivateCmd{ACM: true, ProvisioningCert: "dGVzdC1jZXJ0", ProvisioningCertPwd: "cert-password"},
 			controlMode: 0,
 			wantErr:     true, // Expect error due to invalid certificate
 		},
@@ -1100,7 +1057,7 @@ func TestLocalActivateCmd_Run_PasswordPrompting(t *testing.T) {
 	// but we can test the logic path
 	cmd := &LocalActivateCmd{
 		CCM:        true,
-		AMTBaseCmd: commands.AMTBaseCmd{Password: ""}, // Empty password
+		AMTBaseCmd: commands.AMTBaseCmd{}, // Password supplied via context globally
 	}
 
 	mockAMT := &MockAMTCommand{

@@ -7,6 +7,7 @@ go 1.24.0
 
 require (
 	github.com/alecthomas/kong v1.12.1
+	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/device-management-toolkit/go-wsman-messages/v2 v2.32.3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
