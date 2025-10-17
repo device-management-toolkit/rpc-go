@@ -24,13 +24,11 @@ func TestAMTFeaturesCmd_Structure(t *testing.T) {
 	cmd := &AMTFeaturesCmd{}
 
 	// Test basic field access to ensure struct is correct
-	cmd.Password = "test123"
 	cmd.UserConsent = "kvm"
 	cmd.KVM = true
 	cmd.SOL = true
 	cmd.IDER = false
 
-	assert.Equal(t, "test123", cmd.Password)
 	assert.Equal(t, "kvm", cmd.UserConsent)
 	assert.Equal(t, true, cmd.KVM)
 	assert.Equal(t, true, cmd.SOL)
@@ -48,10 +46,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "password provided with KVM feature",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				UserConsent: "kvm",
 				KVM:         true,
@@ -63,10 +58,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "password provided with SOL feature",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				SOL: true,
 			},
@@ -77,10 +69,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "password provided with IDER feature",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				IDER: true,
 			},
@@ -91,10 +80,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "password provided with UserConsent",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				UserConsent: "none",
 			},
@@ -105,10 +91,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "no features specified",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				UserConsent: "", // No value provided
 				KVM:         false,
@@ -122,10 +105,7 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			name: "multiple features enabled",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
-					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
-						ControlMode: 1, // Device is activated
-					},
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1},
 				},
 				UserConsent: "all",
 				KVM:         true,
@@ -159,17 +139,14 @@ func TestAMTFeaturesCmd_Run_DeviceNotActivated(t *testing.T) {
 
 	cmd := &AMTFeaturesCmd{
 		ConfigureBaseCmd: ConfigureBaseCmd{
-			AMTBaseCmd: commands.AMTBaseCmd{
-				Password:    "test123",
-				WSMan:       mockWSMAN,
-				ControlMode: 0, // Set control mode to 0 (not activated)
-			},
+			AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN, ControlMode: 0},
 		},
 		KVM: true,
 	}
 
 	ctx := &commands.Context{
-		AMTCommand: mockAMT,
+		AMTCommand:  mockAMT,
+		AMTPassword: "test-pass",
 	}
 
 	err := cmd.Run(ctx)
@@ -186,18 +163,12 @@ func TestAMTFeaturesCmd_Run_GetControlModeError(t *testing.T) {
 
 	cmd := &AMTFeaturesCmd{
 		ConfigureBaseCmd: ConfigureBaseCmd{
-			AMTBaseCmd: commands.AMTBaseCmd{
-				Password:    "test123",
-				WSMan:       mockWSMAN,
-				ControlMode: 0, // Set control mode to 0 (not activated)
-			},
+			AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN, ControlMode: 0},
 		},
 		KVM: true,
 	}
 
-	ctx := &commands.Context{
-		AMTCommand: mockAMT,
-	}
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 	// With the new structure, control mode errors are handled during initialization
 	// so this test now checks for device not activated error
@@ -215,18 +186,12 @@ func TestAMTFeaturesCmd_Run_CCMMode_KVMFeature(t *testing.T) {
 
 	cmd := &AMTFeaturesCmd{
 		ConfigureBaseCmd: ConfigureBaseCmd{
-			AMTBaseCmd: commands.AMTBaseCmd{
-				Password:    "test123",
-				WSMan:       mockWSMAN,
-				ControlMode: 1, // Set control mode to 1 (CCM mode)
-			},
+			AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN, ControlMode: 1},
 		},
 		KVM: true,
 	}
 
-	ctx := &commands.Context{
-		AMTCommand: mockAMT,
-	}
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 	// Mock GetRedirectionService
 	redirectionResponse := redirection.Response{
@@ -269,7 +234,6 @@ func TestAMTFeaturesCmd_Run_ACMMode_WithUserConsent(t *testing.T) {
 	cmd := &AMTFeaturesCmd{
 		ConfigureBaseCmd: ConfigureBaseCmd{
 			AMTBaseCmd: commands.AMTBaseCmd{
-				Password:    "test123",
 				WSMan:       mockWSMAN,
 				ControlMode: 2, // Set control mode to 2 (ACM mode)
 			},
@@ -279,7 +243,8 @@ func TestAMTFeaturesCmd_Run_ACMMode_WithUserConsent(t *testing.T) {
 	}
 
 	ctx := &commands.Context{
-		AMTCommand: mockAMT,
+		AMTCommand:  mockAMT,
+		AMTPassword: "test-pass",
 	}
 
 	// Mock GetRedirectionService
@@ -345,7 +310,6 @@ func TestAMTFeaturesCmd_Run_ISMSystem(t *testing.T) {
 	cmd := &AMTFeaturesCmd{
 		ConfigureBaseCmd: ConfigureBaseCmd{
 			AMTBaseCmd: commands.AMTBaseCmd{
-				Password:    "test123",
 				WSMan:       mockWSMAN,
 				ControlMode: 1, // Set control mode to 1 (CCM mode)
 			},
@@ -355,7 +319,8 @@ func TestAMTFeaturesCmd_Run_ISMSystem(t *testing.T) {
 	}
 
 	ctx := &commands.Context{
-		AMTCommand: mockAMT,
+		AMTCommand:  mockAMT,
+		AMTPassword: "test-pass",
 	}
 
 	// Mock GetRedirectionService
@@ -500,7 +465,6 @@ func TestAMTFeaturesCmd_Run_Errors(t *testing.T) {
 			cmd := &AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{
 					AMTBaseCmd: commands.AMTBaseCmd{
-						Password:    "test123",
 						WSMan:       mockWSMAN,
 						ControlMode: 1, // Set control mode to 1 (activated)
 					},
@@ -509,7 +473,8 @@ func TestAMTFeaturesCmd_Run_Errors(t *testing.T) {
 			}
 
 			ctx := &commands.Context{
-				AMTCommand: mockAMT,
+				AMTCommand:  mockAMT,
+				AMTPassword: "test-pass",
 			}
 
 			tt.setupMocks(mockWSMAN, mockAMT)

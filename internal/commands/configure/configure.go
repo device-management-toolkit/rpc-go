@@ -14,16 +14,20 @@ type ConfigureBaseCmd struct {
 	commands.AMTBaseCmd
 }
 
-// Validate implements Kong's Validate interface for configure commands
-func (cmd *ConfigureBaseCmd) Validate() error {
-	// Call base validation if password is required
-	if cmd.RequiresAMTPassword() {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
-		}
+// Validate currently performs no password prompting; password acquisition and
+// WSMAN client setup are deferred to Run via EnsureRuntime to centralize
+// prompting behavior after context construction.
+func (cmd *ConfigureBaseCmd) Validate() error { return nil }
+
+// EnsureRuntime performs the lazy initialization steps common to all configure
+// subcommands: obtain AMT password (if required) and establish the WSMAN
+// client. It should be called at the top of each Run method.
+func (cmd *ConfigureBaseCmd) EnsureRuntime(ctx *commands.Context) error {
+	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+		return err
 	}
 
-	return nil
+	return cmd.EnsureWSMAN(ctx)
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password

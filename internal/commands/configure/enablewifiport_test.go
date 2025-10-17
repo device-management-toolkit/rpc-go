@@ -37,7 +37,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi with sync and sharing enabled
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil)
@@ -60,7 +62,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("wifi enable failed"))
@@ -85,7 +89,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return a connection error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("connection timeout"))
@@ -110,7 +116,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an authentication error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("authentication failed"))
@@ -173,7 +181,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to be called multiple times
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil).Times(3)
@@ -203,7 +213,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return a WiFi not available error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("WiFi hardware not available"))
@@ -228,7 +240,9 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 			},
 		}
 
-		ctx := &commands.Context{}
+		ctx := &commands.Context{
+			AMTPassword: "test-pass",
+		}
 
 		// Mock EnableWiFi to return an AMT not provisioned error
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("AMT not provisioned"))
