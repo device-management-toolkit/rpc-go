@@ -350,8 +350,9 @@ func (g *GoWSMANMessages) EnableWiFi(enableSync, uefiWiFiSync bool) error {
 		syncState = wifiportconfiguration.UnrestrictedSync
 	}
 
-	// if local sync not enable, enable it
-	if response.Body.WiFiPortConfigurationService.LocalProfileSynchronizationEnabled != syncState {
+	// Apply configuration when either local sync state or UEFI profile share differs
+	if response.Body.WiFiPortConfigurationService.LocalProfileSynchronizationEnabled != syncState ||
+		response.Body.WiFiPortConfigurationService.UEFIWiFiProfileShareEnabled != uefiWiFiSyncState {
 		putRequest := wifiportconfiguration.WiFiPortConfigurationServiceRequest{
 			RequestedState:                     response.Body.WiFiPortConfigurationService.RequestedState,
 			EnabledState:                       response.Body.WiFiPortConfigurationService.EnabledState,

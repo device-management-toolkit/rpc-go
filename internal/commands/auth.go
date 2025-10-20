@@ -27,6 +27,7 @@ type ServerAuthFlags struct {
 // If required is false, this performs no validation.
 func (a *ServerAuthFlags) ValidateRequired(required bool) error {
 	logrus.Debugf("validating server auth flags")
+
 	if !required {
 		return nil
 	}

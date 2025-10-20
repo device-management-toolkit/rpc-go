@@ -64,6 +64,7 @@ func (f *ProfileFetcher) FetchProfile() (config.Configuration, error) {
 	token := f.Token
 	if token == "" && f.Username != "" && f.Password != "" {
 		logrus.Debug("no token provided, attempting authentication with username/password")
+
 		t, err := f.authenticate()
 		if err != nil {
 			return cfg, fmt.Errorf("authentication failed: %w", err)

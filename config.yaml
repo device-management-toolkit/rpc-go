@@ -137,8 +137,10 @@ configure:
   # --- Sync Hostname ---
   sync-hostname:
 
-  # --- Enable WiFi Port ---
-  enablewifiport:
+  # --- WiFi Sync (WiFi port + sync settings) ---
+  wifisync:
+    oswifisync: true         # true|false - sync AMT WiFi profiles with OS profiles
+    uefiwifisync: true       # true|false - enable UEFI WiFi profile share (if supported)
 
 ################################################################################
 # End of sample configuration.

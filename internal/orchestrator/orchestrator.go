@@ -108,7 +108,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 	// Step 5: Enable WiFi port if needed
 	if err := po.executeEnableWiFi(); err != nil {
-		return fmt.Errorf("WiFi port enable failed: %w", err)
+		return fmt.Errorf("WiFi sync enable failed: %w", err)
 	}
 
 	// Step 6: Wireless profile configurations
@@ -400,20 +400,18 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 // executeEnableWiFi enables WiFi port if needed
 func (po *ProfileOrchestrator) executeEnableWiFi() error {
-	if !po.profile.Configuration.Network.Wireless.WiFiSyncEnabled {
-		log.Info("WiFi sync not enabled, skipping WiFi port enable")
-
-		return nil
-	}
-
-	log.Info("Executing WiFi sync enable")
+	log.Info("Executing WiFi sync configuration")
 
 	args := []string{"rpc"}
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
 
-	args = append(args, "configure", "enablewifisync")
+	args = append(args, "configure", "wifisync")
+
+	// Pass through explicit values from the strongly-typed profile
+	args = append(args, "--oswifisync", strconv.FormatBool(po.profile.Configuration.Network.Wireless.WiFiSyncEnabled))
+	args = append(args, "--uefiwifisync", strconv.FormatBool(po.profile.Configuration.Network.Wireless.UEFIWiFiSyncEnabled))
 
 	return po.executeWithPasswordFallback(args)
 }
