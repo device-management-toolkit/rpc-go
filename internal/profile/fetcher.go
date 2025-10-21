@@ -72,7 +72,7 @@ func (f *ProfileFetcher) FetchProfile() (config.Configuration, error) {
 
 		token = t
 	} else {
-		logrus.Debug("using provided token for profile fetch" + token)
+		logrus.Debug("using provided token for profile fetch")
 	}
 
 	body, err := f.fetchData(f.URL, token)

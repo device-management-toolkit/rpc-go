@@ -642,7 +642,7 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 		args = append(args, "--password", po.globalPassword)
 	}
 
-	args = append(args, "configure", "amtpassword", "--password", newPass, "--newamtpassword", newPass)
+	args = append(args, "configure", "amtpassword", "--newamtpassword", newPass)
 
 	return po.executeWithPasswordFallback(args)
 }
