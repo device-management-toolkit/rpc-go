@@ -223,7 +223,7 @@ func (f *Flags) handleConfigureCommand() error {
 }
 
 func (f *Flags) handleChangeAMTPassword() error {
-	fs := f.NewConfigureFlagSet(utils.SubCommandChangeAMTPassword)
+	fs := flag.NewFlagSet(utils.SubCommandChangeAMTPassword, flag.ContinueOnError)
 	fs.StringVar(&f.NewPassword, "newamtpassword", "", "New AMT password")
 
 	if len(f.commandLineArgs) > 3 {
@@ -268,14 +268,10 @@ func (f *Flags) handleSetAMTFeatures() error {
 		return utils.IncorrectCommandLineParameters
 	}
 
-	f.flagSetAMTFeatures.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	f.flagSetAMTFeatures.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	f.flagSetAMTFeatures.BoolVar(&f.JsonOutput, "json", false, "JSON output")
 	f.flagSetAMTFeatures.StringVar(&f.UserConsent, "userConsent", "", "Sets userconsent (ACM only): kvm, all, none")
 	f.flagSetAMTFeatures.BoolVar(&f.KVM, "kvm", false, "Enables or Disables KVM (Keyboard, Video, Mouse)")
 	f.flagSetAMTFeatures.BoolVar(&f.SOL, "sol", false, "Enables or Disables SOL (Serial Over LAN)")
 	f.flagSetAMTFeatures.BoolVar(&f.IDER, "ider", false, "Enables or Disables IDER (IDE Redirection)")
-	f.flagSetAMTFeatures.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	// V2 features
 	f.flagSetAMTFeatures.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
@@ -322,10 +318,6 @@ func (f *Flags) handleSetAMTFeatures() error {
 }
 
 func (f *Flags) handleMEBxPassword() error {
-	f.flagSetMEBx.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	f.flagSetMEBx.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	f.flagSetMEBx.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetMEBx.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 	f.flagSetMEBx.StringVar(&f.MEBxPassword, "mebxpassword", utils.LookupEnv("MEBX_PASSWORD"), "MEBX password")
 	// V2 features
 	f.flagSetMEBx.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")
@@ -371,11 +363,6 @@ func (f *Flags) handleEnableWifiPort() error {
 
 		return utils.IncorrectCommandLineParameters
 	}
-
-	f.flagSetEnableWifiPort.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	f.flagSetEnableWifiPort.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	f.flagSetEnableWifiPort.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetEnableWifiPort.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	if err := f.flagSetEnableWifiPort.Parse(f.commandLineArgs[3:]); err != nil {
 		f.printConfigurationUsage()
@@ -439,19 +426,8 @@ func (f *Flags) handleCIRA() error {
 	return nil
 }
 
-func (f *Flags) NewConfigureFlagSet(subCommand string) *flag.FlagSet {
-	fs := flag.NewFlagSet(subCommand, flag.ContinueOnError)
-	// these flags are common to all configuration commands
-	fs.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	fs.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	fs.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	fs.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
-
-	return fs
-}
-
 func (f *Flags) handleConfigureTLS() error {
-	fs := f.NewConfigureFlagSet(utils.SubCommandConfigureTLS)
+	fs := f.flagSetTLS
 	tlsModeUsage := fmt.Sprintf("TLS authentication usage model (%s) (default %s)", TLSModesToString(), f.ConfigTLSInfo.TLSMode)
 	fs.Func("mode", tlsModeUsage, func(flagValue string) error {
 		var e error
@@ -582,10 +558,6 @@ func (f *Flags) handleAddEthernetSettings() error {
 	f.flagSetAddEthernetSettings.Func("primarydns", "Primary DNS to be assigned to AMT", validateIP(&wiredSettings.PrimaryDNS))
 	f.flagSetAddEthernetSettings.Func("secondarydns", "Secondary DNS to be assigned to AMT", validateIP(&wiredSettings.SecondaryDNS))
 	f.flagSetAddEthernetSettings.StringVar(&wiredSettings.Ieee8021xProfileName, "ieee8021xProfileName", "", "specify 802.1x profile name")
-	f.flagSetAddEthernetSettings.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	f.flagSetAddEthernetSettings.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	f.flagSetAddEthernetSettings.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetAddEthernetSettings.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
 
 	ieee8021xCfg := config.Ieee8021xConfig{}
 	f.flagSetAddEthernetSettings.StringVar(&ieee8021xCfg.Username, "username", "", "specify username")
@@ -818,10 +790,7 @@ func (f *Flags) handleAddWifiSettings() error {
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.ClientCert, "clientCert", "", "specify client certificate")
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.CACert, "caCert", "", "specify CA certificate")
 	f.flagSetAddWifiSettings.StringVar(&ieee8021xCfg.PrivateKey, "privateKey", utils.LookupEnv("IEE8021X_PRIVATE_KEY"), "specify private key")
-	f.flagSetAddWifiSettings.BoolVar(&f.Verbose, "v", false, "Verbose output")
-	f.flagSetAddWifiSettings.StringVar(&f.LogLevel, "l", "info", "Log level (panic,fatal,error,warn,info,debug,trace)")
-	f.flagSetAddWifiSettings.BoolVar(&f.JsonOutput, "json", false, "JSON output")
-	f.flagSetAddWifiSettings.StringVar(&f.Password, "password", utils.LookupEnv("AMT_PASSWORD"), "AMT password")
+
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAAddress, "eaAddress", "", "Enterprise Assistant address")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAUsername, "eaUsername", "", "Enterprise Assistant username")
 	f.flagSetAddWifiSettings.StringVar(&eaSettings.EAPassword, "eaPassword", "", "Enterprise Assistant password")

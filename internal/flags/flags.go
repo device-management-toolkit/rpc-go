@@ -104,6 +104,7 @@ type Flags struct {
 	flagSetCIRA                         *flag.FlagSet
 	flagSetMEBx                         *flag.FlagSet
 	flagSetAMTFeatures                  *flag.FlagSet
+	flagSetTLS                          *flag.FlagSet
 	AmtCommand                          amt.AMTCommand
 	netEnumerator                       NetEnumerator
 	IpConfiguration                     IPConfiguration
@@ -150,6 +151,7 @@ func NewFlags(args []string, pr utils.PasswordReader) *Flags {
 	flags.flagSetMEBx = flag.NewFlagSet(utils.SubCommandSetMEBx, flag.ContinueOnError)
 	flags.flagSetAMTFeatures = flag.NewFlagSet(utils.SubCommandSetAMTFeatures, flag.ContinueOnError)
 	flags.flagSetCIRA = flag.NewFlagSet(utils.SubCommandCIRA, flag.ContinueOnError)
+	flags.flagSetTLS = flag.NewFlagSet(utils.SubCommandConfigureTLS, flag.ContinueOnError)
 
 	flags.AmtCommand = amt.NewAMTCommand()
 	flags.netEnumerator = NetEnumerator{}
@@ -224,6 +226,13 @@ func (f *Flags) setupCommonFlags() {
 		f.amtMaintenanceSyncClockCommand,
 		f.amtMaintenanceSyncHostnameCommand,
 		f.amtMaintenanceSyncIPCommand,
+		f.flagSetAddEthernetSettings,
+		f.flagSetAddWifiSettings,
+		f.flagSetEnableWifiPort,
+		f.flagSetMEBx,
+		f.flagSetAMTFeatures,
+		f.flagSetCIRA,
+		f.flagSetTLS,
 	} {
 		fs.StringVar(&f.URL, "u", "", "Websocket address of server to activate against") // required
 		fs.BoolVar(&f.SkipCertCheck, "n", false, "Skip Websocket server certificate verification")
