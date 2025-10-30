@@ -42,7 +42,7 @@ type WSMANer interface {
 	HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error)
 	GetHostBasedSetupService() (hostbasedsetup.Response, error)
 	AddNextCertInChain(cert string, isLeaf, isRoot bool) (hostbasedsetup.Response, error)
-	HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error)
+	HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string, isUpgrade bool) (hostbasedsetup.Response, error)
 	SetupMEBX(string) (response setupandconfiguration.Response, err error)
 	GetSetupAndConfigurationService() (setupandconfiguration.Response, error)
 	GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error)

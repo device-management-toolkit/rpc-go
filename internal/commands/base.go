@@ -139,7 +139,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	if resp.IsTlsEnforcedOnLocalPorts() {
 		cmd.LocalTLSEnforced = true
 
-		log.Trace("TLS is enforced on local ports")
+		log.Info("TLS is enforced on local ports")
 	}
 
 	// We no longer build WSMAN here. Control mode + TLS enforcement only.

@@ -135,7 +135,11 @@ func (g *GoWSMANMessages) AddNextCertInChain(cert string, isLeaf, isRoot bool) (
 	return g.wsmanMessages.IPS.HostBasedSetupService.AddNextCertInChain(cert, isLeaf, isRoot)
 }
 
-func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
+func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string, isUpgrade bool) (hostbasedsetup.Response, error) {
+	if isUpgrade {
+		return g.wsmanMessages.IPS.HostBasedSetupService.UpgradeClientToAdmin(base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
+	}
+
 	return g.wsmanMessages.IPS.HostBasedSetupService.AdminSetup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password, base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
 }
 
