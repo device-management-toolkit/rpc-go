@@ -1,3 +1,14 @@
+# [3.0.0-beta.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v3.0.0-beta.1) (2025-11-05)
+
+
+* feat!: begin 3.0 beta series ([a888af2](https://github.com/device-management-toolkit/rpc-go/commit/a888af26c2a1f98c8fa815172a34cb77fe472f8c))
+
+
+### BREAKING CHANGES
+
+* see migration-guide.md for the command and flag syntax overhaul, profile/config realignment,
+and the new restful profile activation flow.
+
 ## [2.48.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.1...v2.48.2) (2025-07-03)
 
 
