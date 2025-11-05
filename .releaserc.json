@@ -1,6 +1,9 @@
 {
   "branches": [
-    "main",
+    {
+      "name": "main",
+      "prerelease": true
+    },
     {
       "name": "2.x.x",
       "range": "2.x",
