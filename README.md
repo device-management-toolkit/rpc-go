@@ -14,6 +14,12 @@ The Remote Provisioning Client (RPC) is an application that assists with activat
 
 ---
 
+## v3.0.0 Beta
+
+The current `next` channel publishes the **v3.0.0 beta** series, introducing the new restful profile activation flow, refreshed flag syntax, and CLI/config naming alignment. These changes are **breaking** relative to the v2.x line. To learn more,read about the guidance in the [v3 Changes](./v3.0-changes.md). The v2.x maintenance branch continues to receive updates for teams that are not ready to adopt the beta yet.
+
+---
+
 **For detailed documentation** about Getting Started or other features of the Device Management Toolkit, see the [docs](https://device-management-toolkit.github.io/docs/).
 
 ---
@@ -130,6 +136,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 ## Additional Resources
 
 - For detailed documentation and Getting Started, [visit the docs site](https://device-management-toolkit.github.io/docs).
+- Planning to move to v3? Read the [v3 Migration Guide](./migration-guide.md) for breaking changes and upgrade steps.
 
 - Looking to contribute? [Find more information here about contribution guidelines and practices](.\CONTRIBUTING.md).
 
