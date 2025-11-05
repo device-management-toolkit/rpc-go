@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -24,21 +23,21 @@ type AMTActivationServer struct {
 	Proxy string
 }
 
-func ExecuteCommand(flags *flags.Flags) error {
-	setCommandMethod(flags)
+func ExecuteCommand(req *Request) error {
+	setCommandMethod(req)
 
-	startMessage, err := PrepareInitialMessage(flags)
+	startMessage, err := PrepareInitialMessage(req)
 	if err != nil {
 		return err
 	}
 
 	config := ExecutorConfig{
-		URL:              flags.URL,
-		Proxy:            flags.Proxy,
-		LocalTlsEnforced: flags.LocalTlsEnforced,
-		SkipAmtCertCheck: flags.SkipAmtCertCheck,
-		ControlMode:      flags.ControlMode,
-		SkipCertCheck:    flags.SkipCertCheck,
+		URL:              req.URL,
+		Proxy:            req.Proxy,
+		LocalTlsEnforced: req.LocalTlsEnforced,
+		SkipAmtCertCheck: req.SkipAmtCertCheck,
+		ControlMode:      req.ControlMode,
+		SkipCertCheck:    req.SkipCertCheck,
 	}
 
 	executor, err := NewExecutor(config)
@@ -51,7 +50,7 @@ func ExecuteCommand(flags *flags.Flags) error {
 	return nil
 }
 
-func setCommandMethod(flags *flags.Flags) {
+func setCommandMethod(flags *Request) {
 	switch flags.Command {
 	case utils.CommandActivate:
 		flags.Command += " --profile " + flags.Profile
@@ -86,7 +85,7 @@ func NewAMTActivationServer(URL, proxy string) AMTActivationServer {
 	return amtactivationserver
 }
 
-func PrepareInitialMessage(flags *flags.Flags) (Message, error) {
+func PrepareInitialMessage(flags *Request) (Message, error) {
 	payload := NewPayload()
 
 	return payload.CreateMessageRequest(*flags)

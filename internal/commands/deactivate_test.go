@@ -64,34 +64,18 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 			wantErr: "-u flag is required when not using local mode",
 		},
 		{
-			name: "valid local mode",
-			cmd: DeactivateCmd{
-				AMTBaseCmd: AMTBaseCmd{
-					Password: utils.TestPassword,
-				},
-				Local: true,
-			},
+			name:    "valid local mode",
+			cmd:     DeactivateCmd{Local: true},
 			wantErr: "",
 		},
 		{
-			name: "valid remote mode",
-			cmd: DeactivateCmd{
-				AMTBaseCmd: AMTBaseCmd{
-					Password: utils.TestPassword,
-				},
-				URL: "https://example.com",
-			},
+			name:    "valid remote mode",
+			cmd:     DeactivateCmd{URL: "https://example.com"},
 			wantErr: "",
 		},
 		{
-			name: "valid local with partial",
-			cmd: DeactivateCmd{
-				AMTBaseCmd: AMTBaseCmd{
-					Password: utils.TestPassword,
-				},
-				Local:              true,
-				PartialUnprovision: true,
-			},
+			name:    "valid local with partial",
+			cmd:     DeactivateCmd{Local: true, PartialUnprovision: true},
 			wantErr: "",
 		},
 	}
@@ -110,42 +94,14 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 	}
 }
 
-func TestDeactivateCmd_EnsurePasswordProvided(t *testing.T) {
-	// Save original password reader
-	originalPR := utils.PR
-
-	t.Run("password already provided", func(t *testing.T) {
-		cmd := &DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: "existing-password"}, Local: true}
-		err := cmd.ValidatePasswordIfNeeded(cmd)
-		assert.NoError(t, err)
-		assert.Equal(t, "existing-password", cmd.GetPassword())
-	})
-
-	t.Run("password prompted successfully", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderSuccess{}
-		cmd := &DeactivateCmd{Local: true}
-		err := cmd.ValidatePasswordIfNeeded(cmd)
-		assert.NoError(t, err)
-		assert.Equal(t, utils.TestPassword, cmd.GetPassword())
-	})
-
-	t.Run("password prompt fails", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderFail{}
-		cmd := &DeactivateCmd{Local: true}
-		err := cmd.ValidatePasswordIfNeeded(cmd)
-		assert.Error(t, err)
-	})
-
-	// Restore original password reader
-	utils.PR = originalPR
-}
+// Removed TestDeactivateCmd_EnsurePasswordProvided: password handling now centralized via context + EnsureAMTPassword.
 
 func TestDeactivateCmd_SetupTLSConfig(t *testing.T) {
 	cmd := &DeactivateCmd{}
 
 	t.Run("TLS enforced", func(t *testing.T) {
 		cmd.LocalTLSEnforced = true
-		ctx := &Context{SkipCertCheck: true, ControlMode: ControlModeACM}
+		ctx := &Context{SkipCertCheck: true, SkipAMTCertCheck: true, ControlMode: ControlModeACM}
 		tlsConfig := cmd.setupTLSConfig(ctx)
 		assert.NotNil(t, tlsConfig)
 	})
@@ -166,7 +122,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set the control mode directly since it's now stored in AMTBaseCmd
 		cmd.ControlMode = ControlModeCCM
@@ -182,8 +138,8 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
-		cmd := DeactivateCmd{Local: true, AMTBaseCmd: AMTBaseCmd{Password: "test-password"}}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+		cmd := DeactivateCmd{Local: true}
 		// Set the control mode directly since it's now stored in AMTBaseCmd
 		cmd.ControlMode = ControlModeCCM
 
@@ -198,7 +154,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, errors.New("unprovision failed"))
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set the control mode directly since it's now stored in AMTBaseCmd
 		cmd.ControlMode = ControlModeCCM
@@ -215,7 +171,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(1, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set the control mode directly since it's now stored in AMTBaseCmd
 		cmd.ControlMode = ControlModeCCM
@@ -231,7 +187,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true, PartialUnprovision: true}
 		// Set the control mode directly since it's now stored in AMTBaseCmd
 		cmd.ControlMode = ControlModeCCM
@@ -249,7 +205,7 @@ func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set invalid control mode to simulate failure
 		cmd.ControlMode = 0 // This should trigger UnableToDeactivate
@@ -267,7 +223,7 @@ func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set unsupported control mode
 		cmd.ControlMode = 0 // Pre-provisioning mode
@@ -282,36 +238,44 @@ func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 func TestDeactivateCmd_Run_Local_ACM_PasswordHandling(t *testing.T) {
 	originalPR := utils.PR
 
-	t.Run("ACM mode fails when password prompt fails", func(t *testing.T) {
+	t.Run("ACM mode fails when password prompt fails (Run path)", func(t *testing.T) {
 		utils.PR = &MockPasswordReaderFail{}
 
 		defer func() { utils.PR = originalPR }()
 
-		cmd := DeactivateCmd{
-			Local: true,
-		}
-		// Set ACM control mode
-		cmd.ControlMode = ControlModeACM
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		// Provide a mock WSMAN so EnsureWSMAN short-circuits and doesn't create a real client
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
 
-		// Call Validate to trigger password validation since Kong would call this
-		err := cmd.Validate()
+		cmd := DeactivateCmd{Local: true}
+		cmd.ControlMode = ControlModeACM
+		cmd.WSMan = mockWSMAN
+
+		ctx := &Context{} // Intentionally omit AMTPassword to trigger prompt
+		err := cmd.Run(ctx)
 		assert.Error(t, err)
-		assert.Equal(t, utils.MissingOrIncorrectPassword, err)
+		assert.Contains(t, err.Error(), "failed to read AMT password")
 	})
 
-	t.Run("ACM mode fails when password is empty string", func(t *testing.T) {
+	t.Run("ACM mode fails when password is empty string (Run path)", func(t *testing.T) {
 		utils.PR = &MockPasswordReaderEmpty{}
 
 		defer func() { utils.PR = originalPR }()
 
-		cmd := DeactivateCmd{Local: true}
-		// Set ACM control mode
-		cmd.ControlMode = ControlModeACM
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
 
-		// Call Validate to trigger password validation since Kong would call this
-		err := cmd.Validate()
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := DeactivateCmd{Local: true}
+		cmd.ControlMode = ControlModeACM
+		cmd.WSMan = mockWSMAN
+
+		ctx := &Context{}
+		err := cmd.Run(ctx)
 		assert.Error(t, err)
-		// Should fail because empty password will fail validation in readPasswordFromUser
+		assert.Contains(t, err.Error(), "password cannot be empty")
 	})
 }
 
@@ -324,7 +288,7 @@ func TestDeactivateCmd_Run_Routing(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set CCM control mode
 		cmd.ControlMode = ControlModeCCM
@@ -339,31 +303,12 @@ func TestDeactivateCmd_Run_Routing(t *testing.T) {
 
 // Test remote deactivate validation (password handling happens in Validate, not in executeRemoteDeactivate)
 func TestDeactivateCmd_RemoteDeactivate_Validation(t *testing.T) {
-	originalPR := utils.PR
-
-	t.Run("remote deactivation validation fails when password prompt fails", func(t *testing.T) {
-		utils.PR = &MockPasswordReaderFail{}
-
-		defer func() { utils.PR = originalPR }()
-
+	// Remote validation now only checks URL/local logic. Password prompting happens in Run.
+	t.Run("remote deactivation Validate passes without password", func(t *testing.T) {
 		cmd := DeactivateCmd{URL: "https://example.com"}
-
-		// Call Validate to trigger password validation since Kong would call this
-		err := cmd.Validate()
-		assert.Error(t, err)
-		assert.Equal(t, utils.MissingOrIncorrectPassword, err)
-	})
-
-	t.Run("remote deactivation validation passes with existing password", func(t *testing.T) {
-		cmd := DeactivateCmd{URL: "https://example.com", AMTBaseCmd: AMTBaseCmd{Password: "existing-password"}}
-
-		// Call Validate - this should pass
 		err := cmd.Validate()
 		assert.NoError(t, err)
 	})
-
-	// Restore original password reader
-	defer func() { utils.PR = originalPR }()
 }
 
 // Test for deactivateCCM function in isolation
@@ -375,8 +320,8 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
-		cmd := DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: "test-password"}}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+		cmd := DeactivateCmd{}
 
 		err := cmd.deactivateCCM(ctx)
 		assert.NoError(t, err)
@@ -389,7 +334,7 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{}
 
 		err := cmd.deactivateCCM(ctx)
@@ -403,7 +348,7 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(0, errors.New("unprovision error"))
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{}
 
 		err := cmd.deactivateCCM(ctx)
@@ -418,7 +363,7 @@ func TestDeactivateCmd_DeactivateCCM(t *testing.T) {
 		mockAMT := mock.NewMockInterface(ctrl)
 		mockAMT.EXPECT().Unprovision().Return(5, nil) // Non-zero status
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{}
 
 		err := cmd.deactivateCCM(ctx)
@@ -435,7 +380,7 @@ func TestDeactivateCmd_ExecuteLocalDeactivate(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set unknown control mode
 		cmd.ControlMode = 3
@@ -451,7 +396,7 @@ func TestDeactivateCmd_ExecuteLocalDeactivate(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{AMTCommand: mockAMT}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
 		// Set negative control mode
 		cmd.ControlMode = -1
@@ -469,37 +414,7 @@ func TestControlModeConstants(t *testing.T) {
 }
 
 // Test edge cases for password handling
-func TestPasswordHandlingEdgeCases(t *testing.T) {
-	originalPR := utils.PR
-
-	t.Run("password with special characters", func(t *testing.T) {
-		cmd := &DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: "P@ssw0rd!@#$%^&*()"}}
-		// Test that special characters in password don't cause issues
-		assert.Equal(t, "P@ssw0rd!@#$%^&*()", cmd.Password)
-	})
-
-	t.Run("empty password prompts for input", func(t *testing.T) {
-		// Mock password reader
-		utils.PR = &MockPasswordReaderSuccess{}
-
-		cmd := &DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: ""}, Local: true}
-		err := cmd.ValidatePasswordIfNeeded(cmd)
-
-		assert.NoError(t, err)
-		assert.Equal(t, "test-password", cmd.Password)
-	})
-
-	t.Run("password validation", func(t *testing.T) {
-		cmd := &DeactivateCmd{AMTBaseCmd: AMTBaseCmd{Password: "validPassword123"}}
-		assert.NotEmpty(t, cmd.Password)
-		assert.True(t, len(cmd.Password) > 0)
-	})
-
-	// Restore original password reader
-	defer func() {
-		utils.PR = originalPR
-	}()
-}
+// Legacy password handling tests removed due to context-based password refactor.
 
 // Test additional Run method edge cases
 func TestRunMethodEdgeCases(t *testing.T) {
@@ -517,9 +432,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Execute
 		err := cmd.Run(ctx)
@@ -540,9 +453,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Execute
 		err := cmd.Run(ctx)
@@ -563,9 +474,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 
 		mockAMT := mock.NewMockInterface(ctrl)
 
-		ctx := &Context{
-			AMTCommand: mockAMT,
-		}
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
 		// Execute
 		err := cmd.Run(ctx)

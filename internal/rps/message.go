@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -44,21 +43,21 @@ type StatusMessage struct {
 
 // MessagePayload struct is used for the initial request to RPS to activate or manage a device
 type MessagePayload struct {
-	Version           string                `json:"ver"`
-	Build             string                `json:"build"`
-	SKU               string                `json:"sku"`
-	Features          string                `json:"features"`
-	UUID              string                `json:"uuid"`
-	Username          string                `json:"username"`
-	Password          string                `json:"password"`
-	CurrentMode       int                   `json:"currentMode"`
-	Hostname          string                `json:"hostname"`
-	FQDN              string                `json:"fqdn"`
-	Client            string                `json:"client"`
-	CertificateHashes []string              `json:"certHashes"`
-	IPConfiguration   flags.IPConfiguration `json:"ipConfiguration"`
-	HostnameInfo      flags.HostnameInfo    `json:"hostnameInfo"`
-	FriendlyName      string                `json:"friendlyName,omitempty"`
+	Version           string          `json:"ver"`
+	Build             string          `json:"build"`
+	SKU               string          `json:"sku"`
+	Features          string          `json:"features"`
+	UUID              string          `json:"uuid"`
+	Username          string          `json:"username"`
+	Password          string          `json:"password"`
+	CurrentMode       int             `json:"currentMode"`
+	Hostname          string          `json:"hostname"`
+	FQDN              string          `json:"fqdn"`
+	Client            string          `json:"client"`
+	CertificateHashes []string        `json:"certHashes"`
+	IPConfiguration   IPConfiguration `json:"ipConfiguration"`
+	HostnameInfo      HostnameInfo    `json:"hostnameInfo"`
+	FriendlyName      string          `json:"friendlyName,omitempty"`
 }
 
 func NewPayload() Payload {
@@ -157,43 +156,40 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 }
 
 // CreateMessageRequest is used for assembling the message to request activation of a device
-func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
+func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	message := Message{
-		Method:          flags.Command,
+		Method:          req.Command,
 		APIKey:          "key",
 		AppVersion:      utils.ProjectVersion,
 		ProtocolVersion: utils.ProtocolVersion,
 		Status:          "ok",
 		Message:         "ok",
-		TenantID:        flags.TenantID,
+		TenantID:        req.TenantID,
 	}
 
-	payload, err := p.createPayload(flags.DNS, flags.Hostname, flags.AMTTimeoutDuration)
+	payload, err := p.createPayload(req.DNS, req.Hostname, req.AMTTimeoutDuration)
 	if err != nil {
 		return message, err
 	}
 
-	payload.IPConfiguration = flags.IpConfiguration
-	payload.HostnameInfo = flags.HostnameInfo
+	payload.IPConfiguration = req.IpConfiguration
+	payload.HostnameInfo = req.HostnameInfo
 
-	if flags.UUID != "" {
-		payload.UUID = flags.UUID
+	if req.UUID != "" {
+		payload.UUID = req.UUID
 	}
 
 	// Update with AMT password for activated devices
 	if payload.CurrentMode != 0 {
-		if flags.Password == "" {
-			for flags.Password == "" {
-				if err := flags.ReadPasswordFromUser(); err != nil {
-					return message, utils.MissingOrIncorrectPassword
-				}
-			}
+		// When device is already configured, RPC expects an AMT password to be provided
+		if req.Password == "" {
+			return message, utils.MissingOrIncorrectPassword
 		}
 
-		payload.Password = flags.Password
+		payload.Password = req.Password
 	}
 
-	payload.FriendlyName = flags.FriendlyName
+	payload.FriendlyName = req.FriendlyName
 	// convert struct to json
 	data, err := json.Marshal(payload)
 	if err != nil {

@@ -18,7 +18,6 @@ import (
 
 func TestProxyCmd_Validate(t *testing.T) {
 	cmd := &ProxyCmd{}
-	cmd.Password = "test123" // Set password to avoid base validation prompt
 	cmd.ControlMode = 1
 	// Missing address for adding
 	err := cmd.Validate()
@@ -26,7 +25,6 @@ func TestProxyCmd_Validate(t *testing.T) {
 	assert.Contains(t, err.Error(), "address is required for adding a proxy")
 
 	cmd = &ProxyCmd{Address: "proxy.example.com", Port: 8080}
-	cmd.Password = "test123" // Set password to avoid base validation prompt
 	cmd.ControlMode = 1
 	// Missing NetworkDnsSuffix for adding
 	err = cmd.Validate()
@@ -34,29 +32,24 @@ func TestProxyCmd_Validate(t *testing.T) {
 	assert.Contains(t, err.Error(), "network DNS suffix is required for adding a proxy")
 
 	cmd = &ProxyCmd{Address: "proxy.example.com", Port: 8080, NetworkDnsSuffix: "example.com"}
-	// No base password provided; base Validate will prompt but not in tests, so set password and control mode via base
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	err = cmd.Validate()
 	assert.NoError(t, err)
 
 	// Test with --list flag (no other params required)
 	cmd = &ProxyCmd{List: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	err = cmd.Validate()
 	assert.NoError(t, err)
 
 	// Test with --delete flag (only address required)
 	cmd = &ProxyCmd{Delete: true, Address: "proxy.example.com"}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	err = cmd.Validate()
 	assert.NoError(t, err)
 
 	// Test --delete without address
 	cmd = &ProxyCmd{Delete: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	err = cmd.Validate()
 	assert.Error(t, err)
@@ -64,7 +57,6 @@ func TestProxyCmd_Validate(t *testing.T) {
 
 	// Test conflicting flags
 	cmd = &ProxyCmd{List: true, Delete: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	err = cmd.Validate()
 	assert.Error(t, err)
@@ -79,18 +71,18 @@ func TestProxyCmd_Run_Success(t *testing.T) {
 	ws.EXPECT().AddHTTPProxyAccessPoint("proxy.example.com", int(ipshttp.InfoFormatFQDN), 8080, "example.com").Return(ipshttp.Response{}, nil)
 
 	cmd := &ProxyCmd{Address: "proxy.example.com", Port: 8080, NetworkDnsSuffix: "example.com"}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
 }
 
 func TestProxyCmd_Run_NotActivated(t *testing.T) {
 	cmd := &ProxyCmd{Address: "proxy.example.com", Port: 8080}
-	cmd.Password = "test123"
 	cmd.ControlMode = 0
 
 	err := cmd.Run(&commands.Context{})
@@ -105,11 +97,10 @@ func TestProxyCmd_Run_ErrorFromWSMAN(t *testing.T) {
 	ws.EXPECT().AddHTTPProxyAccessPoint("192.0.2.1", int(ipshttp.InfoFormatIPv4), 3128, "test.com").Return(ipshttp.Response{}, errors.New("boom"))
 
 	cmd := &ProxyCmd{Address: "192.0.2.1", Port: 3128, NetworkDnsSuffix: "test.com"}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	err := cmd.Run(&commands.Context{})
+	err := cmd.Run(&commands.Context{AMTPassword: "test-pass"})
 	assert.Error(t, err)
 }
 
@@ -133,11 +124,12 @@ func TestProxyCmd_Run_List_Success(t *testing.T) {
 	ws.EXPECT().GetHTTPProxyAccessPoints().Return(accessPoints, nil)
 
 	cmd := &ProxyCmd{List: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
 }
@@ -153,11 +145,12 @@ func TestProxyCmd_Run_List_Empty(t *testing.T) {
 	ws.EXPECT().GetHTTPProxyAccessPoints().Return(emptyAccessPoints, nil)
 
 	cmd := &ProxyCmd{List: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
 }
@@ -170,11 +163,12 @@ func TestProxyCmd_Run_List_Error(t *testing.T) {
 	ws.EXPECT().GetHTTPProxyAccessPoints().Return(nil, errors.New("failed to retrieve"))
 
 	cmd := &ProxyCmd{List: true}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to retrieve HTTP proxy access points")
@@ -204,11 +198,12 @@ func TestProxyCmd_Run_Delete_Success(t *testing.T) {
 	ws.EXPECT().DeleteHTTPProxyAccessPoint("Intel(r) ME:HTTP Proxy Access Point 1").Return(deleteResp, nil)
 
 	cmd := &ProxyCmd{Delete: true, Address: "proxy.example.com", Port: 8080}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.NoError(t, err)
 }
@@ -233,11 +228,12 @@ func TestProxyCmd_Run_Delete_NotFound(t *testing.T) {
 	ws.EXPECT().GetHTTPProxyAccessPoints().Return(accessPoints, nil)
 
 	cmd := &ProxyCmd{Delete: true, Address: "proxy.example.com"}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no HTTP proxy access point found with address: proxy.example.com")
@@ -251,11 +247,12 @@ func TestProxyCmd_Run_Delete_GetAccessPointsError(t *testing.T) {
 	ws.EXPECT().GetHTTPProxyAccessPoints().Return(nil, errors.New("failed to retrieve"))
 
 	cmd := &ProxyCmd{Delete: true, Address: "proxy.example.com"}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to retrieve HTTP proxy access points")
@@ -282,11 +279,12 @@ func TestProxyCmd_Run_Delete_RemoveError(t *testing.T) {
 	ws.EXPECT().DeleteHTTPProxyAccessPoint("Intel(r) ME:HTTP Proxy Access Point 1").Return(ipshttp.ProxyAccessPointResponse{}, errors.New("delete failed"))
 
 	cmd := &ProxyCmd{Delete: true, Address: "proxy.example.com", Port: 8080}
-	cmd.Password = "test123"
 	cmd.ControlMode = 1
 	cmd.WSMan = ws
 
-	ctx := &commands.Context{}
+	ctx := &commands.Context{
+		AMTPassword: "test-pass",
+	}
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to delete HTTP proxy access point")

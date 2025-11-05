@@ -66,6 +66,41 @@ command line with <b>adminstrator privileges</b>.
 
 For usage, call the executable with no additional parameters.
 
+### Configuration file
+
+RPC can preload defaults from a YAML configuration file (default: `config.yaml` in the working directory or passed explicitly via `--config <path>`).
+
+See `config.sample.yaml` for a fully documented example containing every command and flag. Typical workflow:
+
+1. Copy the sample: `cp config.sample.yaml config.yaml` (or on Windows `copy config.sample.yaml config.yaml`).
+2. Edit only the sections you need (e.g. set `configure: sync-clock: password:` or activation parameters).
+3. Run a command using the file:
+
+```shell
+rpc --config config.yaml configure sync-clock
+```
+
+CLI flags and environment variables always override values loaded from the file.
+
+Sensitive values (passwords, tokens) can also be provided via environment variables (see flag `env:` tags in code) instead of storing in plaintext YAML.
+
+#### Global AMT Password
+
+You can now supply a single global AMT admin password once via either:
+
+```
+rpc --amt-password <pass> <command> ...
+```
+
+or environment variable:
+
+```
+set AMT_PASSWORD=<pass>   # Windows PowerShell
+export AMT_PASSWORD=<pass> # Linux/macOS
+```
+
+All commands that require an AMT password will use this value automatically unless a per-command `--password` is explicitly provided (legacy behavior kept for backward compatibility). The sample config (`config.sample.yaml`) reflects this by using a top-level `amt-password:` key instead of repeating `password:` under each command section.
+
 ### Windows
 
 ```shell
@@ -88,7 +123,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 
 # Dev tips for passing CI Checks
 
-- Ensure code is formatted correctly with `gofmt -s -w ./`
+- Ensure code is formatted correctly with `gofumpt -l -w -extra ./`
 - Ensure all unit tests pass with `go test ./...`
 - Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:latest golangci-lint run -v`
 

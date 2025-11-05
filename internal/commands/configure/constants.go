@@ -4,7 +4,10 @@
  **********************************************************************/
 package configure
 
+import "errors"
+
 // Error messages
-const (
-	ErrDeviceNotActivated = "device is not activated to configure. Please activate the device first"
+var (
+	// ErrDeviceNotActivated indicates the device is not activated and cannot be configured
+	ErrDeviceNotActivated = errors.New("device is not activated to configure. Please activate the device first")
 )

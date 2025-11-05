@@ -32,14 +32,14 @@ jobs:
 
       - name: Docker Login
         if: ${{ github.ref == 'refs/heads/main' }}
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: vprodemo.azurecr.io
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           logout: true
       - name: Docker Login DockerHub
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: docker.io
           username: ${{ secrets.INTC_DOCKER_USERNAME }}
@@ -50,7 +50,7 @@ jobs:
           echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
 
       - name: Semantic Release
-        uses: cycjimmy/semantic-release-action@9cc899c47e6841430bbaedb43de1560a568dfd16 # v5.0.0
+        uses: cycjimmy/semantic-release-action@ba330626c4750c19d8299de843f05c7aa5574f62 # v5.0.2
         with:
           semantic_version:
             19.0.5 # It is recommended to specify specifying version range

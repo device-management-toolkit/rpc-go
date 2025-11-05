@@ -1,48 +1,148 @@
-ccmactivate:
-  amtPassword: 'test'
-acmactivate:
-  amtPassword: 'test'
-  provisioningCert: 'your provisioning certificate'
-  provisioningCertPwd: 'test'
-wiredConfig:
-  dhcp: true
-  ipsync: true
-enterpriseAssistant:
-  eaAddress: '' # Address of the EA server (example: https://<your EA Address>:8000)
-  eaUsername: '' # Username for the EA server given in EA Settings
-  eaPassword: '' # Password for the EA server given in EA Settings
-wifiSyncEnabled: true
-uefiWiFiSyncEnabled: true
-wifiConfigs:
-  - profileName: 'exampleWifiWPA2' # friendly name, alphanumeric only
-    ssid: 'exampleSSID'
-    priority: 1 # must be unique across profiles
-    authenticationMethod: 6
-    encryptionMethod: 4
-    pskPassphrase: 'example123!@#'  # SECRET: can be in this file, a secrets file, or user prompt
-  - profileName: 'exampleWifiWPA' # friendly name
-    ssid: 'exampleSSID'
-    priority: 2 # must be unique across profiles
-    authenticationMethod: 4
-    encryptionMethod: 4
-    pskPassphrase: ''  # SECRET: can be in this file, a secrets file, or user prompt
-  - profileName: 'exampleWifi8021xTLS' # friendly name, alphanumeric only
-    ssid: 'ssid'
-    priority: 3 # must be unique across profiles
-    authenticationMethod: 7
-    encryptionMethod: 4
-    ieee8021xProfileName: 'exampleIeee8021xEAP-TLS'
-ieee8021xConfigs:
-  - profileName: 'exampleIeee8021xEAP-TLS'
-    username: "exampleUserName"
-    authenticationProtocol: 0 # Extensible Authentication Protocol (ex. EAP-TLS(0))
-    clientCert: 'testClientCertString'
-    caCert: 'testCaCertString'
-    privateKey: '' # SECRET: can be in this file, a secrets file, or user prompt
-  - profileName: 'exampleIeee8021xMSCHAPv2'
-    username: "exampleUserName"
-    password: "" # SECRET: can be in this file, a secrets file, or user prompt
-    authenticationProtocol: 2 # Extensible Authentication Protocol (ex. EAP-TLS(0))
-    caCert: 'testCaCertString'
-tlsConfig:
-  mode: 'Server' # Supported modes are: Server and ServerAndNonTLS
+################################################################################
+# RPC Sample Configuration File (config.sample.yaml)
+# Copy or rename to config.yaml and edit as needed. Only populate what you use.
+# Unknown or unused sections are ignored.
+################################################################################
+
+# ------------------------- Global Flags ---------------------------------------
+log-level: info              # trace|debug|info|warn|error|fatal|panic
+json: false                  # true => JSON output
+verbose: false               # true => force trace logging
+skip-cert-check: false       # true => skip TLS server certificate verification (insecure)
+lmsaddress: localhost        # Local LMS host
+lmsport: "16992"              # Local LMS port (16992 HTTP / 16993 HTTPS)
+tenant-id: ""                # Multi-tenant identifier (future remote use)
+amt-password: ""             # Global AMT admin password (applies to all commands needing it)
+
+# ------------------------- Server Auth (shared) -------------------------------
+auth-token: ""              # Bearer token (preferred)
+auth-username: ""           # Basic auth username (if no token)
+auth-password: ""           # Basic auth password (if no token)
+auth-endpoint: "http://localhost:8181/api/v1/authorize"  # Token exchange endpoint (HTTP profile fetch)
+
+# ------------------------- amtinfo Command ------------------------------------
+amtinfo:
+  userCert: false           # Show user certificates
+  all: false                # Show all info (overrides individual flags)
+  ver: false                # Show AMT version
+  bld: false                # Show build number
+  sku: false                # Show SKU
+  uuid: false               # Show UUID
+  mode: false               # Show control mode
+  dns: false                # Show firmware DNS suffix
+  hostname: false           # Show OS hostname
+  lan: false                # Show LAN settings
+  ras: false                # Show remote access status
+  operationalState: false   # Show operational state
+  sync: false               # Sync device info to server (requires url + auth)
+  url: ""                  # Server endpoint for sync
+
+# ------------------------- activate Command -----------------------------------
+activate:
+  local: false              # Force local activation
+  url: "http://localhost:8181/api/v1/admin/profiles/export/<profilename>?domainName=<domainprofilename>"                  # Remote RPS or HTTP profile URL
+  profile: ""              # Legacy profile name (ws/wss) or local/HTTP profile file path
+  proxy: ""                # Proxy URL (legacy ws/wss flows)
+  key: ""                   # 32-byte decryption key for encrypted profile
+  dns: ""                  # DNS suffix override
+  hostname: ""             # Hostname override
+  name: ""                 # Friendly name
+  uuid: ""                 # Override UUID (avoid unless necessary)
+  ccm: false                # Local activation in Client Control Mode
+  acm: false                # Local activation in Admin Control Mode
+  stopConfig: false         # Transition device out of in-provisioning
+  provisioningCert: ""      # Base64 provisioning cert (ACM)
+  provisioningCertPwd: ""   # Provisioning cert password
+  skipIPRenew: false        # Skip DHCP renew post activation
+
+# ------------------------- deactivate Command ---------------------------------
+deactivate:
+  url: ""                  # If remote legacy path used
+  profile: ""              # Legacy profile name
+  proxy: ""
+
+# ------------------------- configure (subcommands) ----------------------------
+configure:
+  # --- Change AMT Password ---
+  amtpassword:
+    newamtpassword: ""      # New AMT password (prompt if blank; current taken from global or prompt)
+
+  # --- MEBx Password (ACM only) ---
+  mebx:
+    mebxpassword: ""        # New MEBx password (prompt if blank; AMT password from global)
+
+  # --- AMT Features (KVM/SOL/IDER/User Consent) ---
+  amtfeatures:
+    kvm: false
+    sol: false
+    ider: false
+    userConsent: "all"      # kvm|all|none
+
+  # --- Wired Ethernet ---
+  wired:
+    dhcp: true               # true => ignore static settings
+    ipsync: true             # true => sync to host OS IP (SharedStaticIp)
+    ipaddress: ""            # Static IP (when dhcp:false & ipsync:false)
+    subnetmask: ""
+    gateway: ""
+    primarydns: ""
+    secondarydns: ""
+    ieee8021xProfileName: ""
+    ieee8021xUsername: ""
+    ieee8021xPassword: ""
+    ieee8021xAuthenticationProtocol: 0   # 0=EAP-TLS,2=PEAPv0/EAP-MSCHAPv2
+    ieee8021xPrivateKey: ""              # PEM
+    ieee8021xClientCert: ""              # PEM
+    ieee8021xCACert: ""                  # PEM
+    eaAddress: ""                        # Enterprise Assistant (future)
+    eaUsername: ""
+    eaPassword: ""
+
+  # --- Wireless (WiFi) ---
+  wireless:
+    purge: false            # true => delete all profiles & exit
+    profileName: ""
+    ssid: ""
+    priority: 1
+    authenticationMethod: 6 # 4=WPA-PSK,6=WPA2-PSK,7=WPA2-IEEE8021x
+    encryptionMethod: 4     # 3=TKIP,4=CCMP
+    pskPassphrase: ""
+    ieee8021xProfileName: ""
+    ieee8021xUsername: ""
+    ieee8021xPassword: ""
+    ieee8021xAuthenticationProtocol: 0
+    ieee8021xPrivateKey: ""
+    ieee8021xClientCert: ""
+    ieee8021xCACert: ""
+
+  # --- TLS Settings ---
+  tls:
+    mode: "Server"          # Server|ServerAndNonTLS|Mutual|MutualAndNonTLS|None
+    delay: 3                 # Seconds pause after remote settings
+    eaAddress: ""           # Enterprise Assistant URL (optional)
+    eaUsername: ""
+    eaPassword: ""
+
+  # --- HTTP Proxy Access Point ---
+  proxy:
+    list: false
+    delete: false
+    address: ""
+    port: 80
+    networkdnssuffix: ""
+
+  # --- Sync Clock ---
+  sync-clock:
+
+  # --- Sync Hostname ---
+  sync-hostname:
+
+  # --- WiFi Sync (WiFi port + sync settings) ---
+  wifisync:
+    oswifisync: true         # true|false - sync AMT WiFi profiles with OS profiles
+    uefiwifisync: true       # true|false - enable UEFI WiFi profile share (if supported)
+
+################################################################################
+# End of sample configuration.
+# Invoke with: rpc --config config.yaml <command> ...
+################################################################################

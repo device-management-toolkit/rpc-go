@@ -15,12 +15,16 @@ import (
 func TestRefactoredPasswordFunctionality(t *testing.T) {
 	t.Run("DeactivateCmd inherits password functionality", func(t *testing.T) {
 		cmd := &DeactivateCmd{
-			AMTBaseCmd: AMTBaseCmd{Password: "test-password"},
+			AMTBaseCmd: AMTBaseCmd{},
 			Local:      true,
 		}
 
+		ctx := &Context{
+			AMTPassword: "test-password",
+		}
+
 		// Test that password is accessible
-		assert.Equal(t, "test-password", cmd.GetPassword())
+		assert.Equal(t, "test-password", ctx.AMTPassword)
 
 		// Test that password requirement logic works
 		assert.True(t, cmd.RequiresAMTPassword(), "Local deactivate should require password")
@@ -31,31 +35,52 @@ func TestRefactoredPasswordFunctionality(t *testing.T) {
 	})
 
 	t.Run("AmtInfoCmd conditional password requirements", func(t *testing.T) {
+		// Start with control mode = 0 (pre-provisioning)
 		cmd := &AmtInfoCmd{
-			AMTBaseCmd: AMTBaseCmd{Password: "test-password"},
+			AMTBaseCmd: AMTBaseCmd{ControlMode: 0},
 		}
 
+		ctx := &Context{
+			AMTPassword: "test-password",
+		}
 		// Test that password is accessible
-		assert.Equal(t, "test-password", cmd.GetPassword())
+		assert.Equal(t, "test-password", ctx.AMTPassword)
 
 		// Test password requirement logic
+		// Without user certs, no password required
 		assert.False(t, cmd.RequiresAMTPassword(), "amtinfo without user certs should not require password")
 
 		// Test with user certificates
 		cmd.UserCert = true
-		assert.True(t, cmd.RequiresAMTPassword(), "amtinfo with user certs should require password")
+		// With user certificates, still no password when control mode == 0
+		assert.False(t, cmd.RequiresAMTPassword(), "amtinfo with user certs should not require password when control mode is 0")
 
 		// Test with All flag (includes user certs)
 		cmd.UserCert = false
 		cmd.All = true
-		assert.True(t, cmd.RequiresAMTPassword(), "amtinfo with --all should require password")
+		// With --all, still no password when control mode == 0
+		assert.False(t, cmd.RequiresAMTPassword(), "amtinfo with --all should not require password when control mode is 0")
+
+		// Now set control mode to non-zero (provisioned) and test again
+		cmd.All = false
+		cmd.UserCert = true
+		cmd.ControlMode = 2 // any non-zero indicates provisioned
+		assert.True(t, cmd.RequiresAMTPassword(), "amtinfo with user certs should require password when control mode is non-zero")
+
+		cmd.UserCert = false
+		cmd.All = true
+		assert.True(t, cmd.RequiresAMTPassword(), "amtinfo with --all should require password when control mode is non-zero")
 	})
 
 	t.Run("Base command provides common functionality", func(t *testing.T) {
-		cmd := &AMTBaseCmd{Password: "shared-password"}
+		cmd := &AMTBaseCmd{}
+
+		ctx := &Context{
+			AMTPassword: "shared-password",
+		}
 
 		// Test getter method
-		assert.Equal(t, "shared-password", cmd.GetPassword())
+		assert.Equal(t, "shared-password", ctx.AMTPassword)
 
 		// Test default password requirement
 		assert.True(t, cmd.RequiresAMTPassword(), "Base command should require password by default")

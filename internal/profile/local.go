@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
-package config
+package profile
 
 import (
 	"os"
@@ -12,21 +12,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadConfig loads a configuration from a YAML file
-func LoadConfig(path string) (config.Configuration, error) {
-	var config config.Configuration
+// LoadProfile loads a configuration from a YAML file
+func LoadProfile(path string) (config.Configuration, error) {
+	var profile config.Configuration
 
 	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return config, err
+		return profile, err
 	}
 
 	// Parse YAML
-	err = yaml.Unmarshal(data, &config)
+	err = yaml.Unmarshal(data, &profile)
 	if err != nil {
-		return config, err
+		return profile, err
 	}
 
-	return config, nil
+	return profile, nil
 }

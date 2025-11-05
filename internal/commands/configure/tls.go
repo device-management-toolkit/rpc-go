@@ -117,6 +117,11 @@ func DetermineTLSMode(mutualAuth, enabled, allowNonTLS bool) string {
 type TLSCmd struct {
 	ConfigureBaseCmd
 
+	// Enterprise Assistant settings
+	EAAddress  string `help:"Enterprise Assistant address" name:"eaAddress"`
+	EAUsername string `help:"Enterprise Assistant username" name:"eaUsername"`
+	EAPassword string `help:"Enterprise Assistant password" name:"eaPassword"`
+
 	Mode  string `help:"TLS authentication mode" enum:"Server,ServerAndNonTLS,Mutual,MutualAndNonTLS,None" default:"Server" name:"mode"`
 	Delay int    `help:"Delay time in seconds after putting remote TLS settings" default:"3" name:"delay"`
 }
@@ -160,6 +165,11 @@ func (cmd *TLSCmd) Validate() error {
 
 // Run executes the TLS configuration command
 func (cmd *TLSCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Configuring TLS settings...")
 
 	// Parse the TLS mode
@@ -197,6 +207,14 @@ func (cmd *TLSCmd) Run(ctx *commands.Context) error {
 		}
 	}
 
+	// Update TLS credential context if certificates were provisioned
+	if tlsMode != TLSModeDisabled && handles.ClientCertHandle != "" {
+		err = cmd.updateTLSCredentialContext(handles.ClientCertHandle)
+		if err != nil {
+			return fmt.Errorf("failed to update TLS credential context: %w", err)
+		}
+	}
+
 	// Synchronize time
 	err = cmd.synchronizeTime(ctx)
 	if err != nil {
@@ -209,14 +227,6 @@ func (cmd *TLSCmd) Run(ctx *commands.Context) error {
 		log.Error("Failed to configure TLS")
 
 		return fmt.Errorf("TLS configuration failed: %w", err)
-	}
-
-	// Update TLS credential context if certificates were provisioned
-	if tlsMode != TLSModeDisabled && handles.ClientCertHandle != "" {
-		err = cmd.updateTLSCredentialContext(handles.ClientCertHandle)
-		if err != nil {
-			return fmt.Errorf("failed to update TLS credential context: %w", err)
-		}
 	}
 
 	// Apply delay after configuration

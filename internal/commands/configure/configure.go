@@ -12,32 +12,27 @@ import (
 // ConfigureBaseCmd provides base functionality for all configure commands
 type ConfigureBaseCmd struct {
 	commands.AMTBaseCmd
-
-	// 802.1x settings
-	IEEE8021xProfileName            string `help:"802.1x profile name" name:"ieee8021xProfileName"`
-	IEEE8021xUsername               string `help:"802.1x username" alias:"username" name:"ieee8021xUsername"`
-	IEEE8021xPassword               string `help:"802.1x password" name:"ieee8021xPassword"`
-	IEEE8021xAuthenticationProtocol int    `help:"802.1x authentication protocol (0=EAP-TLS, 2=PEAPv0/EAP-MSCHAPv2)" alias:"authenticationprotocol" enum:"0,2" default:"0" name:"ieee8021xAuthenticationProtocol"`
-	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" alias:"privatekey" name:"ieee8021xPrivateKey"`
-	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" alias:"clientcert" name:"ieee8021xClientCert"`
-	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" alias:"cacert" name:"ieee8021xCACert"`
-
-	// Enterprise Assistant settings
-	EAAddress  string `help:"Enterprise Assistant address" name:"eaAddress"`
-	EAUsername string `help:"Enterprise Assistant username" name:"eaUsername"`
-	EAPassword string `help:"Enterprise Assistant password" name:"eaPassword"`
 }
 
-// Validate implements Kong's Validate interface for configure commands
-func (cmd *ConfigureBaseCmd) Validate() error {
-	// Call base validation if password is required
-	if cmd.RequiresAMTPassword() {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
-		}
+// Validate currently performs no password prompting; password acquisition and
+// WSMAN client setup are deferred to Run via EnsureRuntime to centralize
+// prompting behavior after context construction.
+func (cmd *ConfigureBaseCmd) Validate() error { return nil }
+
+// EnsureRuntime performs the lazy initialization steps common to all configure
+// subcommands: obtain AMT password (if required) and establish the WSMAN
+// client. It should be called at the top of each Run method.
+func (cmd *ConfigureBaseCmd) EnsureRuntime(ctx *commands.Context) error {
+	// If a WSMAN client is already injected (e.g., in tests), skip prompting/setup.
+	if cmd.GetWSManClient() != nil {
+		return nil
 	}
 
-	return nil
+	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+		return err
+	}
+
+	return cmd.EnsureWSMAN(ctx)
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -49,14 +44,15 @@ func (cmd *ConfigureBaseCmd) RequiresAMTPassword() bool {
 
 // ConfigureCmd is the main configure command that contains all subcommands
 type ConfigureCmd struct {
-	MEBx           MEBxCmd           `cmd:"" name:"mebx" aliases:"setmebx" help:"Configure MEBx password"`
-	AMTPassword    AMTPasswordCmd    `cmd:"" aliases:"amtpassword,changeamtpassword" help:"Change AMT password"`
-	AMTFeatures    AMTFeaturesCmd    `cmd:"" aliases:"amtfeatures,setamtfeatures" help:"Configure AMT features (KVM, SOL, IDER, user consent)"`
-	CIRA           CIRACmd           `cmd:"cira" help:"Configure Cloud-Initiated Remote Access (CIRA)"`
-	SyncClock      SyncClockCmd      `cmd:"" aliases:"syncclock,synctime" help:"Synchronize host OS clock to AMT"`
-	EnableWiFiPort EnableWifiPortCmd `cmd:"" aliases:"enablewifiport,enablewifi" help:"Enable WiFi port and local profile synchronization"`
-	Wireless       WirelessCmd       `cmd:"" aliases:"wireless,wifi,addwifisettings" help:"Configure WiFi settings"`
-	Wired          WiredCmd          `cmd:"" aliases:"wired,ethernet,addethernetsettings" help:"Configure wired ethernet settings"`
-	TLS            TLSCmd            `cmd:"" aliases:"tls,configuretls" help:"Configure TLS settings"`
-	Proxy          ProxyCmd          `cmd:"" aliases:"proxy,httpproxy" help:"Configure HTTP proxy access point for firmware-initiated connections"`
+	MEBx        MEBxCmd         `cmd:"" name:"mebx" aliases:"setmebx" help:"Configure MEBx password"`
+	AMTPassword AMTPasswordCmd  `cmd:"" aliases:"amtpassword,changeamtpassword" help:"Change AMT password"`
+	AMTFeatures AMTFeaturesCmd  `cmd:"" aliases:"amtfeatures,setamtfeatures" help:"Configure AMT features (KVM, SOL, IDER, user consent)"`
+	CIRA        CIRACmd         `cmd:"cira" help:"Configure Cloud-Initiated Remote Access (CIRA)"`
+	SyncClock   SyncClockCmd    `cmd:"" aliases:"syncclock,synctime" help:"Synchronize host OS clock to AMT"`
+	WiFiSync    WifiSyncCmd     `cmd:"" aliases:"wifisync,wifi" help:"Control WiFi and local profile synchronization"`
+	Wireless    WirelessCmd     `cmd:"" aliases:"wireless,wifi,addwifisettings" help:"Configure WiFi settings"`
+	Wired       WiredCmd        `cmd:"" aliases:"wired,ethernet,addethernetsettings" help:"Configure wired ethernet settings"`
+	TLS         TLSCmd          `cmd:"" aliases:"tls,configuretls" help:"Configure TLS settings"`
+	Proxy       ProxyCmd        `cmd:"" aliases:"proxy,httpproxy" help:"Configure HTTP proxy access point for firmware-initiated connections"`
+	Hostname    SyncHostnameCmd `cmd:"" aliases:"synchostname,sethostname" help:"Synchronize host OS hostname and DNS suffix to AMT general settings"`
 }

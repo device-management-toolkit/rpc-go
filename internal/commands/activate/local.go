@@ -97,6 +97,7 @@ type LocalActivationService struct {
 	config           LocalActivationConfig
 	context          *commands.Context
 	localTLSEnforced bool
+	isUpgrade        bool
 }
 
 // NewLocalActivationService creates a new local activation service
@@ -152,7 +153,7 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Convert Kong CLI flags to activation config
-	config := cmd.toActivationConfig()
+	config := cmd.toActivationConfig(ctx)
 
 	// Create and run the activation service
 	service := NewLocalActivationService(ctx.AMTCommand, config, ctx)
@@ -203,7 +204,7 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 }
 
 // toActivationConfig converts Kong CLI flags to LocalActivationConfig
-func (cmd *LocalActivateCmd) toActivationConfig() LocalActivationConfig {
+func (cmd *LocalActivateCmd) toActivationConfig(ctx *commands.Context) LocalActivationConfig {
 	var mode ActivationMode
 	if cmd.CCM {
 		mode = ModeCCM
@@ -215,7 +216,7 @@ func (cmd *LocalActivateCmd) toActivationConfig() LocalActivationConfig {
 		Mode:                mode,
 		DNS:                 cmd.DNS,
 		Hostname:            cmd.Hostname,
-		AMTPassword:         cmd.GetPassword(),
+		AMTPassword:         ctx.AMTPassword,
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
 		FriendlyName:        cmd.FriendlyName,
@@ -258,6 +259,16 @@ func (service *LocalActivationService) Activate() error {
 func (service *LocalActivationService) validateAMTState() error {
 	// Check if device is already activated using the stored control mode
 	if service.config.ControlMode != 0 {
+		// Always allow upgrade path CCM (1) -> ACM when ACM mode is requested.
+		// Provisioning certificate requirements are validated later in validateConfiguration.
+		if service.config.Mode == ModeACM && service.config.ControlMode == 1 {
+			log.Info("Upgrading device from Client Control Mode to Admin Control Mode")
+
+			service.isUpgrade = true
+
+			return nil
+		}
+
 		return fmt.Errorf("device is already activated (control mode: %d)", service.config.ControlMode)
 	}
 
@@ -339,7 +350,7 @@ func (service *LocalActivationService) activateCCM() error {
 
 	if service.localTLSEnforced {
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 	}
 
 	// Create WSMAN client
@@ -511,7 +522,7 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		}
 
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck)
 
 		// Add client certificate to TLS config
 		tlsCert := tls.Certificate{
@@ -554,6 +565,14 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
 func (service *LocalActivationService) activateACMLegacy() error {
+	if service.isUpgrade {
+		// For upgrade path, we just change the AMT password
+		// Setup WSMAN client with admin credentials
+		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+		if err != nil {
+			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
+		}
+	}
 	// Get provisioning certificate object
 	certObject, fingerPrint, err := service.getProvisioningCertObj()
 	if err != nil {
@@ -605,7 +624,7 @@ func (service *LocalActivationService) activateACMLegacy() error {
 	}
 
 	// Perform host-based setup with admin credentials
-	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature)
+	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature, service.isUpgrade)
 	if err != nil {
 		// Check if activation was successful despite error
 		// We can check the stored control mode, but it won't reflect the new state

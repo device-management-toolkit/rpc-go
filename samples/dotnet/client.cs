@@ -3,46 +3,68 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
-using System;
-using System.Text;
 using System.Runtime.InteropServices;
+using System.Text;
 
-namespace clientAgent
+namespace ClientAgent
 {
-    class clientAgent
+    class RpcClientAgent
     {
-        // use appropriately named library (.so/.dll) on desired OS
-        // Linux [DllImport("rpc")]
-        // Win [DllImport("rpc.dll")]
-        [DllImport("rpc")]
-        static extern int rpcCheckAccess();
+        private const string LibraryName = "rpc";
 
-        [DllImport("rpc")]
-        static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output);
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int rpcCheckAccess();
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output);
+
+        private const int SUCCESS = 0;
 
         static void Main(string[] args)
         {
-            int returnCode;
-
-            Console.WriteLine("... CALLING rpcCheckAccess ...");
-            returnCode = rpcCheckAccess();
-            Console.WriteLine("... rpcCheckAccess completed: return code[" + returnCode + "] ");
-            Console.WriteLine();
-
-            var res = "";
-            foreach (var arg in args)
+            try
             {
-                res += $"{arg} ";
+                var client = new RpcClientAgent();
+                Environment.Exit(client.Run(args));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                Environment.Exit(1);
+            }
+        }
+
+        private int Run(string[] args)
+        {
+            // Check access
+            if (rpcCheckAccess() != SUCCESS)
+            {
+                Console.Error.WriteLine("RPC access failed - try running as administrator");
+                Console.WriteLine("Exit code: 1");
+                return 1;
             }
 
-            // Example commands to be passed in
-            // string res = "activate -u wss://192.168.1.96/activate -n -profile Test_Profile";
-            // string res = "amtinfo";
-
+            // Build command
+            string command = string.Join(" ", args);
+            byte[] cmdBytes = Encoding.UTF8.GetBytes(command);
             IntPtr output = IntPtr.Zero;
-            Console.WriteLine("... CALLING rpcExec with argument string: " + res);
-            returnCode = rpcExec(Encoding.ASCII.GetBytes(res), ref output);
-            Console.WriteLine("... rpcExec completed: return code[" + returnCode + "] " + Marshal.PtrToStringAnsi(output));
+
+            // Execute command
+            int result = rpcExec(cmdBytes, ref output);
+
+            // Show output
+            if (output != IntPtr.Zero)
+            {
+                string? outputString = Marshal.PtrToStringAnsi(output);
+                if (!string.IsNullOrEmpty(outputString))
+                {
+                    Console.WriteLine(outputString);
+                }
+                Marshal.FreeHGlobal(output);
+            }
+
+            Console.WriteLine($"Exit code: {result}");
+            return result;
         }
     }
 }

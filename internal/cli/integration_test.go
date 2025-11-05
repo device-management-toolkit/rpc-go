@@ -100,7 +100,7 @@ func TestCLIIntegration(t *testing.T) {
 			expectedCmd: "amtinfo",
 			validateResult: func(t *testing.T, cli *CLI) {
 				assert.True(t, cli.AmtInfo.Cert)
-				assert.Equal(t, "test123", cli.AmtInfo.Password)
+				// Password now stored globally in context; command struct no longer holds Password field.
 			},
 		},
 		{

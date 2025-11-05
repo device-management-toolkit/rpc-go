@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -28,7 +27,7 @@ func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 
 	if cmd.LocalTLSEnforced {
 		controlMode := cmd.GetControlMode()
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck)
 	}
 
 	return tlsConfig
@@ -40,6 +39,7 @@ type DeactivateCmd struct {
 	Local              bool   `help:"Execute command to AMT directly without cloud interaction" short:"l"`
 	PartialUnprovision bool   `help:"Partially unprovision the device. Only supported with -local flag" name:"partial"`
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
+	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -66,15 +66,24 @@ func (cmd *DeactivateCmd) Validate() error {
 		return fmt.Errorf("partial unprovisioning is only supported with local flag")
 	}
 
-	if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-		return utils.MissingOrIncorrectPassword
-	}
-
 	return nil
 }
 
 // Run executes the deactivate command
 func (cmd *DeactivateCmd) Run(ctx *Context) error {
+	// Resolve AMT password (only when required)
+	if cmd.RequiresAMTPassword() {
+		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+			return err
+		}
+
+		if cmd.Local { // local path needs WSMAN
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				return err
+			}
+		}
+	}
+
 	if cmd.Local {
 		// For local deactivation
 		return cmd.executeLocalDeactivate(ctx)
@@ -86,19 +95,22 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 
 // executeRemoteDeactivate handles remote deactivation via RPS
 func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
-	// Create flags object for RPS
-	f := &flags.Flags{
-		Command:       utils.CommandDeactivate,
-		URL:           cmd.URL,
-		Password:      cmd.GetPassword(),
-		LogLevel:      ctx.LogLevel,
-		JsonOutput:    ctx.JsonOutput,
-		Verbose:       ctx.Verbose,
-		SkipCertCheck: ctx.SkipCertCheck,
+	// Create RPS request
+	req := &rps.Request{
+		Command:          utils.CommandDeactivate,
+		URL:              cmd.URL,
+		Password:         ctx.AMTPassword,
+		LogLevel:         ctx.LogLevel,
+		JsonOutput:       ctx.JsonOutput,
+		Verbose:          ctx.Verbose,
+		SkipCertCheck:    ctx.SkipCertCheck,
+		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
+		Force:            cmd.Force,
+		TenantID:         ctx.TenantID,
 	}
 
 	// Execute via RPS
-	return rps.ExecuteCommand(f)
+	return rps.ExecuteCommand(req)
 }
 
 // executeLocalDeactivate handles local deactivation
@@ -163,8 +175,8 @@ func (cmd *DeactivateCmd) executeFullUnprovision() error {
 
 // deactivateCCM handles CCM mode deactivation
 func (cmd *DeactivateCmd) deactivateCCM(ctx *Context) error {
-	if cmd.Password != "" {
-		log.Warn("Password not required for CCM deactivation")
+	if ctx.AMTPassword != "" {
+		log.Warn("AMT password not required for CCM deactivation")
 	}
 
 	status, err := ctx.AMTCommand.Unprovision()

@@ -14,5 +14,11 @@ type Context struct {
 	JsonOutput    bool
 	Verbose       bool
 	SkipCertCheck bool
-	TLSConfig     *tls.Config
+	// SkipAMTCertCheck controls whether to skip TLS verification when connecting to AMT/LMS over TLS
+	// This is distinct from SkipCertCheck which applies to remote RPS HTTPS/WSS connections.
+	SkipAMTCertCheck bool
+	TLSConfig        *tls.Config
+	TenantID         string
+	AMTPassword      string // Centralized AMT admin password (from global flag/env or interactive prompt)
+	ServerAuthFlags
 }

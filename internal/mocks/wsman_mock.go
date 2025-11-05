@@ -629,18 +629,18 @@ func (mr *MockWSMANerMockRecorder) HostBasedSetupService(digestRealm, password a
 }
 
 // HostBasedSetupServiceAdmin mocks base method.
-func (m *MockWSMANer) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
+func (m *MockWSMANer) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string, isUpgrade bool) (hostbasedsetup.Response, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HostBasedSetupServiceAdmin", password, digestRealm, nonce, signature)
+	ret := m.ctrl.Call(m, "HostBasedSetupServiceAdmin", password, digestRealm, nonce, signature, isUpgrade)
 	ret0, _ := ret[0].(hostbasedsetup.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // HostBasedSetupServiceAdmin indicates an expected call of HostBasedSetupServiceAdmin.
-func (mr *MockWSMANerMockRecorder) HostBasedSetupServiceAdmin(password, digestRealm, nonce, signature any) *gomock.Call {
+func (mr *MockWSMANerMockRecorder) HostBasedSetupServiceAdmin(password, digestRealm, nonce, signature, isUpgrade any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HostBasedSetupServiceAdmin", reflect.TypeOf((*MockWSMANer)(nil).HostBasedSetupServiceAdmin), password, digestRealm, nonce, signature)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HostBasedSetupServiceAdmin", reflect.TypeOf((*MockWSMANer)(nil).HostBasedSetupServiceAdmin), password, digestRealm, nonce, signature, isUpgrade)
 }
 
 // PUTTLSSettings mocks base method.
@@ -716,6 +716,21 @@ func (m *MockWSMANer) PutEthernetSettings(ethernetPortSettings ethernetport.Sett
 func (mr *MockWSMANerMockRecorder) PutEthernetSettings(ethernetPortSettings, instanceId any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEthernetSettings", reflect.TypeOf((*MockWSMANer)(nil).PutEthernetSettings), ethernetPortSettings, instanceId)
+}
+
+// PutGeneralSettings mocks base method.
+func (m *MockWSMANer) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PutGeneralSettings", request)
+	ret0, _ := ret[0].(general.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PutGeneralSettings indicates an expected call of PutGeneralSettings.
+func (mr *MockWSMANerMockRecorder) PutGeneralSettings(request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutGeneralSettings", reflect.TypeOf((*MockWSMANer)(nil).PutGeneralSettings), request)
 }
 
 // PutIPSIEEE8021xSettings mocks base method.

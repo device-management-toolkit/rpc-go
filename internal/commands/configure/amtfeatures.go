@@ -6,7 +6,6 @@
 package configure
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -23,9 +22,12 @@ type AMTFeaturesCmd struct {
 	ConfigureBaseCmd
 
 	UserConsent string `help:"Sets user consent (ACM only)" enum:"kvm,all,none" name:"userConsent" default:"all"`
-	KVM         bool   `help:"Enables or Disables KVM (Keyboard, Video, Mouse)" name:"kvm"`
-	SOL         bool   `help:"Enables or Disables SOL (Serial Over LAN)" name:"sol"`
-	IDER        bool   `help:"Enables or Disables IDER (IDE Redirection)" name:"ider"`
+	KVM         bool   `help:"Enable KVM (Keyboard, Video, Mouse). If omitted, KVM will be disabled when other flags are also omitted." name:"kvm"`
+	SOL         bool   `help:"Enable SOL (Serial Over LAN). If omitted, SOL will be disabled when other flags are also omitted." name:"sol"`
+	IDER        bool   `help:"Enable IDER (IDE Redirection). If omitted, IDER will be disabled when other flags are also omitted." name:"ider"`
+	// DisableAll is an internal flag used by the profile orchestrator to explicitly
+	// disable all features when the profile sets them to false. Hidden from help.
+	DisableAll bool `name:"disableAll" hidden:""`
 }
 
 // Validate implements Kong's Validate interface for AMT features validation
@@ -35,10 +37,10 @@ func (cmd *AMTFeaturesCmd) Validate() error {
 		return err
 	}
 
-	// Check if at least one feature is being configured
+	// Backward compatibility: by default, require at least one feature or user consent.
+	// Allow an internal override when DisableAll is explicitly set (used by orchestrator).
 	featuresSpecified := cmd.KVM || cmd.SOL || cmd.IDER || cmd.UserConsent != ""
-
-	if !featuresSpecified {
+	if !featuresSpecified && !cmd.DisableAll {
 		return fmt.Errorf("no AMT features specified for configuration. Use --kvm, --sol, --ider flags or --userConsent to configure features")
 	}
 
@@ -47,13 +49,18 @@ func (cmd *AMTFeaturesCmd) Validate() error {
 
 // Run executes the AMT features configuration command
 func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
 	log.Info("configuring AMT Features")
 
 	// Device must be activated (not in pre-provisioning state)
 	if cmd.GetControlMode() == 0 {
 		log.Error(ErrDeviceNotActivated)
 
-		return errors.New(ErrDeviceNotActivated)
+		return ErrDeviceNotActivated
 	}
 
 	// Determine the redirection state

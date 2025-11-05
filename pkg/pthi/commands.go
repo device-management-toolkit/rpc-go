@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 )
@@ -62,7 +63,7 @@ func (pthi Command) Close() {
 func (pthi Command) Call(command []byte, commandSize int) (result []byte, err error) {
 	size := pthi.Heci.GetBufferSize()
 
-	if commandSize < 0 || commandSize > int(^uint32(0)) {
+	if commandSize < 0 || uint64(commandSize) > math.MaxInt32 {
 		return nil, fmt.Errorf("buffer length exceeds uint32 maximum value")
 	}
 

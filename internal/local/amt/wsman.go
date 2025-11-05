@@ -119,6 +119,10 @@ func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {
 	return g.wsmanMessages.AMT.GeneralSettings.Get()
 }
 
+func (g *GoWSMANMessages) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
+	return g.wsmanMessages.AMT.GeneralSettings.Put(request)
+}
+
 func (g *GoWSMANMessages) HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error) {
 	return g.wsmanMessages.IPS.HostBasedSetupService.Setup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password)
 }
@@ -131,7 +135,11 @@ func (g *GoWSMANMessages) AddNextCertInChain(cert string, isLeaf, isRoot bool) (
 	return g.wsmanMessages.IPS.HostBasedSetupService.AddNextCertInChain(cert, isLeaf, isRoot)
 }
 
-func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string) (hostbasedsetup.Response, error) {
+func (g *GoWSMANMessages) HostBasedSetupServiceAdmin(password, digestRealm string, nonce []byte, signature string, isUpgrade bool) (hostbasedsetup.Response, error) {
+	if isUpgrade {
+		return g.wsmanMessages.IPS.HostBasedSetupService.UpgradeClientToAdmin(base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
+	}
+
 	return g.wsmanMessages.IPS.HostBasedSetupService.AdminSetup(hostbasedsetup.AdminPassEncryptionTypeHTTPDigestMD5A1, digestRealm, password, base64.StdEncoding.EncodeToString(nonce), hostbasedsetup.SigningAlgorithmRSASHA2256, signature)
 }
 
@@ -346,8 +354,9 @@ func (g *GoWSMANMessages) EnableWiFi(enableSync, uefiWiFiSync bool) error {
 		syncState = wifiportconfiguration.UnrestrictedSync
 	}
 
-	// if local sync not enable, enable it
-	if response.Body.WiFiPortConfigurationService.LocalProfileSynchronizationEnabled != syncState {
+	// Apply configuration when either local sync state or UEFI profile share differs
+	if response.Body.WiFiPortConfigurationService.LocalProfileSynchronizationEnabled != syncState ||
+		response.Body.WiFiPortConfigurationService.UEFIWiFiProfileShareEnabled != uefiWiFiSyncState {
 		putRequest := wifiportconfiguration.WiFiPortConfigurationServiceRequest{
 			RequestedState:                     response.Body.WiFiPortConfigurationService.RequestedState,
 			EnabledState:                       response.Body.WiFiPortConfigurationService.EnabledState,

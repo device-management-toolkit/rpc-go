@@ -6,10 +6,14 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
+	neturl "net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,12 +23,16 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
-const notFoundIP = "Not Found"
+const (
+	notFoundIP = "Not Found"
+	zeroIP     = "0.0.0.0"
+)
 
 // AmtInfoCmd represents the amtinfo command with Kong CLI binding
 type AmtInfoCmd struct {
@@ -41,7 +49,7 @@ type AmtInfoCmd struct {
 
 	// Network flags
 	DNS      bool `help:"Show Domain Name Suffix" short:"d"`
-	Hostname bool `help:"Show OS Hostname" short:"h"`
+	Hostname bool `help:"Show OS Hostname"`
 	Lan      bool `help:"Show LAN Settings" short:"l"`
 
 	// Status flags
@@ -54,27 +62,42 @@ type AmtInfoCmd struct {
 
 	// Special flags
 	All bool `help:"Show All AMT Information" short:"A"`
+
+	// Sync to server flags
+	Sync bool   `help:"Sync device info to remote server via HTTP PATCH"`
+	URL  string `help:"Endpoint URL of the devices API (e.g., https://mps.example.com/api/v1/devices)" name:"url"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
 // For amtinfo, password is only required for user certificate operations
 func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
-	// Only require password when user explicitly requests user certificates.
-	return cmd.IsUserCertRequested()
+	log.Trace("Checking if amtinfo requires AMT password")
+	// Password is required for user cert operations when device is provisioned (control mode != 0).
+	return cmd.IsUserCertRequested() && cmd.GetControlMode() != 0
 }
 
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	// For amtinfo, skip WSMAN setup unless user certificates are explicitly requested.
 	// Avoid any hardware/driver access during validation to keep tests hermetic.
-	cmd.SkipWSMANSetup = !cmd.UserCert
+	cmd.SkipWSMANSetup = !cmd.UserCert && !cmd.All
 
-	// Handle interactive password prompting only when explicitly requesting user certificates.
-	// Provisioning/control-mode checks are deferred to runtime where the injected AMT interface is used.
-	if cmd.IsUserCertRequested() {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
+	log.Trace("Validating amtinfo command")
+	// Defer password prompting to Run(), where control mode is available (set in AfterApply).
+
+	// Basic validation for sync mode
+	if cmd.Sync {
+		if strings.TrimSpace(cmd.URL) == "" {
+			return fmt.Errorf("--url is required when --sync is specified")
 		}
+
+		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
+			return fmt.Errorf("invalid --url: %w", err)
+		}
+		// // Require some form of authentication when syncing
+		// if err := cmd.ValidateRequired(true); err != nil {
+		// 	return err
+		// }
 	}
 
 	return nil
@@ -94,23 +117,43 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 // Run executes the amtinfo command
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// If user requested user certificates or --all, prompt for password at runtime.
-	if (cmd.UserCert || cmd.All) && cmd.GetPassword() == "" {
-		if err := cmd.ValidatePasswordIfNeeded(cmd); err != nil {
-			return err
-		}
+	log.Trace("Running amtinfo command")
+
+	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+		return err
+	}
+	// If password now present and user certs requested, build WSMAN client
+	if err := cmd.EnsureWSMAN(ctx); err != nil {
+		return err
 	}
 
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
-	service.password = cmd.GetPassword()
+	service.password = ctx.AMTPassword
 	service.localTLSEnforced = cmd.LocalTLSEnforced
-	service.skipCertCheck = ctx.SkipCertCheck
+	// Use AMT-specific skip flag for WSMAN/TLS to firmware
+	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
 	// Reuse the already-initialized WSMAN client from AMTBaseCmd (initialized in AfterApply when userCert is requested)
 	service.wsman = cmd.GetWSManClient()
 
-	result, err := service.GetAMTInfo(cmd)
+	// If syncing, ensure we collect full device info regardless of selective flags
+	effectiveCmd := cmd
+	if cmd.Sync {
+		copied := *cmd
+		copied.All = true
+		effectiveCmd = &copied
+	}
+
+	result, err := service.GetAMTInfo(effectiveCmd)
 	if err != nil {
 		return err
+	}
+
+	// If requested, sync device info to remote server
+	if cmd.Sync {
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags); err != nil {
+			return err
+		}
 	}
 
 	if ctx.JsonOutput {
@@ -153,7 +196,8 @@ type InfoService struct {
 	jsonOutput       bool
 	password         string
 	localTLSEnforced bool
-	skipCertCheck    bool
+	// skipAMTCertCheck controls TLS verification when connecting to AMT/LMS
+	skipAMTCertCheck bool
 	wsman            interfaces.WSMANer
 }
 
@@ -164,10 +208,133 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		jsonOutput:       false,
 		password:         "",
 		localTLSEnforced: false,
-		skipCertCheck:    false,
+		skipAMTCertCheck: false,
 		wsman:            nil,
 	}
 }
+
+// syncPayload mirrors the expected JSON body for the PATCH request
+type syncPayload struct {
+	GUID       string         `json:"guid"`
+	DeviceInfo syncDeviceInfo `json:"deviceInfo"`
+}
+
+type syncDeviceInfo struct {
+	FWVersion   string    `json:"fwVersion"`
+	FWBuild     string    `json:"fwBuild"`
+	FWSku       string    `json:"fwSku"`
+	CurrentMode string    `json:"currentMode"`
+	Features    string    `json:"features"`
+	IPAddress   string    `json:"ipAddress"`
+	LastUpdated time.Time `json:"lastUpdated"`
+}
+
+// SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
+// The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices)
+func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
+	// Use the provided URL directly as the target endpoint
+	endpoint := urlArg
+
+	payload := syncPayload{
+		GUID: result.UUID,
+		DeviceInfo: syncDeviceInfo{
+			FWVersion:   result.AMT,
+			FWBuild:     result.BuildNumber,
+			FWSku:       result.SKU,
+			CurrentMode: result.ControlMode,
+			Features:    result.Features,
+			IPAddress:   bestIPAddress(result),
+			LastUpdated: time.Now(),
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync payload: %w", err)
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	// Respect skip-cert-check for HTTPS endpoints
+	if strings.HasPrefix(strings.ToLower(endpoint), "https://") && ctx.SkipCertCheck {
+		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: ctx.SkipCertCheck}}
+	}
+
+	// Create a request with context to comply with lint noctx rule and allow cancellation., not to be confused with context of kong cli commands
+	reqCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create PATCH request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Apply Authorization header. If username/password are provided without a token, exchange for a token first.
+	if auth != nil {
+		token := strings.TrimSpace(auth.AuthToken)
+		if token == "" && auth.AuthUsername != "" && auth.AuthPassword != "" {
+			// Derive the base (scheme://host) from the target endpoint for default auth endpoints
+			parsed, perr := neturl.Parse(endpoint)
+			if perr != nil {
+				return fmt.Errorf("invalid endpoint url: %w", perr)
+			}
+
+			base := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+			t, aerr := profile.Authenticate(base, auth.AuthUsername, auth.AuthPassword, auth.AuthEndpoint, ctx.SkipCertCheck, 10*time.Second)
+			if aerr != nil {
+				return fmt.Errorf("authentication failed: %w", aerr)
+			}
+
+			token = t
+		}
+
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("sync request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("sync failed with status %s", resp.Status)
+	}
+
+	return nil
+}
+
+// bestIPAddress chooses a reasonable IP address for reporting
+func bestIPAddress(res *InfoResult) string {
+	// Prefer OS IP from wired
+	if res.WiredAdapter != nil {
+		if ip := strings.TrimSpace(res.WiredAdapter.OsIPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+
+		if ip := strings.TrimSpace(res.WiredAdapter.IPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+	}
+
+	if res.WirelessAdapter != nil {
+		if ip := strings.TrimSpace(res.WirelessAdapter.OsIPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+
+		if ip := strings.TrimSpace(res.WirelessAdapter.IPAddress); ip != "" && ip != zeroIP && ip != notFoundIP {
+			return ip
+		}
+	}
+
+	return zeroIP
+}
+
+// joinURL safely concatenates base URL and path
+// (previously had joinURL helper; no longer needed as endpoints are provided in full)
 
 // GetAMTInfo retrieves AMT information based on the command flags
 func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
@@ -310,7 +477,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	}
 
 	// Get certificate hashes
-	if showAll || cmd.Cert {
+	if cmd.Cert || cmd.All {
 		certResult, err := s.amtCommand.GetCertificateHashes()
 		if err == nil {
 			result.CertificateHashes = make(map[string]amt.CertHashEntry)
@@ -325,6 +492,10 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		// Get control mode if not already retrieved
 		if controlMode == -1 {
 			controlMode, _ = s.amtCommand.GetControlMode()
+		}
+
+		if controlMode == 0 {
+			log.Debug("Device is in pre-provisioning mode, user certificates are not available")
 		}
 
 		if s.password != "" {
@@ -575,9 +746,9 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 		// Setup TLS configuration
 		var tlsConfig *tls.Config
 		if s.localTLSEnforced {
-			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipCertCheck)
+			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
 		} else {
-			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipCertCheck}
+			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
 		}
 
 		if err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {

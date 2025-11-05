@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -30,6 +29,9 @@ type RemoteActivateCmd struct {
 	UUID         string `help:"UUID override (prevents MPS connection)" name:"uuid"`
 	FriendlyName string `help:"Friendly name to associate with this device" name:"name"`
 	Proxy        string `help:"Proxy server URL for RPS connection" env:"PROXY" name:"proxy"`
+
+	// Authentication to the remote server (optional for websockets today but reserved for future)
+	commands.ServerAuthFlags
 }
 
 // RemoteActivationConfig holds the configuration for remote activation
@@ -163,24 +165,27 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 func (service *RemoteActivationService) requestActivation(deviceInfo map[string]interface{}) (map[string]interface{}, error) {
 	log.Info("Sending activation request to RPS...")
 
-	// Create flags object for RPS using the existing pattern
-	f := &flags.Flags{
-		Command:       utils.CommandActivate,
-		URL:           service.config.URL,
-		Profile:       service.config.Profile,
-		DNS:           service.config.DNS,
-		Hostname:      service.config.Hostname,
-		UUID:          service.config.UUID,
-		FriendlyName:  service.config.FriendlyName,
-		Proxy:         service.config.Proxy,
-		LogLevel:      service.context.LogLevel,
-		JsonOutput:    service.context.JsonOutput,
-		Verbose:       service.context.Verbose,
-		SkipCertCheck: service.context.SkipCertCheck,
+	// Build RPS request directly (no internal/flags dependency)
+	req := &rps.Request{
+		Command:          utils.CommandActivate,
+		URL:              service.config.URL,
+		Profile:          service.config.Profile,
+		DNS:              service.config.DNS,
+		Hostname:         service.config.Hostname,
+		UUID:             service.config.UUID,
+		FriendlyName:     service.config.FriendlyName,
+		Proxy:            service.config.Proxy,
+		LogLevel:         service.context.LogLevel,
+		JsonOutput:       service.context.JsonOutput,
+		Verbose:          service.context.Verbose,
+		SkipCertCheck:    service.context.SkipCertCheck,
+		SkipAmtCertCheck: service.context.SkipAMTCertCheck,
+		ControlMode:      service.context.ControlMode,
+		TenantID:         service.context.TenantID,
 	}
 
 	// Execute activation via RPS
-	err := rps.ExecuteCommand(f)
+	err := rps.ExecuteCommand(req)
 	if err != nil {
 		return nil, fmt.Errorf("RPS activation failed: %w", err)
 	}
