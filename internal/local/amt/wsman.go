@@ -657,6 +657,7 @@ func (g *GoWSMANMessages) DeleteHTTPProxyAccessPoint(name string) (response ipsh
 func (g *GoWSMANMessages) AddHTTPProxyAccessPoint(accessInfo string, infoFormat, port int, networkDnsSuffix string) (response ipshttp.Response, err error) {
 	// Convert infoFormat int to the library enum
 	var fmtEnum ipshttp.InfoFormat
+
 	switch infoFormat {
 	case int(ipshttp.InfoFormatIPv4):
 		fmtEnum = ipshttp.InfoFormatIPv4
