@@ -1,8 +1,6 @@
 {
   "branches": [
-    {
-      "name": "main"
-    },
+    "main",
     {
       "name": "2.x.x",
       "range": "2.x",
