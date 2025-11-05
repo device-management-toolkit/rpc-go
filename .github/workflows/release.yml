@@ -9,7 +9,7 @@ name: Semantic-Release CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, next, 2.x.x]
 
 permissions:
   contents: read

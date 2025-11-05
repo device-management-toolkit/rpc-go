@@ -16,3 +16,4 @@ coverage
 !README.md
 *.yaml
 !config.yaml
+node_modules
