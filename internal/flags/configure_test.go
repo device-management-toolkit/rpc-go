@@ -458,7 +458,7 @@ var wifiCfgWPA = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             1,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPAPSK),
-	EncryptionMethod:     int(wifi.EncryptionMethod_TKIP),
+	EncryptionMethod:     int(wifi.EncryptionMethodTKIP),
 	PskPassphrase:        "wifiWPAPassPhrase",
 }
 
@@ -467,7 +467,7 @@ var wifiCfgWPA2 = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             2,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	PskPassphrase:        "wifiWPA2PassPhrase",
 }
 
@@ -476,7 +476,7 @@ var wifiCfgWPA8021xEAPTLS = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             3,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPAIEEE8021x),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	Ieee8021xProfileName: "ieee8021xCfgEAPTLS",
 }
 
@@ -495,7 +495,7 @@ var wifiCfgWPA28021xPEAPv0_EAPMSCHAPv2 = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             4,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPA2IEEE8021x),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	Ieee8021xProfileName: "ieee8021xCfgPEAPv0_EAPMSCHAPv2",
 }
 
@@ -570,7 +570,7 @@ func TestVerifyWifiConfiguration(t *testing.T) {
 	})
 	t.Run("expect MissingOrInvalidConfiguration with invalid EncryptionMethod", func(t *testing.T) {
 		orig := wifiCfgWPA.EncryptionMethod
-		wifiCfgWPA.EncryptionMethod = int(wifi.EncryptionMethod_None + 99)
+		wifiCfgWPA.EncryptionMethod = int(wifi.EncryptionMethodNone + 99)
 		runVerifyWifiConfiguration(t, utils.MissingOrInvalidConfiguration,
 			[]config.WifiConfig{wifiCfgWPA},
 			[]config.Ieee8021xConfig{})
@@ -765,9 +765,9 @@ func TestInvalidEncryptionMethods(t *testing.T) {
 	cases := []struct {
 		method wifi.EncryptionMethod
 	}{
-		{method: wifi.EncryptionMethod_Other},
-		{method: wifi.EncryptionMethod_WEP},
-		{method: wifi.EncryptionMethod_None},
+		{method: wifi.EncryptionMethodOther},
+		{method: wifi.EncryptionMethodWEP},
+		{method: wifi.EncryptionMethodNone},
 		{method: 599},
 	}
 	for _, tc := range cases {

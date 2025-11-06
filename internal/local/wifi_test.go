@@ -27,7 +27,7 @@ var wifiCfgWPA = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             1,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPAPSK),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	PskPassphrase:        "wifiWPAPassPhrase",
 	Ieee8021xProfileName: "",
 }
@@ -37,7 +37,7 @@ var wifiCfgWPA2 = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             2,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPA2PSK),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	PskPassphrase:        "wifiWPAPassPhrase",
 	Ieee8021xProfileName: "",
 }
@@ -47,7 +47,7 @@ var wifiCfgWPA8021xEAPTLS = config.WifiConfig{
 	SSID:                 "ssid",
 	Priority:             2,
 	AuthenticationMethod: int(wifi.AuthenticationMethodWPAIEEE8021x),
-	EncryptionMethod:     int(wifi.EncryptionMethod_CCMP),
+	EncryptionMethod:     int(wifi.EncryptionMethodCCMP),
 	PskPassphrase:        "",
 	Ieee8021xProfileName: "ieee8021xCfgEAPTLS",
 }

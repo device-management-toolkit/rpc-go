@@ -107,11 +107,11 @@ var authenticationMethod = map[string]wifi.AuthenticationMethod{
 
 // encryptionMethod Map now maps strings directly to integer values
 var encryptionMethod = map[string]wifi.EncryptionMethod{
-	"Other": wifi.EncryptionMethod_Other,
-	"WEP":   wifi.EncryptionMethod_WEP,
-	"TKIP":  wifi.EncryptionMethod_TKIP,
-	"CCMP":  wifi.EncryptionMethod_CCMP,
-	"None":  wifi.EncryptionMethod_None,
+	"Other": wifi.EncryptionMethodOther,
+	"WEP":   wifi.EncryptionMethodWEP,
+	"TKIP":  wifi.EncryptionMethodTKIP,
+	"CCMP":  wifi.EncryptionMethodCCMP,
+	"None":  wifi.EncryptionMethodNone,
 }
 
 func (f *Flags) printConfigurationUsage() {
@@ -1138,19 +1138,19 @@ func (f *Flags) verifyWifiConfigurations() error {
 		encryptionMethod := wifi.EncryptionMethod(cfg.EncryptionMethod)
 		// NOTE: this is only
 		switch encryptionMethod {
-		case wifi.EncryptionMethod_TKIP:
+		case wifi.EncryptionMethodTKIP:
 			fallthrough
-		case wifi.EncryptionMethod_CCMP: // EncryptionMethod 4
+		case wifi.EncryptionMethodCCMP: // EncryptionMethod 4
 			break
-		case wifi.EncryptionMethod_Other:
+		case wifi.EncryptionMethodOther:
 			log.Errorf("unsupported EncryptionMethod_Other (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
 
 			return utils.MissingOrInvalidConfiguration
-		case wifi.EncryptionMethod_WEP:
+		case wifi.EncryptionMethodWEP:
 			log.Errorf("unsupported EncryptionMethod_WEP (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
 
 			return utils.MissingOrInvalidConfiguration
-		case wifi.EncryptionMethod_None:
+		case wifi.EncryptionMethodNone:
 			log.Errorf("unsupported EncryptionMethod_None (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
 
 			return utils.MissingOrInvalidConfiguration
