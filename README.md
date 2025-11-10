@@ -136,6 +136,7 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 ## Additional Resources
 
 - For detailed documentation and Getting Started, [visit the docs site](https://device-management-toolkit.github.io/docs).
+
 - Planning to move to v3? Read the [v3 Migration Guide](./migration-guide.md) for breaking changes and upgrade steps.
 
 - Looking to contribute? [Find more information here about contribution guidelines and practices](.\CONTRIBUTING.md).
