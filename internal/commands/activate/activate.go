@@ -62,14 +62,29 @@ func (cmd *ActivateCmd) RequiresAMTPassword() bool {
 // Validate checks the command configuration and determines activation mode
 func (cmd *ActivateCmd) Validate() error {
 	log.Trace("Entering Validate method of ActivateCmd")
-	// Check for conflicting mode specifications
-	if cmd.Local && cmd.URL != "" {
-		return fmt.Errorf("cannot specify both --local and --url flags")
+
+	// Determine if caller intends local activation (explicit --local or local-only flags)
+	localIntent := cmd.Local || cmd.hasLocalActivationFlags()
+
+	// Resolve local-vs-remote precedence when both are present.
+	// - For HTTP(S) URL: keep the URL (used to fetch a profile and orchestrate steps) and ignore local flags.
+	// - For WS/WSS URL: mixing with --local is invalid and should fail early to preserve legacy semantics.
+	if localIntent && cmd.URL != "" {
+		lowerURL := strings.ToLower(cmd.URL)
+		if strings.HasPrefix(lowerURL, "http://") || strings.HasPrefix(lowerURL, "https://") {
+			log.Warn("Both --url and local activation flags detected; proceeding with local activation via http://")
+			// Clear URL so we don't trigger HTTP profile fullflow during local runs (prevents recursion)
+			cmd.URL = ""
+		}
 	}
 
 	// If URL is specified, split behavior by scheme
 	if cmd.URL != "" {
 		if strings.HasPrefix(strings.ToLower(cmd.URL), "ws://") || strings.HasPrefix(strings.ToLower(cmd.URL), "wss://") {
+			// --local must not be combined with ws/wss remote URLs
+			if cmd.Local {
+				return fmt.Errorf("cannot specify both --local and --url flags")
+			}
 			// Legacy remote activation via RPS requires profile name
 			if cmd.Profile == "" {
 				return fmt.Errorf("--profile is required for remote activation with ws/wss URLs")
@@ -87,8 +102,6 @@ func (cmd *ActivateCmd) Validate() error {
 			if cmd.StopConfig {
 				return fmt.Errorf("--stopConfig flag is only valid for local activation, not with --url")
 			}
-
-			// Password not applicable for remote legacy path; ignore global/local presence silently.
 
 			if cmd.ProvisioningCert != "" {
 				return fmt.Errorf("--provisioningCert flag is only valid for local activation, not with --url")
@@ -126,8 +139,15 @@ func (cmd *ActivateCmd) Validate() error {
 		return fmt.Errorf("unsupported url scheme: %s", cmd.URL)
 	}
 
-	// If --profile is a file path (local fullflow)
+	// If --profile is provided, handle file vs. name
 	if cmd.Profile != "" {
+		// In local intent, ignore a non-file profile name to avoid forcing ws/wss URL
+		if localIntent && !looksLikeFilePath(cmd.Profile) {
+			log.Warn("Ignoring --profile as a name for local activation; provide a file path to run a local profile fullflow")
+
+			cmd.Profile = ""
+		}
+
 		if looksLikeFilePath(cmd.Profile) {
 			// Disallow local activation flags that conflict; orchestrator uses profile
 			if cmd.CCM || cmd.ACM || cmd.StopConfig {
@@ -141,14 +161,14 @@ func (cmd *ActivateCmd) Validate() error {
 			return nil
 		}
 
-		// Otherwise treat as legacy profile name; require ws/wss URL
-		if cmd.URL == "" {
+		// Otherwise treat as legacy profile name; require ws/wss URL (only when not in local intent)
+		if !localIntent && cmd.URL == "" {
 			return fmt.Errorf("--profile as a name requires --url with ws/wss scheme")
 		}
 	}
 
 	// If --local is specified or local flags are present, it's local mode
-	if cmd.Local || cmd.hasLocalActivationFlags() {
+	if localIntent {
 		// For local activation, validate mode selection unless stopConfig is used
 		if !cmd.StopConfig && !cmd.CCM && !cmd.ACM {
 			return fmt.Errorf("local activation requires either --ccm, --acm, or --stopConfig")
@@ -191,6 +211,15 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 		// Remote URL provided: choose path by scheme
 		lower := strings.ToLower(cmd.URL)
 		if strings.HasPrefix(lower, "ws://") || strings.HasPrefix(lower, "wss://") {
+			// Legacy remote activation path. If device already activated (control mode != 0),
+			// a password is required downstream for authenticated operations; prompt now if missing.
+			if cmd.ControlMode != 0 && strings.TrimSpace(ctx.AMTPassword) == "" {
+				if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+					return err
+				}
+				// WSMAN not required for remote activation, so we do not call EnsureWSMAN here.
+			}
+
 			log.Debugf("Running legacy remote activation with URL: %s", cmd.URL)
 
 			return cmd.runRemoteActivation(ctx)

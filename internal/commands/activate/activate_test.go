@@ -7,6 +7,7 @@ package activate
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -57,13 +58,22 @@ func TestActivateCmd_Validate_Remote(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "conflicting local and remote flags",
+			name: "conflicting local and remote flags (ws/wss) should fail",
 			cmd: ActivateCmd{
 				Local:   true,
 				URL:     "wss://192.168.1.1/activate",
 				Profile: "test-profile",
 			},
 			wantErr: true,
+		},
+		{
+			name: "HTTP URL with local flags should pass (local flags ignored)",
+			cmd: ActivateCmd{
+				Local: true,
+				CCM:   true,
+				URL:   "https://profiles.example.com/export/p1",
+			},
+			wantErr: false,
 		},
 	}
 
@@ -359,4 +369,88 @@ func TestActivateCmd_Validate_ConflictingFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestActivateCmd_Validate_PrecendenceMatrix exercises combined flag scenarios to
+// ensure precedence logic (local intent vs HTTP(S) URL vs ws/wss vs profile file/name) behaves.
+func TestActivateCmd_Validate_PrecendenceMatrix(t *testing.T) {
+	tests := []struct {
+		name           string
+		cmd            ActivateCmd
+		wantErr        bool
+		wantClearedURL bool
+		wantReason     string // substring we expect in error (optional)
+	}{
+		{
+			name:           "Local CCM with HTTP URL causes URL to be cleared (local precedence)",
+			cmd:            ActivateCmd{Local: true, CCM: true, URL: "https://server/profile/p1"},
+			wantErr:        false,
+			wantClearedURL: true,
+		},
+		{
+			name:           "Local ACM with HTTP URL clears URL",
+			cmd:            ActivateCmd{Local: true, ACM: true, URL: "http://server/p2"},
+			wantErr:        false,
+			wantClearedURL: true,
+		},
+		{
+			name:           "HTTP URL remote only (no local flags) retains URL",
+			cmd:            ActivateCmd{URL: "https://server/p3"},
+			wantErr:        false,
+			wantClearedURL: false,
+		},
+		{
+			name:           "ws URL plus local flag fails",
+			cmd:            ActivateCmd{Local: true, URL: "wss://rps.example.com/activate", Profile: "prof"},
+			wantErr:        true,
+			wantClearedURL: false,
+			wantReason:     "cannot specify both --local and --url flags",
+		},
+		{
+			name:       "Profile file path with local flags invalid",
+			cmd:        ActivateCmd{Profile: "myprofile.yaml", CCM: true},
+			wantErr:    true,
+			wantReason: "--ccm/--acm/--stopConfig are not valid when --profile points to a file",
+		},
+		{
+			name:    "Profile file path alone succeeds",
+			cmd:     ActivateCmd{Profile: "device.enc"},
+			wantErr: false,
+		},
+		{
+			name:       "Legacy profile name without ws/wss url fails",
+			cmd:        ActivateCmd{Profile: "legacy-name"},
+			wantErr:    true,
+			wantReason: "--profile as a name requires --url with ws/wss scheme",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Copy to avoid modifying original test case struct inadvertently
+			cmd := tt.cmd
+
+			err := cmd.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error=%v wantErr=%v", err, tt.wantErr)
+			}
+
+			if tt.wantErr && tt.wantReason != "" && err != nil && !contains(err.Error(), tt.wantReason) {
+				t.Fatalf("error=%q does not contain expected substring %q", err.Error(), tt.wantReason)
+			}
+
+			if tt.wantClearedURL && cmd.URL != "" {
+				t.Fatalf("expected URL to be cleared, still have %q", cmd.URL)
+			}
+
+			if !tt.wantClearedURL && tt.cmd.URL != "" && cmd.URL == "" && !tt.wantErr {
+				t.Fatalf("did not expect URL to be cleared (got empty) for scenario: %s", tt.name)
+			}
+		})
+	}
+}
+
+// small helper (avoid importing strings in this test addition section since already used above)
+func contains(haystack, needle string) bool {
+	return strings.Contains(haystack, needle)
 }
