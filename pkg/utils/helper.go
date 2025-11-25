@@ -56,7 +56,10 @@ func InterpretHashAlgorithm(hashAlgorithm int) (hashSize int, algorithm string) 
 	case 2: // SHA256
 		hashSize = 32
 		algorithm = "SHA256"
-	case 3: // SHA512
+	case 3: // SHA384
+		hashSize = 48
+		algorithm = "SHA384"
+	case 5: // SHA512
 		hashSize = 64
 		algorithm = "SHA512"
 	default:
