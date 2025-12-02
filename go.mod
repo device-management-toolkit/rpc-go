@@ -25,7 +25,7 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/kr/text v0.1.0 // indirect
 	github.com/zalando/go-keyring v0.2.6 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 )
 
 require (
