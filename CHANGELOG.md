@@ -1,3 +1,10 @@
+# [3.0.0-beta.3](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.2...v3.0.0-beta.3) (2025-12-02)
+
+
+### Features
+
+* add cira to orchestrator ([b796a54](https://github.com/device-management-toolkit/rpc-go/commit/b796a54b585739407586935d5d09265d468c891a))
+
 # [3.0.0-beta.2](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.1...v3.0.0-beta.2) (2025-11-10)
 
 # [3.0.0-beta.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v3.0.0-beta.1) (2025-11-05)
