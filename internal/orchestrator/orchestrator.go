@@ -121,7 +121,12 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		return fmt.Errorf("TLS configuration failed: %w", err)
 	}
 
-	// Step 8: HTTP Proxy configuration
+	// Step 8: CIRA configuration
+	if err := po.executeCIRAConfiguration(); err != nil {
+		return fmt.Errorf("CIRA configuration failed: %w", err)
+	}
+
+	// Step 9: HTTP Proxy configuration
 	if err := po.executeHTTPProxyConfiguration(); err != nil {
 		return fmt.Errorf("HTTP proxy configuration failed: %w", err)
 	}
@@ -563,6 +568,55 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 				args = append(args, "--eaPassword", po.profile.Configuration.EnterpriseAssistant.Password)
 			}
 		}
+	}
+
+	return po.executeWithPasswordFallback(args)
+}
+
+// executeCIRAConfiguration performs CIRA (Cloud-Initiated Remote Access) configuration
+func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
+	cira := po.profile.Configuration.AMTSpecific.CIRA
+
+	// Check if CIRA is configured (need at least address and cert)
+	if cira.MPSAddress == "" || cira.MPSCert == "" {
+		log.Info("No CIRA configuration specified, skipping")
+
+		return nil
+	}
+
+	log.Info("Executing CIRA configuration")
+
+	args := []string{"rpc"}
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
+	}
+
+	args = append(args, "configure", "cira")
+
+	// MPS Address is required
+	args = append(args, "--mps-address", cira.MPSAddress)
+
+	// MPS Certificate is required
+	args = append(args, "--mps-cert", cira.MPSCert)
+
+	// MPS Password - if not provided, the CLI will prompt
+	if cira.MPSPassword != "" {
+		args = append(args, "--mpspassword", cira.MPSPassword)
+	}
+
+	// MPS Username - optional, pass if provided
+	if cira.MPSUsername != "" {
+		// Note: The CIRA command doesn't have an --mpsusername flag in the current implementation
+		// The username is typically part of the MPS password authentication
+		// If needed in the future, this can be extended
+		log.Debug("MPS Username provided but not used in current CIRA command implementation")
+	}
+
+	// Environment Detection - optional
+	if len(cira.EnvironmentDetection) > 0 {
+		// Join multiple environment detection strings with comma
+		envDetection := strings.Join(cira.EnvironmentDetection, ",")
+		args = append(args, "--envdetection", envDetection)
 	}
 
 	return po.executeWithPasswordFallback(args)
