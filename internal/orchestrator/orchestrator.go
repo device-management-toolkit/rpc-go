@@ -604,12 +604,8 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 		args = append(args, "--mpspassword", cira.MPSPassword)
 	}
 
-	// MPS Username - optional, pass if provided
-	if cira.MPSUsername != "" {
-		// Note: The CIRA command doesn't have an --mpsusername flag in the current implementation
-		// The username is typically part of the MPS password authentication
-		// If needed in the future, this can be extended
-		log.Debug("MPS Username provided but not used in current CIRA command implementation")
+	if cira.GenerateRandomPassword {
+		args = append(args, "--generateRandomPassword")
 	}
 
 	// Environment Detection - optional

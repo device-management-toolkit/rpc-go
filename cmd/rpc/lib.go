@@ -68,6 +68,7 @@ func rpcExec(Input *C.char, Output **C.char, ErrOutput **C.char) int {
 	if err != nil {
 		log.Error(AccessErrMsg)
 		captureAndRestoreStderr()
+
 		return handleError(err)
 	}
 
@@ -81,6 +82,7 @@ func rpcExec(Input *C.char, Output **C.char, ErrOutput **C.char) int {
 	if err != nil {
 		log.Error(err.Error())
 		captureAndRestoreStderr()
+
 		return utils.InvalidParameterCombination.Code
 	}
 
@@ -106,6 +108,7 @@ func rpcExec(Input *C.char, Output **C.char, ErrOutput **C.char) int {
 func handleError(err error) int {
 	if customErr, ok := err.(utils.CustomError); ok {
 		log.Error(customErr.Error())
+
 		return customErr.Code
 	} else {
 		errorMsg := err.Error()
@@ -114,6 +117,7 @@ func handleError(err error) int {
 		if strings.Contains(errorMsg, "unexpected argument") {
 			return utils.InvalidParameterCombination.Code
 		}
+
 		return utils.GenericFailure.Code
 	}
 }

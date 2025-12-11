@@ -23,10 +23,11 @@ import (
 type CIRACmd struct {
 	ConfigureBaseCmd
 
-	MPSPassword          string   `help:"MPS Password" env:"MPS_PASSWORD" name:"mpspassword"`
-	MPSAddress           string   `help:"MPS Address" env:"MPS_ADDRESS" name:"mpsaddress" kong:"required"`
-	MPSCert              string   `help:"MPS Root Public Certificate" env:"MPS_CERT" name:"mpscert" kong:"required"`
-	EnvironmentDetection []string `help:"Environment Detection (comma separated)" env:"ENVIRONMENT_DETECTION" name:"envdetection"`
+	MPSPassword            string   `help:"MPS Password" env:"MPS_PASSWORD" name:"mpspassword"`
+	MPSAddress             string   `help:"MPS Address" env:"MPS_ADDRESS" name:"mpsaddress" kong:"required"`
+	MPSCert                string   `help:"MPS Root Public Certificate" env:"MPS_CERT" name:"mpscert" kong:"required"`
+	EnvironmentDetection   []string `help:"Environment Detection (comma separated)" env:"ENVIRONMENT_DETECTION" name:"envdetection"`
+	GenerateRandomPassword bool     `help:"Generate Random Password for connection with MPS" env:"GENERATE_RANDOM_PASSWORD" name:"generateRandomPassword"`
 }
 
 // BeforeApply validates the CIRA configuration command before execution
@@ -41,16 +42,26 @@ func (cmd *CIRACmd) Validate() error {
 		return err
 	}
 
-	// 3. Prompt for MPS password last (only if everything else is valid)
-	if cmd.MPSPassword == "" {
-		fmt.Print("MPS Password: ")
+	if !cmd.GenerateRandomPassword {
+		// 3. Prompt for MPS password last (only if everything else is valid)
+		if cmd.MPSPassword == "" {
+			fmt.Print("MPS Password: ")
 
-		password, err := utils.PR.ReadPassword()
+			password, err := utils.PR.ReadPassword()
+			if err != nil {
+				return fmt.Errorf("failed to read MPS password: %w", err)
+			}
+
+			cmd.MPSPassword = password
+		}
+	} else {
+		// generate random mps password
+		pwd, err := utils.GenerateRandomPassword(12)
 		if err != nil {
-			return fmt.Errorf("failed to read MPS password: %w", err)
+			return fmt.Errorf("failed to generate random MPS password: %w", err)
 		}
 
-		cmd.MPSPassword = password
+		cmd.MPSPassword = pwd
 	}
 
 	// 4. Set default environment detection if not provided
