@@ -251,6 +251,15 @@ func TestCreateMessageRequestCustomUUID(t *testing.T) {
 	assert.Equal(t, flags.UUID, msgPayload.UUID)
 }
 
+func TestCreateMessageRequestCustomInvalidUUID(t *testing.T) {
+	flags := Request{
+		UUID: "00000000-0000-0000-0000-000000000000",
+	}
+	_, createErr := p.CreateMessageRequest(flags)
+	assert.Error(t, createErr)
+	assert.Equal(t, utils.InvalidUUID, createErr)
+}
+
 func TestCreateMessageRequestNoUUID(t *testing.T) {
 	const expectedUUID = "123-456-789"
 
@@ -319,4 +328,73 @@ func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
 
 	_, isInMap := m["friendlyName"]
 	assert.False(t, isInMap)
+}
+
+func TestIsKnownInvalidUUID(t *testing.T) {
+	tests := []struct {
+		name      string
+		uuid      string
+		isInvalid bool
+	}{
+		{
+			name:      "valid UUID",
+			uuid:      "1c113fd2-3325-4594-a272-54b2038beb07",
+			isInvalid: false,
+		},
+		{
+			name:      "all zeros UUID - invalid",
+			uuid:      "00000000-0000-0000-0000-000000000000",
+			isInvalid: true,
+		},
+		{
+			name:      "known bad UUID pattern - invalid",
+			uuid:      "03000200-0400-0500-0006-000700080009",
+			isInvalid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isKnownInvalidUUID(tt.uuid)
+			assert.Equal(t, tt.isInvalid, result, "UUID: %s isInvalid=%v", tt.uuid, tt.isInvalid)
+		})
+	}
+}
+
+type MockAMTInvalidUUID struct {
+	MockAMT
+}
+
+func (c MockAMTInvalidUUID) GetUUID() (string, error) {
+	return "00000000-0000-0000-0000-000000000000", nil
+}
+
+func TestCreateMessageRequestWithInvalidUUID(t *testing.T) {
+	mockAMT := MockAMTInvalidUUID{}
+	payload := Payload{
+		AMT: mockAMT,
+	}
+	flags := Request{}
+	_, createErr := payload.CreateMessageRequest(flags)
+	assert.Error(t, createErr)
+	assert.Equal(t, utils.InvalidUUID, createErr)
+}
+
+type MockAMTInvalidUUIDPattern struct {
+	MockAMT
+}
+
+func (c MockAMTInvalidUUIDPattern) GetUUID() (string, error) {
+	return "03000200-0400-0500-0006-000700080009", nil
+}
+
+func TestCreateMessageRequestWithInvalidUUIDPattern(t *testing.T) {
+	mockAMT := MockAMTInvalidUUIDPattern{}
+	payload := Payload{
+		AMT: mockAMT,
+	}
+	flags := Request{}
+	_, createErr := payload.CreateMessageRequest(flags)
+	assert.Error(t, createErr)
+	assert.Equal(t, utils.InvalidUUID, createErr)
 }
