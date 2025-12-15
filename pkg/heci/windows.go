@@ -34,6 +34,7 @@ type Driver struct {
 	PTHIGUID       windows.GUID
 	LMEGUID        windows.GUID
 	WDGUID         windows.GUID
+	UPIDGUID       windows.GUID
 	clientGUID     *windows.GUID
 	clientGUIDSize uint32
 }
@@ -70,6 +71,11 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	heci.UPIDGUID, err = windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	if err != nil {
+		return err
+	}
+
 	if useLME {
 		heci.clientGUID = &heci.LMEGUID
 	} else if useWD {
@@ -84,6 +90,18 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	}
 
 	return err
+}
+
+// InitWithGUID initializes the HECI driver with a specific GUID
+func (heci *Driver) InitWithGUID(guid windows.GUID) error {
+	heci.clientGUID = &guid
+
+	err := heci.FindDevices()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (heci *Driver) FindDevices() error {

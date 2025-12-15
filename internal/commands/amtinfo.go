@@ -25,6 +25,7 @@ import (
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -170,6 +171,7 @@ type InfoResult struct {
 	SKU               string                       `json:"sku,omitempty"`
 	Features          string                       `json:"features,omitempty"`
 	UUID              string                       `json:"uuid,omitempty"`
+	UPID              string                       `json:"upid,omitempty"`
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
@@ -391,6 +393,24 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	// Get UPID (Intel Unique Platform ID)
+	if showAll {
+		upidClient := upid.NewClient()
+		if upidClient.IsSupported() {
+			// Create a new client for GetUPID since IsSupported closed the previous connection
+			upidClient = upid.NewClient()
+
+			upidData, err := upidClient.GetUPID()
+			if err != nil {
+				log.Debug("Failed to get UPID: ", err)
+			} else if upidData != nil {
+				result.UPID = upidData.String()
+			}
+		} else {
+			log.Debug("Intel UPID is not supported on this platform")
+		}
+	}
+
 	// Get control mode
 	if showAll || cmd.Mode {
 		// Use cached control mode if already retrieved, otherwise get it
@@ -545,6 +565,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 
 	if (showAll || cmd.UUID) && result.UUID != "" {
 		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
+	}
+
+	if showAll && result.UPID != "" {
+		fmt.Printf("UPID\t\t\t: %s\n", result.UPID)
 	}
 
 	if (showAll || cmd.Mode) && result.ControlMode != "" {
