@@ -15,6 +15,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sys/windows"
 )
 
 // Client represents a Windows UPID client
@@ -67,7 +68,15 @@ func NewClient() Interface {
 func (c *Client) GetUPID() (*UPID, error) {
 	// Initialize HECI driver with UPID GUID
 	driver := c.heci.(*heci.Driver)
-	err := driver.InitWithGUID(driver.UPIDGUID)
+
+	// Parse UPID GUID string - same GUID as Linux MEI_UPID
+	upidGUID, err := windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	if err != nil {
+		log.Debugf("Failed to parse UPID GUID: %v", err)
+		return nil, ErrConnectionFailed
+	}
+
+	err = driver.InitWithGUID(upidGUID)
 	if err != nil {
 		log.Debugf("Failed to initialize UPID MEI client: %v", err)
 
@@ -302,7 +311,15 @@ func (c *Client) getPlatformID() (*UPID, error) {
 // IsSupported checks if UPID is supported on this platform
 func (c *Client) IsSupported() bool {
 	driver := c.heci.(*heci.Driver)
-	err := driver.InitWithGUID(driver.UPIDGUID)
+
+	// Parse UPID GUID string - same GUID as Linux MEI_UPID
+	upidGUID, err := windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	if err != nil {
+		log.Debugf("Failed to parse UPID GUID: %v", err)
+		return false
+	}
+
+	err = driver.InitWithGUID(upidGUID)
 	if err != nil {
 		log.Debugf("UPID MEI client initialization failed: %v", err)
 		return false
