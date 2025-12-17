@@ -14,5 +14,6 @@ coverage
 .github/copilot-instructions.md
 *.md
 !README.md
+!migration-guide.md
 *.yaml
 !config.yaml
