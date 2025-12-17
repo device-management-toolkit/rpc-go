@@ -143,13 +143,17 @@ func (u *UPID) String() string {
 		return result
 	}
 
-	// Otherwise show both OEM and CSME Platform IDs on separate lines
+	// Otherwise show both Intel CSME and OEM Platform IDs on separate lines (Intel CSME first per Intel UPID Attestation SDK Documentation)
 	result := ""
-	for i, b := range u.Raw {
-		result += hexChar(b>>4) + hexChar(b&0x0F)
-		if i == 31 {
-			result += "\n          "
-		}
+	// First line: Intel CSME Platform ID (bytes 32-63)
+	for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
+		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+	}
+
+	result += "\n          "
+	// Second line: OEM Platform ID (bytes 0-31)
+	for i := 0; i < OEMPlatformIDSize; i++ {
+		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
 	}
 
 	return result

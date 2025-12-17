@@ -407,6 +407,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 			} else if upidData != nil {
 				result.UPID = upidData.String()
 			}
+		} else {
+			log.Trace("Intel UPID is not supported on this platform")
 		}
 	}
 

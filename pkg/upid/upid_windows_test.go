@@ -114,7 +114,7 @@ func TestUPIDString(t *testing.T) {
 			expected: "0000000000000000000000000000000000000000000000000000000000000000",
 		},
 		{
-			name: "Valid UPID with OEM provisioned (shows both OEM and CSME)",
+			name: "Valid UPID with OEM provisioned (shows CSME first, then OEM)",
 			upid: &UPID{
 				Raw: func() []byte {
 					raw := make([]byte, UPIDSize)
@@ -126,7 +126,7 @@ func TestUPIDString(t *testing.T) {
 					return raw
 				}(),
 			},
-			expected: "AB00000000000000000000000000000000000000000000000000000000000000\n          CDEF000000000000000000000000000000000000000000000000000000000000",
+			expected: "CDEF000000000000000000000000000000000000000000000000000000000000\n          AB00000000000000000000000000000000000000000000000000000000000000",
 		},
 	}
 
@@ -300,9 +300,10 @@ func TestUPIDStructSize(t *testing.T) {
 func TestUPIDStringFormatting(t *testing.T) {
 	// Create a UPID with known values
 	upidData := make([]byte, 64)
-	// Set first byte to 0x12, second to 0x34 for verification
+	// Set OEM Platform ID bytes (bytes 0-31)
 	upidData[0] = 0x12
 	upidData[1] = 0x34
+	// Set CSME Platform ID bytes (bytes 32-63)
 	upidData[32] = 0xAB
 	upidData[33] = 0xCD
 
@@ -318,9 +319,9 @@ func TestUPIDStringFormatting(t *testing.T) {
 		t.Fatal("UPID string too short")
 	}
 
-	// First 4 hex chars should be "1234"
-	if str[0:4] != "1234" {
-		t.Errorf("UPID string doesn't start with expected hex: got %s, want 1234...", str[0:4])
+	// First 4 hex chars should be "ABCD" (CSME Platform ID is displayed first per Intel spec)
+	if str[0:4] != "ABCD" {
+		t.Errorf("UPID string doesn't start with expected hex: got %s, want ABCD...", str[0:4])
 	}
 
 	// Verify it contains newline and spaces for second line formatting
