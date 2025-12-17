@@ -25,6 +25,7 @@ import (
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -45,6 +46,7 @@ type AmtInfoCmd struct {
 
 	// Identity flags
 	UUID bool `help:"Show Unique Identifier" short:"u"`
+	UPID bool `help:"Show Intel Unique Platform ID"`
 	Mode bool `help:"Show Current Control Mode" short:"m"`
 
 	// Network flags
@@ -110,7 +112,7 @@ func (cmd *AmtInfoCmd) IsUserCertRequested() bool {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.DNS &&
+	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
 }
 
@@ -170,6 +172,7 @@ type InfoResult struct {
 	SKU               string                       `json:"sku,omitempty"`
 	Features          string                       `json:"features,omitempty"`
 	UUID              string                       `json:"uuid,omitempty"`
+	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
@@ -391,6 +394,16 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	// Get UPID (Intel Unique Platform ID)
+	if showAll || cmd.UPID {
+		upidData, err := upid.NewClient().GetUPID()
+		if err != nil {
+			log.Trace("Failed to get UPID: ", err)
+		} else if upidData != nil {
+			result.UPID = upidData
+		}
+	}
+
 	// Get control mode
 	if showAll || cmd.Mode {
 		// Use cached control mode if already retrieved, otherwise get it
@@ -545,6 +558,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 
 	if (showAll || cmd.UUID) && result.UUID != "" {
 		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
+	}
+
+	if (showAll || cmd.UPID) && result.UPID != nil {
+		fmt.Printf("UPID\t\t\t: %s\n", result.UPID.String())
 	}
 
 	if (showAll || cmd.Mode) && result.ControlMode != "" {
