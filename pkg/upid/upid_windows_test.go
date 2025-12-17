@@ -330,18 +330,6 @@ func TestUPIDStringFormatting(t *testing.T) {
 	}
 }
 
-func TestClientClose(t *testing.T) {
-	client := NewClient()
-	if client == nil {
-		t.Fatal("NewClient() returned nil")
-	}
-
-	err := client.Close()
-	if err != nil {
-		t.Errorf("Close() returned unexpected error: %v", err)
-	}
-}
-
 func TestUPIDHECIHeaderSize(t *testing.T) {
 	// Verify header is 4 bytes as per Intel spec
 	var header UPIDHECIHeader

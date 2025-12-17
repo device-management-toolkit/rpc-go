@@ -335,6 +335,73 @@ func TestUPIDStringFormatting(t *testing.T) {
 	}
 }
 
+func TestUPIDMarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		upid     *UPID
+		expected string
+	}{
+		{
+			name: "OEM not provisioned - only CSME",
+			upid: &UPID{
+				Raw: append(
+					make([]byte, 32), // OEM all zeros
+					[]byte{
+						0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
+						0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+						0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
+						0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+					}...,
+				),
+			},
+			expected: `"123456789ABCDEF01122334455667788AABBCCDDEEFF00112233445566778899"`,
+		},
+		{
+			name: "OEM provisioned - both IDs",
+			upid: &UPID{
+				Raw: []byte{
+					// OEM Platform ID (bytes 0-31)
+					0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89,
+					0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
+					0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+					0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+					// CSME Platform ID (bytes 32-63)
+					0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
+					0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+					0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
+					0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+				},
+			},
+			// JSON should have CSME first, then OEM (no newline)
+			expected: `"123456789ABCDEF01122334455667788AABBCCDDEEFF00112233445566778899ABCDEF0123456789FEDCBA9876543210112233445566778899AABBCCDDEEFF00"`,
+		},
+		{
+			name:     "nil UPID",
+			upid:     nil,
+			expected: `""`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jsonBytes, err := tt.upid.MarshalJSON()
+			if err != nil {
+				t.Fatalf("MarshalJSON() error = %v", err)
+			}
+
+			result := string(jsonBytes)
+			if result != tt.expected {
+				t.Errorf("MarshalJSON() = %q, want %q", result, tt.expected)
+			}
+
+			// Verify no newlines in JSON output
+			if contains(result, "\n") {
+				t.Error("JSON output should not contain newlines")
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

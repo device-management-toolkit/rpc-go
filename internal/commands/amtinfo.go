@@ -172,7 +172,7 @@ type InfoResult struct {
 	SKU               string                       `json:"sku,omitempty"`
 	Features          string                       `json:"features,omitempty"`
 	UUID              string                       `json:"uuid,omitempty"`
-	UPID              string                       `json:"upid,omitempty"`
+	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
@@ -396,19 +396,11 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 	// Get UPID (Intel Unique Platform ID)
 	if showAll || cmd.UPID {
-		upidClient := upid.NewClient()
-		if upidClient.IsSupported() {
-			// Create a new client for GetUPID since IsSupported closed the previous connection
-			upidClient = upid.NewClient()
-
-			upidData, err := upidClient.GetUPID()
-			if err != nil {
-				log.Trace("Failed to get UPID: ", err)
-			} else if upidData != nil {
-				result.UPID = upidData.String()
-			}
-		} else {
-			log.Trace("Intel UPID is not supported on this platform")
+		upidData, err := upid.NewClient().GetUPID()
+		if err != nil {
+			log.Trace("Failed to get UPID: ", err)
+		} else if upidData != nil {
+			result.UPID = upidData
 		}
 	}
 
@@ -568,8 +560,8 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
 	}
 
-	if (showAll || cmd.UPID) && result.UPID != "" {
-		fmt.Printf("UPID\t\t\t: %s\n", result.UPID)
+	if (showAll || cmd.UPID) && result.UPID != nil {
+		fmt.Printf("UPID\t\t\t: %s\n", result.UPID.String())
 	}
 
 	if (showAll || cmd.Mode) && result.ControlMode != "" {

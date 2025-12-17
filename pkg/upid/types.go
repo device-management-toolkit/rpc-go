@@ -15,6 +15,8 @@ const (
 	OEMPlatformIDSize = 32
 	// HWSerialNumSize is the size of the Hardware Serial Number (second 32 bytes)
 	HWSerialNumSize = 32
+	// UPIDGUID is the Intel ME UPID interface GUID
+	UPIDGUID = "{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}"
 )
 
 // UPID Command Feature Codes (from Intel UPID Attestation SDK)
@@ -94,13 +96,8 @@ type UPID struct {
 type Interface interface {
 	// GetUPID retrieves the Intel UPID from the platform
 	// Returns the UPID struct or an error if not supported/enabled
+	// Automatically checks support and manages resource cleanup
 	GetUPID() (*UPID, error)
-
-	// IsSupported checks if Intel UPID is supported on this platform
-	IsSupported() bool
-
-	// Close releases any resources held by the UPID client
-	Close() error
 }
 
 // NewUPID creates a new UPID structure from raw 64-byte data
@@ -117,6 +114,7 @@ func NewUPID(raw []byte) (*UPID, error) {
 }
 
 // String returns a hex-encoded string representation of the full UPID
+// For text output, formats with newlines when both IDs are present
 func (u *UPID) String() string {
 	if u == nil || u.Raw == nil {
 		return ""
@@ -157,6 +155,42 @@ func (u *UPID) String() string {
 	}
 
 	return result
+}
+
+// MarshalJSON implements custom JSON marshaling for UPID
+// Returns a single continuous hex string without newlines (CSME first, then OEM)
+func (u *UPID) MarshalJSON() ([]byte, error) {
+	if u == nil || u.Raw == nil {
+		return []byte(`""`), nil
+	}
+
+	// Check if OEM Platform ID is all zeros (not provisioned)
+	oemAllZeros := true
+
+	for i := 0; i < OEMPlatformIDSize; i++ {
+		if u.Raw[i] != 0 {
+			oemAllZeros = false
+
+			break
+		}
+	}
+
+	result := "\""
+	// Always show CSME Platform ID first (bytes 32-63)
+	for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
+		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+	}
+
+	// If OEM Platform ID is provisioned, append it (bytes 0-31)
+	if !oemAllZeros {
+		for i := 0; i < OEMPlatformIDSize; i++ {
+			result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+		}
+	}
+
+	result += "\""
+
+	return []byte(result), nil
 }
 
 func hexChar(n byte) string {

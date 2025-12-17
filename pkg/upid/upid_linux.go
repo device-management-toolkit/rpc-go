@@ -62,9 +62,15 @@ func NewClient() Interface {
 	}
 }
 
-// GetUPID retrieves the Intel UPID from the platform via MEI/HECI
+// GetUPID retrieves the Intel UPID from the platform via MEI/HECI.
+// Automatically checks support and manages resource cleanup.
 // Following Intel UPID SDK workflow: Enable feature -> Get UPID -> Disable feature
 func (c *Client) GetUPID() (*UPID, error) {
+	// First check if UPID is supported
+	if !c.isSupported() {
+		return nil, ErrUPIDNotSupported
+	}
+
 	// Initialize HECI driver with UPID GUID
 	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
 	if err != nil {
@@ -72,7 +78,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 
 		return nil, ErrConnectionFailed
 	}
-	defer c.Close()
+	defer c.close()
 
 	// Step 1: Enable UPID feature (required before reading)
 	err = c.setFeatureState(true)
@@ -305,8 +311,8 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	return upid, nil
 }
 
-// IsSupported checks if UPID is supported on this platform
-func (c *Client) IsSupported() bool {
+// isSupported checks if UPID is supported on this platform (internal method)
+func (c *Client) isSupported() bool {
 	// Try to initialize the UPID MEI client
 	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
 	if err != nil {
@@ -315,16 +321,14 @@ func (c *Client) IsSupported() bool {
 		return false
 	}
 
-	c.Close()
+	c.close()
 
 	return true
 }
 
-// Close releases resources held by the UPID client
-func (c *Client) Close() error {
+// close releases resources held by the UPID client (internal method).
+func (c *Client) close() {
 	if c.heci != nil {
 		c.heci.Close()
 	}
-
-	return nil
 }

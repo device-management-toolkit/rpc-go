@@ -69,11 +69,16 @@ func (c *Client) GetUPID() (*UPID, error) {
 	// Initialize HECI driver with UPID GUID
 	driver := c.heci.(*heci.Driver)
 
-	// Parse UPID GUID string - same GUID as Linux MEI_UPID
-	upidGUID, err := windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	// Parse UPID GUID string
+	upidGUID, err := windows.GUIDFromString(UPIDGUID)
 	if err != nil {
 		log.Tracef("Failed to parse UPID GUID: %v", err)
 		return nil, ErrConnectionFailed
+	}
+
+	// Check if UPID is supported first
+	if !c.isSupported() {
+		return nil, ErrUPIDNotSupported
 	}
 
 	err = driver.InitWithGUID(upidGUID)
@@ -82,7 +87,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 
 		return nil, ErrConnectionFailed
 	}
-	defer c.Close()
+	defer c.close()
 
 	// Step 1: Enable UPID feature (required before reading)
 	err = c.setFeatureState(true)
@@ -308,12 +313,12 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	return upid, nil
 }
 
-// IsSupported checks if UPID is supported on this platform
-func (c *Client) IsSupported() bool {
+// isSupported checks if UPID is supported on this platform (internal method)
+func (c *Client) isSupported() bool {
 	driver := c.heci.(*heci.Driver)
 
-	// Parse UPID GUID string - same GUID as Linux MEI_UPID
-	upidGUID, err := windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	// Parse UPID GUID string
+	upidGUID, err := windows.GUIDFromString(UPIDGUID)
 	if err != nil {
 		log.Tracef("Failed to parse UPID GUID: %v", err)
 		return false
@@ -324,16 +329,15 @@ func (c *Client) IsSupported() bool {
 		log.Tracef("UPID MEI client initialization failed: %v", err)
 		return false
 	}
-	defer c.Close()
+	defer c.close()
 
 	return true
 }
 
-// Close releases resources held by the UPID client
-func (c *Client) Close() error {
+// close releases resources held by the UPID client (internal method)
+func (c *Client) close() {
 	if c.heci != nil {
 		driver := c.heci.(*heci.Driver)
 		driver.Close()
 	}
-	return nil
 }
