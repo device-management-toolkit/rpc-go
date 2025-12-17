@@ -333,7 +333,6 @@ func (c *Client) isSupported() bool {
 // close releases resources held by the UPID client (internal method)
 func (c *Client) close() {
 	if c.heci != nil {
-		driver := c.heci.(*heci.Driver)
-		driver.Close()
+		c.heci.Close()
 	}
 }
