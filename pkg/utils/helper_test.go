@@ -381,6 +381,53 @@ func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (needle == haystack || (len(needle) > 0 && string([]rune(haystack)[0:len(needle)]) == needle))
 }
 
+func TestGenerateRandomPassword(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+	}{
+		{"DefaultLength16", 16},
+		{"Length8", 8},
+		{"Length12", 12},
+		{"BelowMinClampsTo8", 4},
+		{"AboveMaxClampsTo16", 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			password, err := GenerateRandomPassword(tt.length)
+			assert.NoError(t, err)
+
+			expectedLen := tt.length
+			if expectedLen < 8 {
+				expectedLen = 8
+			} else if expectedLen > 16 {
+				expectedLen = 16
+			}
+
+			assert.Equal(t, expectedLen, len(password))
+
+			// Verify the password passes validation
+			assert.NoError(t, ValidateMPSPassword(password))
+		})
+	}
+}
+
+func TestGenerateRandomPassword_Uniqueness(t *testing.T) {
+	passwords := make(map[string]bool)
+
+	for i := 0; i < 100; i++ {
+		password, err := GenerateRandomPassword(16)
+		assert.NoError(t, err)
+
+		if passwords[password] {
+			t.Errorf("generated duplicate password: %s", password)
+		}
+
+		passwords[password] = true
+	}
+}
+
 func TestDecodeAMT(t *testing.T) {
 	testCases := []struct {
 		version string
