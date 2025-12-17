@@ -66,9 +66,6 @@ func NewClient() Interface {
 // GetUPID retrieves the Intel UPID from the platform via MEI/HECI
 // Following Intel UPID SDK workflow: Enable feature → Get UPID → Disable feature
 func (c *Client) GetUPID() (*UPID, error) {
-	// Initialize HECI driver with UPID GUID
-	driver := c.heci.(*heci.Driver)
-
 	// Parse UPID GUID string
 	upidGUID, err := windows.GUIDFromString(UPIDGUID)
 	if err != nil {
@@ -81,7 +78,8 @@ func (c *Client) GetUPID() (*UPID, error) {
 		return nil, ErrUPIDNotSupported
 	}
 
-	err = driver.InitWithGUID(upidGUID)
+	// Initialize HECI driver with UPID GUID
+	err = c.heci.InitWithGUID(upidGUID)
 	if err != nil {
 		log.Tracef("Failed to initialize UPID MEI client: %v", err)
 
@@ -315,8 +313,6 @@ func (c *Client) getPlatformID() (*UPID, error) {
 
 // isSupported checks if UPID is supported on this platform (internal method)
 func (c *Client) isSupported() bool {
-	driver := c.heci.(*heci.Driver)
-
 	// Parse UPID GUID string
 	upidGUID, err := windows.GUIDFromString(UPIDGUID)
 	if err != nil {
@@ -324,7 +320,7 @@ func (c *Client) isSupported() bool {
 		return false
 	}
 
-	err = driver.InitWithGUID(upidGUID)
+	err = c.heci.InitWithGUID(upidGUID)
 	if err != nil {
 		log.Tracef("UPID MEI client initialization failed: %v", err)
 		return false

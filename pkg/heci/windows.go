@@ -93,8 +93,14 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 }
 
 // InitWithGUID initializes the HECI driver with a specific GUID
-func (heci *Driver) InitWithGUID(guid windows.GUID) error {
-	heci.clientGUID = &guid
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	// Type assert to windows.GUID
+	guidValue, ok := guid.(windows.GUID)
+	if !ok {
+		return errors.New("invalid GUID type for Windows, expected windows.GUID")
+	}
+
+	heci.clientGUID = &guidValue
 
 	err := heci.FindDevices()
 	if err != nil {

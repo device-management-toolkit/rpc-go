@@ -10,6 +10,7 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 	"syscall"
 	"unsafe"
@@ -96,8 +97,14 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 }
 
 // InitWithGUID initializes the HECI driver with a specific GUID
-func (heci *Driver) InitWithGUID(guid [16]uint8) error {
+func (heci *Driver) InitWithGUID(guid interface{}) error {
 	var err error
+
+	// Type assert to [16]uint8
+	guidBytes, ok := guid.([16]uint8)
+	if !ok {
+		return errors.New("invalid GUID type for Linux, expected [16]uint8")
+	}
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
@@ -113,7 +120,7 @@ func (heci *Driver) InitWithGUID(guid [16]uint8) error {
 	}
 
 	data := CMEIConnectClientData{}
-	data.data = guid
+	data.data = guidBytes
 
 	// we try up to 3 times in case the resource/device is still busy from previous call.
 	for i := 0; i < 3; i++ {

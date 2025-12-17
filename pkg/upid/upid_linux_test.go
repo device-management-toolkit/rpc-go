@@ -9,6 +9,8 @@
 package upid
 
 import (
+	"encoding/binary"
+	"errors"
 	"testing"
 )
 
@@ -410,4 +412,263 @@ func contains(s, substr string) bool {
 	}
 
 	return false
+}
+
+// MockHECI implements heci.Interface for testing
+type MockHECI struct {
+	initWithGUIDFunc   func(guid interface{}) error
+	sendMessageFunc    func(buffer []byte, done *uint32) (int, error)
+	receiveMessageFunc func(buffer []byte, done *uint32) (int, error)
+	closed             bool
+}
+
+func (m *MockHECI) Init(useLME, useWD bool) error {
+	return nil
+}
+
+func (m *MockHECI) InitWithGUID(guid interface{}) error {
+	if m.initWithGUIDFunc != nil {
+		return m.initWithGUIDFunc(guid)
+	}
+	return nil
+}
+
+func (m *MockHECI) GetBufferSize() uint32 {
+	return 5120
+}
+
+func (m *MockHECI) SendMessage(buffer []byte, done *uint32) (int, error) {
+	if m.sendMessageFunc != nil {
+		return m.sendMessageFunc(buffer, done)
+	}
+	return len(buffer), nil
+}
+
+func (m *MockHECI) ReceiveMessage(buffer []byte, done *uint32) (int, error) {
+	if m.receiveMessageFunc != nil {
+		return m.receiveMessageFunc(buffer, done)
+	}
+	return 0, nil
+}
+
+func (m *MockHECI) Close() {
+	m.closed = true
+}
+
+// TestGetUPIDLinux tests GetUPID implementation with mock
+func TestGetUPIDLinux(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMock   func(*MockHECI)
+		wantErr     bool
+		wantErrType error
+		checkUPID   func(*testing.T, *UPID)
+	}{
+		{
+			name: "successful UPID retrieval - OEM provisioned",
+			setupMock: func(m *MockHECI) {
+				callCount := 0
+				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
+					callCount++
+					if callCount == 1 {
+						// First call: enable feature response (command 2)
+						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)]
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else if callCount == 2 {
+						// Second call: UPID response with OEM provisioned (command 5)
+						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)|PlatformIdType(4bytes)|OEM(32bytes)|CSME(32bytes)]
+						response := make([]byte, 76)
+						response[1] = CommandPlatformIDGet
+						binary.LittleEndian.PutUint16(response[2:4], 72)                    // ByteCount (2 bytes)
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess)) // Status (4 bytes)
+						// PlatformIdType (4 bytes at offset 8)
+						binary.LittleEndian.PutUint32(response[8:12], uint32(PlatformIDTypeBinary))
+						// OEM Platform ID (32 bytes at offset 12)
+						for i := 0; i < 32; i++ {
+							response[12+i] = 0xAA
+						}
+						// CSME Platform ID (32 bytes at offset 44)
+						for i := 0; i < 32; i++ {
+							response[44+i] = 0xBB
+						}
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else {
+						// Third call: disable feature response (command 2)
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					}
+				}
+			},
+			wantErr: false,
+			checkUPID: func(t *testing.T, upid *UPID) {
+				if upid == nil {
+					t.Fatal("Expected UPID, got nil")
+				}
+				if len(upid.Raw) != 64 {
+					t.Errorf("Expected Raw length 64, got %d", len(upid.Raw))
+				}
+				// Verify OEM ID (bytes 0-31)
+				for i := 0; i < 32; i++ {
+					if upid.OEMPlatformID[i] != 0xAA {
+						t.Errorf("OEMPlatformID[%d] = 0x%02x, want 0xAA", i, upid.OEMPlatformID[i])
+						break
+					}
+				}
+				// Verify CSME ID (bytes 32-63)
+				for i := 0; i < 32; i++ {
+					if upid.HWSerialNum[i] != 0xBB {
+						t.Errorf("HWSerialNum[%d] = 0x%02x, want 0xBB", i, upid.HWSerialNum[i])
+						break
+					}
+				}
+			},
+		},
+		{
+			name: "UPID not supported",
+			setupMock: func(m *MockHECI) {
+				m.initWithGUIDFunc = func(guid interface{}) error {
+					return errors.New("device not found")
+				}
+			},
+			wantErr:     true,
+			wantErrType: ErrUPIDNotSupported,
+		},
+		{
+			name: "UPID not provisioned - short response",
+			setupMock: func(m *MockHECI) {
+				callCount := 0
+				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
+					callCount++
+					if callCount == 1 {
+						// Enable feature response
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else if callCount == 2 {
+						// Short response (8 bytes) with SUCCESS indicates not provisioned
+						response := make([]byte, 8)
+						response[1] = CommandPlatformIDGet
+						binary.LittleEndian.PutUint16(response[2:4], 0)                     // ByteCount = 0
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess)) // Status
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else {
+						// Disable feature response
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					}
+				}
+			},
+			wantErr:     true,
+			wantErrType: ErrUPIDNotProvisioned,
+		},
+		{
+			name: "UPID disabled status",
+			setupMock: func(m *MockHECI) {
+				callCount := 0
+				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
+					callCount++
+					if callCount == 1 {
+						// Enable feature response
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else if callCount == 2 {
+						// Response with Invalid State status
+						response := make([]byte, 8)
+						response[1] = CommandPlatformIDGet
+						binary.LittleEndian.PutUint16(response[2:4], 0)                          // ByteCount
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusInvalidState)) // Status
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					} else {
+						// Disable feature response
+						response := make([]byte, 8)
+						response[1] = CommandFeatureStateSet
+						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
+						copy(buffer, response)
+						if done != nil {
+							*done = uint32(len(response))
+						}
+						return len(response), nil
+					}
+				}
+			},
+			wantErr:     true,
+			wantErrType: ErrInvalidState,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHECI := &MockHECI{}
+			tt.setupMock(mockHECI)
+
+			client := &Client{
+				heci: mockHECI,
+			}
+
+			upid, err := client.GetUPID()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Expected error, got nil")
+				}
+				if tt.wantErrType != nil && err != tt.wantErrType {
+					t.Errorf("Expected error %v, got %v", tt.wantErrType, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Unexpected error: %v", err)
+				}
+				if tt.checkUPID != nil {
+					tt.checkUPID(t, upid)
+				}
+			}
+
+			// Verify Close was called (except for "not supported" case where close may not be reached)
+			if tt.name != "UPID not supported" && !mockHECI.closed {
+				t.Error("Expected HECI to be closed")
+			}
+		})
+	}
 }

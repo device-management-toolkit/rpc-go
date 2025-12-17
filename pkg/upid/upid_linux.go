@@ -72,7 +72,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	}
 
 	// Initialize HECI driver with UPID GUID
-	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
+	err := c.heci.InitWithGUID(heci.MEI_UPID)
 	if err != nil {
 		log.Tracef("Failed to initialize UPID MEI client: %v", err)
 
@@ -314,7 +314,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 // isSupported checks if UPID is supported on this platform (internal method)
 func (c *Client) isSupported() bool {
 	// Try to initialize the UPID MEI client
-	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
+	err := c.heci.InitWithGUID(heci.MEI_UPID)
 	if err != nil {
 		log.Tracef("UPID MEI client initialization failed: %v", err)
 
