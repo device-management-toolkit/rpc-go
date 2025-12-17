@@ -2,7 +2,7 @@
 // +build linux
 
 /*********************************************************************
- * Copyright (c) Intel Corporation 2024
+ * Copyright (c) Intel Corporation 2025
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
@@ -68,7 +68,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	// Initialize HECI driver with UPID GUID
 	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
 	if err != nil {
-		log.Debugf("Failed to initialize UPID MEI client: %v", err)
+		log.Tracef("Failed to initialize UPID MEI client: %v", err)
 
 		return nil, ErrConnectionFailed
 	}
@@ -77,7 +77,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	// Step 1: Enable UPID feature (required before reading)
 	err = c.setFeatureState(true)
 	if err != nil {
-		log.Debugf("Failed to enable UPID feature: %v", err)
+		log.Tracef("Failed to enable UPID feature: %v", err)
 		// Continue anyway - some platforms may have it already enabled or not require this
 	}
 
@@ -87,7 +87,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	// Step 3: Disable UPID feature (security best practice)
 	disableErr := c.setFeatureState(false)
 	if disableErr != nil {
-		log.Debugf("Failed to disable UPID feature: %v", disableErr)
+		log.Tracef("Failed to disable UPID feature: %v", disableErr)
 		// Non-fatal - log but don't fail the operation
 	}
 
@@ -112,7 +112,7 @@ func (c *Client) setFeatureState(enable bool) error {
 		FeatureEnabled: featureEnabled,
 	}
 
-	log.Debugf("Setting UPID feature state to %v (value=%d)", enable, featureEnabled)
+	log.Tracef("Setting UPID feature state to %v (value=%d)", enable, featureEnabled)
 
 	var requestBuffer bytes.Buffer
 
@@ -153,7 +153,7 @@ func (c *Client) setFeatureState(enable bool) error {
 		return fmt.Errorf("feature state set failed with status: %d", response.Status)
 	}
 
-	log.Debugf("UPID feature state set successfully to %v", enable)
+	log.Tracef("UPID feature state set successfully to %v", enable)
 
 	return nil
 }
@@ -169,7 +169,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 		},
 	}
 
-	log.Debugf("Sending UPID_PLATFORM_ID_GET request: Feature=%d Command=%d ByteCount=%d",
+	log.Tracef("Sending UPID_PLATFORM_ID_GET request: Feature=%d Command=%d ByteCount=%d",
 		request.Header.Feature, request.Header.Command, request.Header.ByteCount)
 
 	// Serialize request
@@ -184,11 +184,11 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	requestBytes := requestBuffer.Bytes()
 	requestSize := uint32(len(requestBytes))
 
-	log.Debugf("Sending %d bytes: %x", requestSize, requestBytes)
+	log.Tracef("Sending %d bytes: %x", requestSize, requestBytes)
 
 	bytesWritten, err := c.heci.SendMessage(requestBytes, &requestSize)
 	if err != nil {
-		log.Debugf("Failed to send UPID command: %v", err)
+		log.Tracef("Failed to send UPID command: %v", err)
 
 		return nil, ErrCommandFailed
 	}
@@ -203,7 +203,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 
 	bytesRead, err := c.heci.ReceiveMessage(responseBuffer, &bufferSize)
 	if err != nil {
-		log.Debugf("Failed to receive UPID response: %v", err)
+		log.Tracef("Failed to receive UPID response: %v", err)
 
 		return nil, ErrCommandFailed
 	}
@@ -212,8 +212,8 @@ func (c *Client) getPlatformID() (*UPID, error) {
 		return nil, fmt.Errorf("empty response from UPID MEI client")
 	}
 
-	log.Debugf("UPID response: %d bytes received", bytesRead)
-	log.Debugf("UPID response data: %x", responseBuffer[:bytesRead])
+	log.Tracef("UPID response: %d bytes received", bytesRead)
+	log.Tracef("UPID response data: %x", responseBuffer[:bytesRead])
 
 	// Check minimum response size (header is 4 bytes + status is 4 bytes = 8 bytes minimum)
 	const minResponseSize = 8
@@ -236,7 +236,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 		return nil, fmt.Errorf("failed to parse UPID response status: %w", err)
 	}
 
-	log.Debugf("UPID header: Feature=%d Command=%d ByteCount=%d Status=%d",
+	log.Tracef("UPID header: Feature=%d Command=%d ByteCount=%d Status=%d",
 		heciHeader.Feature, heciHeader.Command, heciHeader.ByteCount, status)
 
 	// Verify command matches
@@ -246,7 +246,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 
 	// Check response status using official Intel UPID status codes
 	if status != uint32(StatusSuccess) {
-		log.Debugf("UPID command returned error status: %d", status)
+		log.Tracef("UPID command returned error status: %d", status)
 
 		switch uint8(status) {
 		case StatusFeatureNotSupported:
@@ -276,7 +276,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	const expectedFullSize = 76
 	if bytesRead < expectedFullSize {
 		// Short response with SUCCESS status indicates UPID not provisioned
-		log.Debugf("Short response (%d bytes) with SUCCESS status - UPID not provisioned (expected %d bytes)", bytesRead, expectedFullSize)
+		log.Tracef("Short response (%d bytes) with SUCCESS status - UPID not provisioned (expected %d bytes)", bytesRead, expectedFullSize)
 
 		return nil, ErrUPIDNotProvisioned
 	}
@@ -289,7 +289,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 		return nil, fmt.Errorf("failed to parse full UPID response: %w", err)
 	}
 
-	log.Debugf("PlatformIdType: %d", response.PlatformIdType)
+	log.Tracef("PlatformIdType: %d", response.PlatformIdType)
 
 	// Combine OEM and CSME Platform IDs to form the complete 64-byte UPID
 	fullUPID := make([]byte, UPIDSize)
@@ -310,7 +310,7 @@ func (c *Client) IsSupported() bool {
 	// Try to initialize the UPID MEI client
 	err := c.heci.(*heci.Driver).InitWithGUID(heci.MEI_UPID)
 	if err != nil {
-		log.Debugf("UPID MEI client initialization failed: %v", err)
+		log.Tracef("UPID MEI client initialization failed: %v", err)
 
 		return false
 	}

@@ -2,7 +2,7 @@
 // +build linux
 
 /*********************************************************************
- * Copyright (c) Intel Corporation 2024
+ * Copyright (c) Intel Corporation 2025
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
@@ -107,11 +107,27 @@ func TestUPIDString(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "Valid UPID with zeros",
+			name: "Valid UPID with zeros (OEM not provisioned, only shows CSME)",
 			upid: &UPID{
 				Raw: make([]byte, UPIDSize),
 			},
-			expected: "0000000000000000000000000000000000000000000000000000000000000000\n          0000000000000000000000000000000000000000000000000000000000000000",
+			expected: "0000000000000000000000000000000000000000000000000000000000000000",
+		},
+		{
+			name: "Valid UPID with OEM provisioned (shows both OEM and CSME)",
+			upid: &UPID{
+				Raw: func() []byte {
+					raw := make([]byte, UPIDSize)
+					// Set first byte of OEM to non-zero
+					raw[0] = 0xAB
+					// Set some CSME bytes
+					raw[32] = 0xCD
+					raw[33] = 0xEF
+
+					return raw
+				}(),
+			},
+			expected: "AB00000000000000000000000000000000000000000000000000000000000000\n          CDEF000000000000000000000000000000000000000000000000000000000000",
 		},
 	}
 

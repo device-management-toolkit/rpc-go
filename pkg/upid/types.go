@@ -1,5 +1,5 @@
 /*********************************************************************
- * Copyright (c) Intel Corporation 2024
+ * Copyright (c) Intel Corporation 2025
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
@@ -122,6 +122,28 @@ func (u *UPID) String() string {
 		return ""
 	}
 
+	// Check if OEM Platform ID is all zeros (not provisioned)
+	oemAllZeros := true
+
+	for i := 0; i < OEMPlatformIDSize; i++ {
+		if u.Raw[i] != 0 {
+			oemAllZeros = false
+
+			break
+		}
+	}
+
+	// If OEM Platform ID is not provisioned, only show CSME Platform ID
+	if oemAllZeros {
+		result := ""
+		for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
+			result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+		}
+
+		return result
+	}
+
+	// Otherwise show both OEM and CSME Platform IDs on separate lines
 	result := ""
 	for i, b := range u.Raw {
 		result += hexChar(b>>4) + hexChar(b&0x0F)

@@ -46,6 +46,7 @@ type AmtInfoCmd struct {
 
 	// Identity flags
 	UUID bool `help:"Show Unique Identifier" short:"u"`
+	UPID bool `help:"Show Intel Unique Platform ID"`
 	Mode bool `help:"Show Current Control Mode" short:"m"`
 
 	// Network flags
@@ -111,7 +112,7 @@ func (cmd *AmtInfoCmd) IsUserCertRequested() bool {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.DNS &&
+	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
 }
 
@@ -394,7 +395,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	}
 
 	// Get UPID (Intel Unique Platform ID)
-	if showAll {
+	if showAll || cmd.UPID {
 		upidClient := upid.NewClient()
 		if upidClient.IsSupported() {
 			// Create a new client for GetUPID since IsSupported closed the previous connection
@@ -402,12 +403,10 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 			upidData, err := upidClient.GetUPID()
 			if err != nil {
-				log.Debug("Failed to get UPID: ", err)
+				log.Trace("Failed to get UPID: ", err)
 			} else if upidData != nil {
 				result.UPID = upidData.String()
 			}
-		} else {
-			log.Debug("Intel UPID is not supported on this platform")
 		}
 	}
 
@@ -567,7 +566,7 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
 	}
 
-	if showAll && result.UPID != "" {
+	if (showAll || cmd.UPID) && result.UPID != "" {
 		fmt.Printf("UPID\t\t\t: %s\n", result.UPID)
 	}
 
