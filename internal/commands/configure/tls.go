@@ -416,7 +416,7 @@ func (cmd *TLSCmd) configureTLSWithEA() (CertificateHandles, error) {
 	response, err := cmd.WSMan.GeneratePKCS10RequestEx(
 		keyPairResponse.Response.KeyInstanceId,
 		keyPairResponse.Response.CSR,
-		2, // SHA384-RSA signing algorithm
+		1,
 	)
 	if err != nil {
 		return handles, fmt.Errorf("failed to generate PKCS10 request: %w", err)
