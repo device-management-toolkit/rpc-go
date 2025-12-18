@@ -70,12 +70,29 @@ func TestGetTLSConfig(t *testing.T) {
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+	assert.NotNil(t, tlsConfig.VerifyConnection, "VerifyConnection should be set when skipAMTCertCheck is true")
 
 	mode = 1
 	tlsConfig = GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.Nil(t, tlsConfig.VerifyPeerCertificate)
+	assert.NotNil(t, tlsConfig.VerifyConnection, "VerifyConnection should be set when skipAMTCertCheck is true")
+
+	// Test with skipAMTCertCheck = false
+	mode = 0
+	tlsConfig = GetTLSConfig(&mode, nil, false)
+	assert.NotNil(t, tlsConfig)
+	assert.False(t, tlsConfig.InsecureSkipVerify)
+	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+	assert.Nil(t, tlsConfig.VerifyConnection, "VerifyConnection should NOT be set when skipAMTCertCheck is false")
+
+	mode = 1
+	tlsConfig = GetTLSConfig(&mode, nil, false)
+	assert.NotNil(t, tlsConfig)
+	assert.False(t, tlsConfig.InsecureSkipVerify)
+	assert.Nil(t, tlsConfig.VerifyPeerCertificate)
+	assert.Nil(t, tlsConfig.VerifyConnection, "VerifyConnection should NOT be set when skipAMTCertCheck is false")
 }
 
 func TestVerifyLeafCertificate(t *testing.T) {

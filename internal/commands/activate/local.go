@@ -545,7 +545,11 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 func (service *LocalActivationService) activateACMWithTLS() error {
 	// For TLS path, we just change the AMT password and commit
 	// Setup WSMAN client with admin credentials
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+	// Use proper TLS config with VerifyConnection callback for AMT 19+ support
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
@@ -568,7 +572,11 @@ func (service *LocalActivationService) activateACMLegacy() error {
 	if service.isUpgrade {
 		// For upgrade path, we just change the AMT password
 		// Setup WSMAN client with admin credentials
-		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+		// Use proper TLS config with VerifyConnection callback for AMT 19+ support
+		controlMode := service.config.ControlMode
+		tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 		}
