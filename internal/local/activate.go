@@ -199,7 +199,21 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 	} else {
 		service.flags.NewPassword = service.config.ACMSettings.AMTPassword
 
-		err := service.ChangeAMTPassword()
+		// Setup WSMAN client with admin credentials and proper TLS config for AMT 19+ support
+		tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+		err := service.interfacedWsmanMessage.SetupWsmanClient(
+			"admin",
+			service.config.ACMSettings.AMTPassword,
+			service.flags.LocalTlsEnforced,
+			log.GetLevel() == log.TraceLevel,
+			tlsConfig,
+		)
+		if err != nil {
+			log.Error("Failed to setup admin WSMAN client:", err)
+			return utils.ActivationFailed
+		}
+
+		err = service.ChangeAMTPassword()
 		if err != nil {
 			log.Error(err.Error())
 
