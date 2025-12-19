@@ -112,6 +112,28 @@ func TestActivateACM(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestActivateACMWithTLS(t *testing.T) {
+	f := &flags.Flags{}
+	f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+	testCerts := getTestCerts()
+	f.LocalConfig.ACMSettings.ProvisioningCert = testCerts.Pfxb64
+	f.LocalConfig.ACMSettings.ProvisioningCertPwd = testCerts.PfxPassword
+	lps := setupService(f)
+	lps.flags.LocalTlsEnforced = true
+	lps.flags.Command = utils.CommandActivate
+
+	t.Run("ACM activation with TLS and client certificate", func(t *testing.T) {
+		err := lps.ActivateACM(false)
+		assert.NoError(t, err)
+	})
+
+	t.Run("ACM activation with invalid provisioning cert", func(t *testing.T) {
+		lps.config.ACMSettings.ProvisioningCert = "invalid"
+		err := lps.ActivateACM(false)
+		assert.Error(t, err)
+	})
+}
+
 func TestInjectCertsErrors(t *testing.T) {
 	f := &flags.Flags{}
 	testCerts := getTestCerts()

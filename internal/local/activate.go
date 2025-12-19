@@ -81,16 +81,27 @@ func (service *ProvisioningService) Activate() error {
 
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck)
 
-			tlsCert := tls.Certificate{
-				PrivateKey: certsAndKeys.keys[0],
-				Leaf:       certsAndKeys.certs[0],
-			}
-
+			// Build the certificate chain properly
+			var certChain [][]byte
 			for _, cert := range certsAndKeys.certs {
-				tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
+				certChain = append(certChain, cert.Raw)
 			}
 
-			tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+			tlsCert := tls.Certificate{
+				Certificate: certChain,
+				PrivateKey:  certsAndKeys.keys[0],
+				Leaf:        certsAndKeys.certs[0],
+			}
+
+			tlsConfig.Certificates = []tls.Certificate{tlsCert}
+
+			// Ensure GetClientCertificate callback is set for proper client certificate selection
+			// This is critical for mutual TLS - capture the certificate in a way that ensures it's available
+			clientCert := tlsCert
+			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				log.Trace("Client certificate requested by server")
+				return &clientCert, nil
+			}
 		} else {
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
 		}
@@ -200,7 +211,41 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		service.flags.NewPassword = service.config.ACMSettings.AMTPassword
 
 		// Setup WSMAN client with admin credentials and proper TLS config for AMT 19+ support
+		// After activation, device is in ACM mode and requires client certificate for TLS
 		tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+
+		if service.flags.LocalTlsEnforced {
+			tlsConfig.MinVersion = tls.VersionTLS12
+
+			// Load the provisioning certificate for client authentication
+			certsAndKeys, err := convertPfxToObject(service.config.ACMSettings.ProvisioningCert, service.config.ACMSettings.ProvisioningCertPwd)
+			if err != nil {
+				log.Error("Failed to load provisioning certificate for post-activation:", err)
+				return utils.ActivationFailed
+			}
+
+			// Build the certificate chain properly
+			var certChain [][]byte
+			for _, cert := range certsAndKeys.certs {
+				certChain = append(certChain, cert.Raw)
+			}
+
+			tlsCert := tls.Certificate{
+				Certificate: certChain,
+				PrivateKey:  certsAndKeys.keys[0],
+				Leaf:        certsAndKeys.certs[0],
+			}
+
+			tlsConfig.Certificates = []tls.Certificate{tlsCert}
+
+			// Ensure GetClientCertificate callback is set for proper client certificate selection
+			clientCert := tlsCert
+			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				log.Trace("Client certificate requested by server (post-activation)")
+				return &clientCert, nil
+			}
+		}
+
 		err := service.interfacedWsmanMessage.SetupWsmanClient(
 			"admin",
 			service.config.ACMSettings.AMTPassword,
@@ -217,7 +262,17 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		if err != nil {
 			log.Error(err.Error())
 
-			return utils.ActivationFailed
+			// Check if activation actually succeeded despite post-activation errors
+			controlMode, checkErr := service.amtCommand.GetControlMode()
+			if checkErr != nil {
+				return utils.ActivationFailedGetControlMode
+			}
+
+			if controlMode != 2 {
+				return utils.ActivationFailedControlMode
+			}
+
+			return nil
 		}
 
 		// commit changes
