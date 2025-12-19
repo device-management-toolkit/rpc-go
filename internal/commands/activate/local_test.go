@@ -6,14 +6,27 @@
 package activate
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 )
+
+var sortaSingletonCerts *certs.CompositeChain
+
+// getTestCerts returns a singleton test certificate chain
+func getTestCerts() *certs.CompositeChain {
+	if sortaSingletonCerts == nil {
+		cc, _ := certs.NewCompositeChain("P@ssw0rd")
+		sortaSingletonCerts = &cc
+	}
+	return sortaSingletonCerts
+}
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
 	tests := []struct {
@@ -924,6 +937,49 @@ func TestLocalActivationService_setupACMTLSConfig(t *testing.T) {
 	}
 }
 
+// Test that GetClientCertificate callback is set when using valid provisioning cert
+func TestLocalActivationService_setupACMTLSConfig_ClientCertCallback(t *testing.T) {
+	// Create a test certificate using the helper
+	testCerts := getTestCerts()
+
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{},
+		config: LocalActivationConfig{
+			ProvisioningCert:    testCerts.Pfxb64,
+			ProvisioningCertPwd: testCerts.PfxPassword,
+		},
+		context:          &commands.Context{},
+		localTLSEnforced: true,
+	}
+
+	tlsConfig, err := service.setupACMTLSConfig()
+	if err != nil {
+		t.Fatalf("setupACMTLSConfig() returned unexpected error: %v", err)
+	}
+
+	// Verify GetClientCertificate callback is set
+	if tlsConfig.GetClientCertificate == nil {
+		t.Error("setupACMTLSConfig() did not set GetClientCertificate callback with valid provisioning cert")
+	}
+
+	// Verify the callback returns the expected certificate
+	if tlsConfig.GetClientCertificate != nil {
+		certInfo := &tls.CertificateRequestInfo{
+			AcceptableCAs: [][]byte{},
+		}
+		cert, err := tlsConfig.GetClientCertificate(certInfo)
+		if err != nil {
+			t.Errorf("GetClientCertificate callback returned error: %v", err)
+		}
+		if cert == nil {
+			t.Error("GetClientCertificate callback returned nil certificate")
+		}
+		if cert != nil && len(cert.Certificate) == 0 {
+			t.Error("GetClientCertificate callback returned certificate with empty chain")
+		}
+	}
+}
+
 // Test for activateACMWithTLS function coverage
 func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 	// This function requires a valid WSMAN client, so we can't easily test it
@@ -937,14 +993,11 @@ func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 		localTLSEnforced: true,
 	}
 
-	// Test that calling with nil panics (as expected)
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("activateACMWithTLS() should panic with nil WSMAN client")
-		}
-	}()
-
-	_ = service.activateACMWithTLS()
+	// Test that calling with invalid config returns an error (not a panic)
+	err := service.activateACMWithTLS()
+	if err == nil {
+		t.Error("activateACMWithTLS() should return error with invalid configuration")
+	}
 }
 
 // Test for activateACMLegacy function coverage

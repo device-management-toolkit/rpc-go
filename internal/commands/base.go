@@ -6,6 +6,9 @@
 package commands
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 // DefaultSkipAMTCertCheck is set by CLI context to control AMT TLS verification at WSMAN setup time.
@@ -31,9 +35,11 @@ type PasswordRequirer interface {
 // for all commands that require AMT connectivity. This reduces code duplication
 // and ensures consistent password handling across all commands.
 type AMTBaseCmd struct {
-	WSMan            interfaces.WSMANer `kong:"-"`
-	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
-	LocalTLSEnforced bool               `kong:"-"`
+	WSMan               interfaces.WSMANer `kong:"-"`
+	ControlMode         int                `kong:"-"` // Store the control mode for use by embedding commands
+	LocalTLSEnforced    bool               `kong:"-"`
+	ProvisioningCert    string             `kong:"-"` // Provisioning certificate for mutual TLS
+	ProvisioningCertPwd string             `kong:"-"` // Provisioning certificate password
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
@@ -84,12 +90,87 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, ctx.SkipAMTCertCheck)
+
+	// Add client certificate support for mutual TLS (required after ACM activation on AMT 19+)
+	if cmd.LocalTLSEnforced && cmd.ProvisioningCert != "" && cmd.ProvisioningCertPwd != "" {
+		if err := cmd.addClientCertificate(tlsConfig); err != nil {
+			log.Debug("Failed to load client certificate, continuing without it: ", err)
+			// Continue without client cert - some commands may work without it
+		}
+	}
+
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
 	return nil
+}
+
+// addClientCertificate adds the provisioning certificate to the TLS config for mutual TLS
+func (cmd *AMTBaseCmd) addClientCertificate(tlsConfig *tls.Config) error {
+	certAndKeys, err := cmd.convertPfxToObject(cmd.ProvisioningCert, cmd.ProvisioningCertPwd)
+	if err != nil {
+		return fmt.Errorf("failed to convert provisioning certificate: %w", err)
+	}
+
+	if len(certAndKeys.certs) == 0 || len(certAndKeys.keys) == 0 {
+		return fmt.Errorf("invalid provisioning certificate: no certificates or keys found")
+	}
+
+	// Build the certificate chain properly
+	tlsCert := tls.Certificate{
+		PrivateKey: certAndKeys.keys[0],
+		Leaf:       certAndKeys.certs[0],
+	}
+
+	for _, c := range certAndKeys.certs {
+		tlsCert.Certificate = append(tlsCert.Certificate, c.Raw)
+	}
+
+	tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+
+	// Set GetClientCertificate callback for proper client certificate selection
+	clientCert := tlsCert
+	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		log.Trace("Client certificate requested by server")
+		return &clientCert, nil
+	}
+
+	return nil
+}
+
+// CertsAndKeys holds certificates and their corresponding private keys
+type CertsAndKeys struct {
+	certs []*x509.Certificate
+	keys  []interface{}
+}
+
+// convertPfxToObject converts a base64 PFX certificate to a CertsAndKeys object
+func (cmd *AMTBaseCmd) convertPfxToObject(pfxb64, passphrase string) (CertsAndKeys, error) {
+	pfx, err := base64.StdEncoding.DecodeString(pfxb64)
+	if err != nil {
+		return CertsAndKeys{}, fmt.Errorf("failed to decode base64 certificate: %w", err)
+	}
+
+	privateKey, certificate, extraCerts, err := pkcs12.DecodeChain(pfx, passphrase)
+	if err != nil {
+		if strings.Contains(err.Error(), "decryption password incorrect") {
+			return CertsAndKeys{}, fmt.Errorf("incorrect certificate password")
+		}
+
+		return CertsAndKeys{}, fmt.Errorf("invalid provisioning certificate: %w", err)
+	}
+
+	certs := append([]*x509.Certificate{certificate}, extraCerts...)
+	pfxOut := CertsAndKeys{certs: certs, keys: []interface{}{privateKey}}
+
+	pfxOut.certs, err = utils.OrderCertsChain(pfxOut.certs)
+	if err != nil {
+		return pfxOut, err
+	}
+
+	return pfxOut, nil
 }
 
 // AfterApply sets up WSMAN client after validation.

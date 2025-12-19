@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -431,8 +433,10 @@ func (service *LocalActivationService) activateACM() error {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
-	// Perform ACM activation using the new TLS path (cleaner)
-	if service.localTLSEnforced {
+	// Perform ACM activation using appropriate method
+	// For initial activation, always use legacy path (certificate-based)
+	// For upgrades, use simplified TLS path (password-based)
+	if service.isUpgrade && service.localTLSEnforced {
 		err = service.activateACMWithTLS()
 	} else {
 		err = service.activateACMLegacy()
@@ -506,25 +510,21 @@ type ProvisioningCertObj struct {
 
 // setupACMTLSConfig sets up TLS configuration for ACM activation
 func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) {
-	tlsConfig := &tls.Config{}
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 
 	if service.localTLSEnforced {
+		log.Info("TLS is enforced - setting up client certificate for activation")
+
 		// Convert certificate for TLS
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
+			log.Error("Failed to convert provisioning certificate:", err)
 			return nil, err
 		}
+		log.Info("Successfully loaded provisioning certificate, chain length:", len(certsAndKeys.certs))
 
-		// Get secure host-based configuration response
-		startHBasedResponse, err := service.startSecureHostBasedConfiguration(certsAndKeys)
-		if err != nil {
-			return nil, err
-		}
-
-		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck)
-
-		// Add client certificate to TLS config
+		// Add client certificate to TLS config for mutual TLS
 		tlsCert := tls.Certificate{
 			PrivateKey: certsAndKeys.keys[0],
 			Leaf:       certsAndKeys.certs[0],
@@ -534,8 +534,15 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 			tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
 		}
 
-		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+		tlsConfig.Certificates = []tls.Certificate{tlsCert}
 		tlsConfig.MinVersion = tls.VersionTLS12
+
+		// Set GetClientCertificate callback for proper client certificate selection during TLS handshake
+		clientCert := tlsCert
+		tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			log.Debug("Client certificate requested by server")
+			return &clientCert, nil
+		}
 	}
 
 	return tlsConfig, nil
@@ -549,17 +556,118 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 	controlMode := service.config.ControlMode
 	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 
+	// Add client certificate for post-activation mutual TLS
+	if service.localTLSEnforced {
+		tlsConfig.MinVersion = tls.VersionTLS12
+
+		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+		if err != nil {
+			log.Error("Failed to load provisioning certificate for post-activation:", err)
+			return fmt.Errorf("failed to load provisioning certificate: %w", err)
+		}
+
+		// Build the certificate chain properly
+		tlsCert := tls.Certificate{
+			PrivateKey: certsAndKeys.keys[0],
+			Leaf:       certsAndKeys.certs[0],
+		}
+
+		for _, cert := range certsAndKeys.certs {
+			tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
+		}
+
+		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+
+		// Ensure GetClientCertificate callback is set for proper client certificate selection
+		clientCert := tlsCert
+		tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			log.Trace("Client certificate requested by server (post-activation)")
+			return &clientCert, nil
+		}
+	}
+
 	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
 
+	// Change AMT password - this triggers activation on pre-provisioning devices
+	// Get general settings to obtain digest realm
+	generalSettings, err := service.wsman.GetGeneralSettings()
+	if err != nil {
+		log.Debug("Error during password change: ", err)
+
+		// Check if activation actually succeeded despite the error
+		controlMode, checkErr := service.amtCommand.GetControlMode()
+		if checkErr != nil {
+			return utils.ActivationFailedGetControlMode
+		}
+
+		if controlMode != 2 {
+			return utils.ActivationFailedControlMode
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring password change error")
+
+		return nil
+	}
+
+	// Hash and update the AMT password
+	challenge := client.AuthChallenge{
+		Username: utils.AMTUserName,
+		Password: service.config.AMTPassword,
+		Realm:    generalSettings.Body.GetResponse.DigestRealm,
+	}
+
+	hashedMessage := challenge.HashCredentials()
+
+	bytes, errDecode := hex.DecodeString(hashedMessage)
+	if errDecode != nil {
+		return fmt.Errorf("failed to decode hex string: %w", errDecode)
+	}
+
+	encodedMessage := base64.StdEncoding.EncodeToString(bytes)
+
+	_, err = service.wsman.UpdateAMTPassword(encodedMessage)
+	if err != nil {
+		log.Debug("Error during password change: ", err)
+
+		// Check if activation actually succeeded despite the error
+		controlMode, checkErr := service.amtCommand.GetControlMode()
+		if checkErr != nil {
+			return utils.ActivationFailedGetControlMode
+		}
+
+		if controlMode != 2 {
+			return utils.ActivationFailedControlMode
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring password change error")
+
+		return nil
+	}
+
 	// Commit changes
 	result, err := service.wsman.CommitChanges()
 	if err != nil {
-		log.Error(err.Error())
+		log.Debug("Error during commit: ", err)
 
-		return utils.ActivationFailed
+		// Check if activation actually succeeded despite the error
+		controlMode, checkErr := service.amtCommand.GetControlMode()
+		if checkErr != nil {
+			return utils.ActivationFailedGetControlMode
+		}
+
+		if controlMode != 2 {
+			return utils.ActivationFailedControlMode
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring commit error")
+
+		return nil
 	}
 
 	log.Debug(result)
@@ -569,10 +677,9 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
 func (service *LocalActivationService) activateACMLegacy() error {
-	if service.isUpgrade {
-		// For upgrade path, we just change the AMT password
-		// Setup WSMAN client with admin credentials
-		// Use proper TLS config with VerifyConnection callback for AMT 19+ support
+	// Note: WSMAN client is already set up in activateACM() with proper TLS config
+	// For non-TLS upgrade only, we need to re-setup with admin credentials
+	if service.isUpgrade && !service.localTLSEnforced {
 		controlMode := service.config.ControlMode
 		tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 
@@ -581,21 +688,69 @@ func (service *LocalActivationService) activateACMLegacy() error {
 			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 		}
 	}
-	// Get provisioning certificate object
+
+	// Get provisioning certificate object for activation
 	certObject, fingerPrint, err := service.getProvisioningCertObj()
 	if err != nil {
 		return err
 	}
 
-	// Check provisioning certificate is accepted by AMT
-	err = service.compareCertHashes(fingerPrint)
-	if err != nil {
-		return err
+	// For TLS-enforced initial activation, call PTHI/MEI StartConfigurationHBased
+	// This completes the activation for AMT 19+ devices (AMT transitions immediately)
+	// Skip compareCertHashes check for TLS-enforced initial activation since WSMAN
+	// cannot be called in pre-provisioning mode. PTHI validates certificate internally.
+	if service.localTLSEnforced && !service.isUpgrade {
+		log.Info("Calling PTHI/MEI StartConfigurationHBased for TLS-enforced activation...")
+		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+		if err != nil {
+			log.Error("Failed to convert provisioning cert for PTHI:", err)
+			return err
+		}
+
+		_, err = service.startSecureHostBasedConfiguration(certsAndKeys)
+		if err != nil {
+			return fmt.Errorf("failed to start secure host-based configuration: %w", err)
+		}
+
+		log.Info("PTHI/MEI activation completed - verifying control mode...")
+		// Give AMT a moment to complete the transition
+		time.Sleep(500 * time.Millisecond)
+
+		// Verify activation succeeded by checking control mode
+		controlMode, err := service.amtCommand.GetControlMode()
+		if err != nil {
+			return utils.ActivationFailedGetControlMode
+		}
+
+		if controlMode == 2 { // 2 = ACM mode
+			log.Info("ACM activation successful via PTHI/MEI")
+			return nil
+		}
+
+		// If not in ACM yet, continue with WSMAN activation flow
+		log.Warn("Control mode not yet ACM after PTHI call, continuing with WSMAN flow...")
+	}
+
+	// Check provisioning certificate is accepted by AMT (WSMAN path only)
+	// For TLS-enforced initial activation, this was skipped earlier
+	if !service.localTLSEnforced || service.isUpgrade {
+		err = service.compareCertHashes(fingerPrint)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Get general settings for digest realm
 	generalSettings, err := service.wsman.GetGeneralSettings()
 	if err != nil {
+		// If this fails after PTHI call, check if activation actually succeeded
+		if service.localTLSEnforced && !service.isUpgrade {
+			controlMode, controlErr := service.amtCommand.GetControlMode()
+			if controlErr == nil && controlMode == 2 {
+				log.Info("Activation succeeded - WSMAN connection closed during AMT transition")
+				return nil
+			}
+		}
 		return utils.ActivationFailedGeneralSettings
 	}
 
@@ -647,8 +802,10 @@ func (service *LocalActivationService) activateACMLegacy() error {
 		}
 
 		// Activation was successful
+		log.Info("Activation succeeded despite HostBasedSetupServiceAdmin error")
 		return nil
 	}
+	log.Info("HostBasedSetupServiceAdmin succeeded")
 
 	return nil
 }

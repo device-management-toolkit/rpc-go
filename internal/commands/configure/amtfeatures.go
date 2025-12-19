@@ -28,6 +28,10 @@ type AMTFeaturesCmd struct {
 	// DisableAll is an internal flag used by the profile orchestrator to explicitly
 	// disable all features when the profile sets them to false. Hidden from help.
 	DisableAll bool `name:"disableAll" hidden:""`
+
+	// Provisioning certificate (for mutual TLS after ACM activation)
+	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
+	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for AMT features validation
@@ -49,6 +53,12 @@ func (cmd *AMTFeaturesCmd) Validate() error {
 
 // Run executes the AMT features configuration command
 func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
+	// Copy provisioning certificate from flags to base command for mutual TLS
+	if cmd.ProvisioningCertFlag != "" {
+		cmd.ProvisioningCert = cmd.ProvisioningCertFlag
+		cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
+	}
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err

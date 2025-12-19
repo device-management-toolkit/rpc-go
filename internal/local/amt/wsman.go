@@ -80,10 +80,9 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
 		if err != nil {
-			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
-			logrus.Error(err)
+			logrus.Debug("TLS connection test failed: ", err)
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("TLS connection test succeeded")
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
