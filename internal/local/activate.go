@@ -100,6 +100,7 @@ func (service *ProvisioningService) Activate() error {
 			clientCert := tlsCert
 			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				log.Trace("Client certificate requested by server")
+
 				return &clientCert, nil
 			}
 		} else {
@@ -221,6 +222,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			certsAndKeys, err := convertPfxToObject(service.config.ACMSettings.ProvisioningCert, service.config.ACMSettings.ProvisioningCertPwd)
 			if err != nil {
 				log.Error("Failed to load provisioning certificate for post-activation:", err)
+
 				return utils.ActivationFailed
 			}
 
@@ -242,6 +244,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			clientCert := tlsCert
 			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				log.Trace("Client certificate requested by server (post-activation)")
+
 				return &clientCert, nil
 			}
 		}
@@ -255,6 +258,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		)
 		if err != nil {
 			log.Error("Failed to setup admin WSMAN client:", err)
+
 			return utils.ActivationFailed
 		}
 
