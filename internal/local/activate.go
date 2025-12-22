@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
@@ -81,27 +82,9 @@ func (service *ProvisioningService) Activate() error {
 
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck)
 
-			// Build the certificate chain properly
-			var certChain [][]byte
-			for _, cert := range certsAndKeys.certs {
-				certChain = append(certChain, cert.Raw)
-			}
-
-			tlsCert := tls.Certificate{
-				Certificate: certChain,
-				PrivateKey:  certsAndKeys.keys[0],
-				Leaf:        certsAndKeys.certs[0],
-			}
-
-			tlsConfig.Certificates = []tls.Certificate{tlsCert}
-
-			// Ensure GetClientCertificate callback is set for proper client certificate selection
-			// This is critical for mutual TLS - capture the certificate in a way that ensures it's available
-			clientCert := tlsCert
-			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-				log.Trace("Client certificate requested by server")
-				return &clientCert, nil
-			}
+			// NOTE: Client certificate is NOT added here during initial activation
+			// It will be added in ActivateACM() after password change and activation complete
+			// Adding it here causes EOF errors on AMT 20/21 during the activation process
 		} else {
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
 		}
@@ -210,6 +193,13 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 	} else {
 		service.flags.NewPassword = service.config.ACMSettings.AMTPassword
 
+		// Get LSA credentials for initial WSMAN setup
+		lsa, err := service.amtCommand.GetLocalSystemAccount()
+		if err != nil {
+			log.Error("Failed to get LSA credentials:", err)
+			return utils.AMTConnectionFailed
+		}
+
 		// Setup WSMAN client with admin credentials and proper TLS config for AMT 19+ support
 		// After activation, device is in ACM mode and requires client certificate for TLS
 		tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
@@ -246,15 +236,16 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			}
 		}
 
-		err := service.interfacedWsmanMessage.SetupWsmanClient(
-			"admin",
-			service.config.ACMSettings.AMTPassword,
+		// Setup WSMAN client with LSA credentials initially (password not yet changed)
+		err = service.interfacedWsmanMessage.SetupWsmanClient(
+			lsa.Username,
+			lsa.Password,
 			service.flags.LocalTlsEnforced,
 			log.GetLevel() == log.TraceLevel,
 			tlsConfig,
 		)
 		if err != nil {
-			log.Error("Failed to setup admin WSMAN client:", err)
+			log.Error("Failed to setup WSMAN client with LSA credentials:", err)
 			return utils.ActivationFailed
 		}
 
@@ -275,15 +266,46 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			return nil
 		}
 
+		// AMT may close TLS connection after password change
+		// Recreate WSMAN client with new password before continuing
+		// This is critical for AMT 20/21 which are more sensitive to stale TLS connections
+		if service.flags.LocalTlsEnforced {
+			log.Debug("Recreating WSMAN client after password change...")
+			err = service.interfacedWsmanMessage.SetupWsmanClient(
+				"admin",
+				service.config.ACMSettings.AMTPassword,
+				service.flags.LocalTlsEnforced,
+				log.GetLevel() == log.TraceLevel,
+				tlsConfig,
+			)
+			if err != nil {
+				log.Error("Failed to recreate WSMAN client after password change:", err)
+				return utils.ActivationFailed
+			}
+			log.Debug("WSMAN client recreated successfully")
+		}
+
 		// commit changes
 		result, err := service.interfacedWsmanMessage.CommitChanges()
-		if err != nil {
+		// AMT may close the connection after CommitChanges as services restart
+		// EOF errors during this phase are expected and don't indicate failure
+		if err != nil && !strings.Contains(err.Error(), "EOF") {
 			log.Error(err.Error())
 
 			return utils.ActivationFailed
 		}
 
-		log.Debug(result)
+		if err == nil {
+			log.Debug(result)
+		} else {
+			log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
+		}
+
+		// Allow AMT services to fully stabilize after CommitChanges
+		// This prevents "device did not respond" errors from remote connections
+		log.Debug("Waiting for AMT services to stabilize...")
+		time.Sleep(5 * time.Second)
+		log.Debug("AMT activation complete")
 	}
 
 	return nil
