@@ -8,11 +8,15 @@ package commands
 import (
 	"crypto/tls"
 	"fmt"
+	"os"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 // Control mode constants for better readability
@@ -40,6 +44,8 @@ type DeactivateCmd struct {
 	PartialUnprovision bool   `help:"Partially unprovision the device. Only supported with -local flag" name:"partial"`
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
 	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
+	Profile            string `help:"Path to profile YAML file (required for AMT 19+ ACM deactivation)" short:"p"`
+	Key                string `help:"Encryption key for encrypted profile" short:"k"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -71,6 +77,11 @@ func (cmd *DeactivateCmd) Validate() error {
 
 // Run executes the deactivate command
 func (cmd *DeactivateCmd) Run(ctx *Context) error {
+	// Load profile if specified (must be done before EnsureWSMAN for mutual TLS)
+	if err := cmd.loadProfileIfNeeded(); err != nil {
+		return fmt.Errorf("failed to load profile: %w", err)
+	}
+
 	// Resolve AMT password (only when required)
 	if cmd.RequiresAMTPassword() {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
@@ -187,6 +198,55 @@ func (cmd *DeactivateCmd) deactivateCCM(ctx *Context) error {
 	}
 
 	log.Info("Status: Device deactivated")
+
+	return nil
+}
+
+// loadProfileIfNeeded loads the profile from a YAML file if specified
+func (cmd *DeactivateCmd) loadProfileIfNeeded() error {
+	// If no profile specified, nothing to do
+	if cmd.Profile == "" {
+		return nil
+	}
+
+	var (
+		cfg config.Configuration
+		err error
+	)
+
+	// If encryption key is provided, use encrypted profile loading
+
+	if cmd.Key != "" {
+		crypto := security.Crypto{EncryptionKey: cmd.Key}
+
+		cfg, err = crypto.ReadAndDecryptFile(cmd.Profile)
+		if err != nil {
+			return fmt.Errorf("failed to read/decrypt profile: %w", err)
+		}
+	} else {
+		// For unencrypted profiles, read and parse directly
+		profileData, err := os.ReadFile(cmd.Profile)
+		if err != nil {
+			return fmt.Errorf("failed to read profile file: %w", err)
+		}
+
+		if err := yaml.Unmarshal(profileData, &cfg); err != nil {
+			return fmt.Errorf("failed to parse profile YAML: %w", err)
+		}
+	}
+
+	// Assign to AMTBaseCmd fields if not already set by flags
+	if cmd.ProvisioningCert == "" && cfg.Configuration.AMTSpecific.ProvisioningCert != "" {
+		cmd.ProvisioningCert = cfg.Configuration.AMTSpecific.ProvisioningCert
+
+		log.Debug("Loaded provisioning certificate from profile")
+	}
+
+	if cmd.ProvisioningCertPwd == "" && cfg.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
+		cmd.ProvisioningCertPwd = cfg.Configuration.AMTSpecific.ProvisioningCertPwd
+
+		log.Debug("Loaded provisioning certificate password from profile")
+	}
 
 	return nil
 }
