@@ -520,8 +520,10 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
 			log.Error("Failed to convert provisioning certificate:", err)
+
 			return nil, err
 		}
+
 		log.Info("Successfully loaded provisioning certificate, chain length:", len(certsAndKeys.certs))
 
 		// Add client certificate to TLS config for mutual TLS
@@ -541,6 +543,7 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		clientCert := tlsCert
 		tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			log.Debug("Client certificate requested by server")
+
 			return &clientCert, nil
 		}
 	}
@@ -563,6 +566,7 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
 			log.Error("Failed to load provisioning certificate for post-activation:", err)
+
 			return fmt.Errorf("failed to load provisioning certificate: %w", err)
 		}
 
@@ -582,6 +586,7 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 		clientCert := tlsCert
 		tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			log.Trace("Client certificate requested by server (post-activation)")
+
 			return &clientCert, nil
 		}
 	}
@@ -701,9 +706,11 @@ func (service *LocalActivationService) activateACMLegacy() error {
 	// cannot be called in pre-provisioning mode. PTHI validates certificate internally.
 	if service.localTLSEnforced && !service.isUpgrade {
 		log.Info("Calling PTHI/MEI StartConfigurationHBased for TLS-enforced activation...")
+
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
 			log.Error("Failed to convert provisioning cert for PTHI:", err)
+
 			return err
 		}
 
@@ -724,6 +731,7 @@ func (service *LocalActivationService) activateACMLegacy() error {
 
 		if controlMode == 2 { // 2 = ACM mode
 			log.Info("ACM activation successful via PTHI/MEI")
+
 			return nil
 		}
 
@@ -748,9 +756,11 @@ func (service *LocalActivationService) activateACMLegacy() error {
 			controlMode, controlErr := service.amtCommand.GetControlMode()
 			if controlErr == nil && controlMode == 2 {
 				log.Info("Activation succeeded - WSMAN connection closed during AMT transition")
+
 				return nil
 			}
 		}
+
 		return utils.ActivationFailedGeneralSettings
 	}
 
@@ -803,8 +813,10 @@ func (service *LocalActivationService) activateACMLegacy() error {
 
 		// Activation was successful
 		log.Info("Activation succeeded despite HostBasedSetupServiceAdmin error")
+
 		return nil
 	}
+
 	log.Info("HostBasedSetupServiceAdmin succeeded")
 
 	return nil

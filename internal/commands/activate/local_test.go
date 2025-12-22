@@ -25,6 +25,7 @@ func getTestCerts() *certs.CompositeChain {
 		cc, _ := certs.NewCompositeChain("P@ssw0rd")
 		sortaSingletonCerts = &cc
 	}
+
 	return sortaSingletonCerts
 }
 
@@ -967,13 +968,16 @@ func TestLocalActivationService_setupACMTLSConfig_ClientCertCallback(t *testing.
 		certInfo := &tls.CertificateRequestInfo{
 			AcceptableCAs: [][]byte{},
 		}
+
 		cert, err := tlsConfig.GetClientCertificate(certInfo)
 		if err != nil {
 			t.Errorf("GetClientCertificate callback returned error: %v", err)
 		}
+
 		if cert == nil {
 			t.Error("GetClientCertificate callback returned nil certificate")
 		}
+
 		if cert != nil && len(cert.Certificate) == 0 {
 			t.Error("GetClientCertificate callback returned certificate with empty chain")
 		}

@@ -7,6 +7,8 @@ package commands
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
@@ -510,5 +512,200 @@ func TestSetupTLSConfig(t *testing.T) {
 
 		assert.NotNil(t, tlsConfig)
 		// The actual config setup depends on the config.GetTLSConfig implementation
+	})
+}
+
+func TestDeactivateCmd_LoadProfileIfNeeded(t *testing.T) {
+	t.Run("no profile specified", func(t *testing.T) {
+		cmd := &DeactivateCmd{}
+		err := cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		assert.Empty(t, cmd.ProvisioningCert)
+		assert.Empty(t, cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("profile file not found", func(t *testing.T) {
+		cmd := &DeactivateCmd{
+			Profile: "/nonexistent/profile.yaml",
+		}
+		err := cmd.loadProfileIfNeeded()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read")
+	})
+
+	t.Run("valid unencrypted profile", func(t *testing.T) {
+		// Create a temporary test profile file
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "profile.yaml")
+
+		profileContent := `id: 1
+name: test-profile
+configuration:
+  amtSpecific:
+    provisioningCert: "test-cert-data"
+    provisioningCertPwd: "test-cert-password"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		assert.Equal(t, "test-cert-data", cmd.ProvisioningCert)
+		assert.Equal(t, "test-cert-password", cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("profile with existing flags - flags take precedence", func(t *testing.T) {
+		// Create a temporary test profile file
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "profile.yaml")
+
+		profileContent := `id: 1
+name: test-profile
+configuration:
+  amtSpecific:
+    provisioningCert: "profile-cert-data"
+    provisioningCertPwd: "profile-cert-password"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+		// Set via flags
+		cmd.ProvisioningCert = "flag-cert-data"
+		cmd.ProvisioningCertPwd = "flag-cert-password"
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		// Flags should take precedence
+		assert.Equal(t, "flag-cert-data", cmd.ProvisioningCert)
+		assert.Equal(t, "flag-cert-password", cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("profile with empty provisioning cert fields", func(t *testing.T) {
+		// Create a temporary test profile file
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "profile.yaml")
+
+		profileContent := `id: 1
+name: test-profile
+configuration:
+  amtSpecific:
+    controlMode: "acm"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		assert.Empty(t, cmd.ProvisioningCert)
+		assert.Empty(t, cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("invalid YAML format", func(t *testing.T) {
+		// Create a temporary test profile file with invalid YAML
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "invalid-profile.yaml")
+
+		invalidContent := `this is not valid yaml: [[[`
+		err := os.WriteFile(profilePath, []byte(invalidContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to parse profile YAML")
+	})
+
+	t.Run("profile loading works for CCM mode", func(t *testing.T) {
+		// Create a temporary test profile file for CCM
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "ccm-profile.yaml")
+
+		profileContent := `id: 1
+name: ccm-test-profile
+configuration:
+  amtSpecific:
+    controlMode: "ccm"
+    provisioningCert: "ccm-cert-data"
+    provisioningCertPwd: "ccm-cert-password"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		// Profile should load for CCM mode too (though cert won't be used without LocalTLSEnforced)
+		assert.Equal(t, "ccm-cert-data", cmd.ProvisioningCert)
+		assert.Equal(t, "ccm-cert-password", cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("profile loading works for ACM mode", func(t *testing.T) {
+		// Create a temporary test profile file for ACM
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "acm-profile.yaml")
+
+		profileContent := `id: 1
+name: acm-test-profile
+configuration:
+  amtSpecific:
+    controlMode: "acm"
+    provisioningCert: "acm-cert-data"
+    provisioningCertPwd: "acm-cert-password"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		// Profile should load for ACM mode (cert will be used if LocalTLSEnforced is true)
+		assert.Equal(t, "acm-cert-data", cmd.ProvisioningCert)
+		assert.Equal(t, "acm-cert-password", cmd.ProvisioningCertPwd)
+	})
+
+	t.Run("profile loading is mode-agnostic", func(t *testing.T) {
+		// Test that profile loading doesn't care about control mode
+		// The actual TLS enforcement is handled by LocalTLSEnforced flag in base.go
+		tempDir := t.TempDir()
+		profilePath := filepath.Join(tempDir, "generic-profile.yaml")
+
+		profileContent := `id: 1
+name: generic-profile
+configuration:
+  amtSpecific:
+    provisioningCert: "generic-cert"
+    provisioningCertPwd: "generic-password"
+`
+		err := os.WriteFile(profilePath, []byte(profileContent), 0o600)
+		assert.NoError(t, err)
+
+		cmd := &DeactivateCmd{
+			Profile: profilePath,
+		}
+
+		err = cmd.loadProfileIfNeeded()
+		assert.NoError(t, err)
+		assert.Equal(t, "generic-cert", cmd.ProvisioningCert)
+		assert.Equal(t, "generic-password", cmd.ProvisioningCertPwd)
 	})
 }

@@ -134,6 +134,7 @@ func (cmd *AMTBaseCmd) addClientCertificate(tlsConfig *tls.Config) error {
 	clientCert := tlsCert
 	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 		log.Trace("Client certificate requested by server")
+
 		return &clientCert, nil
 	}
 
