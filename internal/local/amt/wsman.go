@@ -132,7 +132,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		// Test TLS connection to LMS
 		conn, err := cryptotls.Dial("tcp", utils.LMSAddress+":"+utils.LMSTLSPort, tlsConfig)
 		if err != nil {
-			logrus.Debug("TLS connection test failed: ", err)
+			logrus.Trace("TLS connection test failed (will retry): ", err)
 		} else {
 			logrus.Debug("TLS connection test succeeded")
 
