@@ -8,6 +8,8 @@ package configure
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -48,7 +50,17 @@ func (cmd *SyncHostnameCmd) Run(ctx *commands.Context) error {
 
 	// Ensure service availability (optional)
 	if _, err := cmd.WSMan.GetGeneralSettings(); err != nil {
-		return fmt.Errorf("failed to get general settings: %w", err)
+		// AMT 20/21 may need a moment after WSMAN client setup before accepting requests
+		// Retry once if we get EOF or connection error
+		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
+			log.Debug("First GetGeneralSettings failed, retrying...")
+			time.Sleep(1 * time.Second)
+			if _, err := cmd.WSMan.GetGeneralSettings(); err != nil {
+				return fmt.Errorf("failed to get general settings: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to get general settings: %w", err)
+		}
 	}
 
 	req := general.GeneralSettingsRequest{}

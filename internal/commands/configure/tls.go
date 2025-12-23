@@ -286,10 +286,14 @@ func (cmd *TLSCmd) enableTLS(tlsMode TLSMode) error {
 
 	// Commit changes
 	_, err = cmd.WSMan.CommitChanges()
-	if err != nil {
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
 		log.Error("commit changes failed")
 
 		return fmt.Errorf("failed to commit TLS changes: %w", err)
+	} else if err != nil {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
 	}
 
 	return nil
@@ -600,8 +604,12 @@ func (cmd *TLSCmd) updateTLSCredentialContext(certHandle string) error {
 		}
 
 		_, err = cmd.WSMan.CommitChanges()
-		if err != nil {
+		// AMT may close the connection after CommitChanges as services restart
+		// EOF errors during this phase are expected and don't indicate failure
+		if err != nil && !strings.Contains(err.Error(), "EOF") {
 			return fmt.Errorf("failed to commit TLS credential context changes: %w", err)
+		} else if err != nil {
+			log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
 		}
 	} else {
 		// TLS not yet enabled, create credential context

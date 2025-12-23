@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -78,7 +79,18 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	// Get general settings to obtain digest realm
 	generalSettings, err := cmd.WSMan.GetGeneralSettings()
 	if err != nil {
-		return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))
+		// AMT 20/21 may need a moment after WSMAN client setup before accepting requests
+		// Retry once if we get EOF or connection error
+		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
+			log.Debug("First GetGeneralSettings failed, retrying...")
+			time.Sleep(1 * time.Second)
+			generalSettings, err = cmd.WSMan.GetGeneralSettings()
+			if err != nil {
+				return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))
+			}
+		} else {
+			return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))
+		}
 	}
 
 	// Create authentication challenge with new password

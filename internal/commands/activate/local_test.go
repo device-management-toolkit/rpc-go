@@ -1013,8 +1013,14 @@ func TestLocalActivationService_activateACMLegacy(t *testing.T) {
 		context: &commands.Context{},
 	}
 
+	// Create mock LSA for the function parameter
+	lsa := amt.LocalSystemAccount{
+		Username: "admin",
+		Password: "lsa-password",
+	}
+
 	// Test that it fails due to invalid certificate first
-	err := service.activateACMLegacy()
+	err := service.activateACMLegacy(lsa)
 	if err == nil {
 		t.Error("activateACMLegacy() should fail with invalid certificate")
 	}

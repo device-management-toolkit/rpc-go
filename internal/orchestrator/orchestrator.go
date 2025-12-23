@@ -31,17 +31,20 @@ type ProfileOrchestrator struct {
 	currentPassword string
 	// global password argument to pass once to root rpc invocation
 	globalPassword string
+	// controls whether to skip AMT/LMS TLS certificate verification
+	skipAMTCertCheck bool
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
 // is treated as the existing AMT admin password and will be used to rotate to the profile's
-// AdminPassword without prompting when provided.
-func NewProfileOrchestrator(cfg config.Configuration, currentPassword string) *ProfileOrchestrator {
+// AdminPassword without prompting when provided. skipAMTCertCheck controls TLS verification.
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
-		profile:         cfg,
-		executor:        &CLIExecutor{},
-		currentPassword: strings.TrimSpace(currentPassword),
-		globalPassword:  strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		profile:          cfg,
+		executor:         &CLIExecutor{},
+		currentPassword:  strings.TrimSpace(currentPassword),
+		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		skipAMTCertCheck: skipAMTCertCheck,
 	}
 }
 
@@ -166,7 +169,8 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
-		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass, "--skip-amt-cert-check"}
+		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		change = po.addAMTCertCheckFlag(change)
 		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
 			change = append(change, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 			if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
@@ -208,7 +212,8 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 		}
 
 		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
-		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass, "--skip-amt-cert-check"}
+		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+		change = po.addAMTCertCheckFlag(change)
 		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
 			change = append(change, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 			if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
@@ -269,9 +274,8 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 	base = append(base, "--local")
 
-	// Always pass skip-amt-cert-check to bypass hostname verification for AMT 19+
-	// AMT 19+ certificates (CN=AMT RCFG) don't have localhost in SANs
-	base = append(base, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	base = po.addAMTCertCheckFlag(base)
 
 	return po.executor.Execute(base)
 }
@@ -290,8 +294,8 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 	args = append(args, "activate", "--acm", "--local")
 	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
 
-	// Always pass skip-amt-cert-check to bypass hostname verification for AMT 19+
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 	args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
@@ -315,9 +319,8 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 		args = append(args, "--password", po.globalPassword)
 	}
 
-	// Always pass skip-amt-cert-check to bypass hostname verification for AMT 19+
-	// AMT 19+ certificates (CN=AMT RCFG) don't have localhost in SANs
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	args = append(args, "configure", "mebx", "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
@@ -348,8 +351,8 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 		args = append(args, "--password", po.globalPassword)
 	}
 
-	// Always pass skip-amt-cert-check to bypass hostname verification for AMT 19+
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	args = append(args, "configure", "amtfeatures")
 
@@ -415,8 +418,8 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	args = append(args, "configure", "wired")
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -465,8 +468,8 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 
 	args = append(args, "configure", "wifisync")
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -495,8 +498,8 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 
 	purgeArgs = append(purgeArgs, "configure", "wireless", "--purge")
 
-	// Always skip cert check for AMT 19+ compatibility
-	purgeArgs = append(purgeArgs, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	purgeArgs = po.addAMTCertCheckFlag(purgeArgs)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -536,8 +539,8 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 
 	args = append(args, "configure", "wireless")
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -620,8 +623,8 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	args = append(args, "configure", "tls")
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -698,8 +701,8 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 
 	args = append(args, "configure", "proxy")
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -735,7 +738,8 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
-		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass, "--skip-amt-cert-check"}
+		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		change = po.addAMTCertCheckFlag(change)
 		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
 			change = append(change, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
 			if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
@@ -761,8 +765,8 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 
 	args = append(args, "configure", "amtpassword", "--newamtpassword", newPass)
 
-	// Always skip cert check for AMT 19+ compatibility
-	args = append(args, "--skip-amt-cert-check")
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	// Add provisioning certificate if available
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
@@ -773,4 +777,12 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	}
 
 	return po.executeWithPasswordFallback(args)
+}
+
+// addAMTCertCheckFlag conditionally adds --skip-amt-cert-check to args if the flag is set
+func (po *ProfileOrchestrator) addAMTCertCheckFlag(args []string) []string {
+	if po.skipAMTCertCheck {
+		return append(args, "--skip-amt-cert-check")
+	}
+	return args
 }

@@ -197,13 +197,17 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	log.Tracef("Entering Run method of ActivateCmd. Context: %s", ctx.AuthEndpoint)
 
 	// Local activation paths require AMT password unless stopConfig.
+	// CCM activation from pre-provisioning doesn't need WSMAN setup (no admin account exists yet)
 	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 			return err
 		}
 
-		if err := cmd.EnsureWSMAN(ctx); err != nil {
-			return err
+		// Skip WSMAN setup for CCM activation - it uses LSA credentials internally
+		if !cmd.CCM {
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	// Determine activation mode based on flags
@@ -293,7 +297,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -312,7 +316,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword)
+		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, ctx.SkipAMTCertCheck)
 		if err := orch.ExecuteProfile(); err != nil {
 			return err
 		}
@@ -359,7 +363,7 @@ func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
 		return fmt.Errorf("failed to decrypt profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}

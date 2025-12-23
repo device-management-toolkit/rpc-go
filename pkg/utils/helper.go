@@ -137,7 +137,7 @@ func Pause(howManySeconds int) {
 		return
 	}
 
-	log.Debugf("pausing %d seconds", howManySeconds)
+	log.Tracef("pausing %d seconds", howManySeconds)
 	time.Sleep(time.Duration(howManySeconds) * time.Second)
 }
 
