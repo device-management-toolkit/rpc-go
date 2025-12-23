@@ -200,6 +200,9 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			return utils.AMTConnectionFailed
 		}
 
+		// Declare certsAndKeys at function scope for potential use in rollback
+		var certsAndKeys CertsAndKeys
+
 		// Setup WSMAN client with admin credentials and proper TLS config for AMT 19+ support
 		// After activation, device is in ACM mode and requires client certificate for TLS
 		tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
@@ -208,7 +211,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			tlsConfig.MinVersion = tls.VersionTLS12
 
 			// Load the provisioning certificate for client authentication
-			certsAndKeys, err := convertPfxToObject(service.config.ACMSettings.ProvisioningCert, service.config.ACMSettings.ProvisioningCertPwd)
+			certsAndKeys, err = convertPfxToObject(service.config.ACMSettings.ProvisioningCert, service.config.ACMSettings.ProvisioningCertPwd)
 			if err != nil {
 				log.Error("Failed to load provisioning certificate for post-activation:", err)
 				return utils.ActivationFailed
@@ -251,19 +254,54 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 
 		err = service.ChangeAMTPassword()
 		if err != nil {
-			log.Error(err.Error())
+			log.Error("PTHI activation succeeded but password configuration failed:", err.Error())
+			log.Warn("Attempting to rollback activation (unprovision device)...")
 
-			// Check if activation actually succeeded despite post-activation errors
-			controlMode, checkErr := service.amtCommand.GetControlMode()
-			if checkErr != nil {
-				return utils.ActivationFailedGetControlMode
+			// Setup WSMAN client with cert checking disabled for unprovision
+			// Use LSA credentials since password was not successfully changed
+			rollbackTlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, true) // Skip cert check
+			rollbackTlsConfig.MinVersion = tls.VersionTLS12
+
+			// Add provisioning cert for client auth
+			var certChain [][]byte
+			for _, cert := range certsAndKeys.certs {
+				certChain = append(certChain, cert.Raw)
+			}
+			tlsCert := tls.Certificate{
+				Certificate: certChain,
+				PrivateKey:  certsAndKeys.keys[0],
+				Leaf:        certsAndKeys.certs[0],
+			}
+			rollbackTlsConfig.Certificates = []tls.Certificate{tlsCert}
+			clientCert := tlsCert
+			rollbackTlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				log.Trace("Client certificate requested by server (rollback)")
+				return &clientCert, nil
 			}
 
-			if controlMode != 2 {
-				return utils.ActivationFailedControlMode
+			// Setup WSMAN client for rollback with LSA credentials
+			if setupErr := service.interfacedWsmanMessage.SetupWsmanClient(
+				lsa.Username,
+				lsa.Password,
+				service.flags.LocalTlsEnforced,
+				log.GetLevel() == log.TraceLevel,
+				rollbackTlsConfig,
+			); setupErr != nil {
+				log.Error("Failed to setup WSMAN client for rollback:", setupErr)
+				log.Error("Manually deactivate and retry activation with -n flag")
+				return utils.ActivationFailed
 			}
 
-			return nil
+			// Try to unprovision back to pre-provisioning state
+			if _, unprovErr := service.interfacedWsmanMessage.Unprovision(1); unprovErr != nil {
+				log.Error("Rollback failed - device remains in activated state:", unprovErr)
+				log.Error("Manually deactivate and retry activation with -n flag")
+			} else {
+				log.Info("Rollback successful - device returned to pre-provisioning state")
+				log.Info("Retry activation with -n flag")
+			}
+
+			return utils.ActivationFailed
 		}
 
 		// AMT may close TLS connection after password change
