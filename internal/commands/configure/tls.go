@@ -124,6 +124,9 @@ type TLSCmd struct {
 
 	Mode  string `help:"TLS authentication mode" enum:"Server,ServerAndNonTLS,Mutual,MutualAndNonTLS,None" default:"Server" name:"mode"`
 	Delay int    `help:"Delay time in seconds after putting remote TLS settings" default:"3" name:"delay"`
+
+	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded PFX)" name:"provisioningCert"`
+	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
@@ -165,6 +168,10 @@ func (cmd *TLSCmd) Validate() error {
 
 // Run executes the TLS configuration command
 func (cmd *TLSCmd) Run(ctx *commands.Context) error {
+	// Copy provisioning certificate flags to base command
+	cmd.ProvisioningCert = cmd.ProvisioningCertFlag
+	cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
@@ -279,10 +286,14 @@ func (cmd *TLSCmd) enableTLS(tlsMode TLSMode) error {
 
 	// Commit changes
 	_, err = cmd.WSMan.CommitChanges()
-	if err != nil {
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
 		log.Error("commit changes failed")
 
 		return fmt.Errorf("failed to commit TLS changes: %w", err)
+	} else if err != nil {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
 	}
 
 	return nil
@@ -593,8 +604,12 @@ func (cmd *TLSCmd) updateTLSCredentialContext(certHandle string) error {
 		}
 
 		_, err = cmd.WSMan.CommitChanges()
-		if err != nil {
+		// AMT may close the connection after CommitChanges as services restart
+		// EOF errors during this phase are expected and don't indicate failure
+		if err != nil && !strings.Contains(err.Error(), "EOF") {
 			return fmt.Errorf("failed to commit TLS credential context changes: %w", err)
+		} else if err != nil {
+			log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
 		}
 	} else {
 		// TLS not yet enabled, create credential context

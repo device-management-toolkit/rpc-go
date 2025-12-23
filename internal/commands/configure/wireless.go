@@ -40,6 +40,10 @@ type WirelessCmd struct {
 	PSKPassphrase        string `help:"WPA/WPA2 passphrase" name:"pskPassphrase"`
 	// Maintenance
 	Purge bool `help:"Purge all existing AMT wireless profiles and exit" name:"purge"`
+
+	// Provisioning certificate (for mutual TLS after ACM activation)
+	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
+	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for wireless command validation
@@ -133,6 +137,12 @@ func (cmd *WirelessCmd) Validate() error {
 
 // Run executes the wireless configuration command
 func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
+	// Copy provisioning certificate from flags to base command for mutual TLS
+	if cmd.ProvisioningCertFlag != "" {
+		cmd.ProvisioningCert = cmd.ProvisioningCertFlag
+		cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
+	}
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err

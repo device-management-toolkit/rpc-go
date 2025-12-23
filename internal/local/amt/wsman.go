@@ -9,6 +9,7 @@ import (
 	"context"
 	cryptotls "crypto/tls"
 	"encoding/base64"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -69,6 +70,10 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	}
 
 	if clientParams.UseTLS {
+		// Ensure tlsConfig is not nil before accessing its fields
+		if tlsConfig == nil {
+			return fmt.Errorf("TLS is enabled but tlsConfig is nil")
+		}
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -80,18 +85,18 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
 		if err != nil {
-			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
-			logrus.Error(err)
+			logrus.Trace("TLS connection test failed (will retry): ", err)
 		} else {
-			logrus.Info("Successfully connected to LMS.")
-
+			logrus.Debug("TLS connection test succeeded")
+			// Successfully connected - log certificate info and close
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
-				cert := state.PeerCertificates[0]
-				logrus.Trace("Server certificate: ", cert)
+				if len(state.PeerCertificates) > 0 {
+					cert := state.PeerCertificates[0]
+					logrus.Trace("Server certificate: ", cert)
+				}
 			}
-
-			defer conn.Close()
+			conn.Close()
 		}
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

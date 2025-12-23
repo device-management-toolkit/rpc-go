@@ -19,6 +19,10 @@ type MEBxCmd struct {
 
 	// MEBx password
 	MEBxPassword string `help:"MEBx password" env:"MEBX_PASSWORD" name:"mebxpassword"`
+
+	// Provisioning certificate (for mutual TLS after ACM activation)
+	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
+	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
@@ -45,6 +49,15 @@ func (cmd *MEBxCmd) Validate() error {
 
 // Run executes the MEBx configuration command
 func (cmd *MEBxCmd) Run(ctx *commands.Context) error {
+	// Set provisioning certificate from flags for mutual TLS
+	if cmd.ProvisioningCertFlag != "" {
+		cmd.ProvisioningCert = cmd.ProvisioningCertFlag
+	}
+
+	if cmd.ProvisioningCertPwdFlag != "" {
+		cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
+	}
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
