@@ -102,3 +102,41 @@ func TestParseFlagsDeactivate(t *testing.T) {
 	assert.EqualValues(t, result, utils.IncorrectCommandLineParameters)
 	assert.Equal(t, utils.CommandDeactivate, flags.Command)
 }
+
+// Test profile loading for local deactivation
+func TestHandleLocalDeactivateWithConfigV2Flags(t *testing.T) {
+	// Test that configv2 and configencryptionkey flags are recognized
+	args := []string{"./rpc", "deactivate", "-local", "-n", "-configv2", "profile.yaml", "-configencryptionkey", "testkey12345678901234567890123"}
+	flags := NewFlags(args, MockPRSuccess)
+	flags.AmtCommand.PTHI = MockPTHICommands{}
+
+	// This should fail because the file doesn't exist, but it shows the flags are recognized
+	result := flags.handleDeactivateCommand()
+	// We expect an error because the file doesn't exist
+	assert.NotNil(t, result)
+	// But the flags should be set
+	assert.Equal(t, "profile.yaml", flags.configContentV2)
+	assert.Equal(t, "testkey12345678901234567890123", flags.configV2Key)
+}
+
+func TestHandleLocalDeactivateWithoutProfile(t *testing.T) {
+	// Test that deactivation works without profile (CCM mode)
+	args := []string{"./rpc", "deactivate", "-local", "-n"}
+	flags := NewFlags(args, MockPRSuccess)
+	flags.AmtCommand.PTHI = MockPTHICommands{}
+
+	result := flags.handleDeactivateCommand()
+	assert.Nil(t, result)
+	assert.Equal(t, "", flags.configContentV2)
+	assert.Equal(t, "", flags.LocalConfig.ACMSettings.ProvisioningCert)
+}
+
+func TestHandleLocalDeactivateConfigV2WithoutKey(t *testing.T) {
+	// Test that providing configv2 without key fails
+	args := []string{"./rpc", "deactivate", "-local", "-n", "-configv2", "profile.yaml"}
+	flags := NewFlags(args, MockPRSuccess)
+	flags.AmtCommand.PTHI = MockPTHICommands{}
+
+	result := flags.handleDeactivateCommand()
+	assert.EqualValues(t, utils.FailedReadingConfiguration, result)
+}

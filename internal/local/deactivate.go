@@ -7,11 +7,14 @@ package local
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 func (service *ProvisioningService) Deactivate() (err error) {
@@ -66,6 +69,59 @@ func (service *ProvisioningService) DeactivateACM() (err error) {
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
 		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+
+		// Add client certificate for mutual TLS if provisioning cert is provided
+		// This is required for AMT 19+ in ACM mode
+		if service.flags.LocalConfig.ACMSettings.ProvisioningCert != "" &&
+			service.flags.LocalConfig.ACMSettings.ProvisioningCertPwd != "" {
+			log.Trace("Adding client certificate for mutual TLS")
+
+			pfx, err := base64.StdEncoding.DecodeString(service.flags.LocalConfig.ACMSettings.ProvisioningCert)
+			if err != nil {
+				log.Error("Failed to decode provisioning certificate: ", err)
+
+				return utils.ActivationFailedDecode64
+			}
+
+			privateKey, certificate, extraCerts, err := pkcs12.DecodeChain(pfx, service.flags.LocalConfig.ACMSettings.ProvisioningCertPwd)
+			if err != nil {
+				log.Error("Failed to decode certificate chain: ", err)
+
+				return utils.ActivationFailedInvalidProvCert
+			}
+
+			// Order certificate chain properly
+			certs := append([]*x509.Certificate{certificate}, extraCerts...)
+
+			orderedCerts, err := utils.OrderCertsChain(certs)
+			if err != nil {
+				log.Error("Failed to order certificate chain: ", err)
+
+				return utils.ActivationFailedInvalidProvCert
+			}
+
+			// Build certificate chain
+			var certChain [][]byte
+			for _, cert := range orderedCerts {
+				certChain = append(certChain, cert.Raw)
+			}
+
+			tlsCert := tls.Certificate{
+				Certificate: certChain,
+				PrivateKey:  privateKey,
+				Leaf:        orderedCerts[0],
+			}
+
+			tlsConfig.Certificates = []tls.Certificate{tlsCert}
+
+			// Set GetClientCertificate callback for proper client certificate selection
+			clientCert := tlsCert
+			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				log.Trace("Client certificate requested by server for deactivation")
+
+				return &clientCert, nil
+			}
+		}
 	}
 
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
