@@ -280,6 +280,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			clientCert := tlsCert
 			rollbackTlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				log.Trace("Client certificate requested by server (rollback)")
+
 				return &clientCert, nil
 			}
 
@@ -293,6 +294,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			); setupErr != nil {
 				log.Error("Failed to setup WSMAN client for rollback:", setupErr)
 				log.Error("Manually deactivate and retry activation with -n flag")
+
 				return utils.ActivationFailed
 			}
 
