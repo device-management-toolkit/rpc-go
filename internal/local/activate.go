@@ -252,6 +252,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		)
 		if err != nil {
 			log.Error("Failed to setup WSMAN client with LSA credentials:", err)
+
 			return utils.ActivationFailed
 		}
 
@@ -325,6 +326,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			)
 			if err != nil {
 				log.Error("Failed to recreate WSMAN client after password change:", err)
+
 				return utils.ActivationFailed
 			}
 
