@@ -24,6 +24,7 @@ func (service *ProvisioningService) ChangeAMTPassword() (err error) {
 		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
 			log.Debug("First GetGeneralSettings failed, retrying...")
 			time.Sleep(1 * time.Second)
+
 			generalSettings, err = service.interfacedWsmanMessage.GetGeneralSettings()
 			if err != nil {
 				return err

@@ -197,6 +197,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		lsa, err := service.amtCommand.GetLocalSystemAccount()
 		if err != nil {
 			log.Error("Failed to get LSA credentials:", err)
+
 			return utils.AMTConnectionFailed
 		}
 
@@ -214,6 +215,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			certsAndKeys, err = convertPfxToObject(service.config.ACMSettings.ProvisioningCert, service.config.ACMSettings.ProvisioningCertPwd)
 			if err != nil {
 				log.Error("Failed to load provisioning certificate for post-activation:", err)
+
 				return utils.ActivationFailed
 			}
 
@@ -235,6 +237,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			clientCert := tlsCert
 			tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 				log.Trace("Client certificate requested by server (post-activation)")
+
 				return &clientCert, nil
 			}
 		}
@@ -267,6 +270,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 			for _, cert := range certsAndKeys.certs {
 				certChain = append(certChain, cert.Raw)
 			}
+
 			tlsCert := tls.Certificate{
 				Certificate: certChain,
 				PrivateKey:  certsAndKeys.keys[0],
@@ -309,6 +313,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 		// This is critical for AMT 20/21 which are more sensitive to stale TLS connections
 		if service.flags.LocalTlsEnforced {
 			log.Debug("Recreating WSMAN client after password change...")
+
 			err = service.interfacedWsmanMessage.SetupWsmanClient(
 				"admin",
 				service.config.ACMSettings.AMTPassword,
@@ -320,6 +325,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 				log.Error("Failed to recreate WSMAN client after password change:", err)
 				return utils.ActivationFailed
 			}
+
 			log.Debug("WSMAN client recreated successfully")
 		}
 
