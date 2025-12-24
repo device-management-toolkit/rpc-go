@@ -23,6 +23,16 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipCertChec
 
 	tlsConfig.InsecureSkipVerify = skipCertCheck
 
+	// When skipping AMT certificate checks, we need to bypass hostname verification as well.
+	// AMT 19+ certificates (e.g., CN=AMT RCFG) don't have localhost in their SANs,
+	// causing "certificate is not valid for any names" errors even with InsecureSkipVerify=true.
+	// VerifyConnection is called after the handshake and allows us to completely bypass validation.
+	if skipCertCheck {
+		tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+			return nil
+		}
+	}
+
 	if *mode == 0 { // pre-provisioning mode
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if skipCertCheck {
