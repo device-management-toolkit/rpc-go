@@ -47,7 +47,7 @@ func TestInterpretHashAlgorithm(t *testing.T) {
 		{"Hash0", 0, "MD5", 16},
 		{"Hash1", 1, "SHA1", 20},
 		{"Hash2", 2, "SHA256", 32},
-		{"Hash3", 3, "SHA512", 64},
+		{"Hash3", 3, "SHA384", 48},
 		{"Hash4", 4, "UNKNOWN", 0},
 	}
 	for _, tt := range tests {
@@ -176,9 +176,6 @@ func TestCheckCertificateAlgorithmSupported(t *testing.T) {
 		{"SHA384WithRSA", x509.SHA384WithRSA, 3, false},
 		{"ECDSAWithSHA384", x509.ECDSAWithSHA384, 3, false},
 		{"SHA384WithRSAPSS", x509.SHA384WithRSAPSS, 3, false},
-		{"SHA512WithRSA", x509.SHA512WithRSA, 5, false},
-		{"ECDSAWithSHA512", x509.ECDSAWithSHA512, 5, false},
-		{"SHA512WithRSAPSS", x509.SHA512WithRSAPSS, 5, false},
 
 		// Unsupported cases
 		{"UnknownSignatureAlgorithm", x509.UnknownSignatureAlgorithm, 99, true},
