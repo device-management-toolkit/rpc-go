@@ -1,3 +1,10 @@
+## [2.48.10](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.9...v2.48.10) (2025-12-10)
+
+
+### Bug Fixes
+
+* reject invalid UUIDs during activation ([dba3b6e](https://github.com/device-management-toolkit/rpc-go/commit/dba3b6e4afb4a9a9fe0abdf4db676cf5ca84dab4)), closes [#480](https://github.com/device-management-toolkit/rpc-go/issues/480)
+
 ## [2.48.9](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.8...v2.48.9) (2025-12-02)
 
 ## [2.48.8](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.7...v2.48.8) (2025-11-18).

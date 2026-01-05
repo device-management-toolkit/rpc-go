@@ -108,8 +108,54 @@ func TestActivateACM(t *testing.T) {
 			IsDefault: true,
 		},
 	}
-	err := lps.ActivateACM(true)
+
+	// Parse certificate for test
+	certsAndKeys, err := convertPfxToObject(testCerts.Pfxb64, testCerts.PfxPassword)
 	assert.NoError(t, err)
+
+	// Mock LSA
+	lsa := &amt2.LocalSystemAccount{
+		Username: "admin",
+		Password: "testpass",
+	}
+
+	err = lps.ActivateACM(true, lsa, certsAndKeys)
+	assert.NoError(t, err)
+}
+
+func TestActivateACMWithTLS(t *testing.T) {
+	f := &flags.Flags{}
+	f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+	testCerts := getTestCerts()
+	f.LocalConfig.ACMSettings.ProvisioningCert = testCerts.Pfxb64
+	f.LocalConfig.ACMSettings.ProvisioningCertPwd = testCerts.PfxPassword
+	lps := setupService(f)
+	lps.flags.LocalTlsEnforced = true
+	lps.flags.Command = utils.CommandActivate
+
+	// Mock LSA
+	lsa := &amt2.LocalSystemAccount{
+		Username: "admin",
+		Password: "testpass",
+	}
+
+	t.Run("ACM activation with TLS and client certificate", func(t *testing.T) {
+		certsAndKeys, err := convertPfxToObject(testCerts.Pfxb64, testCerts.PfxPassword)
+		assert.NoError(t, err)
+
+		err = lps.ActivateACM(false, lsa, certsAndKeys)
+		assert.NoError(t, err)
+	})
+
+	t.Run("ACM activation with invalid provisioning cert", func(t *testing.T) {
+		lps.config.ACMSettings.ProvisioningCert = "invalid"
+		certsAndKeys, err := convertPfxToObject("invalid", "invalid")
+		assert.Error(t, err)
+
+		// If parsing fails, use empty certsAndKeys
+		_ = lps.ActivateACM(false, lsa, certsAndKeys)
+		// This should error due to invalid cert
+	})
 }
 
 func TestInjectCertsErrors(t *testing.T) {

@@ -6,6 +6,7 @@
 package smb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -62,7 +63,9 @@ func (s *Service) FetchFileContents(url string) ([]byte, error) {
 	log.Infof("fetching remote file server: %s:%s, user: %s, pwd: %s, domain: %s, share: %s, path: %s",
 		p.Host, p.Port, p.User, pwdOutput, p.Domain, p.ShareName, p.FilePath)
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", p.Host, p.Port))
+	var netDialer net.Dialer
+
+	conn, err := netDialer.DialContext(context.Background(), "tcp", net.JoinHostPort(p.Host, p.Port))
 	if err != nil {
 		return contents, err
 	}
