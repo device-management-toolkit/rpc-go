@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -54,15 +55,51 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// TEST CONNECTION TO SEE IF LMS EXISTS
 	err := client.localManagement.Connect()
 	if err != nil {
-		if config.LocalTlsEnforced {
-			return client, utils.LMSConnectionFailed
-		}
-		// client.localManagement.Close()
-		log.Trace("LMS not running.  Using LME Connection\n")
+		log.Debugf("LMS connection failed: %v", err)
 
-		client.localManagement = lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
-		client.isLME = true
-		client.localManagement.Initialize()
+		if config.LocalTlsEnforced {
+			// Try non-TLS LMS as fallback before LME
+			nonTlsLMS := lm.NewLMSConnection(utils.LMSAddress, utils.LMSPort, false, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck)
+
+			err = nonTlsLMS.Connect()
+			if err == nil {
+				client.localManagement = nonTlsLMS
+				client.localManagement.Close() // Test connection, close for now
+			} else {
+				log.Trace("LMS TLS connection failed. Attempting LME fallback...")
+			}
+		} else {
+			// Try TLS LMS as fallback before LME
+			tlsLMS := lm.NewLMSConnection(utils.LMSAddress, utils.LMSTLSPort, true, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck)
+
+			err = tlsLMS.Connect()
+			if err == nil {
+				client.localManagement = tlsLMS
+				client.localManagement.Close() // Test connection, close for now
+			} else {
+				log.Trace("LMS not running.  Using LME Connection\\n")
+			}
+		}
+
+		if err != nil {
+			// Wait a moment before attempting LME to allow any MEI operations to complete
+			time.Sleep(2 * time.Second)
+
+			// Try LME connection
+			lmeConnection := lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
+
+			err = lmeConnection.Initialize()
+			if err == nil {
+				client.localManagement = lmeConnection
+				client.isLME = true
+			} else {
+				if config.LocalTlsEnforced {
+					return client, utils.LMSConnectionFailed
+				}
+
+				return client, utils.LMSConnectionFailed
+			}
+		}
 	} else {
 		log.Trace("Using existing LMS\n")
 		client.localManagement.Close()
