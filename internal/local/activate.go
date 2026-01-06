@@ -74,7 +74,7 @@ func buildTLSCertificate(certsAndKeys CertsAndKeys) tls.Certificate {
 
 // buildTLSConfigWithClientCert creates a TLS configuration with client certificate for mutual TLS
 func (service *ProvisioningService) buildTLSConfigWithClientCert(certsAndKeys CertsAndKeys) *tls.Config {
-	tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+	tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
 
 	if !service.flags.LocalTlsEnforced {
 		return tlsConfig
@@ -304,7 +304,7 @@ func (service *ProvisioningService) ActivateACM(oldWay bool, lsa *amt.LocalSyste
 			// Setup WSMAN client for rollback with LSA credentials
 			if setupErr := service.setupWsmanWithConfig(lsa.Username, lsa.Password, rollbackTlsConfig); setupErr != nil {
 				log.Error("Failed to setup WSMAN client for rollback:", setupErr)
-				log.Error("Manually deactivate and retry activation with -n flag")
+				log.Error("Manually deactivate and retry activation with -n or -skipamtcertcheck flag")
 
 				return utils.ActivationFailed
 			}
@@ -312,10 +312,10 @@ func (service *ProvisioningService) ActivateACM(oldWay bool, lsa *amt.LocalSyste
 			// Try to unprovision back to pre-provisioning state
 			if _, unprovErr := service.interfacedWsmanMessage.Unprovision(UnprovisionModePartial); unprovErr != nil {
 				log.Error("Rollback failed - device remains in activated state:", unprovErr)
-				log.Error("Manually deactivate and retry activation with -n flag")
+				log.Error("Manually deactivate and retry activation with -n or -skipamtcertcheck flag")
 			} else {
 				log.Info("Rollback successful - device returned to pre-provisioning state")
-				log.Info("Retry activation with -n flag")
+				log.Info("Retry activation with -n or -skipamtcertcheck flag")
 			}
 
 			return utils.ActivationFailed
