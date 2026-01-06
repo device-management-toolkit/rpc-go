@@ -139,15 +139,16 @@ func (service *ProvisioningService) Activate() error {
 
 	var certsAndKeys CertsAndKeys // Cache parsed certificate to reuse in ActivateACM
 
-	if service.flags.LocalTlsEnforced {
-		if service.flags.UseACM {
-			acmConfig := service.config.ACMSettings
+	if service.flags.UseACM {
+		acmConfig := service.config.ACMSettings
 
-			// Parse certificate once and cache for reuse in ActivateACM
-			certsAndKeys, err = convertPfxToObject(acmConfig.ProvisioningCert, acmConfig.ProvisioningCertPwd)
-			if err != nil {
-				return err
-			}
+		// Parse certificate once and cache for reuse in ActivateACM
+		certsAndKeys, err = convertPfxToObject(acmConfig.ProvisioningCert, acmConfig.ProvisioningCertPwd)
+		if err != nil {
+			return err
+		}
+
+		if service.flags.LocalTlsEnforced {
 			// Use the AMT Certificate response to verify AMT device
 			startHBasedResponse, err := service.StartSecureHostBasedConfiguration(certsAndKeys)
 			if err != nil {
@@ -155,7 +156,6 @@ func (service *ProvisioningService) Activate() error {
 			}
 
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
-
 			// NOTE: Client certificate is NOT added here during initial activation
 			// It will be added in ActivateACM() after password change and activation complete
 			// Adding it here causes EOF errors on AMT 20/21 during the activation process
@@ -163,6 +163,9 @@ func (service *ProvisioningService) Activate() error {
 			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
 		}
 
+		tlsConfig.MinVersion = tls.VersionTLS12
+	} else if service.flags.LocalTlsEnforced {
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
 		tlsConfig.MinVersion = tls.VersionTLS12
 	}
 
