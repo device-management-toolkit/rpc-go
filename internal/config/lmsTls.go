@@ -31,6 +31,13 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipCertChec
 		tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
 			return nil
 		}
+		// When the server requests a client certificate (mutual TLS), return nil to indicate
+		// no client certificate is available. This allows deactivation without provisioning cert.
+		tlsConfig.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			log.Trace("Server requested client certificate, responding with no certificate")
+
+			return nil, nil
+		}
 	}
 
 	if *mode == 0 { // pre-provisioning mode
