@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -1094,12 +1095,22 @@ func (service *LocalActivationService) startSecureHostBasedConfiguration(certsAn
 	// Create leaf certificate hash
 	var certHashByteArray [64]byte
 
-	leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
-	copy(certHashByteArray[:], leafHash[:])
-
 	certAlgo, err := utils.CheckCertificateAlgorithmSupported(certsAndKeys.certs[0].SignatureAlgorithm)
 	if err != nil {
 		return amt.SecureHBasedResponse{}, utils.ActivationFailedCertHash
+	}
+
+	// Generate hash based on certificate algorithm
+	switch certAlgo {
+	case 2: // SHA256
+		leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	case 3: // SHA384
+		leafHash := sha512.Sum384(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	default:
+		// Only SHA-256 and SHA-384 are supported for secure host-based configuration
+		return amt.SecureHBasedResponse{}, fmt.Errorf("unsupported certificate algorithm for activation: %d", certAlgo)
 	}
 
 	// Call StartConfigurationHBased
@@ -1186,15 +1197,53 @@ func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (Provisionin
 }
 
 // compareCertHashes compares certificate hash with AMT stored hashes
+// Computes both SHA-256 and SHA-384 fingerprints to support different AMT platforms
 func (service *LocalActivationService) compareCertHashes(fingerPrint string) error {
+	// Get certificate object to compute multiple hash algorithms
+	certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+	if err != nil {
+		return utils.ActivationFailedGetCertHash
+	}
+
+	// Find the root certificate
+	var rootCert *x509.Certificate
+
+	for _, cert := range certsAndKeys.certs {
+		if cert.Subject.String() == cert.Issuer.String() {
+			rootCert = cert
+
+			break
+		}
+	}
+
+	if rootCert == nil {
+		return utils.ActivationFailedNoRootCertFound
+	}
+
+	// Compute fingerprints using different hash algorithms
+	der := rootCert.Raw
+
+	fingerprints := make(map[string]string)
+	// SHA-384 (48 bytes) - Default for newer platforms
+	hashSHA384 := sha512.Sum384(der)
+	fingerprints["SHA384"] = hex.EncodeToString(hashSHA384[:])
+	// SHA-256 (32 bytes) - Fallback for older platforms
+	hashSHA256 := sha256.Sum256(der)
+	fingerprints["SHA256"] = hex.EncodeToString(hashSHA256[:])
+
+	// Get all certificate hashes from AMT
 	result, err := service.amtCommand.GetCertificateHashes()
 	if err != nil {
 		return utils.ActivationFailedGetCertHash
 	}
 
+	// Try to match against any stored hash with any algorithm
 	for _, v := range result {
-		if v.Hash == fingerPrint {
-			return nil
+		// Check if this AMT hash matches any of our computed fingerprints
+		if computedHash, exists := fingerprints[v.Algorithm]; exists {
+			if v.Hash == computedHash {
+				return nil
+			}
 		}
 	}
 
