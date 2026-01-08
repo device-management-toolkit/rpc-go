@@ -26,9 +26,6 @@ type ProxyCmd struct {
 	Address          string `help:"Proxy host or IP (IPv4/IPv6/FQDN)" name:"address"`
 	Port             int    `help:"Proxy TCP port" name:"port" default:"80"`
 	NetworkDnsSuffix string `help:"Network DNS suffix (domain) used for the access point" name:"networkdnssuffix"`
-
-	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded PFX)" name:"provisioningCert"`
-	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for proxy configuration
@@ -87,10 +84,6 @@ func (cmd *ProxyCmd) Validate() error {
 
 // Run executes the proxy configuration command
 func (cmd *ProxyCmd) Run(ctx *commands.Context) error {
-	// Copy provisioning certificate flags to base command
-	cmd.ProvisioningCert = cmd.ProvisioningCertFlag
-	cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
-
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err

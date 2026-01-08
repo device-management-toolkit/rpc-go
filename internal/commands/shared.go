@@ -20,5 +20,8 @@ type Context struct {
 	TLSConfig        *tls.Config
 	TenantID         string
 	AMTPassword      string // Centralized AMT admin password (from global flag/env or interactive prompt)
+	// Provisioning certificate for mutual TLS with AMT (required after ACM activation on AMT 19+)
+	ProvisioningCert    string
+	ProvisioningCertPwd string
 	ServerAuthFlags
 }

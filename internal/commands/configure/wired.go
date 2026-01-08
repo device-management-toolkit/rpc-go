@@ -42,10 +42,6 @@ type WiredCmd struct {
 	Gateway       string `help:"Default gateway" name:"gateway"`
 	PrimaryDNS    string `help:"Primary DNS server" name:"primarydns"`
 	SecondaryDNS  string `help:"Secondary DNS server" name:"secondarydns"`
-
-	// Provisioning certificate (for mutual TLS after ACM activation)
-	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
-	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
@@ -113,12 +109,6 @@ func (cmd *WiredCmd) Validate() error {
 
 // Run executes the wired configuration command
 func (cmd *WiredCmd) Run(ctx *commands.Context) error {
-	// Copy provisioning certificate from flags to base command for mutual TLS
-	if cmd.ProvisioningCertFlag != "" {
-		cmd.ProvisioningCert = cmd.ProvisioningCertFlag
-		cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
-	}
-
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err

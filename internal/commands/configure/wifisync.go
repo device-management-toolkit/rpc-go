@@ -25,10 +25,6 @@ type WifiSyncCmd struct {
 	// If the platform does not support UEFI WiFi profile share, this flag is ignored by firmware.
 	// Defaults to true for backward compatibility.
 	UEFIWiFiSync bool `help:"Enable/disable UEFI WiFi profile share (if supported)" name:"uefiwifisync" default:"true"`
-
-	// Provisioning certificate (for mutual TLS after ACM activation)
-	ProvisioningCertFlag    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
-	ProvisioningCertPwdFlag string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 }
 
 // Run executes the enable wifi port command
@@ -44,12 +40,6 @@ func (cmd *WifiSyncCmd) Run(ctx *commands.Context) error {
 		log.Info("Setting UEFI WiFi profile share: ENABLED (if supported)")
 	} else {
 		log.Info("Setting UEFI WiFi profile share: DISABLED")
-	}
-
-	// Copy provisioning certificate from flags to base command for mutual TLS
-	if cmd.ProvisioningCertFlag != "" {
-		cmd.ProvisioningCert = cmd.ProvisioningCertFlag
-		cmd.ProvisioningCertPwd = cmd.ProvisioningCertPwdFlag
 	}
 
 	// Ensure runtime initialization (password + WSMAN client)

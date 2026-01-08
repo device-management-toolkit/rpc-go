@@ -35,11 +35,9 @@ type PasswordRequirer interface {
 // for all commands that require AMT connectivity. This reduces code duplication
 // and ensures consistent password handling across all commands.
 type AMTBaseCmd struct {
-	WSMan               interfaces.WSMANer `kong:"-"`
-	ControlMode         int                `kong:"-"` // Store the control mode for use by embedding commands
-	LocalTLSEnforced    bool               `kong:"-"`
-	ProvisioningCert    string             `kong:"-"` // Provisioning certificate for mutual TLS
-	ProvisioningCertPwd string             `kong:"-"` // Provisioning certificate password
+	WSMan            interfaces.WSMANer `kong:"-"`
+	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
+	LocalTLSEnforced bool               `kong:"-"`
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
@@ -93,8 +91,8 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, ctx.SkipAMTCertCheck)
 
 	// Add client certificate support for mutual TLS (required after ACM activation on AMT 19+)
-	if cmd.LocalTLSEnforced && cmd.ProvisioningCert != "" && cmd.ProvisioningCertPwd != "" {
-		if err := cmd.addClientCertificate(tlsConfig); err != nil {
+	if cmd.LocalTLSEnforced && ctx.ProvisioningCert != "" && ctx.ProvisioningCertPwd != "" {
+		if err := cmd.addClientCertificate(tlsConfig, ctx.ProvisioningCert, ctx.ProvisioningCertPwd); err != nil {
 			log.Debug("Failed to load client certificate, continuing without it: ", err)
 			// Continue without client cert - some commands may work without it
 		}
@@ -108,8 +106,8 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 }
 
 // addClientCertificate adds the provisioning certificate to the TLS config for mutual TLS
-func (cmd *AMTBaseCmd) addClientCertificate(tlsConfig *tls.Config) error {
-	certAndKeys, err := cmd.convertPfxToObject(cmd.ProvisioningCert, cmd.ProvisioningCertPwd)
+func (cmd *AMTBaseCmd) addClientCertificate(tlsConfig *tls.Config, provisioningCert, provisioningCertPwd string) error {
+	certAndKeys, err := cmd.convertPfxToObject(provisioningCert, provisioningCertPwd)
 	if err != nil {
 		return fmt.Errorf("failed to convert provisioning certificate: %w", err)
 	}

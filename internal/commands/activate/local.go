@@ -791,9 +791,10 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 				log.Debug("Waiting for AMT to stabilize before rollback...")
 				time.Sleep(2 * time.Second)
 
-				// Recreate WSMAN client with skip amt cert check + LSA credentials + provisioning cert for rollback
+				// Recreate WSMAN client with LSA credentials + provisioning cert for rollback
+				// Use InsecureSkipVerify for rollback to ensure device recovery even with certificate issues
 				rollbackTlsConfig := &tls.Config{
-					InsecureSkipVerify: true, // Skip amt cert check for rollback
+					InsecureSkipVerify: true, // Required for rollback recovery path
 				}
 
 				// Add client certificate for mutual TLS
