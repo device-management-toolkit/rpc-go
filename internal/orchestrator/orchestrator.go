@@ -22,6 +22,19 @@ const (
 	ACMMODE = "acmactivate"
 )
 
+// Control mode constants represent the device's current state (what mode device is IN)
+// These values match AMT firmware control mode states
+const (
+	ControlModePreProvisioning = 0 // Pre-provisioning state (not activated)
+	ControlModeCCM             = 1 // Client Control Mode
+	ControlModeACM             = 2 // Admin Control Mode
+)
+
+// Timing constants for AMT operations (in seconds)
+const (
+	AMTPostActivationDelay = 5 // Delay after activation for AMT/MEI driver availability
+)
+
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
 type ProfileOrchestrator struct {
 	profile  config.Configuration
@@ -77,7 +90,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	// If the device is already activated and the profile supplies an AdminPassword,
 	// proactively verify that the provided password works. If not, prompt for the
 	// current AMT password and rotate it to the profile value before proceeding.
-	if po.currentControlMode != 0 {
+	if po.currentControlMode != ControlModePreProvisioning {
 		if strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword) != "" {
 			if err := po.verifyAndAlignAMTPassword(); err != nil {
 				return fmt.Errorf("password verification/rotation failed: %w", err)
@@ -88,12 +101,12 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	}
 
 	// Step 1: Activation or upgrade if needed
-	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == 1 {
+	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == ControlModeCCM {
 		// Upgrade CCM -> ACM using local activation path with provisioning cert
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
-	} else if currentControlMode == 0 {
+	} else if currentControlMode == ControlModePreProvisioning {
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
@@ -102,7 +115,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	}
 
 	// Wait for AMT to stabilize after activation, especially for MEI driver availability
-	utils.Pause(5)
+	utils.Pause(AMTPostActivationDelay)
 
 	// Step 2: MEBx password configuration (ACM only)
 	if err := po.executeMEBxConfiguration(); err != nil {
@@ -154,7 +167,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 	}
 
 	// Do not prompt/rotate when device is in pre-provisioning (control mode 0)
-	if po.currentControlMode == 0 {
+	if po.currentControlMode == ControlModePreProvisioning {
 		return err
 	}
 
@@ -692,5 +705,6 @@ func (po *ProfileOrchestrator) addAMTCertCheckFlag(args []string) []string {
 	if po.skipAMTCertCheck {
 		return append(args, "--skip-amt-cert-check")
 	}
+
 	return args
 }
