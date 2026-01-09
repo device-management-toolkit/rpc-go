@@ -74,6 +74,7 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
 			log.Debug("First GetGeneralSettings failed, retrying...")
 			time.Sleep(1 * time.Second)
+
 			generalSettings, err = cmd.WSMan.GetGeneralSettings()
 			if err != nil {
 				return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))

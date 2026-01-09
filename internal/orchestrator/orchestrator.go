@@ -70,6 +70,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	// AMT 19+ requires client certificate authentication after ACM activation.
 	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
 		os.Setenv("PROVISIONING_CERT", po.profile.Configuration.AMTSpecific.ProvisioningCert)
+
 		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
 			os.Setenv("PROVISIONING_CERT_PASSWORD", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
 		}
@@ -193,6 +194,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+
 		change = po.addAMTCertCheckFlag(change)
 		if cerr := po.executor.Execute(change); cerr == nil {
 			log.Info("AMT password updated to profile value using provided current password; retrying previous operation")
@@ -230,6 +232,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 
 		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
 		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+
 		change = po.addAMTCertCheckFlag(change)
 		if cerr := po.executor.Execute(change); cerr != nil {
 			lower := strings.ToLower(cerr.Error())

@@ -775,6 +775,7 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 				if strings.Contains(originalErr.Error(), "failed to verify certificate") || strings.Contains(originalErr.Error(), "certificate is not valid") {
 					// Password config failed due to cert verification - rollback must skip to succeed
 					skipCertCheckForRollback = true
+
 					log.Debug("Enabling certificate skip for rollback due to cert verification failure")
 				}
 
@@ -818,6 +819,7 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 					if strings.Contains(unprovErr.Error(), "EOF") || strings.Contains(unprovErr.Error(), "connection") {
 						log.Debug("First unprovision failed with connection error, retrying...")
 						time.Sleep(AMTRetryDelay)
+
 						_, unprovErr = rollbackWsman.Unprovision(1)
 					}
 

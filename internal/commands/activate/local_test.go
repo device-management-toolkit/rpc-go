@@ -976,9 +976,11 @@ func TestLocalActivationService_setupACMTLSConfig_ClientCertCallback(t *testing.
 		if err != nil {
 			t.Errorf("GetClientCertificate callback returned error: %v", err)
 		}
+
 		if cert == nil {
 			t.Error("GetClientCertificate callback returned nil certificate")
 		}
+
 		if cert != nil && len(cert.Certificate) == 0 {
 			t.Error("GetClientCertificate callback returned certificate with empty chain")
 		}

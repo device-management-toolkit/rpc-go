@@ -96,6 +96,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 					logrus.Trace("Server certificate: ", cert)
 				}
 			}
+
 			conn.Close()
 		}
 	} else {
