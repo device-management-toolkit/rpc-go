@@ -121,6 +121,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 			strings.Contains(err.Error(), "connection")) {
 			log.Warnf("WSMAN setup failed (attempt %d/%d): %v. Retrying in %s...", attempt, WSMANSetupMaxAttempts, err, WSMANSetupRetryDelay)
 			time.Sleep(WSMANSetupRetryDelay)
+
 			continue
 		}
 
