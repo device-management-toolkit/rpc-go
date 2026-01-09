@@ -55,6 +55,7 @@ func (cmd *SyncHostnameCmd) Run(ctx *commands.Context) error {
 		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
 			log.Debug("First GetGeneralSettings failed, retrying...")
 			time.Sleep(1 * time.Second)
+
 			if _, err := cmd.WSMan.GetGeneralSettings(); err != nil {
 				return fmt.Errorf("failed to get general settings: %w", err)
 			}

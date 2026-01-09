@@ -677,6 +677,7 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+
 		change = po.addAMTCertCheckFlag(change)
 		if err := po.executor.Execute(change); err == nil {
 			log.Info("AMT password aligned to profile value using provided current password")

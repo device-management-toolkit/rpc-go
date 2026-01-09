@@ -796,6 +796,7 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 				// Create new WSMAN client for rollback
 				// Try with NEW password first (password change may have succeeded even if verification failed)
 				rollbackWsman := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
 				err = rollbackWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, rollbackTlsConfig)
 				if err != nil {
 					// If new password doesn't work, try LSA credentials
@@ -938,6 +939,7 @@ func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys C
 
 	// Create new WSMAN client with admin credentials for password change
 	pwdWsman := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
 	err := pwdWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup WSMAN client for password configuration: %w", err)
