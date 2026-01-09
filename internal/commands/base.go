@@ -22,6 +22,13 @@ import (
 	"software.sslmate.com/src/go-pkcs12"
 )
 
+const (
+	// WSMANSetupMaxAttempts is the maximum number of retry attempts for WSMAN client setup
+	WSMANSetupMaxAttempts = 3
+	// WSMANSetupRetryDelay is the delay between WSMAN setup retry attempts
+	WSMANSetupRetryDelay = 3 * time.Second
+)
+
 // DefaultSkipAMTCertCheck is set by CLI context to control AMT TLS verification at WSMAN setup time.
 // It is used in AMTBaseCmd.AfterApply where the CLI context isn't directly accessible.
 var DefaultSkipAMTCertCheck bool
@@ -98,7 +105,25 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 		}
 	}
 
-	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+	// Setup WSMAN client with retry for post-activation scenarios
+	// After CCM/ACM activation, AMT services may need a moment to stabilize
+	var err error
+
+	for attempt := 1; attempt <= WSMANSetupMaxAttempts; attempt++ {
+		err = cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+		if err == nil {
+			break
+		}
+
+		// Retry on connection errors that indicate AMT is still stabilizing
+		if attempt < WSMANSetupMaxAttempts && (strings.Contains(err.Error(), "interrupted system call") ||
+			strings.Contains(err.Error(), "EOF") ||
+			strings.Contains(err.Error(), "connection")) {
+			log.Warnf("WSMAN setup failed (attempt %d/%d): %v. Retrying in %s...", attempt, WSMANSetupMaxAttempts, err, WSMANSetupRetryDelay)
+			time.Sleep(WSMANSetupRetryDelay)
+			continue
+		}
+
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
