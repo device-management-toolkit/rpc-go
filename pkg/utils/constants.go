@@ -51,6 +51,8 @@ const (
 	SubCommandSyncHostname        = "synchostname"
 	SubCommandSyncIP              = "syncip"
 	SubCommandSetAMTFeatures      = "amtfeatures"
+	SubCommandEnableAMT           = "enableamt"
+	SubCommandDisableAMT          = "disableamt"
 	SubCommandCIRA                = "cira"
 
 	// Return Codes
