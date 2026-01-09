@@ -98,20 +98,73 @@ type LocalSystemAccount struct {
 
 type ChangeEnabledResponse uint8
 
+const (
+	changeEnabledTransitionAllowedMask uint8 = 0x01
+	changeEnabledAMTEnabledMask        uint8 = 0x02
+	changeEnabledRestrictedMask        uint8 = 0x20
+	changeEnabledTlsEnforcedMask       uint8 = 0x40
+	changeEnabledNewInterfaceMask      uint8 = 0x80
+	changeEnabledTlsAndNewMask         uint8 = 0xC0
+	changeEnabledLockedMask            uint8 = 0xE0
+)
+
 func (r ChangeEnabledResponse) IsTransitionAllowed() bool {
-	return (r & 1) == 1
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
+}
+
+// IsEnabledFlagSet indicates whether the Enabled bit (bit 0) is set.
+func (r ChangeEnabledResponse) IsEnabledFlagSet() bool {
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
 }
 
 func (r ChangeEnabledResponse) IsAMTEnabled() bool {
-	return ((r >> 1) & 1) == 1
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
+}
+
+// IsCurrentOperationalStateEnabled indicates whether the CurrentOperationalState bit (bit 1) is set.
+func (r ChangeEnabledResponse) IsCurrentOperationalStateEnabled() bool {
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
 }
 
 func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
-	return ((r >> 7) & 1) == 1
+	return (uint8(r) & changeEnabledNewInterfaceMask) == changeEnabledNewInterfaceMask
+}
+
+// SupportsSetAmtOperationalState checks if AMT version supports SetAmtOperationalState command (ME 16.1+)
+func (r ChangeEnabledResponse) SupportsSetAmtOperationalState() bool {
+	return r.IsNewInterfaceVersion() // Bit 7 indicates ME 16.1+ interface support
 }
 
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {
-	return ((r >> 6) & 1) == 1
+	return (uint8(r) & changeEnabledTlsEnforcedMask) == changeEnabledTlsEnforcedMask
+}
+
+// GetTransitionBlockedReason provides specific reason why transition is blocked
+func (r ChangeEnabledResponse) GetTransitionBlockedReason() string {
+	if r.IsTransitionAllowed() {
+		return "Transition is allowed"
+	}
+
+	// Decode specific bits to determine exact reason
+	rawValue := uint8(r)
+
+	// Bit analysis for blocked transitions
+	switch {
+	case (rawValue & changeEnabledLockedMask) == changeEnabledLockedMask:
+		// bits 7,6,5 set = New+TLS+Restricted, disabled, locked
+		return "Device is in locked state - requires unprovisioning first"
+	case (rawValue & changeEnabledTlsAndNewMask) == changeEnabledTlsAndNewMask:
+		// bits 7,6 set = New+TLS, but transition blocked
+		return "Device has TLS enforced and is likely provisioned; requires unprovisioning first"
+	case !r.SupportsSetAmtOperationalState():
+		return "AMT version does not support operational state transitions"
+	case (rawValue & changeEnabledRestrictedMask) != 0:
+		// Bit 5 set indicates additional restrictions
+		return "Device has additional security restrictions or OEM policy lockdown"
+	default:
+		// Default case for other blocked scenarios
+		return "Device is provisioned or has manufacturer restrictions"
+	}
 }
 
 type Interface interface {
@@ -222,7 +275,7 @@ func (amt AMTCommand) GetChangeEnabled() (ChangeEnabledResponse, error) {
 
 	defer amt.PTHI.Close()
 
-	rawVal, err := amt.PTHI.GetIsAMTEnabled()
+	rawVal, err := amt.PTHI.IsChangeToAMTEnabled()
 	if err != nil {
 		return ChangeEnabledResponse(0), err
 	}
