@@ -27,7 +27,7 @@ type Interface interface {
 	GetUUID() (uuid string, err error)
 	GetControlMode() (state int, err error)
 	GetProvisioningState() (state int, err error)
-	GetIsAMTEnabled() (uint8, error)
+	IsChangeToAMTEnabled() (uint8, error)
 	SetAmtOperationalState(state AMTOperationalState) (Status, error)
 	GetDNSSuffix() (suffix string, err error)
 	GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryList []CertHashEntry, err error)
@@ -230,7 +230,7 @@ func (pthi Command) GetProvisioningState() (state int, err error) {
 	return int(response.ProvisioningState), nil
 }
 
-func (pthi Command) GetIsAMTEnabled() (uint8, error) {
+func (pthi Command) IsChangeToAMTEnabled() (uint8, error) {
 	command := GetStateIndependenceIsChangeToAMTEnabledRequest{
 		Command:       0x5,
 		ByteCount:     0x2,

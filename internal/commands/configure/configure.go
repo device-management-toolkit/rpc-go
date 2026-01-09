@@ -47,6 +47,8 @@ type ConfigureCmd struct {
 	MEBx        MEBxCmd         `cmd:"" name:"mebx" aliases:"setmebx" help:"Configure MEBx password"`
 	AMTPassword AMTPasswordCmd  `cmd:"" aliases:"amtpassword,changeamtpassword" help:"Change AMT password"`
 	AMTFeatures AMTFeaturesCmd  `cmd:"" aliases:"amtfeatures,setamtfeatures" help:"Configure AMT features (KVM, SOL, IDER, user consent)"`
+	EnableAMT   EnableAMTCmd    `cmd:"" aliases:"enable-op-state,enable-operational-state" help:"Enable AMT operational state (requires unprovisioned state)"`
+	DisableAMT  DisableAMTCmd   `cmd:"" aliases:"disable-op-state,disable-operational-state" help:"Disable AMT operational state (requires unprovisioned state)"`
 	CIRA        CIRACmd         `cmd:"cira" help:"Configure Cloud-Initiated Remote Access (CIRA)"`
 	SyncClock   SyncClockCmd    `cmd:"" aliases:"syncclock,synctime" help:"Synchronize host OS clock to AMT"`
 	WiFiSync    WifiSyncCmd     `cmd:"" aliases:"wifisync,wifi" help:"Control WiFi and local profile synchronization"`
