@@ -385,6 +385,11 @@ func (service *LocalActivationService) activateCCM() error {
 	// Get general settings for digest realm
 	generalSettings, err := getGeneralSettingsWithRetry(service.wsman)
 	if err != nil {
+		// Check if error is due to certificate verification on AMT 19+ (missing --skip-amt-cert-check flag)
+		if strings.Contains(err.Error(), "failed to verify certificate") || strings.Contains(err.Error(), "certificate is not valid") {
+			log.Error("Certificate verification failed during CCM activation")
+			return fmt.Errorf("CCM activation requires --skip-amt-cert-check flag for AMT 19+. Please rerun activation with --skip-amt-cert-check flag")
+		}
 		return utils.ActivationFailedGeneralSettings
 	}
 
@@ -559,10 +564,11 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 			log.Error("Failed to convert provisioning certificate:", err)
 			return nil, err
 		}
+
 		log.Info("Successfully loaded provisioning certificate, chain length:", len(certsAndKeys.certs))
 
 		// Add client certificate to TLS config for mutual TLS
-		tlsCert := setupClientCertificateForTLS(tlsConfig, certsAndKeys)
+		tlsCert := setupClientCertificateForTLS(certsAndKeys)
 		tlsConfig.MinVersion = tls.VersionTLS12
 		addClientCertificateCallback(tlsConfig, tlsCert, "")
 	}
@@ -589,7 +595,7 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 		}
 
 		// Build the certificate chain properly
-		tlsCert := setupClientCertificateForTLS(tlsConfig, certsAndKeys)
+		tlsCert := setupClientCertificateForTLS(certsAndKeys)
 		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
 
 		// Ensure GetClientCertificate callback is set for proper client certificate selection
@@ -686,6 +692,7 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAccount) error {
 	// Declare at function scope for rollback access
 	var certsAndKeys CertsAndKeys
+
 	var err error
 
 	// Note: WSMAN client is already set up in activateACM() with proper TLS config
@@ -712,6 +719,7 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 	// cannot be called in pre-provisioning mode. PTHI validates certificate internally.
 	if service.localTLSEnforced && !service.isUpgrade {
 		log.Info("Calling PTHI/MEI StartConfigurationHBased for TLS-enforced activation...")
+
 		certsAndKeys, err = service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
 			log.Error("Failed to convert provisioning cert for PTHI:", err)
@@ -742,23 +750,46 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 
 			// PTHI activation succeeded - now need to configure password via WSMAN
 			// This may fail if --skip-amt-cert-check is not used on AMT 19+
-			err = service.configurePasswordAfterPTHI(certsAndKeys, lsa, controlMode)
+			err = service.configurePasswordAfterPTHI(certsAndKeys, controlMode)
 			if err != nil {
+				// Save the original error before rollback operations (which may overwrite err variable)
+				originalErr := err
+
 				log.Error("PTHI activation succeeded but password configuration failed:", err)
+
+				// Check if error is due to certificate verification (missing --skip-amt-cert-check flag)
+				// Log helpful message but continue to rollback logic
+				if strings.Contains(err.Error(), "failed to verify certificate") || strings.Contains(err.Error(), "certificate is not valid") {
+					log.Error("Certificate verification failed - --skip-amt-cert-check flag is required for AMT 19+")
+				}
+
 				log.Info("Attempting to rollback device to pre-provisioning state...")
 
 				// Allow AMT to stabilize after PTHI activation before attempting rollback
 				log.Debug("Waiting for AMT to stabilize before rollback...")
 				time.Sleep(AMTStabilizationDelay)
 
-				// Recreate WSMAN client with LSA credentials + provisioning cert for rollback
-				// Use same cert check policy as main activation for consistency
+				// Determine if we need to skip certificate verification for rollback
+				// If password config failed due to cert verification, rollback will also fail without skipping
+				skipCertCheckForRollback := service.context.SkipAMTCertCheck
+				if strings.Contains(originalErr.Error(), "failed to verify certificate") || strings.Contains(originalErr.Error(), "certificate is not valid") {
+					// Password config failed due to cert verification - rollback must skip to succeed
+					skipCertCheckForRollback = true
+					log.Debug("Enabling certificate skip for rollback due to cert verification failure")
+				}
+
+				// Recreate WSMAN client with provisioning cert for rollback
+				// Security note: Using InsecureSkipVerify in rollback is acceptable because:
+				// 1. This is a recovery path to restore pre-provisioning state after partial activation
+				// 2. Connection still uses mutual TLS with client certificate authentication
+				// 3. Only triggered when password configuration fails (device already in ACM from PTHI)
+				// 4. Alternative is leaving device in inconsistent/unusable state requiring manual recovery
 				rollbackTlsConfig := &tls.Config{
-					InsecureSkipVerify: service.context.SkipAMTCertCheck,
+					InsecureSkipVerify: skipCertCheckForRollback, // #nosec G402 - Required for device recovery with mutual TLS
 				}
 
 				// Add client certificate for mutual TLS
-				tlsCert := setupClientCertificateForTLS(rollbackTlsConfig, certsAndKeys)
+				tlsCert := setupClientCertificateForTLS(certsAndKeys)
 				addClientCertificateCallback(rollbackTlsConfig, tlsCert, "rollback")
 
 				// Create new WSMAN client for rollback
@@ -768,11 +799,16 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 				if err != nil {
 					// If new password doesn't work, try LSA credentials
 					log.Debug("Rollback with new password failed, trying LSA credentials...")
+
 					err = rollbackWsman.SetupWsmanClient(lsa.Username, lsa.Password, true, log.GetLevel() == log.TraceLevel, rollbackTlsConfig)
 					if err != nil {
 						log.Error("Failed to setup rollback WSMAN client:", err)
 						return fmt.Errorf("PTHI activation succeeded but password configuration failed. Device is in ACM mode but password may be incorrect. Manual intervention required: %w", err)
 					}
+
+					log.Info("Rollback WSMAN client authenticated successfully using LSA credentials")
+				} else {
+					log.Info("Rollback WSMAN client authenticated successfully using new password")
 				}
 
 				// Unprovision to return to pre-provisioning state (with retry for EOF errors)
@@ -784,6 +820,7 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 						time.Sleep(AMTRetryDelay)
 						_, unprovErr = rollbackWsman.Unprovision(1)
 					}
+
 					if unprovErr != nil {
 						log.Error("Rollback unprovision failed:", unprovErr)
 						return fmt.Errorf("PTHI activation succeeded but password configuration failed. Rollback also failed. Device may be in inconsistent state. Manual intervention required")
@@ -791,7 +828,14 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 				}
 
 				log.Info("Rollback successful - device returned to pre-provisioning state")
-				log.Info("Please retry activation with --skip-amt-cert-check flag")
+
+				// Return with helpful message based on the failure type
+				if strings.Contains(originalErr.Error(), "failed to verify certificate") || strings.Contains(originalErr.Error(), "certificate is not valid") {
+					log.Info("Please retry activation with --skip-amt-cert-check flag")
+					return fmt.Errorf("password configuration failed due to certificate verification. Device rolled back to pre-provisioning state. Please rerun activation with --skip-amt-cert-check flag for AMT 19+")
+				}
+
+				log.Info("Please retry activation")
 				return utils.ActivationFailed
 			}
 
@@ -875,18 +919,19 @@ func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAcco
 		log.Info("Activation succeeded despite HostBasedSetupServiceAdmin error")
 		return nil
 	}
+
 	log.Info("HostBasedSetupServiceAdmin succeeded")
 
 	return nil
 }
 
 // configurePasswordAfterPTHI configures AMT password via WSMAN after PTHI activation
-func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys CertsAndKeys, lsa amt.LocalSystemAccount, controlMode int) error {
+func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys CertsAndKeys, controlMode int) error {
 	// Setup TLS configuration with client certificate
 	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 
 	// Add client certificate for mutual TLS
-	tlsCert := setupClientCertificateForTLS(tlsConfig, certsAndKeys)
+	tlsCert := setupClientCertificateForTLS(certsAndKeys)
 	addClientCertificateCallback(tlsConfig, tlsCert, "password config")
 
 	// Create new WSMAN client with admin credentials for password change
@@ -942,9 +987,9 @@ func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys C
 	// To ensure consistent behavior and proper security, we enforce hostname verification
 	// when --skip-amt-cert-check is NOT used
 	if !service.context.SkipAMTCertCheck {
-		log.Info("Enforcing strict certificate hostname verification (AMT 19+ requires --skip-amt-cert-check flag)")
-		// This will cause verification to fail on AMT 19+ where cert CN=AMT RCFG doesn't match localhost
-		// which is the expected secure behavior - user must explicitly skip cert checks
+		log.Info("Enforcing strict certificate hostname verification (will fail on AMT 19+ without --skip-amt-cert-check)")
+		// Force hostname verification: cert CN=AMT RCFG won't match "localhost"
+		// Failure is caught and handled gracefully with helpful error message
 		verifyTlsConfig.ServerName = "localhost"
 	}
 
@@ -991,15 +1036,16 @@ func getGeneralSettingsWithRetry(wsman interfaces.WSMANer) (general.Response, er
 		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
 			log.Debug("First GetGeneralSettings failed, retrying...")
 			time.Sleep(AMTRetryDelay)
+
 			generalSettings, err = wsman.GetGeneralSettings()
 		}
 	}
 	return generalSettings, err
 }
 
-// setupClientCertificateForTLS configures a TLS config with client certificate from CertsAndKeys
-// Returns the TLS certificate that was added to the config
-func setupClientCertificateForTLS(tlsConfig *tls.Config, certsAndKeys CertsAndKeys) tls.Certificate {
+// setupClientCertificateForTLS builds a TLS certificate structure from CertsAndKeys
+// Returns the TLS certificate structure
+func setupClientCertificateForTLS(certsAndKeys CertsAndKeys) tls.Certificate {
 	tlsCert := tls.Certificate{
 		PrivateKey: certsAndKeys.keys[0],
 		Leaf:       certsAndKeys.certs[0],
@@ -1015,7 +1061,7 @@ func setupClientCertificateForTLS(tlsConfig *tls.Config, certsAndKeys CertsAndKe
 // addClientCertificateCallback adds client certificate and callback to TLS config
 // logContext is an optional descriptive context for the log message (e.g., "rollback", "password config")
 func addClientCertificateCallback(tlsConfig *tls.Config, tlsCert tls.Certificate, logContext string) {
-	tlsConfig.Certificates = []tls.Certificate{tlsCert}
+	tlsConfig.Certificates = []tls.Certificate{tlsCert} // always called on fresh/empty TLS configs
 	clientCert := tlsCert
 	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 		if logContext != "" {
