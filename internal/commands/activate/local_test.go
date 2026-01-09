@@ -972,6 +972,7 @@ func TestLocalActivationService_setupACMTLSConfig_ClientCertCallback(t *testing.
 		certInfo := &tls.CertificateRequestInfo{
 			AcceptableCAs: [][]byte{},
 		}
+
 		cert, err := tlsConfig.GetClientCertificate(certInfo)
 		if err != nil {
 			t.Errorf("GetClientCertificate callback returned error: %v", err)

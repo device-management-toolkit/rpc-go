@@ -1000,6 +1000,7 @@ func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys C
 	// DO NOT add client certificate - we want password-only auth like console uses
 	// Use localhost (wsman library will add port 16993 for TLS connections automatically)
 	verifyWsman := localamt.NewGoWSMANMessages("localhost")
+
 	err = verifyWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, verifyTlsConfig)
 	if err != nil {
 		return fmt.Errorf("password verification failed - cannot setup WSMAN client on port 16993: %w", err)
