@@ -86,6 +86,7 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 
 	// Serialize request
 	buf := new(bytes.Buffer)
+
 	err = binary.Write(buf, binary.LittleEndian, request.Header)
 	if err != nil {
 		return 0, err
@@ -105,8 +106,10 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 	}
 
 	var responseData GetFlogSizeResponse
+
 	responseBuf := bytes.NewReader(response)
 	err = binary.Read(responseBuf, binary.LittleEndian, &responseData.Header)
+
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +138,9 @@ func (hotham Command) GetFlog() (flogData []byte, err error) {
 
 	// Serialize request
 	buf := new(bytes.Buffer)
+
 	err = binary.Write(buf, binary.LittleEndian, request.Header)
+
 	if err != nil {
 		return nil, err
 	}
