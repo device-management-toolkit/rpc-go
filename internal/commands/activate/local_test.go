@@ -949,7 +949,7 @@ func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 		}
 	}()
 
-	_ = service.activateACMWithTLS()
+	_ = service.activateACMWithTLS(nil)
 }
 
 // Test for activateACMLegacy function coverage
@@ -966,7 +966,7 @@ func TestLocalActivationService_activateACMLegacy(t *testing.T) {
 	}
 
 	// Test that it fails due to invalid certificate first
-	err := service.activateACMLegacy()
+	err := service.activateACMLegacy(nil)
 	if err == nil {
 		t.Error("activateACMLegacy() should fail with invalid certificate")
 	}
