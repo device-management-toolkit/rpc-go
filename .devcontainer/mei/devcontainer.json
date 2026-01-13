@@ -1,0 +1,23 @@
+{
+    "name": "Go (MEI Device)",
+    "image": "mcr.microsoft.com/devcontainers/go:1.25-trixie",
+    "runArgs": [
+        "--device", "/dev/mei0",
+        "--privileged",
+        "--net=host"
+    ],
+    "remoteUser": "root",
+    "forwardPorts": [
+        8181
+    ],
+    "containerEnv": {
+        "HTTP_PROXY": "${localEnv:HTTP_PROXY:}",
+        "HTTPS_PROXY": "${localEnv:HTTPS_PROXY:}",
+        "NO_PROXY": "${localEnv:NO_PROXY:}",
+        "http_proxy": "${localEnv:http_proxy:}",
+        "https_proxy": "${localEnv:https_proxy:}",
+        "no_proxy": "${localEnv:no_proxy:}"
+    },
+    "initializeCommand": "sed -i 's/\\r$//' .devcontainer/post-create.sh && /bin/bash .devcontainer/pre-create.sh",
+    "postCreateCommand": "sed -i 's/\\r$//' .devcontainer/post-create.sh && /bin/bash .devcontainer/post-create.sh"
+}
