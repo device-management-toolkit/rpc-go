@@ -434,9 +434,9 @@ func (service *LocalActivationService) activateACM() error {
 
 	// Perform ACM activation using the new TLS path (cleaner)
 	if service.localTLSEnforced {
-		err = service.activateACMWithTLS()
+		err = service.activateACMWithTLS(tlsConfig)
 	} else {
-		err = service.activateACMLegacy()
+		err = service.activateACMLegacy(tlsConfig)
 	}
 
 	if err != nil {
@@ -469,8 +469,18 @@ func (service *LocalActivationService) activateACM() error {
 
 // commitCCMChanges commits changes for CCM activation with admin credentials
 func (service *LocalActivationService) commitCCMChanges() error {
+	// Re-setup WSMAN client with admin credentials before committing
+	// This is required because the initial setup used LSA credentials
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
+	}
+
 	// Commit changes
-	_, err := service.wsman.CommitChanges()
+	_, err = service.wsman.CommitChanges()
 	if err != nil {
 		log.Error("Failed to activate device:", err)
 		log.Info("Putting the device back to pre-provisioning mode")
@@ -543,10 +553,10 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 }
 
 // activateACMWithTLS performs ACM activation with TLS (new cleaner path)
-func (service *LocalActivationService) activateACMWithTLS() error {
+func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config) error {
 	// For TLS path, we just change the AMT password and commit
-	// Setup WSMAN client with admin credentials
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+	// Setup WSMAN client with admin credentials, reusing the TLS config that has client certs
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
@@ -565,11 +575,11 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 }
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
-func (service *LocalActivationService) activateACMLegacy() error {
+func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) error {
 	if service.isUpgrade {
 		// For upgrade path, we just change the AMT password
-		// Setup WSMAN client with admin credentials
-		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+		// Setup WSMAN client with admin credentials, reusing the TLS config
+		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 		}
