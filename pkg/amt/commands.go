@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
@@ -128,6 +129,7 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	GetFlog() ([]byte, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -140,12 +142,14 @@ func ANSI2String(ansi pthi.AMTANSIString) string {
 }
 
 type AMTCommand struct {
-	PTHI pthi.Interface
+	PTHI   pthi.Interface
+	HOTHAM hotham.Interface
 }
 
 func NewAMTCommand() AMTCommand {
 	return AMTCommand{
-		PTHI: pthi.NewCommand(),
+		PTHI:   pthi.NewCommand(),
+		HOTHAM: hotham.NewCommand(),
 	}
 }
 
@@ -526,4 +530,21 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 	}
 
 	return response, nil
+}
+
+// GetFlog retrieves the CSME Flash Log (FLOG)
+func (amt AMTCommand) GetFlog() ([]byte, error) {
+	err := amt.HOTHAM.Open()
+	if err != nil {
+		return nil, err
+	}
+
+	defer amt.HOTHAM.Close()
+
+	flogData, err := amt.HOTHAM.GetFlog()
+	if err != nil {
+		return nil, err
+	}
+
+	return flogData, nil
 }

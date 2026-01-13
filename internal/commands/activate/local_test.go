@@ -331,6 +331,10 @@ func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParamet
 	return amt.SecureHBasedResponse{}, nil
 }
 
+func (m *MockAMTCommand) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
 func TestLocalActivationService_validateAMTState(t *testing.T) {
 	tests := []struct {
 		name        string

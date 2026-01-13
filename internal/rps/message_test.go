@@ -87,6 +87,10 @@ func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.Secur
 	return amt.SecureHBasedResponse{}, nil
 }
 
+func (c MockAMT) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
 var p Payload
 
 func (c MockAMT) InitiateLMS() {}
@@ -369,6 +373,10 @@ func (c MockAMTInvalidUUID) GetUUID() (string, error) {
 	return "00000000-0000-0000-0000-000000000000", nil
 }
 
+func (c MockAMTInvalidUUID) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
 func TestCreateMessageRequestWithInvalidUUID(t *testing.T) {
 	mockAMT := MockAMTInvalidUUID{}
 	payload := Payload{
@@ -386,6 +394,10 @@ type MockAMTInvalidUUIDPattern struct {
 
 func (c MockAMTInvalidUUIDPattern) GetUUID() (string, error) {
 	return "03000200-0400-0500-0006-000700080009", nil
+}
+
+func (c MockAMTInvalidUUIDPattern) GetFlog() ([]byte, error) {
+	return []byte{}, nil
 }
 
 func TestCreateMessageRequestWithInvalidUUIDPattern(t *testing.T) {

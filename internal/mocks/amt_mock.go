@@ -262,3 +262,18 @@ func (mr *MockInterfaceMockRecorder) Unprovision() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unprovision", reflect.TypeOf((*MockInterface)(nil).Unprovision))
 }
+
+// GetFlog mocks base method.
+func (m *MockInterface) GetFlog() ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFlog")
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFlog indicates an expected call of GetFlog.
+func (mr *MockInterfaceMockRecorder) GetFlog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlog", reflect.TypeOf((*MockInterface)(nil).GetFlog))
+}
