@@ -34,6 +34,7 @@ type Driver struct {
 	PTHIGUID       windows.GUID
 	LMEGUID        windows.GUID
 	WDGUID         windows.GUID
+	HOTHAMGUID     windows.GUID
 	clientGUID     *windows.GUID
 	clientGUIDSize uint32
 }
@@ -84,6 +85,19 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	}
 
 	return err
+}
+
+func (heci *Driver) InitHOTHAM() error {
+	var err error
+
+	heci.HOTHAMGUID, err = windows.GUIDFromString("{082EE5A7-7C25-470A-9643-0C06F0466EA1}")
+	if err != nil {
+		return err
+	}
+
+	heci.clientGUID = &heci.HOTHAMGUID
+
+	return heci.FindDevices()
 }
 
 func (heci *Driver) FindDevices() error {
