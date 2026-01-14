@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -73,7 +74,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 				return err
 			}
 
-			log.Infof("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
+			log.Info(fmt.Sprintf("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage))
 
 			parsedCerts = append(parsedCerts, cert)
 

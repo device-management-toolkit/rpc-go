@@ -1100,7 +1100,7 @@ func (f *Flags) verifyWifiConfigurations() error {
 			}
 
 			if cfg.PskPassphrase != "" {
-				log.Errorf("wifi configuration for 8021x contains passphrase: %s", cfg.ProfileName)
+				log.Error(fmt.Sprintf("wifi configuration for 8021x contains passphrase: %s", cfg.ProfileName))
 
 				return utils.MissingOrInvalidConfiguration
 			}
@@ -1110,27 +1110,27 @@ func (f *Flags) verifyWifiConfigurations() error {
 				return err
 			}
 		case wifi.AuthenticationMethodOther:
-			log.Errorf("unsupported AuthenticationMethod_Other (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported AuthenticationMethod_Other (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodOpenSystem:
-			log.Errorf("unsupported AuthenticationMethod_OpenSystem (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported AuthenticationMethod_OpenSystem (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodSharedKey:
-			log.Errorf("unsupported AuthenticationMethod_SharedKey (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported AuthenticationMethod_SharedKey (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodWPA3SAE:
-			log.Errorf("unsupported AuthenticationMethod_WPA3_SAE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported AuthenticationMethod_WPA3_SAE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.AuthenticationMethodWPA3OWE:
-			log.Errorf("unsupported AuthenticationMethod_WPA3_OWE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported AuthenticationMethod_WPA3_OWE (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		default:
-			log.Errorf("invalid AuthenticationMethod_VendorReserved (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("invalid AuthenticationMethod_VendorReserved (%d) for config: %s", cfg.AuthenticationMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		}
@@ -1143,19 +1143,19 @@ func (f *Flags) verifyWifiConfigurations() error {
 		case wifi.EncryptionMethodCCMP: // EncryptionMethod 4
 			break
 		case wifi.EncryptionMethodOther:
-			log.Errorf("unsupported EncryptionMethod_Other (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported EncryptionMethod_Other (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.EncryptionMethodWEP:
-			log.Errorf("unsupported EncryptionMethod_WEP (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported EncryptionMethod_WEP (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		case wifi.EncryptionMethodNone:
-			log.Errorf("unsupported EncryptionMethod_None (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("unsupported EncryptionMethod_None (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		default:
-			log.Errorf("invalid EncryptionMethod (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName)
+			log.Error(fmt.Sprintf("invalid EncryptionMethod (%d) for config: %s", cfg.EncryptionMethod, cfg.ProfileName))
 
 			return utils.MissingOrInvalidConfiguration
 		}
@@ -1235,43 +1235,43 @@ func (f *Flags) verifyIeee8021xConfig(cfg config.Ieee8021xConfig) error {
 			return err
 		}
 	case ieee8021x.AuthenticationProtocolEAPTTLS_MSCHAPv2:
-		log.Errorf("unsupported AuthenticationProtocolEAPTTLS_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAPTTLS_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolPEAPv1_EAPGTC:
-		log.Errorf("unsupported AuthenticationProtocolPEAPv1_EAPGTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolPEAPv1_EAPGTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_MSCHAPv2:
-		log.Errorf("unsupported AuthenticationProtocolEAPFAST_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAPFAST_MSCHAPv2 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_GTC:
-		log.Errorf("unsupported AuthenticationProtocolEAPFAST_GTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAPFAST_GTC (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_MD5:
-		log.Errorf("unsupported AuthenticationProtocolEAP_MD5 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAP_MD5 (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_PSK:
-		log.Errorf("unsupported AuthenticationProtocolEAP_PSK (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAP_PSK (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_SIM:
-		log.Errorf("unsupported AuthenticationProtocolEAP_SIM (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAP_SIM (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAP_AKA:
-		log.Errorf("unsupported AuthenticationProtocolEAP_AKA (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAP_AKA (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	case ieee8021x.AuthenticationProtocolEAPFAST_TLS:
-		log.Errorf("unsupported AuthenticationProtocolEAPFAST_TLS (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("unsupported AuthenticationProtocolEAPFAST_TLS (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	default:
-		log.Errorf("invalid AuthenticationProtocol (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName)
+		log.Error(fmt.Sprintf("invalid AuthenticationProtocol (%d) for config: %s", cfg.AuthenticationProtocol, cfg.ProfileName))
 
 		return err
 	}

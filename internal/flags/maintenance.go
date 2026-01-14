@@ -243,7 +243,7 @@ func (f *Flags) handleMaintenanceSyncIP() error {
 	}
 
 	if len(f.IpConfiguration.IpAddress) == 0 {
-		log.Errorf("static ip address not found")
+		log.Error("static ip address not found")
 
 		return utils.OSNetworkInterfacesLookupFailed
 	}

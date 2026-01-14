@@ -6,6 +6,7 @@
 package local
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -98,14 +99,14 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 
 	token, err := service.GetAuthToken(url, credentials)
 	if err != nil {
-		log.Errorf("error getting auth token: %v", err)
+		log.Error(fmt.Sprintf("error getting auth token: %v", err))
 
 		return utils.TLSConfigurationFailed
 	}
 
 	devName, err := os.Hostname()
 	if err != nil {
-		log.Errorf("error getting auth token: %v", err)
+		log.Error(fmt.Sprintf("error getting auth token: %v", err))
 
 		return err
 	}
@@ -117,7 +118,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 
 	_, err = service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error while requesting EA: %v", err)
+		log.Error(fmt.Sprintf("error while requesting EA: %v", err))
 
 		return err
 	}
@@ -133,7 +134,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 	// Get DERkey
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" {
-		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+		log.Error(fmt.Sprintf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle))
 
 		return utils.TLSConfigurationFailed
 	}
@@ -145,7 +146,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error generating 802.1x keypair: %v", err)
+		log.Error(fmt.Sprintf("error generating 802.1x keypair: %v", err))
 
 		return utils.TLSConfigurationFailed
 	}
@@ -160,7 +161,7 @@ func (service *ProvisioningService) ConfigureTLSWithEA() error {
 
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error signing the certificate: %v", err)
+		log.Error(fmt.Sprintf("error signing the certificate: %v", err))
 
 		return utils.TLSConfigurationFailed
 	}
@@ -210,7 +211,7 @@ func (service *ProvisioningService) ConfigureTLSWithSelfSignedCert() error {
 
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" {
-		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+		log.Error(fmt.Sprintf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle))
 
 		return utils.TLSConfigurationFailed
 	}
@@ -265,7 +266,7 @@ func (service *ProvisioningService) GenerateKeyPair() (handle string, err error)
 	}
 
 	if response.Body.GenerateKeyPair_OUTPUT.ReturnValue != 0 {
-		log.Errorf("GenerateKeyPair.ReturnValue: %d", response.Body.GenerateKeyPair_OUTPUT.ReturnValue)
+		log.Error(fmt.Sprintf("GenerateKeyPair.ReturnValue: %d", response.Body.GenerateKeyPair_OUTPUT.ReturnValue))
 
 		return "", utils.AmtPtStatusCodeBase
 	}
@@ -342,7 +343,7 @@ func (service *ProvisioningService) ConfigureTLSSettings(setting tls.SettingData
 
 	_, err = service.interfacedWsmanMessage.PUTTLSSettings(data.InstanceID, data)
 	if err != nil {
-		log.Errorf("failed to configure remote TLS Settings (%s)\n", data.InstanceID)
+		log.Error(fmt.Sprintf("failed to configure remote TLS Settings (%s)\n", data.InstanceID))
 
 		return utils.WSMANMessageError
 	}
@@ -359,7 +360,7 @@ func getTLSSettings(setting tls.SettingDataResponse, tlsMode flags.TLSMode) (tls
 		MutualAuthentication:       setting.MutualAuthentication,
 	}
 
-	log.Infof("configuring TLS settings: %s", setting.InstanceID)
+	log.Info(fmt.Sprintf("configuring TLS settings: %s", setting.InstanceID))
 
 	if setting.NonSecureConnectionsSupported == nil || *setting.NonSecureConnectionsSupported {
 		data.AcceptNonSecureConnections = tlsMode == flags.TLSModeServerAndNonTLS || tlsMode == flags.TLSModeMutualAndNonTLS
@@ -367,7 +368,7 @@ func getTLSSettings(setting tls.SettingDataResponse, tlsMode flags.TLSMode) (tls
 
 	if setting.NonSecureConnectionsSupported != nil {
 		if tlsMode == flags.TLSModeDisabled && !*setting.NonSecureConnectionsSupported {
-			log.Errorf("TLS cannot be disabled on this device")
+			log.Error("TLS cannot be disabled on this device")
 
 			return tls.SettingDataRequest{}, utils.TLSConfigurationFailed
 		}

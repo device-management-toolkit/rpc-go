@@ -35,7 +35,7 @@ func rpcExec(Input *C.char, Output **C.char) int {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Recovered panic: %v", r)
+			println("Recovered panic: %v", r)
 		}
 	}()
 
@@ -54,6 +54,7 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	if accessStatus := rpcCheckAccess(); accessStatus != int(utils.Success) {
 		log.Error(AccessErrMsg)
 		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
+
 		return accessStatus
 	}
 
@@ -67,6 +68,7 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	if err != nil {
 		log.Error(err.Error())
 		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
+
 		return utils.InvalidParameterCombination.Code
 	}
 

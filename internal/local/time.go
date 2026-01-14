@@ -6,6 +6,7 @@
 package local
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -40,7 +41,7 @@ func (service *ProvisioningService) GetLowAccuracyTimeSynch() (ta0 int64, err er
 
 	ptCode := response.Body.GetLowAccuracyTimeSynchResponse.ReturnValue
 	if ptCode != 0 {
-		log.Errorf("failed GetLowAccuracyTimeSynch with PT Code: %v", ptCode)
+		log.Error(fmt.Sprintf("failed GetLowAccuracyTimeSynch with PT Code: %v", ptCode))
 
 		return ta0, utils.AmtPtStatusCodeBase
 	}
@@ -64,7 +65,7 @@ func (service *ProvisioningService) SetHighAccuracyTimeSynch(ta0 int64) error {
 
 	ptCode := rsp.Body.SetHighAccuracyTimeSynchResponse.ReturnValue
 	if ptCode != 0 {
-		log.Errorf("failed SetHighAccuracyTimeSynch with PT Code: %v", ptCode)
+		log.Error(fmt.Sprintf("failed SetHighAccuracyTimeSynch with PT Code: %v", ptCode))
 
 		return utils.AmtPtStatusCodeBase
 	}

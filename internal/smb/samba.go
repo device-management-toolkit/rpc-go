@@ -60,8 +60,8 @@ func (s *Service) FetchFileContents(url string) ([]byte, error) {
 	}
 	// by usage, this method is called before log level is set
 	// so Debugf statement here is not effective
-	log.Infof("fetching remote file server: %s:%s, user: %s, pwd: %s, domain: %s, share: %s, path: %s",
-		p.Host, p.Port, p.User, pwdOutput, p.Domain, p.ShareName, p.FilePath)
+	log.Info(fmt.Sprintf("fetching remote file server: %s:%s, user: %s, pwd: %s, domain: %s, share: %s, path: %s",
+		p.Host, p.Port, p.User, pwdOutput, p.Domain, p.ShareName, p.FilePath))
 
 	var netDialer net.Dialer
 
