@@ -41,6 +41,7 @@ func (cmd *WifiSyncCmd) Run(ctx *commands.Context) error {
 	} else {
 		log.Info("Setting UEFI WiFi profile share: DISABLED")
 	}
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err

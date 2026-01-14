@@ -20,7 +20,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -75,9 +78,26 @@ type LocalActivationConfig struct {
 // ActivationMode represents the activation mode
 type ActivationMode int
 
+// ActivationMode constants represent the user's intent (what mode to activate INTO)
 const (
 	ModeCCM ActivationMode = iota + 1
 	ModeACM
+)
+
+// Control mode constants represent the device's current state (what mode device is IN)
+// These values match AMT firmware control mode states
+const (
+	ControlModePreProvisioning = 0 // Pre-provisioning state (not activated)
+	ControlModeCCM             = 1 // Client Control Mode
+	ControlModeACM             = 2 // Admin Control Mode
+)
+
+// Timing constants for AMT operations
+const (
+	AMTRetryDelay          = 1 * time.Second        // Delay before retrying failed AMT operations
+	AMTStabilizationDelay  = 2 * time.Second        // Delay for AMT to stabilize after configuration changes
+	AMTServiceRestartDelay = 5 * time.Second        // Delay for AMT services to restart after CommitChanges
+	AMTPTHITransitionDelay = 500 * time.Millisecond // Brief delay for PTHI activation transition
 )
 
 func (m ActivationMode) String() string {
@@ -259,10 +279,10 @@ func (service *LocalActivationService) Activate() error {
 // validateAMTState checks if AMT is in a valid state for activation
 func (service *LocalActivationService) validateAMTState() error {
 	// Check if device is already activated using the stored control mode
-	if service.config.ControlMode != 0 {
+	if service.config.ControlMode != ControlModePreProvisioning {
 		// Always allow upgrade path CCM (1) -> ACM when ACM mode is requested.
 		// Provisioning certificate requirements are validated later in validateConfiguration.
-		if service.config.Mode == ModeACM && service.config.ControlMode == 1 {
+		if service.config.Mode == ModeACM && service.config.ControlMode == ControlModeCCM {
 			log.Info("Upgrading device from Client Control Mode to Admin Control Mode")
 
 			service.isUpgrade = true
@@ -363,8 +383,13 @@ func (service *LocalActivationService) activateCCM() error {
 	}
 
 	// Get general settings for digest realm
-	generalSettings, err := service.wsman.GetGeneralSettings()
+	generalSettings, err := getGeneralSettingsWithRetry(service.wsman)
 	if err != nil {
+		// Check if error is due to certificate verification on AMT 19+ (missing --skip-amt-cert-check flag)
+		if strings.Contains(err.Error(), "failed to verify certificate") || strings.Contains(err.Error(), "certificate is not valid") {
+			log.Error("Certificate verification failed during CCM activation")
+			return fmt.Errorf("CCM activation requires --skip-amt-cert-check flag for AMT 19+. Please rerun activation with --skip-amt-cert-check flag")
+		}
 		return utils.ActivationFailedGeneralSettings
 	}
 
@@ -376,6 +401,16 @@ func (service *LocalActivationService) activateCCM() error {
 
 	// If TLS is enforced, commit changes with admin credentials
 	if service.localTLSEnforced {
+		// Reconnect with admin credentials before committing CCM changes
+		// After CCM HostBasedSetupService, the admin account is created and LSA credentials no longer work
+		controlMode := service.config.ControlMode
+		tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+		err = service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
+		}
+
 		err := service.commitCCMChanges()
 		if err != nil {
 			return utils.ActivationFailed
@@ -432,11 +467,13 @@ func (service *LocalActivationService) activateACM() error {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
-	// Perform ACM activation using the new TLS path (cleaner)
-	if service.localTLSEnforced {
+	// Perform ACM activation using appropriate method
+	// For initial activation, always use legacy path (certificate-based)
+	// For upgrades, use simplified TLS path (password-based)
+	if service.isUpgrade && service.localTLSEnforced {
 		err = service.activateACMWithTLS()
 	} else {
-		err = service.activateACMLegacy()
+		err = service.activateACMLegacy(lsa)
 	}
 
 	if err != nil {
@@ -471,7 +508,9 @@ func (service *LocalActivationService) activateACM() error {
 func (service *LocalActivationService) commitCCMChanges() error {
 	// Commit changes
 	_, err := service.wsman.CommitChanges()
-	if err != nil {
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
 		log.Error("Failed to activate device:", err)
 		log.Info("Putting the device back to pre-provisioning mode")
 
@@ -482,7 +521,13 @@ func (service *LocalActivationService) commitCCMChanges() error {
 		}
 
 		return fmt.Errorf("failed to commit changes: %w", err)
+	} else if err != nil {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
 	}
+
+	// Allow AMT services to fully stabilize after CommitChanges
+	log.Debug("Waiting for AMT services to stabilize...")
+	time.Sleep(AMTServiceRestartDelay)
 
 	return nil
 }
@@ -507,36 +552,25 @@ type ProvisioningCertObj struct {
 
 // setupACMTLSConfig sets up TLS configuration for ACM activation
 func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) {
-	tlsConfig := &tls.Config{}
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
 
 	if service.localTLSEnforced {
+		log.Info("TLS is enforced - setting up client certificate for activation")
+
 		// Convert certificate for TLS
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 		if err != nil {
+			log.Error("Failed to convert provisioning certificate:", err)
 			return nil, err
 		}
 
-		// Get secure host-based configuration response
-		startHBasedResponse, err := service.startSecureHostBasedConfiguration(certsAndKeys)
-		if err != nil {
-			return nil, err
-		}
+		log.Info("Successfully loaded provisioning certificate, chain length:", len(certsAndKeys.certs))
 
-		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck)
-
-		// Add client certificate to TLS config
-		tlsCert := tls.Certificate{
-			PrivateKey: certsAndKeys.keys[0],
-			Leaf:       certsAndKeys.certs[0],
-		}
-
-		for _, cert := range certsAndKeys.certs {
-			tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
-		}
-
-		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+		// Add client certificate to TLS config for mutual TLS
+		tlsCert := setupClientCertificateForTLS(certsAndKeys)
 		tlsConfig.MinVersion = tls.VersionTLS12
+		addClientCertificateCallback(tlsConfig, tlsCert, "")
 	}
 
 	return tlsConfig, nil
@@ -546,49 +580,299 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 func (service *LocalActivationService) activateACMWithTLS() error {
 	// For TLS path, we just change the AMT password and commit
 	// Setup WSMAN client with admin credentials
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+	// Use proper TLS config with VerifyConnection callback for AMT 19+ support
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	// Add client certificate for post-activation mutual TLS
+	if service.localTLSEnforced {
+		tlsConfig.MinVersion = tls.VersionTLS12
+
+		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+		if err != nil {
+			log.Error("Failed to load provisioning certificate for post-activation:", err)
+			return fmt.Errorf("failed to load provisioning certificate: %w", err)
+		}
+
+		// Build the certificate chain properly
+		tlsCert := setupClientCertificateForTLS(certsAndKeys)
+		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+
+		// Ensure GetClientCertificate callback is set for proper client certificate selection
+		clientCert := tlsCert
+		tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			log.Trace("Client certificate requested by server (post-activation)")
+			return &clientCert, nil
+		}
+	}
+
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
 
-	// Commit changes
-	result, err := service.wsman.CommitChanges()
+	// Change AMT password - this triggers activation on pre-provisioning devices
+	// Get general settings to obtain digest realm
+	generalSettings, err := getGeneralSettingsWithRetry(service.wsman)
 	if err != nil {
-		log.Error(err.Error())
+		log.Debug("Error during password change: ", err)
 
-		return utils.ActivationFailed
+		// Check if activation actually succeeded despite the error
+		if verifyErr := service.verifyACMActivationSuccess(); verifyErr != nil {
+			return verifyErr
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring password change error")
+
+		return nil
 	}
 
-	log.Debug(result)
+	// Hash and update the AMT password
+	challenge := client.AuthChallenge{
+		Username: utils.AMTUserName,
+		Password: service.config.AMTPassword,
+		Realm:    generalSettings.Body.GetResponse.DigestRealm,
+	}
+
+	hashedMessage := challenge.HashCredentials()
+
+	bytes, errDecode := hex.DecodeString(hashedMessage)
+	if errDecode != nil {
+		return fmt.Errorf("failed to decode hex string: %w", errDecode)
+	}
+
+	encodedMessage := base64.StdEncoding.EncodeToString(bytes)
+
+	_, err = service.wsman.UpdateAMTPassword(encodedMessage)
+	if err != nil {
+		log.Debug("Error during password change: ", err)
+
+		// Check if activation actually succeeded despite the error
+		if verifyErr := service.verifyACMActivationSuccess(); verifyErr != nil {
+			return verifyErr
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring password change error")
+
+		return nil
+	}
+
+	// Commit changes
+	result, err := service.wsman.CommitChanges()
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
+		log.Debug("Error during commit: ", err)
+
+		// Check if activation actually succeeded despite the error
+		if verifyErr := service.verifyACMActivationSuccess(); verifyErr != nil {
+			return verifyErr
+		}
+
+		// Activation succeeded despite the error
+		log.Debug("Activation succeeded, ignoring commit error")
+
+		return nil
+	} else if err != nil {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
+	} else {
+		log.Debug(result)
+	}
+
+	// Allow AMT services to fully stabilize after CommitChanges
+	log.Debug("Waiting for AMT services to stabilize...")
+	time.Sleep(AMTServiceRestartDelay)
 
 	return nil
 }
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
-func (service *LocalActivationService) activateACMLegacy() error {
-	if service.isUpgrade {
-		// For upgrade path, we just change the AMT password
-		// Setup WSMAN client with admin credentials
-		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+func (service *LocalActivationService) activateACMLegacy(lsa amt.LocalSystemAccount) error {
+	// Declare at function scope for rollback access
+	var certsAndKeys CertsAndKeys
+
+	var err error
+
+	// Note: WSMAN client is already set up in activateACM() with proper TLS config
+	// For non-TLS upgrade only, we need to re-setup with admin credentials
+	if service.isUpgrade && !service.localTLSEnforced {
+		controlMode := service.config.ControlMode
+		tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+		err = service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 		}
 	}
-	// Get provisioning certificate object
+
+	// Get provisioning certificate object for activation
 	certObject, fingerPrint, err := service.getProvisioningCertObj()
 	if err != nil {
 		return err
 	}
 
-	// Check provisioning certificate is accepted by AMT
-	err = service.compareCertHashes(fingerPrint)
-	if err != nil {
-		return err
+	// For TLS-enforced initial activation, call PTHI/MEI StartConfigurationHBased
+	// This completes the activation for AMT 19+ devices (AMT transitions immediately)
+	// Skip compareCertHashes check for TLS-enforced initial activation since WSMAN
+	// cannot be called in pre-provisioning mode. PTHI validates certificate internally.
+	if service.localTLSEnforced && !service.isUpgrade {
+		log.Info("Calling PTHI/MEI StartConfigurationHBased for TLS-enforced activation...")
+
+		certsAndKeys, err = service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+		if err != nil {
+			log.Error("Failed to convert provisioning cert for PTHI:", err)
+			return err
+		}
+
+		_, err = service.startSecureHostBasedConfiguration(certsAndKeys)
+		if err != nil {
+			return fmt.Errorf("failed to start secure host-based configuration: %w", err)
+		}
+
+		log.Info("PTHI/MEI activation completed - verifying control mode...")
+		// Brief delay to let AMT transition complete
+		time.Sleep(AMTPTHITransitionDelay)
+
+		// Verify activation succeeded by checking control mode
+		controlMode, err := service.amtCommand.GetControlMode()
+		if err != nil {
+			return utils.ActivationFailedGetControlMode
+		}
+
+		if controlMode == ControlModeACM {
+			log.Info("ACM activation successful via PTHI/MEI")
+
+			// Allow AMT to stabilize after PTHI activation before configuring password
+			log.Debug("Waiting for AMT to stabilize after PTHI activation...")
+			time.Sleep(AMTStabilizationDelay)
+
+			// PTHI activation succeeded - now need to configure password via WSMAN
+			// This may fail if --skip-amt-cert-check is not used on AMT 19+
+			err = service.configurePasswordAfterPTHI(certsAndKeys, controlMode)
+			if err != nil {
+				// Save the original error before rollback operations (which may overwrite err variable)
+				originalErr := err
+
+				log.Error("PTHI activation succeeded but password configuration failed:", err)
+
+				// Check if error is due to certificate verification (missing --skip-amt-cert-check flag)
+				// Log helpful message but continue to rollback logic
+				if strings.Contains(err.Error(), "failed to verify certificate") || strings.Contains(err.Error(), "certificate is not valid") {
+					log.Error("Certificate verification failed - --skip-amt-cert-check flag is required for AMT 19+")
+				}
+
+				log.Info("Attempting to rollback device to pre-provisioning state...")
+
+				// Allow AMT to stabilize after PTHI activation before attempting rollback
+				log.Debug("Waiting for AMT to stabilize before rollback...")
+				time.Sleep(AMTStabilizationDelay)
+
+				// Determine if we need to skip certificate verification for rollback
+				// If password config failed due to cert verification, rollback will also fail without skipping
+				skipCertCheckForRollback := service.context.SkipAMTCertCheck
+				if strings.Contains(originalErr.Error(), "failed to verify certificate") || strings.Contains(originalErr.Error(), "certificate is not valid") {
+					// Password config failed due to cert verification - rollback must skip to succeed
+					skipCertCheckForRollback = true
+
+					log.Debug("Enabling certificate skip for rollback due to cert verification failure")
+				}
+
+				// Recreate WSMAN client with provisioning cert for rollback
+				// Security note: Using InsecureSkipVerify in rollback is acceptable because:
+				// 1. This is a recovery path to restore pre-provisioning state after partial activation
+				// 2. Connection still uses mutual TLS with client certificate authentication
+				// 3. Only triggered when password configuration fails (device already in ACM from PTHI)
+				// 4. Alternative is leaving device in inconsistent/unusable state requiring manual recovery
+				rollbackTlsConfig := &tls.Config{
+					InsecureSkipVerify: skipCertCheckForRollback, // #nosec G402 - Required for device recovery with mutual TLS
+				}
+
+				// Add client certificate for mutual TLS
+				tlsCert := setupClientCertificateForTLS(certsAndKeys)
+				addClientCertificateCallback(rollbackTlsConfig, tlsCert, "rollback")
+
+				// Create new WSMAN client for rollback
+				// Try with NEW password first (password change may have succeeded even if verification failed)
+				rollbackWsman := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+				err = rollbackWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, rollbackTlsConfig)
+				if err != nil {
+					// If new password doesn't work, try LSA credentials
+					log.Debug("Rollback with new password failed, trying LSA credentials...")
+
+					err = rollbackWsman.SetupWsmanClient(lsa.Username, lsa.Password, true, log.GetLevel() == log.TraceLevel, rollbackTlsConfig)
+					if err != nil {
+						log.Error("Failed to setup rollback WSMAN client:", err)
+						return fmt.Errorf("PTHI activation succeeded but password configuration failed. Device is in ACM mode but password may be incorrect. Manual intervention required: %w", err)
+					}
+
+					log.Info("Rollback WSMAN client authenticated successfully using LSA credentials")
+				} else {
+					log.Info("Rollback WSMAN client authenticated successfully using new password")
+				}
+
+				// Unprovision to return to pre-provisioning state (with retry for EOF errors)
+				_, unprovErr := rollbackWsman.Unprovision(1)
+				if unprovErr != nil {
+					// Retry once if we get EOF or connection error
+					if strings.Contains(unprovErr.Error(), "EOF") || strings.Contains(unprovErr.Error(), "connection") {
+						log.Debug("First unprovision failed with connection error, retrying...")
+						time.Sleep(AMTRetryDelay)
+
+						_, unprovErr = rollbackWsman.Unprovision(1)
+					}
+
+					if unprovErr != nil {
+						log.Error("Rollback unprovision failed:", unprovErr)
+						return fmt.Errorf("PTHI activation succeeded but password configuration failed. Rollback also failed. Device may be in inconsistent state. Manual intervention required")
+					}
+				}
+
+				log.Info("Rollback successful - device returned to pre-provisioning state")
+
+				// Return with helpful message based on the failure type
+				if strings.Contains(originalErr.Error(), "failed to verify certificate") || strings.Contains(originalErr.Error(), "certificate is not valid") {
+					log.Info("Please retry activation with --skip-amt-cert-check flag")
+					return fmt.Errorf("password configuration failed due to certificate verification. Device rolled back to pre-provisioning state. Please rerun activation with --skip-amt-cert-check flag for AMT 19+")
+				}
+
+				log.Info("Please retry activation")
+				return utils.ActivationFailed
+			}
+
+			// Note: PTHI activation may leave remote WSMAN (port 16993) requiring additional
+			// initialization time or client certificate authentication. Local WSMAN (via LMS)
+			// works immediately for all configure commands. Remote WSMAN connections from
+			// external tools should implement retry logic with appropriate delays.
+			return nil
+		}
+
+		// If not in ACM yet, continue with WSMAN activation flow
+		log.Warn("Control mode not yet ACM after PTHI call, continuing with WSMAN flow...")
+	}
+
+	// Check provisioning certificate is accepted by AMT (WSMAN path only)
+	// For TLS-enforced initial activation, this was skipped earlier
+	if !service.localTLSEnforced || service.isUpgrade {
+		err = service.compareCertHashes(fingerPrint)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Get general settings for digest realm
-	generalSettings, err := service.wsman.GetGeneralSettings()
+	generalSettings, err := getGeneralSettingsWithRetry(service.wsman)
 	if err != nil {
+		// If this fails after PTHI call, check if activation actually succeeded
+		if service.localTLSEnforced && !service.isUpgrade {
+			controlMode, controlErr := service.amtCommand.GetControlMode()
+			if controlErr == nil && controlMode == ControlModeACM {
+				log.Info("Activation succeeded - WSMAN connection closed during AMT transition")
+				return nil
+			}
+		}
 		return utils.ActivationFailedGeneralSettings
 	}
 
@@ -630,20 +914,168 @@ func (service *LocalActivationService) activateACMLegacy() error {
 		// Check if activation was successful despite error
 		// We can check the stored control mode, but it won't reflect the new state
 		// So we still need to call GetControlMode() here to verify activation success
-		controlMode, controlErr := service.amtCommand.GetControlMode()
-		if controlErr != nil {
-			return utils.ActivationFailedGetControlMode
-		}
-
-		if controlMode != 2 { // 2 = ACM mode
-			return utils.ActivationFailedControlMode
+		if verifyErr := service.verifyACMActivationSuccess(); verifyErr != nil {
+			return verifyErr
 		}
 
 		// Activation was successful
+		log.Info("Activation succeeded despite HostBasedSetupServiceAdmin error")
 		return nil
 	}
 
+	log.Info("HostBasedSetupServiceAdmin succeeded")
+
 	return nil
+}
+
+// configurePasswordAfterPTHI configures AMT password via WSMAN after PTHI activation
+func (service *LocalActivationService) configurePasswordAfterPTHI(certsAndKeys CertsAndKeys, controlMode int) error {
+	// Setup TLS configuration with client certificate
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	// Add client certificate for mutual TLS
+	tlsCert := setupClientCertificateForTLS(certsAndKeys)
+	addClientCertificateCallback(tlsConfig, tlsCert, "password config")
+
+	// Create new WSMAN client with admin credentials for password change
+	pwdWsman := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+	err := pwdWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup WSMAN client for password configuration: %w", err)
+	}
+
+	// Get general settings to obtain digest realm
+	generalSettings, err := getGeneralSettingsWithRetry(pwdWsman)
+	if err != nil {
+		return fmt.Errorf("failed to get general settings for password configuration: %w", err)
+	}
+
+	// Hash and update the AMT password
+	challenge := client.AuthChallenge{
+		Username: utils.AMTUserName,
+		Password: service.config.AMTPassword,
+		Realm:    generalSettings.Body.GetResponse.DigestRealm,
+	}
+
+	hashedMessage := challenge.HashCredentials()
+
+	bytes, errDecode := hex.DecodeString(hashedMessage)
+	if errDecode != nil {
+		return fmt.Errorf("failed to decode hex string: %w", errDecode)
+	}
+
+	encodedMessage := base64.StdEncoding.EncodeToString(bytes)
+
+	_, err = pwdWsman.UpdateAMTPassword(encodedMessage)
+	if err != nil {
+		return fmt.Errorf("failed to update AMT password: %w", err)
+	}
+
+	// Commit changes
+	_, err = pwdWsman.CommitChanges()
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
+		return fmt.Errorf("failed to commit password changes: %w", err)
+	}
+
+	// Verify password was actually set by attempting to authenticate on port 16993 with password only
+	// This is critical because console uses port 16993 with digest auth (no client certificate)
+	log.Trace("Verifying password configuration on port 16993 (SkipAMTCertCheck=", service.context.SkipAMTCertCheck, ")...")
+	time.Sleep(AMTStabilizationDelay) // Allow AMT to fully process password change
+
+	// Create verification WSMAN client on port 16993 WITHOUT client certificate
+	// This matches how console and other remote tools authenticate
+	verifyTlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	// For AMT 19+, even with InsecureSkipVerify=false, the firmware may accept connections
+	// To ensure consistent behavior and proper security, we enforce hostname verification
+	// when --skip-amt-cert-check is NOT used
+	if !service.context.SkipAMTCertCheck {
+		log.Info("Enforcing strict certificate hostname verification (will fail on AMT 19+ without --skip-amt-cert-check)")
+		// Force hostname verification: cert CN=AMT RCFG won't match "localhost"
+		// Failure is caught and handled gracefully with helpful error message
+		verifyTlsConfig.ServerName = "localhost"
+	}
+
+	// DO NOT add client certificate - we want password-only auth like console uses
+	// Use localhost (wsman library will add port 16993 for TLS connections automatically)
+	verifyWsman := localamt.NewGoWSMANMessages("localhost")
+
+	err = verifyWsman.SetupWsmanClient("admin", service.config.AMTPassword, true, log.GetLevel() == log.TraceLevel, verifyTlsConfig)
+	if err != nil {
+		return fmt.Errorf("password verification failed - cannot setup WSMAN client on port 16993: %w", err)
+	}
+
+	// Attempt verification with retry for EOF/connection errors
+	_, err = getGeneralSettingsWithRetry(verifyWsman)
+	if err != nil {
+		return fmt.Errorf("password verification failed - cannot authenticate with password on port 16993 (console will fail): %w", err)
+	}
+
+	log.Info("Password configuration successful - verified on port 16993")
+	return nil
+}
+
+// verifyACMActivationSuccess checks if ACM activation succeeded by verifying control mode
+// Returns nil if in ACM mode, otherwise returns appropriate error
+func (service *LocalActivationService) verifyACMActivationSuccess() error {
+	controlMode, err := service.amtCommand.GetControlMode()
+	if err != nil {
+		return utils.ActivationFailedGetControlMode
+	}
+
+	if controlMode != ControlModeACM {
+		return utils.ActivationFailedControlMode
+	}
+
+	return nil
+}
+
+// getGeneralSettingsWithRetry calls GetGeneralSettings with automatic retry on connection errors
+// This helper handles the common pattern of retrying once after EOF or connection errors
+func getGeneralSettingsWithRetry(wsman interfaces.WSMANer) (general.Response, error) {
+	generalSettings, err := wsman.GetGeneralSettings()
+	if err != nil {
+		// AMT 20/21 may need a moment after WSMAN client setup before accepting requests
+		// Retry once if we get EOF or connection error
+		if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "connection") {
+			log.Debug("First GetGeneralSettings failed, retrying...")
+			time.Sleep(AMTRetryDelay)
+
+			generalSettings, err = wsman.GetGeneralSettings()
+		}
+	}
+	return generalSettings, err
+}
+
+// setupClientCertificateForTLS builds a TLS certificate structure from CertsAndKeys
+// Returns the TLS certificate structure
+func setupClientCertificateForTLS(certsAndKeys CertsAndKeys) tls.Certificate {
+	tlsCert := tls.Certificate{
+		PrivateKey: certsAndKeys.keys[0],
+		Leaf:       certsAndKeys.certs[0],
+	}
+
+	for _, cert := range certsAndKeys.certs {
+		tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
+	}
+
+	return tlsCert
+}
+
+// addClientCertificateCallback adds client certificate and callback to TLS config
+// logContext is an optional descriptive context for the log message (e.g., "rollback", "password config")
+func addClientCertificateCallback(tlsConfig *tls.Config, tlsCert tls.Certificate, logContext string) {
+	tlsConfig.Certificates = []tls.Certificate{tlsCert} // always called on fresh/empty TLS configs
+	clientCert := tlsCert
+	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		if logContext != "" {
+			log.Trace("Client certificate requested by server (", logContext, ")")
+		} else {
+			log.Debug("Client certificate requested by server")
+		}
+		return &clientCert, nil
+	}
 }
 
 // Certificate handling methods for ACM activation

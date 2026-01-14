@@ -7,6 +7,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,19 @@ const (
 	ACMMODE = "acmactivate"
 )
 
+// Control mode constants represent the device's current state (what mode device is IN)
+// These values match AMT firmware control mode states
+const (
+	ControlModePreProvisioning = 0 // Pre-provisioning state (not activated)
+	ControlModeCCM             = 1 // Client Control Mode
+	ControlModeACM             = 2 // Admin Control Mode
+)
+
+// Timing constants for AMT operations (in seconds)
+const (
+	AMTPostActivationDelay = 5 // Delay after activation for AMT/MEI driver availability
+)
+
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
 type ProfileOrchestrator struct {
 	profile  config.Configuration
@@ -31,23 +45,36 @@ type ProfileOrchestrator struct {
 	currentPassword string
 	// global password argument to pass once to root rpc invocation
 	globalPassword string
+	// controls whether to skip AMT/LMS TLS certificate verification
+	skipAMTCertCheck bool
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
 // is treated as the existing AMT admin password and will be used to rotate to the profile's
-// AdminPassword without prompting when provided.
-func NewProfileOrchestrator(cfg config.Configuration, currentPassword string) *ProfileOrchestrator {
+// AdminPassword without prompting when provided. skipAMTCertCheck controls TLS verification.
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
-		profile:         cfg,
-		executor:        &CLIExecutor{},
-		currentPassword: strings.TrimSpace(currentPassword),
-		globalPassword:  strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		profile:          cfg,
+		executor:         &CLIExecutor{},
+		currentPassword:  strings.TrimSpace(currentPassword),
+		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		skipAMTCertCheck: skipAMTCertCheck,
 	}
 }
 
 // ExecuteProfile orchestrates the execution of all commands based on the profile
 func (po *ProfileOrchestrator) ExecuteProfile() error {
 	log.Info("Starting profile orchestration...")
+
+	// Set provisioning cert as environment variables for child RPC commands.
+	// AMT 19+ requires client certificate authentication after ACM activation.
+	if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
+		os.Setenv("PROVISIONING_CERT", po.profile.Configuration.AMTSpecific.ProvisioningCert)
+
+		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
+			os.Setenv("PROVISIONING_CERT_PASSWORD", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
+		}
+	}
 
 	amtCommand := amt.NewAMTCommand()
 	if err := amtCommand.Initialize(); err != nil {
@@ -64,7 +91,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	// If the device is already activated and the profile supplies an AdminPassword,
 	// proactively verify that the provided password works. If not, prompt for the
 	// current AMT password and rotate it to the profile value before proceeding.
-	if po.currentControlMode != 0 {
+	if po.currentControlMode != ControlModePreProvisioning {
 		if strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword) != "" {
 			if err := po.verifyAndAlignAMTPassword(); err != nil {
 				return fmt.Errorf("password verification/rotation failed: %w", err)
@@ -75,12 +102,12 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	}
 
 	// Step 1: Activation or upgrade if needed
-	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == 1 {
+	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == ControlModeCCM {
 		// Upgrade CCM -> ACM using local activation path with provisioning cert
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
-	} else if currentControlMode == 0 {
+	} else if currentControlMode == ControlModePreProvisioning {
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
@@ -88,8 +115,8 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		log.Info("AMT already activated, skipping activation step")
 	}
 
-	// wait a sec after activation
-	utils.Pause(1)
+	// Wait for AMT to stabilize after activation, especially for MEI driver availability
+	utils.Pause(AMTPostActivationDelay)
 
 	// Step 2: MEBx password configuration (ACM only)
 	if err := po.executeMEBxConfiguration(); err != nil {
@@ -108,7 +135,8 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 	// Step 5: Enable WiFi port if needed
 	if err := po.executeEnableWiFi(); err != nil {
-		return fmt.Errorf("WiFi sync enable failed: %w", err)
+		log.Warnf("WiFi sync configuration failed: %v", err)
+		// Continue orchestration - WiFi sync is not critical for all devices
 	}
 
 	// Step 6: Wireless profile configurations
@@ -140,7 +168,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 	}
 
 	// Do not prompt/rotate when device is in pre-provisioning (control mode 0)
-	if po.currentControlMode == 0 {
+	if po.currentControlMode == ControlModePreProvisioning {
 		return err
 	}
 
@@ -166,6 +194,8 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+
+		change = po.addAMTCertCheckFlag(change)
 		if cerr := po.executor.Execute(change); cerr == nil {
 			log.Info("AMT password updated to profile value using provided current password; retrying previous operation")
 
@@ -202,6 +232,8 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 
 		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
 		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+
+		change = po.addAMTCertCheckFlag(change)
 		if cerr := po.executor.Execute(change); cerr != nil {
 			lower := strings.ToLower(cerr.Error())
 			if attempt < maxTries && (strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "incorrect user name") || strings.Contains(lower, "log on failed") || strings.Contains(lower, "auth")) {
@@ -241,13 +273,6 @@ func (po *ProfileOrchestrator) executeActivation() error {
 	switch po.profile.Configuration.AMTSpecific.ControlMode {
 	case ACMMODE:
 		base = append(base, "--acm")
-		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
-			base = append(base, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
-		}
-
-		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
-			base = append(base, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
-		}
 	case "ccmactivate":
 		base = append(base, "--ccm")
 	default:
@@ -255,6 +280,9 @@ func (po *ProfileOrchestrator) executeActivation() error {
 	}
 
 	base = append(base, "--local")
+
+	// Pass through skip-amt-cert-check flag from CLI
+	base = po.addAMTCertCheckFlag(base)
 
 	return po.executor.Execute(base)
 }
@@ -273,8 +301,8 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 	args = append(args, "activate", "--acm", "--local")
 	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
 
-	args = append(args, "--provisioningCert", po.profile.Configuration.AMTSpecific.ProvisioningCert)
-	args = append(args, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	return po.executeWithPasswordFallback(args)
 }
@@ -295,6 +323,9 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 		args = append(args, "--password", po.globalPassword)
 	}
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	args = append(args, "configure", "mebx", "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
 	return po.executeWithPasswordFallback(args)
@@ -314,6 +345,9 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 	if po.globalPassword != "" {
 		args = append(args, "--password", po.globalPassword)
 	}
+
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	args = append(args, "configure", "amtfeatures")
 
@@ -370,6 +404,9 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	args = append(args, "configure", "wired")
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	if wired.DHCPEnabled {
 		args = append(args, "--dhcp")
 	} else {
@@ -409,6 +446,9 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 
 	args = append(args, "configure", "wifisync")
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	// Pass through explicit values from the strongly-typed profile
 	args = append(args, "--oswifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.WiFiSyncEnabled))
 	args = append(args, "--uefiwifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.UEFIWiFiSyncEnabled))
@@ -427,6 +467,9 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	}
 
 	purgeArgs = append(purgeArgs, "configure", "wireless", "--purge")
+
+	// Pass through skip-amt-cert-check flag from CLI
+	purgeArgs = po.addAMTCertCheckFlag(purgeArgs)
 
 	if err := po.executeWithPasswordFallback(purgeArgs); err != nil {
 		return fmt.Errorf("wireless purge failed: %w", err)
@@ -457,6 +500,9 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 	}
 
 	args = append(args, "configure", "wireless")
+
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
 
 	args = append(args, "--profileName", profile.ProfileName)
 	args = append(args, "--ssid", profile.SSID)
@@ -531,6 +577,9 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	args = append(args, "configure", "tls")
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	// Determine TLS mode
 	var mode string
 
@@ -598,6 +647,9 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 
 	args = append(args, "configure", "proxy")
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	args = append(args, "--address", proxy.Address)
 
 	if proxy.Port > 0 {
@@ -625,6 +677,8 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+
+		change = po.addAMTCertCheckFlag(change)
 		if err := po.executor.Execute(change); err == nil {
 			log.Info("AMT password aligned to profile value using provided current password")
 
@@ -644,5 +698,17 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 
 	args = append(args, "configure", "amtpassword", "--newamtpassword", newPass)
 
+	// Pass through skip-amt-cert-check flag from CLI
+	args = po.addAMTCertCheckFlag(args)
+
 	return po.executeWithPasswordFallback(args)
+}
+
+// addAMTCertCheckFlag conditionally adds --skip-amt-cert-check to args if the flag is set
+func (po *ProfileOrchestrator) addAMTCertCheckFlag(args []string) []string {
+	if po.skipAMTCertCheck {
+		return append(args, "--skip-amt-cert-check")
+	}
+
+	return args
 }

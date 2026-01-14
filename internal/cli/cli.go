@@ -139,12 +139,9 @@ func Execute(args []string) error {
 	// Check AMT access first
 	amtCommand := amt.NewAMTCommand()
 	if err := amtCommand.Initialize(); err != nil {
-		log.Error("Failed to execute due to access issues. " +
-			"Please ensure that Intel ME is present, " +
-			"the MEI driver is installed, " +
-			"and the runtime has administrator or root privileges.")
-
-		return err
+		// Don't fail immediately - many commands only use WSMAN and don't need PTHI/HECI
+		// Commands that actually need PTHI will fail later with a proper error message
+		log.Debug("PTHI/HECI initialization failed (this is OK for WSMAN-only commands): ", err)
 	}
 
 	return ExecuteWithAMT(args, amtCommand)
