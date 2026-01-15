@@ -1,3 +1,10 @@
+## [2.48.15](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.14...v2.48.15) (2026-01-15)
+
+
+### Bug Fixes
+
+* workaround for fixing crash in formated logs ([996b559](https://github.com/device-management-toolkit/rpc-go/commit/996b5599a2ba23e4e5842d248f6b840f8e8568d2))
+
 ## [2.48.14](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.13...v2.48.14) (2026-01-12)
 
 ## [2.48.13](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.12...v2.48.13) (2026-01-06)
