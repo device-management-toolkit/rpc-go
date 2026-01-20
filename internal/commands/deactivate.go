@@ -6,10 +6,8 @@
 package commands
 
 import (
-	"crypto/tls"
 	"fmt"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -20,18 +18,6 @@ const (
 	ControlModeCCM = 1
 	ControlModeACM = 2
 )
-
-// setupTLSConfig creates TLS configuration if local TLS is enforced
-func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
-	tlsConfig := &tls.Config{}
-
-	if cmd.LocalTLSEnforced {
-		controlMode := cmd.GetControlMode()
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck)
-	}
-
-	return tlsConfig
-}
 
 // DeactivateCmd represents the deactivate command
 type DeactivateCmd struct {
