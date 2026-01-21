@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -433,9 +434,9 @@ func (service *LocalActivationService) activateACM() error {
 
 	// Perform ACM activation using the new TLS path (cleaner)
 	if service.localTLSEnforced {
-		err = service.activateACMWithTLS()
+		err = service.activateACMWithTLS(tlsConfig)
 	} else {
-		err = service.activateACMLegacy()
+		err = service.activateACMLegacy(tlsConfig)
 	}
 
 	if err != nil {
@@ -468,8 +469,18 @@ func (service *LocalActivationService) activateACM() error {
 
 // commitCCMChanges commits changes for CCM activation with admin credentials
 func (service *LocalActivationService) commitCCMChanges() error {
+	// Re-setup WSMAN client with admin credentials before committing
+	// This is required because the initial setup used LSA credentials
+	controlMode := service.config.ControlMode
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
+	}
+
 	// Commit changes
-	_, err := service.wsman.CommitChanges()
+	_, err = service.wsman.CommitChanges()
 	if err != nil {
 		log.Error("Failed to activate device:", err)
 		log.Info("Putting the device back to pre-provisioning mode")
@@ -542,10 +553,10 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 }
 
 // activateACMWithTLS performs ACM activation with TLS (new cleaner path)
-func (service *LocalActivationService) activateACMWithTLS() error {
+func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config) error {
 	// For TLS path, we just change the AMT password and commit
-	// Setup WSMAN client with admin credentials
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+	// Setup WSMAN client with admin credentials, reusing the TLS config that has client certs
+	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
@@ -564,11 +575,11 @@ func (service *LocalActivationService) activateACMWithTLS() error {
 }
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
-func (service *LocalActivationService) activateACMLegacy() error {
+func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) error {
 	if service.isUpgrade {
 		// For upgrade path, we just change the AMT password
-		// Setup WSMAN client with admin credentials
-		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, &tls.Config{})
+		// Setup WSMAN client with admin credentials, reusing the TLS config
+		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 		}
@@ -679,12 +690,22 @@ func (service *LocalActivationService) startSecureHostBasedConfiguration(certsAn
 	// Create leaf certificate hash
 	var certHashByteArray [64]byte
 
-	leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
-	copy(certHashByteArray[:], leafHash[:])
-
 	certAlgo, err := utils.CheckCertificateAlgorithmSupported(certsAndKeys.certs[0].SignatureAlgorithm)
 	if err != nil {
 		return amt.SecureHBasedResponse{}, utils.ActivationFailedCertHash
+	}
+
+	// Generate hash based on certificate algorithm
+	switch certAlgo {
+	case 2: // SHA256
+		leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	case 3: // SHA384
+		leafHash := sha512.Sum384(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	default:
+		// Only SHA-256 and SHA-384 are supported for secure host-based configuration
+		return amt.SecureHBasedResponse{}, fmt.Errorf("unsupported certificate algorithm for activation: %d", certAlgo)
 	}
 
 	// Call StartConfigurationHBased
@@ -771,15 +792,53 @@ func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (Provisionin
 }
 
 // compareCertHashes compares certificate hash with AMT stored hashes
+// Computes both SHA-256 and SHA-384 fingerprints to support different AMT platforms
 func (service *LocalActivationService) compareCertHashes(fingerPrint string) error {
+	// Get certificate object to compute multiple hash algorithms
+	certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
+	if err != nil {
+		return utils.ActivationFailedGetCertHash
+	}
+
+	// Find the root certificate
+	var rootCert *x509.Certificate
+
+	for _, cert := range certsAndKeys.certs {
+		if cert.Subject.String() == cert.Issuer.String() {
+			rootCert = cert
+
+			break
+		}
+	}
+
+	if rootCert == nil {
+		return utils.ActivationFailedNoRootCertFound
+	}
+
+	// Compute fingerprints using different hash algorithms
+	der := rootCert.Raw
+
+	fingerprints := make(map[string]string)
+	// SHA-384 (48 bytes) - Default for newer platforms
+	hashSHA384 := sha512.Sum384(der)
+	fingerprints["SHA384"] = hex.EncodeToString(hashSHA384[:])
+	// SHA-256 (32 bytes) - Fallback for older platforms
+	hashSHA256 := sha256.Sum256(der)
+	fingerprints["SHA256"] = hex.EncodeToString(hashSHA256[:])
+
+	// Get all certificate hashes from AMT
 	result, err := service.amtCommand.GetCertificateHashes()
 	if err != nil {
 		return utils.ActivationFailedGetCertHash
 	}
 
+	// Try to match against any stored hash with any algorithm
 	for _, v := range result {
-		if v.Hash == fingerPrint {
-			return nil
+		// Check if this AMT hash matches any of our computed fingerprints
+		if computedHash, exists := fingerprints[v.Algorithm]; exists {
+			if v.Hash == computedHash {
+				return nil
+			}
 		}
 	}
 

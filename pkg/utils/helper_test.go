@@ -47,8 +47,9 @@ func TestInterpretHashAlgorithm(t *testing.T) {
 		{"Hash0", 0, "MD5", 16},
 		{"Hash1", 1, "SHA1", 20},
 		{"Hash2", 2, "SHA256", 32},
-		{"Hash3", 3, "SHA512", 64},
+		{"Hash3", 3, "SHA384", 48},
 		{"Hash4", 4, "UNKNOWN", 0},
+		{"Hash5", 5, "SHA512", 64},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

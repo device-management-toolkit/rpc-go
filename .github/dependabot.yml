@@ -5,8 +5,9 @@
 
 version: 2
 updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # main branch
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "daily"
 
@@ -24,3 +25,22 @@ updates:
     directory: /samples/dotnet
     schedule:
       interval: daily
+
+  # 2.x.x branch
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    target-branch: "2.x.x"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: daily
+    target-branch: "2.x.x"
+
+  - package-ecosystem: nuget
+    directory: /samples/dotnet
+    schedule:
+      interval: daily
+    target-branch: "2.x.x"

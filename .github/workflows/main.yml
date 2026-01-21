@@ -74,7 +74,7 @@ jobs:
           egress-policy: audit
       
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Run unit tests (JUnit report + coverage)
@@ -91,7 +91,7 @@ jobs:
 
       - name: Publish Unit Test Results
         if: ${{ always() && matrix.os == 'ubuntu-24.04' }}
-        uses: EnricoMi/publish-unit-test-result-action@34d7c956a59aed1bfebf31df77b8de55db9bbaaf # v2.21.0
+        uses: EnricoMi/publish-unit-test-result-action@27d65e188ec43221b20d26de30f4892fad91df2f # v2.22.0
         with:
           files: rpc-go-unit.xml
           check_name: Unit tests (Go)

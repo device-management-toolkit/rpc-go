@@ -33,7 +33,7 @@ func rpcCheckAccess() int {
 }
 
 //export rpcExec
-func rpcExec(Input *C.char, Output **C.char, ErrOutput **C.char) int {
+func rpcExec(Input *C.char, Output, ErrOutput **C.char) int {
 	// Configure logger
 	log.SetOutput(os.Stderr)
 
