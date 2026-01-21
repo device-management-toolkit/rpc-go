@@ -203,6 +203,11 @@ const (
 	START_CONFIGURATION_HBASED_RESPONSE = 0x480008b
 )
 
+const (
+	GET_CIRA_LOG_REQUEST  = 0x400008e
+	GET_CIRA_LOG_RESPONSE = 0x480008e
+)
+
 type AMTUnicodeString struct {
 	Length uint16
 	String [UNICODE_STRING_LEN]uint8
@@ -423,4 +428,130 @@ type StopConfigurationRequest struct {
 
 type StopConfigurationResponse struct {
 	Header ResponseMessageHeader
+}
+
+// CIRA Log structures
+const (
+	MAX_IPV6_ADDRESSES     = 6
+	MAX_CONNECTION_DETAILS = 2
+)
+
+type GetCiraLogRequest struct {
+	Header  MessageHeader
+	Version uint8
+}
+
+type IPv6Address struct {
+	Address [16]uint8
+}
+
+type IPv6AddressEntry struct {
+	Address IPv6Address
+	Type    uint8
+	State   uint8
+}
+
+type IPParameters struct {
+	DhcpMode              uint8
+	Reserved              [3]uint8 // Padding for 4-byte alignment
+	IpAddress             uint32
+	DefaultGatewayAddress uint32
+	PrimaryDnsAddress     uint32
+	SecondaryDnsAddress   uint32
+	DomainName            [192]uint8 // CHAR[NET_DOMAIN_NAME_MAX_LENGTH]
+	IPv6DefaultRouter     IPv6Address
+	PrimaryDNS            IPv6Address
+	SecondaryDNS          IPv6Address
+	IPv6Addresses         [MAX_IPV6_ADDRESSES]IPv6AddressEntry
+}
+
+type InterfaceData struct {
+	InterfacePresent uint8
+	LinkStatus       uint8
+	IPParameters     IPParameters
+	Reserved         [306]uint8 // Padding to align to 676 bytes total (370 bytes data + 306 bytes padding)
+}
+
+type WirelessAdditionalData struct {
+	ProfileName [33]byte // CHAR[33]
+	HostControl uint8    // UINT8
+}
+
+type WiredAdditionalData struct {
+	AuthResult802_1x    uint8 // UINT8
+	AuthSubResult802_1x uint8 // UINT8
+	WiredMediaType      uint8 // UINT8
+	DiscreteLanStatus   uint8 // UINT8
+}
+
+type ConnectionDetail struct {
+	ConnectionStatus uint32     // CIRA_LOG_CONNECTION_STATUS enum (4 bytes)
+	ProxyUsed        uint8      // UINT8 (1 byte)
+	ProxyName        [256]uint8 // UINT8[NET_FQDN_MAX_LENGTH]
+	TcpFailureCode   uint32     // CIRA_LOGGER_TCP_ERROR enum (4 bytes)
+	TlsFailureCode   int32      // INT32 (4 bytes)
+}
+
+type TunnelClosureInfo struct {
+	ClosureTimestamp      uint32
+	ClosedByMps           uint8
+	APF_DISCONNECT_REASON uint8
+	ClosureReason         uint8
+	Reserved              [3]uint8 // Padding for 4-byte alignment
+}
+
+type CIRATunnelLogEntry struct {
+	Valid                         uint8
+	OpenTimestamp                 uint32
+	RemoteAccessConnectionTrigger uint8
+	Reserved1                     [3]uint8   // Padding for 4-byte alignment
+	MpsHostname                   [256]uint8 // CHAR[NET_FQDN_MAX_LENGTH]
+	ProxyUsed                     uint8
+	ProxyName                     [256]uint8 // UINT8[NET_FQDN_MAX_LENGTH]
+	AuthenticationMethod          uint8
+	ConnectedInterface            uint8
+	Reserved2                     [3]uint8 // Padding for 4-byte alignment
+	LastKeepAlive                 uint32
+	KeepAliveInterval             uint32
+	TunnelClosureInfo             TunnelClosureInfo
+}
+
+type CIRAFailedConnectionLogEntry struct {
+	Valid                         uint8
+	OpenTimestamp                 uint32
+	RemoteAccessConnectionTrigger uint8
+	Reserved1                     [3]uint8   // Padding for 4-byte alignment
+	MpsHostname                   [256]uint8 // CHAR[NET_FQDN_MAX_LENGTH]
+	AuthenticationMethod          uint8
+	// Structure layout: InterfaceData[0] (370B data + 306B pad) + InterfaceData[1] (370B data + 306B pad) = 1352B total
+	// Each InterfaceData includes full IPv6 support: IPv6DefaultRouter, PrimaryDNS, SecondaryDNS, IPv6Addresses[6]
+	// Then WirelessAdditionalData (34B) + WiredAdditionalData (4B) come after the InterfaceData array
+	InterfaceData              [2]InterfaceData
+	WirelessAdditionalData     WirelessAdditionalData
+	WiredAdditionalData        WiredAdditionalData
+	ConnectedInterface         uint8
+	Reserved2                  [3]uint8 // Padding for 4-byte alignment
+	ConnectionDetails          [MAX_CONNECTION_DETAILS]ConnectionDetail
+	TunnelEstablishmentFailure TunnelClosureInfo
+}
+
+type CIRAStatusSummary struct {
+	IsTunnelOpened            uint8
+	CurrentConnectionState    uint8
+	Reserved                  [3]uint8 // Padding for 4-byte alignment
+	LastKeepAlive             uint32
+	KeepAliveInterval         uint32
+	LastConnectionStatus      uint8
+	LastConnectionTimestamp   uint32
+	LastTunnelStatus          uint8
+	LastTunnelOpenedTimestamp uint32
+	LastTunnelClosedTimestamp uint32
+}
+
+type GetCiraLogResponse struct {
+	Header                   ResponseMessageHeader
+	Version                  uint8
+	CiraStatusSummary        CIRAStatusSummary
+	LastFailedTunnelLogEntry CIRATunnelLogEntry
+	FailedConnectionLogEntry CIRAFailedConnectionLogEntry
 }
