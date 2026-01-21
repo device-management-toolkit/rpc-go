@@ -14,6 +14,7 @@ import (
 	time "time"
 
 	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	pthi "github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -97,6 +98,21 @@ func (m *MockInterface) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
 func (mr *MockInterfaceMockRecorder) GetChangeEnabled() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangeEnabled", reflect.TypeOf((*MockInterface)(nil).GetChangeEnabled))
+}
+
+// GetCiraLog mocks base method.
+func (m *MockInterface) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCiraLog")
+	ret0, _ := ret[0].(pthi.GetCiraLogResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCiraLog indicates an expected call of GetCiraLog.
+func (mr *MockInterfaceMockRecorder) GetCiraLog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCiraLog", reflect.TypeOf((*MockInterface)(nil).GetCiraLog))
 }
 
 // GetControlMode mocks base method.

@@ -37,6 +37,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [CERT_HASH_MAX_LENGTH]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [MAX_SUFFIX_LENGTH * MAX_DNS_SUFFIXES]byte) (StartConfigurationHBasedResponse, error)
 	StopConfiguration() (response StopConfigurationResponse, err error)
+	GetCiraLog() (response GetCiraLogResponse, err error)
 }
 
 func NewCommand() Command {
@@ -602,6 +603,134 @@ func (pthi Command) StopConfiguration() (response StopConfigurationResponse, err
 	response = StopConfigurationResponse{
 		Header: ReadHeaderResponse(buf2),
 	}
+
+	return response, nil
+}
+
+func (pthi Command) GetCiraLog() (response GetCiraLogResponse, err error) {
+	command := GetCiraLogRequest{
+		Header:  CreateRequestHeader(GET_CIRA_LOG_REQUEST, 1),
+		Version: 0,
+	}
+
+	var binBuf bytes.Buffer
+
+	binary.Write(&binBuf, binary.LittleEndian, command)
+
+	result, err := pthi.Call(binBuf.Bytes(), 13) // 12 bytes header + 1 byte version
+	if err != nil {
+		return GetCiraLogResponse{}, err
+	}
+
+	buf2 := bytes.NewBuffer(result)
+	response = GetCiraLogResponse{
+		Header: ReadHeaderResponse(buf2),
+	}
+
+	// Read Version
+	binary.Read(buf2, binary.LittleEndian, &response.Version)
+
+	// Read CIRAStatusSummary
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.IsTunnelOpened)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.CurrentConnectionState)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastKeepAlive)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.KeepAliveInterval)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastConnectionStatus)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastConnectionTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelStatus)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelOpenedTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelClosedTimestamp)
+
+	// Read LastFailedTunnelLogEntry
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.Valid)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.OpenTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.RemoteAccessConnectionTrigger)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.MpsHostname.Length)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.MpsHostname.Buffer)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ProxyUsed)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ProxyName.Length)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ProxyName.Buffer)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.AuthenticationMethod)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ConnectedInterface)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.LastKeepAlive)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.KeepAliveInterval)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosedByMps)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.APF_DISCONNECT_REASON)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureReason)
+
+	// Read FailedConnectionLogEntry
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.Valid)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.OpenTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.RemoteAccessConnectionTrigger)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.MpsHostname.Length)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.MpsHostname.Buffer)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.AuthenticationMethod)
+
+	// Read InterfaceData array count
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.InterfaceDataCount)
+
+	// Read InterfaceData array (fixed size of 2)
+	for i := 0; i < 2; i++ {
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.InterfaceData[i].InterfacePresent)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.InterfaceData[i].LinkStatus)
+
+		// Read IPParameters
+		ipParams := &response.FailedConnectionLogEntry.InterfaceData[i].IPParameters
+		binary.Read(buf2, binary.LittleEndian, &ipParams.DhcpMode)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.IpAddress)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.DefaultGatewayAddress)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.PrimaryDnsAddress)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.SecondaryDnsAddress)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.DomainName.Length)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.DomainName.Buffer)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6DefaultRouter.Address)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.PrimaryDNS.Address)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.SecondaryDNS.Address)
+
+		// Read IPv6 addresses count
+		binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6AddressesCount)
+
+		// Read IPv6 addresses (fixed size of 5)
+		for j := 0; j < MAX_IPV6_ADDRESSES; j++ {
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].Address.Address)
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].Type)
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].State)
+		}
+	}
+
+	// Read WirelessAdditionalData
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WirelessAdditionalData.ProfileName.Length)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WirelessAdditionalData.ProfileName.Buffer)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WirelessAdditionalData.HostControl)
+
+	// Read WiredAdditionalData
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.AuthResult802_1x)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.AuthSubResult802_1x)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.WiredMediaType)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.DiscreteLanStatus)
+
+	// Read ConnectedInterface
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectedInterface)
+
+	// Read ConnectionDetails count
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetailsCount)
+
+	// Read ConnectionDetails array (fixed size of 2)
+	for i := 0; i < MAX_CONNECTION_DETAILS; i++ {
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ConnectionStatus)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyUsed)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyName.Length)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyName.Buffer)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].TcpFailureCode)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].TlsFailureCode)
+	}
+
+	// Read TunnelEstablishmentFailure
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosedByMps)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.APF_DISCONNECT_REASON)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureReason)
 
 	return response, nil
 }

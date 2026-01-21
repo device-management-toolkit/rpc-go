@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -90,6 +91,10 @@ func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.Secur
 
 func (c MockAMT) StopConfiguration() (amt.StopConfigurationResponse, error) {
 	return amt.StopConfigurationResponse{}, nil
+}
+
+func (c MockAMT) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
 }
 
 var p Payload
