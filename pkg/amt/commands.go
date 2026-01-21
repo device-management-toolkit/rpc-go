@@ -186,6 +186,7 @@ type Interface interface {
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
+	GetCiraLog() (pthi.GetCiraLogResponse, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -637,4 +638,20 @@ func (amt AMTCommand) GetFlog() ([]byte, error) {
 	log.Debugf("Successfully retrieved %d bytes of FLOG data", len(flogData))
 
 	return flogData, nil
+}
+
+func (amt AMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetCiraLog()
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	return result, nil
 }
