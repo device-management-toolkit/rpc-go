@@ -84,8 +84,8 @@ func (c *Client) GetUPID() (*UPID, error) {
 	err = c.setFeatureState(true)
 	if err != nil {
 		log.Tracef("Failed to enable UPID feature: %v", err)
-		// Continue anyway - some platforms may have it already enabled or not require this
 	}
+	// Continue anyway - some platforms may have it already enabled or not require this
 
 	// Step 2: Get the UPID
 	upid, getErr := c.getPlatformID()
@@ -94,8 +94,8 @@ func (c *Client) GetUPID() (*UPID, error) {
 	disableErr := c.setFeatureState(false)
 	if disableErr != nil {
 		log.Tracef("Failed to disable UPID feature: %v", disableErr)
-		// Non-fatal - log but don't fail the operation
 	}
+	// Non-fatal - log but don't fail the operation
 
 	return upid, getErr
 }

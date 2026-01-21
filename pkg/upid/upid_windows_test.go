@@ -356,6 +356,7 @@ func contains(s, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -375,6 +376,7 @@ func (m *MockHECI) InitWithGUID(guid interface{}) error {
 	if m.initWithGUIDFunc != nil {
 		return m.initWithGUIDFunc(guid)
 	}
+
 	return nil
 }
 
@@ -386,6 +388,7 @@ func (m *MockHECI) SendMessage(buffer []byte, done *uint32) (int, error) {
 	if m.sendMessageFunc != nil {
 		return m.sendMessageFunc(buffer, done)
 	}
+
 	return len(buffer), nil
 }
 
@@ -393,6 +396,7 @@ func (m *MockHECI) ReceiveMessage(buffer []byte, done *uint32) (int, error) {
 	if m.receiveMessageFunc != nil {
 		return m.receiveMessageFunc(buffer, done)
 	}
+
 	return 0, nil
 }
 
@@ -415,18 +419,21 @@ func TestGetUPIDWindows(t *testing.T) {
 				callCount := 0
 				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
 					callCount++
-					if callCount == 1 {
+					switch callCount {
+					case 1:
 						// First call: enable feature response (command 2)
 						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)]
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else if callCount == 2 {
+					case 2:
 						// Second call: UPID response with OEM provisioned (command 5)
 						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)|PlatformIdType(4bytes)|OEM(32bytes)|CSME(32bytes)]
 						response := make([]byte, 76)
@@ -434,29 +441,35 @@ func TestGetUPIDWindows(t *testing.T) {
 						binary.LittleEndian.PutUint16(response[2:4], 72)                    // ByteCount (2 bytes)
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess)) // Status (4 bytes)
 						// PlatformIdType (4 bytes at offset 8)
-						binary.LittleEndian.PutUint32(response[8:12], uint32(PlatformIDTypeBinary))
+						binary.LittleEndian.PutUint32(response[8:12], PlatformIDTypeBinary)
 						// OEM Platform ID (32 bytes at offset 12)
 						for i := 0; i < 32; i++ {
 							response[12+i] = 0xAA
 						}
+
 						// CSME Platform ID (32 bytes at offset 44)
 						for i := 0; i < 32; i++ {
 							response[44+i] = 0xBB
 						}
+
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else {
+					default:
 						// Third call: disable feature response (command 2)
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
 					}
 				}
@@ -473,6 +486,7 @@ func TestGetUPIDWindows(t *testing.T) {
 				for i := 0; i < 32; i++ {
 					if upid.OEMPlatformID[i] != 0xAA {
 						t.Errorf("OEMPlatformID[%d] = 0x%02x, want 0xAA", i, upid.OEMPlatformID[i])
+
 						break
 					}
 				}
@@ -480,6 +494,7 @@ func TestGetUPIDWindows(t *testing.T) {
 				for i := 0; i < 32; i++ {
 					if upid.HWSerialNum[i] != 0xBB {
 						t.Errorf("HWSerialNum[%d] = 0x%02x, want 0xBB", i, upid.HWSerialNum[i])
+
 						break
 					}
 				}
@@ -501,36 +516,43 @@ func TestGetUPIDWindows(t *testing.T) {
 				callCount := 0
 				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
 					callCount++
-					if callCount == 1 {
+					switch callCount {
+					case 1:
 						// Enable feature response
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else if callCount == 2 {
+					case 2:
 						// Short response (8 bytes) with SUCCESS indicates not provisioned
 						response := make([]byte, 8)
 						response[1] = CommandPlatformIDGet
 						binary.LittleEndian.PutUint16(response[2:4], 0)                     // ByteCount = 0
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess)) // Status
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else {
+					default:
 						// Disable feature response
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
 					}
 				}
@@ -544,36 +566,43 @@ func TestGetUPIDWindows(t *testing.T) {
 				callCount := 0
 				m.receiveMessageFunc = func(buffer []byte, done *uint32) (int, error) {
 					callCount++
-					if callCount == 1 {
+					switch callCount {
+					case 1:
 						// Enable feature response
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else if callCount == 2 {
+					case 2:
 						// Response with Invalid State status
 						response := make([]byte, 8)
 						response[1] = CommandPlatformIDGet
 						binary.LittleEndian.PutUint16(response[2:4], 0)                          // ByteCount
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusInvalidState)) // Status
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
-					} else {
+					default:
 						// Disable feature response
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
 						copy(buffer, response)
+
 						if done != nil {
 							*done = uint32(len(response))
 						}
+
 						return len(response), nil
 					}
 				}
