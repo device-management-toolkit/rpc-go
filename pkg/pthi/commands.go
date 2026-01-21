@@ -12,6 +12,7 @@ import (
 	"math"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
+	log "github.com/sirupsen/logrus"
 )
 
 type Command struct {
@@ -37,6 +38,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [CERT_HASH_MAX_LENGTH]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [MAX_SUFFIX_LENGTH * MAX_DNS_SUFFIXES]byte) (StartConfigurationHBasedResponse, error)
 	StopConfiguration() (response StopConfigurationResponse, err error)
+	GetCiraLog() (response GetCiraLogResponse, err error)
 }
 
 func NewCommand() Command {
@@ -602,6 +604,229 @@ func (pthi Command) StopConfiguration() (response StopConfigurationResponse, err
 	response = StopConfigurationResponse{
 		Header: ReadHeaderResponse(buf2),
 	}
+
+	return response, nil
+}
+
+func (pthi Command) GetCiraLog() (response GetCiraLogResponse, err error) {
+	command := GetCiraLogRequest{
+		Header:  CreateRequestHeader(GET_CIRA_LOG_REQUEST, 1),
+		Version: 0,
+	}
+
+	var binBuf bytes.Buffer
+
+	binary.Write(&binBuf, binary.LittleEndian, command)
+
+	// Trace log request bytes
+	requestBytes := binBuf.Bytes()
+	log.Tracef("GetCiraLog Request (%d bytes): %v", len(requestBytes), requestBytes)
+
+	result, err := pthi.Call(binBuf.Bytes(), 13) // 12 bytes header + 1 byte version
+	if err != nil {
+		return GetCiraLogResponse{}, err
+	}
+
+	// Trace log response bytes
+	log.Tracef("GetCiraLog Response (%d bytes): %v", len(result), result)
+
+	buf2 := bytes.NewBuffer(result)
+	response = GetCiraLogResponse{
+		Header: ReadHeaderResponse(buf2),
+	}
+
+	// Read Version (uint8)
+	binary.Read(buf2, binary.LittleEndian, &response.Version)
+
+	// Read CIRAStatusSummary
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.IsTunnelOpened)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.CurrentConnectionState)
+
+	// Skip 3 bytes of padding after two uint8 fields to align to 4-byte boundary
+	buf2.Next(3)
+
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastKeepAlive)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.KeepAliveInterval)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastConnectionStatus)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastConnectionTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelStatus)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelOpenedTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.CiraStatusSummary.LastTunnelClosedTimestamp)
+
+	// Read LastFailedTunnelLogEntry
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.Valid)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.OpenTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.RemoteAccessConnectionTrigger)
+
+	// Skip 3 bytes padding after RemoteAccessConnectionTrigger for alignment
+	buf2.Next(3)
+
+	// Read MpsHostname - 256-byte buffer
+	buf2.Read(response.LastFailedTunnelLogEntry.MpsHostname.Buffer[:256])
+
+	// Set Length based on null terminator
+	for i, b := range response.LastFailedTunnelLogEntry.MpsHostname.Buffer {
+		if b == 0 {
+			response.LastFailedTunnelLogEntry.MpsHostname.Length = uint16(i)
+
+			break
+		}
+	}
+
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ProxyUsed)
+
+	// Read ProxyName - 256-byte buffer (no padding after ProxyUsed)
+	buf2.Read(response.LastFailedTunnelLogEntry.ProxyName.Buffer[:256])
+	// Set Length based on null terminator
+	for i, b := range response.LastFailedTunnelLogEntry.ProxyName.Buffer {
+		if b == 0 {
+			response.LastFailedTunnelLogEntry.ProxyName.Length = uint16(i)
+
+			break
+		}
+	}
+
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.AuthenticationMethod)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.ConnectedInterface)
+
+	// Skip 3 bytes padding after two uint8 fields to align to 4-byte boundary for uint32
+	buf2.Next(3)
+
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.LastKeepAlive)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.KeepAliveInterval)
+
+	// Read TunnelClosureInfo structure (7 bytes: 4 + 1 + 1 + 1, then 3 bytes padding)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosedByMps)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.APF_DISCONNECT_REASON)
+	binary.Read(buf2, binary.LittleEndian, &response.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureReason)
+
+	// Skip 3 bytes padding after TunnelClosureInfo
+	buf2.Next(3)
+
+	// Read FailedConnectionLogEntry
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.Valid)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.OpenTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.RemoteAccessConnectionTrigger)
+
+	// Skip 3 bytes padding to align structure
+	buf2.Next(3)
+
+	// Read MpsHostname - 256-byte char array
+	buf2.Read(response.FailedConnectionLogEntry.MpsHostname.Buffer[:256])
+	// Set Length based on null terminator
+	for i, b := range response.FailedConnectionLogEntry.MpsHostname.Buffer {
+		if b == 0 {
+			response.FailedConnectionLogEntry.MpsHostname.Length = uint16(i)
+
+			break
+		}
+	}
+
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.AuthenticationMethod)
+
+	// No padding after AuthenticationMethod - InterfaceData array starts immediately
+
+	// The structure: InterfaceData[0], InterfaceData[1], then WirelessAdditionalData and WiredAdditionalData
+	// Each InterfaceData is 676 bytes total (367 data + 309 padding)
+	for i := 0; i < 2; i++ {
+		// Read InterfaceData[i]
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.InterfaceData[i].InterfacePresent)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.InterfaceData[i].LinkStatus)
+
+		// Read IPParameters - DhcpMode comes immediately after LinkStatus (both uint8)
+		ipParams := &response.FailedConnectionLogEntry.InterfaceData[i].IPParameters
+		binary.Read(buf2, binary.LittleEndian, &ipParams.DhcpMode)
+
+		// Skip 3 bytes padding after DhcpMode for 4-byte alignment
+		buf2.Next(3)
+
+		// IP addresses are stored as big-endian uint32
+		binary.Read(buf2, binary.BigEndian, &ipParams.IpAddress)
+		binary.Read(buf2, binary.BigEndian, &ipParams.DefaultGatewayAddress)
+		binary.Read(buf2, binary.BigEndian, &ipParams.PrimaryDnsAddress)
+		binary.Read(buf2, binary.BigEndian, &ipParams.SecondaryDnsAddress)
+
+		// DomainName is a 192-byte char array in CIRA log InterfaceData
+		var domainNameBuf [192]byte
+
+		buf2.Read(domainNameBuf[:])
+
+		for j, b := range domainNameBuf {
+			if b == 0 {
+				ipParams.DomainName.Length = uint16(j)
+
+				break
+			}
+		}
+
+		copy(ipParams.DomainName.Buffer[:], domainNameBuf[:])
+
+		binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6DefaultRouter.Address)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.PrimaryDNS.Address)
+		binary.Read(buf2, binary.LittleEndian, &ipParams.SecondaryDNS.Address)
+
+		// Read IPv6 addresses (fixed size of 6 addresses x 18 bytes = 108 bytes)
+		for j := 0; j < MAX_IPV6_ADDRESSES; j++ {
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].Address.Address)
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].Type)
+			binary.Read(buf2, binary.LittleEndian, &ipParams.IPv6Addresses[j].State)
+		}
+
+		// Skip 306 bytes padding after each InterfaceData (676 bytes total per entry)
+		buf2.Next(306)
+	}
+
+	// After both InterfaceData arrays, read WirelessAdditionalData and WiredAdditionalData
+
+	// WirelessAdditionalData: ProfileName[33] + HostControl (1 byte) = 34 bytes
+	buf2.Read(response.FailedConnectionLogEntry.WirelessAdditionalData.ProfileName[:])
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WirelessAdditionalData.HostControl)
+
+	// WiredAdditionalData: 4 UINT8 fields = 4 bytes
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.AuthResult802_1x)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.AuthSubResult802_1x)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.WiredMediaType)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.WiredAdditionalData.DiscreteLanStatus)
+
+	// Read ConnectedInterface
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectedInterface)
+
+	// Skip 3 bytes padding after ConnectedInterface before ConnectionDetails array
+	buf2.Next(3)
+
+	// Read ConnectionDetails array (fixed size of 2 - NO count field, just fixed array)
+	// Each ConnectionDetail: ConnectionStatus(4) + ProxyUsed(1) + ProxyName(256) + TcpFailureCode(4) + TlsFailureCode(4) = 269 bytes
+	// No padding between array elements - they are contiguous in the binary buffer
+	for i := 0; i < MAX_CONNECTION_DETAILS; i++ {
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ConnectionStatus)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyUsed)
+
+		// ProxyName is a plain 256-byte char array (NOT length-prefixed)
+		var proxyNameBuf [256]byte
+
+		buf2.Read(proxyNameBuf[:])
+
+		// Find null terminator to set Length
+		for j, b := range proxyNameBuf {
+			if b == 0 {
+				response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyName.Length = uint16(j)
+
+				break
+			}
+		}
+
+		copy(response.FailedConnectionLogEntry.ConnectionDetails[i].ProxyName.Buffer[:], proxyNameBuf[:])
+
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].TcpFailureCode)
+		binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.ConnectionDetails[i].TlsFailureCode)
+	}
+
+	// Read TunnelEstablishmentFailure
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureTimestamp)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosedByMps)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.APF_DISCONNECT_REASON)
+	binary.Read(buf2, binary.LittleEndian, &response.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureReason)
 
 	return response, nil
 }
