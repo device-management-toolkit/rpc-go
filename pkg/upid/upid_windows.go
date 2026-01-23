@@ -37,6 +37,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	upidGUID, err := windows.GUIDFromString(UPIDGUID)
 	if err != nil {
 		log.Tracef("Failed to parse UPID GUID: %v", err)
+
 		return nil, ErrConnectionFailed
 	}
 
@@ -44,6 +45,7 @@ func (c *Client) GetUPID() (*UPID, error) {
 	err = c.heci.InitWithGUID(upidGUID)
 	if err != nil {
 		log.Tracef("Failed to initialize UPID MEI client: %v", err)
+
 		return nil, ErrUPIDNotSupported
 	}
 	defer c.close()
