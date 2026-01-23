@@ -22,39 +22,6 @@ type Client struct {
 	heci heci.Interface
 }
 
-// UPIDHECIHeader represents the Intel UPID HECI message header
-type UPIDHECIHeader struct {
-	Feature   uint8  // Command feature code (UPID_COMMAND_FEATURE_PLATFORM_ID = 0)
-	Command   uint8  // Command code (UPID_PLATFORM_ID_GET_CMD = 5)
-	ByteCount uint16 // Total length excluding header
-}
-
-// PlatformIDFeatureStateSetRequest represents a UPID_PLATFORM_ID_FEATURE_STATE_SET request
-type PlatformIDFeatureStateSetRequest struct {
-	Header         UPIDHECIHeader
-	FeatureEnabled uint8 // Feature state (0=disabled, 1=enabled)
-}
-
-// PlatformIDFeatureStateSetResponse represents the response for UPID_PLATFORM_ID_FEATURE_STATE_SET command
-type PlatformIDFeatureStateSetResponse struct {
-	Header UPIDHECIHeader
-	Status uint32 // UPID_STATUS (4 bytes enum)
-}
-
-// PlatformIDGetRequest represents a UPID_PLATFORM_ID_GET request
-type PlatformIDGetRequest struct {
-	Header UPIDHECIHeader
-}
-
-// PlatformIDGetResponse represents the response for UPID_PLATFORM_ID_GET command
-type PlatformIDGetResponse struct {
-	Header         UPIDHECIHeader
-	Status         uint32                  // UPID_STATUS (4 bytes enum)
-	PlatformIdType uint32                  // UPID_OEM_PLATFORM_ID_TYPE (4 bytes enum)
-	OEMPlatformId  [OEMPlatformIDSize]byte // 32 bytes
-	CSMEPlatformId [HWSerialNumSize]byte   // 32 bytes
-}
-
 // NewClient creates a new UPID client for Linux
 func NewClient() Interface {
 	return &Client{
@@ -66,17 +33,11 @@ func NewClient() Interface {
 // Automatically checks support and manages resource cleanup.
 // Following Intel UPID SDK workflow: Enable feature -> Get UPID -> Disable feature
 func (c *Client) GetUPID() (*UPID, error) {
-	// First check if UPID is supported
-	if !c.isSupported() {
-		return nil, ErrUPIDNotSupported
-	}
-
 	// Initialize HECI driver with UPID GUID
 	err := c.heci.InitWithGUID(heci.MEI_UPID)
 	if err != nil {
 		log.Tracef("Failed to initialize UPID MEI client: %v", err)
-
-		return nil, ErrConnectionFailed
+		return nil, ErrUPIDNotSupported
 	}
 	defer c.close()
 
@@ -309,21 +270,6 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	}
 
 	return upid, nil
-}
-
-// isSupported checks if UPID is supported on this platform (internal method)
-func (c *Client) isSupported() bool {
-	// Try to initialize the UPID MEI client
-	err := c.heci.InitWithGUID(heci.MEI_UPID)
-	if err != nil {
-		log.Tracef("UPID MEI client initialization failed: %v", err)
-
-		return false
-	}
-
-	c.close()
-
-	return true
 }
 
 // close releases resources held by the UPID client (internal method).
