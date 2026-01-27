@@ -44,8 +44,9 @@ type AmtInfoCmd struct {
 	Sku bool `help:"Show Product SKU" short:"s"`
 
 	// Identity flags
-	UUID bool `help:"Show Unique Identifier" short:"u"`
-	Mode bool `help:"Show Current Control Mode" short:"m"`
+	UUID      bool `help:"Show Unique Identifier" short:"u"`
+	Mode      bool `help:"Show Current Control Mode" short:"m"`
+	ProvState bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
 
 	// Network flags
 	DNS      bool `help:"Show Domain Name Suffix" short:"d"`
@@ -110,7 +111,7 @@ func (cmd *AmtInfoCmd) IsUserCertRequested() bool {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.DNS &&
+	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
 }
 
@@ -171,6 +172,7 @@ type InfoResult struct {
 	Features          string                       `json:"features,omitempty"`
 	UUID              string                       `json:"uuid,omitempty"`
 	ControlMode       string                       `json:"controlMode,omitempty"`
+	ProvisioningState string                       `json:"provisioningState,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
 	DNSSuffixOS       string                       `json:"dnsSuffixOS,omitempty"`
@@ -405,6 +407,16 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	// Get provisioning state
+	if showAll || cmd.ProvState {
+		provState, err := s.amtCommand.GetProvisioningState()
+		if err != nil {
+			log.Error("Failed to get provisioning state: ", err)
+		} else {
+			result.ProvisioningState = utils.InterpretProvisioningState(provState)
+		}
+	}
+
 	// Get operational state (for AMT versions > 11)
 	if showAll || cmd.OpState {
 		// We need AMT version to check if we can get operational state
@@ -549,6 +561,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 
 	if (showAll || cmd.Mode) && result.ControlMode != "" {
 		fmt.Printf("Control Mode\t\t: %s\n", result.ControlMode)
+	}
+
+	if (showAll || cmd.ProvState) && result.ProvisioningState != "" {
+		fmt.Printf("Provisioning State\t: %s\n", result.ProvisioningState)
 	}
 
 	if (showAll || cmd.OpState) && result.OperationalState != "" {

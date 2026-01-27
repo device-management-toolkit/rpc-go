@@ -41,6 +41,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -130,6 +131,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -183,6 +185,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -220,6 +223,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -272,6 +276,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -343,6 +348,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 				m.EXPECT().GetControlMode().Return(1, nil) // Called once (cached for UserCert check and Mode)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 
 				// Mock ChangeEnabledResponse for operational state
 				// Bit 1 = AMT enabled, Bit 7 = new interface version
@@ -390,6 +396,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 				assert.Equal(t, "enabled", result.OperationalState)
 				assert.Equal(t, "example.com", result.DNSSuffix)
 				assert.Equal(t, "os.example.com", result.DNSSuffixOS)
+				assert.Equal(t, "post-provisioning", result.ProvisioningState)
 				assert.NotNil(t, result.RAS)
 				assert.NotNil(t, result.WiredAdapter)
 				assert.NotNil(t, result.WirelessAdapter)
@@ -1041,7 +1048,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "All individual flags set",
 			cmd: &AmtInfoCmd{
-				Ver: true, Bld: true, Sku: true, UUID: true, Mode: true,
+				Ver: true, Bld: true, Sku: true, UUID: true, Mode: true, ProvState: true,
 				DNS: true, Hostname: true, Lan: true, Ras: true, OpState: true,
 				Cert: true,
 			},
@@ -1051,6 +1058,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 
 				response := amt.ChangeEnabledResponse(0x82) // AMT enabled and new interface
 				m.EXPECT().GetChangeEnabled().Return(response, nil)

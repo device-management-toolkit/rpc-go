@@ -18,6 +18,8 @@ import (
 
 var upgrader = websocket.Upgrader{}
 
+const forceFlag = " -f"
+
 func echo(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -81,7 +83,7 @@ func TestSetCommandMethodDeactivate(t *testing.T) {
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
 	f.Force = true
-	expected += " -f"
+	expected += forceFlag
 
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)
@@ -98,7 +100,7 @@ func TestSetCommandMethodMaintenanceSynctime(t *testing.T) {
 	assert.Equal(t, expected, f.Command)
 	f.Command = utils.CommandMaintenance
 	f.Force = true
-	expected += " -f"
+	expected += forceFlag
 
 	setCommandMethod(f)
 	assert.Equal(t, expected, f.Command)

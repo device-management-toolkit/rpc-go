@@ -120,6 +120,7 @@ type Interface interface {
 	GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error)
 	GetUUID() (string, error)
 	GetControlMode() (int, error)
+	GetProvisioningState() (int, error)
 	GetOSDNSSuffix() (string, error)
 	GetDNSSuffix() (string, error)
 	GetCertificateHashes() ([]CertHashEntry, error)
@@ -292,6 +293,23 @@ func (amt AMTCommand) GetControlMode() (int, error) {
 	defer amt.PTHI.Close()
 
 	result, err := amt.PTHI.GetControlMode()
+	if err != nil {
+		return -1, err
+	}
+
+	return result, nil
+}
+
+// GetProvisioningState ...
+func (amt AMTCommand) GetProvisioningState() (int, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return -1, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetProvisioningState()
 	if err != nil {
 		return -1, err
 	}
