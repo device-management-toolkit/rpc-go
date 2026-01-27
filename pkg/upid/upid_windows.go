@@ -265,8 +265,8 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	copy(fullUPID[0:32], response.OEMPlatformId[:])
 	copy(fullUPID[32:64], response.CSMEPlatformId[:])
 
-	// Create UPID from response
-	upid, err := NewUPID(fullUPID)
+	// Create UPID from response with platform ID type
+	upid, err := NewUPID(fullUPID, response.PlatformIdType)
 	if err != nil {
 		return nil, err
 	}

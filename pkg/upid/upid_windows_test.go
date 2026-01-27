@@ -54,7 +54,7 @@ func TestNewUPID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			upid, err := NewUPID(tt.input)
+			upid, err := NewUPID(tt.input, PlatformIDTypeBinary)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("NewUPID() expected error, got nil")
@@ -111,12 +111,13 @@ func TestUPIDString(t *testing.T) {
 		{
 			name: "Valid UPID with zeros (OEM not provisioned, only shows CSME)",
 			upid: &UPID{
-				Raw: make([]byte, UPIDSize),
+				Raw:            make([]byte, UPIDSize),
+				PlatformIdType: PlatformIDTypeNotSet,
 			},
-			expected: "0000000000000000000000000000000000000000000000000000000000000000",
+			expected: "---UPID---\nOEM_PLATFORM_ID_TYPE    : Not Set (0)\nOEM ID                  :\nCSME ID                 : 0000000000000000000000000000000000000000000000000000000000000000",
 		},
 		{
-			name: "Valid UPID with OEM provisioned (shows CSME first, then OEM)",
+			name: "Valid UPID with OEM provisioned (shows both IDs with type)",
 			upid: &UPID{
 				Raw: func() []byte {
 					raw := make([]byte, UPIDSize)
@@ -125,10 +126,12 @@ func TestUPIDString(t *testing.T) {
 					// Set some CSME bytes
 					raw[32] = 0xCD
 					raw[33] = 0xEF
+
 					return raw
 				}(),
+				PlatformIdType: PlatformIDTypeBinary,
 			},
-			expected: "CDEF000000000000000000000000000000000000000000000000000000000000\n          AB00000000000000000000000000000000000000000000000000000000000000",
+			expected: "---UPID---\nOEM_PLATFORM_ID_TYPE    : Binary (1)\nOEM ID                  : AB00000000000000000000000000000000000000000000000000000000000000\nCSME ID                 : CDEF000000000000000000000000000000000000000000000000000000000000",
 		},
 	}
 
@@ -277,7 +280,7 @@ func TestUPIDStructSize(t *testing.T) {
 		upidData[i] = 0xBB // CSME part
 	}
 
-	upid, err := NewUPID(upidData)
+	upid, err := NewUPID(upidData, PlatformIDTypeBinary)
 	if err != nil {
 		t.Fatalf("NewUPID() failed: %v", err)
 	}
@@ -309,21 +312,26 @@ func TestUPIDStringFormatting(t *testing.T) {
 	upidData[32] = 0xAB
 	upidData[33] = 0xCD
 
-	upid, err := NewUPID(upidData)
+	upid, err := NewUPID(upidData, PlatformIDTypePrintableString)
 	if err != nil {
 		t.Fatalf("NewUPID() failed: %v", err)
 	}
 
 	str := upid.String()
 
-	// Verify the string starts with our test values (uppercase hex)
-	if len(str) < 4 {
-		t.Fatal("UPID string too short")
+	// Verify the string starts with the header
+	if !contains(str, "---UPID---") {
+		t.Fatal("UPID string should start with ---UPID---")
 	}
 
-	// First 4 hex chars should be "ABCD" (CSME Platform ID is displayed first per Intel spec)
-	if str[0:4] != "ABCD" {
-		t.Errorf("UPID string doesn't start with expected hex: got %s, want ABCD...", str[0:4])
+	// Verify CSME ID is present
+	if !contains(str, "CSME ID") {
+		t.Fatal("UPID string should contain CSME ID label")
+	}
+
+	// Verify hex values are uppercase
+	if !contains(str, "ABCD") {
+		t.Error("UPID string should contain uppercase ABCD hex values")
 	}
 
 	// Verify it contains newline and spaces for second line formatting

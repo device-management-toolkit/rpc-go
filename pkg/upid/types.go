@@ -5,7 +5,10 @@
 
 package upid
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // UPID constants
 const (
@@ -118,11 +121,13 @@ type PlatformIDGetResponse struct {
 // UPID represents the Intel Unique Platform Identifier
 type UPID struct {
 	// Full 64-byte UPID
-	Raw []byte `json:"raw"`
+	Raw []byte `json:"-"`
 	// OEMPlatformID is the first 32 bytes
-	OEMPlatformID []byte `json:"oemPlatformID"`
+	OEMPlatformID []byte `json:"-"`
 	// HWSerialNum is the second 32 bytes
-	HWSerialNum []byte `json:"hwSerialNum"`
+	HWSerialNum []byte `json:"-"`
+	// PlatformIdType indicates the type of OEM Platform ID (0=Not Set, 1=Binary, 2=Printable String)
+	PlatformIdType uint32 `json:"platformIdType"`
 }
 
 // Interface defines the operations for Intel UPID
@@ -133,21 +138,21 @@ type Interface interface {
 	GetUPID() (*UPID, error)
 }
 
-// NewUPID creates a new UPID structure from raw 64-byte data
-func NewUPID(raw []byte) (*UPID, error) {
+// NewUPID creates a new UPID structure from raw 64-byte data and platform ID type
+func NewUPID(raw []byte, platformIdType uint32) (*UPID, error) {
 	if len(raw) != UPIDSize {
 		return nil, errors.New("invalid UPID size")
 	}
 
 	return &UPID{
-		Raw:           raw,
-		OEMPlatformID: raw[:OEMPlatformIDSize],
-		HWSerialNum:   raw[OEMPlatformIDSize:],
+		Raw:            raw,
+		OEMPlatformID:  raw[:OEMPlatformIDSize],
+		HWSerialNum:    raw[OEMPlatformIDSize:],
+		PlatformIdType: platformIdType,
 	}, nil
 }
 
-// String returns a hex-encoded string representation of the full UPID
-// For text output, formats with newlines when both IDs are present
+// String returns a hex-encoded string representation of the UPID with labels
 func (u *UPID) String() string {
 	if u == nil || u.Raw == nil {
 		return ""
@@ -164,37 +169,40 @@ func (u *UPID) String() string {
 		}
 	}
 
-	// If OEM Platform ID is not provisioned, only show CSME Platform ID
-	if oemAllZeros {
-		result := ""
-		for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
-			result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
-		}
+	// Build CSME ID string (bytes 32-63)
+	csmeID := ""
+	for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
+		csmeID += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+	}
 
+	// Get platform ID type string
+	platformTypeStr := u.getPlatformIdTypeString()
+
+	// Build result starting with header
+	result := "---UPID---\nOEM_PLATFORM_ID_TYPE    : " + platformTypeStr
+
+	// If OEM Platform ID is not provisioned, show empty OEM ID
+	if oemAllZeros {
+		result += "\nOEM ID                  :\nCSME ID                 : " + csmeID
 		return result
 	}
 
-	// Otherwise show both Intel CSME and OEM Platform IDs on separate lines (Intel CSME first per Intel UPID Attestation SDK Documentation)
-	result := ""
-	// First line: Intel CSME Platform ID (bytes 32-63)
-	for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
-		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
-	}
-
-	result += "\n          "
-	// Second line: OEM Platform ID (bytes 0-31)
+	// Build OEM ID string (bytes 0-31)
+	oemID := ""
 	for i := 0; i < OEMPlatformIDSize; i++ {
-		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+		oemID += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
 	}
 
+	// Show both OEM and CSME IDs
+	result += "\nOEM ID                  : " + oemID + "\nCSME ID                 : " + csmeID
 	return result
 }
 
 // MarshalJSON implements custom JSON marshaling for UPID
-// Returns a single continuous hex string without newlines (CSME first, then OEM)
+// Returns a structured object with oemId, csmeId, and optionally oemPlatformIdType fields
 func (u *UPID) MarshalJSON() ([]byte, error) {
 	if u == nil || u.Raw == nil {
-		return []byte(`""`), nil
+		return []byte(`{}`), nil
 	}
 
 	// Check if OEM Platform ID is all zeros (not provisioned)
@@ -208,22 +216,42 @@ func (u *UPID) MarshalJSON() ([]byte, error) {
 		}
 	}
 
-	result := "\""
-	// Always show CSME Platform ID first (bytes 32-63)
+	// Build CSME ID string (bytes 32-63)
+	csmeID := ""
 	for i := OEMPlatformIDSize; i < len(u.Raw); i++ {
-		result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+		csmeID += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
 	}
 
-	// If OEM Platform ID is provisioned, append it (bytes 0-31)
-	if !oemAllZeros {
-		for i := 0; i < OEMPlatformIDSize; i++ {
-			result += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
-		}
+	// Get platform ID type string
+	platformIdTypeStr := u.getPlatformIdTypeString()
+
+	// If OEM Platform ID is not provisioned, include empty oemId with type
+	if oemAllZeros {
+		return []byte(`{"oemPlatformIdType":"` + platformIdTypeStr + `","oemId":"","csmeId":"` + csmeID + `"}`), nil
 	}
 
-	result += "\""
+	// Build OEM ID string (bytes 0-31)
+	oemID := ""
+	for i := 0; i < OEMPlatformIDSize; i++ {
+		oemID += hexChar(u.Raw[i]>>4) + hexChar(u.Raw[i]&0x0F)
+	}
 
-	return []byte(result), nil
+	// Return oemPlatformIdType, oemId, and csmeId
+	return []byte(`{"oemPlatformIdType":"` + platformIdTypeStr + `","oemId":"` + oemID + `","csmeId":"` + csmeID + `"}`), nil
+}
+
+// getPlatformIdTypeString converts the platform ID type to a human-readable string
+func (u *UPID) getPlatformIdTypeString() string {
+	switch u.PlatformIdType {
+	case PlatformIDTypeNotSet:
+		return "Not Set (0)"
+	case PlatformIDTypeBinary:
+		return "Binary (1)"
+	case PlatformIDTypePrintableString:
+		return "Printable String (2)"
+	default:
+		return fmt.Sprintf("Unknown (%d)", u.PlatformIdType)
+	}
 }
 
 func hexChar(n byte) string {

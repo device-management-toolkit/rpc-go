@@ -172,7 +172,6 @@ type InfoResult struct {
 	SKU               string                       `json:"sku,omitempty"`
 	Features          string                       `json:"features,omitempty"`
 	UUID              string                       `json:"uuid,omitempty"`
-	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
@@ -181,6 +180,7 @@ type InfoResult struct {
 	RAS               *amt.RemoteAccessStatus      `json:"ras,omitempty"`
 	WiredAdapter      *amt.InterfaceSettings       `json:"wiredAdapter,omitempty"`
 	WirelessAdapter   *amt.InterfaceSettings       `json:"wirelessAdapter,omitempty"`
+	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	CertificateHashes map[string]amt.CertHashEntry `json:"certificateHashes,omitempty"`
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 }
@@ -560,10 +560,6 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
 	}
 
-	if (showAll || cmd.UPID) && result.UPID != nil {
-		fmt.Printf("UPID\t\t\t: %s\n", result.UPID.String())
-	}
-
 	if (showAll || cmd.Mode) && result.ControlMode != "" {
 		fmt.Printf("Control Mode\t\t: %s\n", result.ControlMode)
 	}
@@ -609,6 +605,11 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("AMT IP Address\t\t: %s\n", result.WirelessAdapter.IPAddress)
 		fmt.Printf("OS IP Address\t\t: %s\n", result.WirelessAdapter.OsIPAddress)
 		fmt.Printf("MAC Address\t\t: %s\n", result.WirelessAdapter.MACAddress)
+	}
+
+	// Output UPID information
+	if (showAll || cmd.UPID) && result.UPID != nil {
+		fmt.Println(result.UPID.String())
 	}
 
 	// Output certificate hashes (system certs)
