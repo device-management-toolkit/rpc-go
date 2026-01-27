@@ -114,6 +114,21 @@ func (mr *MockInterfaceMockRecorder) GetControlMode() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetControlMode", reflect.TypeOf((*MockInterface)(nil).GetControlMode))
 }
 
+// GetProvisioningState mocks base method.
+func (m *MockInterface) GetProvisioningState() (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProvisioningState")
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProvisioningState indicates an expected call of GetProvisioningState.
+func (mr *MockInterfaceMockRecorder) GetProvisioningState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProvisioningState", reflect.TypeOf((*MockInterface)(nil).GetProvisioningState))
+}
+
 // GetDNSSuffix mocks base method.
 func (m *MockInterface) GetDNSSuffix() (string, error) {
 	m.ctrl.T.Helper()

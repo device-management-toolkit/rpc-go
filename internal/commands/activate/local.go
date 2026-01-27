@@ -585,13 +585,13 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 		}
 	}
 	// Get provisioning certificate object
-	certObject, fingerPrint, err := service.getProvisioningCertObj()
+	certObject, err := service.getProvisioningCertObj()
 	if err != nil {
 		return err
 	}
 
 	// Check provisioning certificate is accepted by AMT
-	err = service.compareCertHashes(fingerPrint)
+	err = service.compareCertHashes()
 	if err != nil {
 		return err
 	}
@@ -723,28 +723,28 @@ func (service *LocalActivationService) startSecureHostBasedConfiguration(certsAn
 }
 
 // getProvisioningCertObj gets the provisioning certificate object
-func (service *LocalActivationService) getProvisioningCertObj() (ProvisioningCertObj, string, error) {
+func (service *LocalActivationService) getProvisioningCertObj() (ProvisioningCertObj, error) {
 	certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 	if err != nil {
-		return ProvisioningCertObj{}, "", err
+		return ProvisioningCertObj{}, err
 	}
 
-	result, fingerprint, err := service.dumpPfx(certsAndKeys)
+	result, err := service.dumpPfx(certsAndKeys)
 	if err != nil {
-		return ProvisioningCertObj{}, "", err
+		return ProvisioningCertObj{}, err
 	}
 
-	return result, fingerprint, nil
+	return result, nil
 }
 
 // dumpPfx processes the PFX certificate object
-func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
+func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, error) {
 	if len(pfxobj.certs) == 0 {
-		return ProvisioningCertObj{}, "", utils.ActivationFailedNoCertFound
+		return ProvisioningCertObj{}, utils.ActivationFailedNoCertFound
 	}
 
 	if len(pfxobj.keys) == 0 {
-		return ProvisioningCertObj{}, "", utils.ActivationFailedNoPrivKeys
+		return ProvisioningCertObj{}, utils.ActivationFailedNoPrivKeys
 	}
 
 	var (
@@ -774,7 +774,7 @@ func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (Provisionin
 	}
 
 	if fingerprint == "" {
-		return provisioningCertificateObj, "", utils.ActivationFailedNoRootCertFound
+		return provisioningCertificateObj, utils.ActivationFailedNoRootCertFound
 	}
 
 	// Add them to the certChain in order
@@ -788,12 +788,12 @@ func (service *LocalActivationService) dumpPfx(pfxobj CertsAndKeys) (Provisionin
 	// Add the certificate algorithm
 	provisioningCertificateObj.certificateAlgorithm = pfxobj.certs[0].SignatureAlgorithm
 
-	return provisioningCertificateObj, fingerprint, nil
+	return provisioningCertificateObj, nil
 }
 
 // compareCertHashes compares certificate hash with AMT stored hashes
 // Computes both SHA-256 and SHA-384 fingerprints to support different AMT platforms
-func (service *LocalActivationService) compareCertHashes(fingerPrint string) error {
+func (service *LocalActivationService) compareCertHashes() error {
 	// Get certificate object to compute multiple hash algorithms
 	certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
 	if err != nil {

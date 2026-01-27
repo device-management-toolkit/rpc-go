@@ -102,8 +102,9 @@ func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState)
 	return SetOperationsStateStatus, SetOperationsStateError
 }
 
-func (c MockPTHICommands) GetControlMode() (state int, err error)   { return 0, nil }
-func (c MockPTHICommands) GetDNSSuffix() (suffix string, err error) { return "Test", nil }
+func (c MockPTHICommands) GetControlMode() (state int, err error)       { return 0, nil }
+func (c MockPTHICommands) GetProvisioningState() (state int, err error) { return 0, nil }
+func (c MockPTHICommands) GetDNSSuffix() (suffix string, err error)     { return "Test", nil }
 func (c MockPTHICommands) GetCertificateHashes(hashHandles pthi.AMTHashHandles) (hashEntryList []pthi.CertHashEntry, err error) {
 	return []pthi.CertHashEntry{{
 		CertificateHash: [64]uint8{84, 101, 115, 116},
