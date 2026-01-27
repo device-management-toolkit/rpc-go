@@ -339,6 +339,14 @@ func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParamet
 	return amt.SecureHBasedResponse{}, nil
 }
 
+func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	if m.shouldErrorOn == "StopConfiguration" {
+		return amt.StopConfigurationResponse{}, errors.New("mock error")
+	}
+
+	return amt.StopConfigurationResponse{Status: "Success"}, nil
+}
+
 func TestLocalActivationService_validateAMTState(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -517,9 +525,9 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:          "error during unprovision",
+			name:          "error during StopConfiguration",
 			jsonOutput:    false,
-			shouldErrorOn: "Unprovision",
+			shouldErrorOn: "StopConfiguration",
 			wantErr:       true,
 		},
 	}

@@ -176,17 +176,16 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 		}
 	}
 
-	// Call unprovision to stop configuration
-	mode, err := amtCmd.Unprovision()
-	if err != nil {
-		return fmt.Errorf("failed to stop configuration: %w", err)
+	// Call StopConfiguration to clean up host-based config state
+	_, stopErr := amtCmd.StopConfiguration()
+	if stopErr != nil {
+		return fmt.Errorf("failed to stop configuration: %w", stopErr)
 	}
 
 	if ctx.JsonOutput {
 		result := map[string]interface{}{
 			"status":  "success",
 			"message": "AMT configuration stopped",
-			"mode":    mode,
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -199,7 +198,7 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 		return nil
 	}
 
-	fmt.Printf("AMT configuration stopped successfully (mode: %d)\n", mode)
+	fmt.Println("AMT configuration stopped successfully")
 
 	return nil
 }
