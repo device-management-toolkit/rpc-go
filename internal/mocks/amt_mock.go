@@ -277,3 +277,18 @@ func (mr *MockInterfaceMockRecorder) Unprovision() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unprovision", reflect.TypeOf((*MockInterface)(nil).Unprovision))
 }
+
+// StopConfiguration mocks base method.
+func (m *MockInterface) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopConfiguration")
+	ret0, _ := ret[0].(amt.StopConfigurationResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StopConfiguration indicates an expected call of StopConfiguration.
+func (mr *MockInterfaceMockRecorder) StopConfiguration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopConfiguration", reflect.TypeOf((*MockInterface)(nil).StopConfiguration))
+}
