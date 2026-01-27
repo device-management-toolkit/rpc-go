@@ -269,6 +269,11 @@ type GetControlModeResponse struct {
 	State  uint32
 }
 
+type GetProvisioningStateResponse struct {
+	Header            ResponseMessageHeader
+	ProvisioningState uint32 // AMT_PROVISIONING_STATE enum
+}
+
 type UnprovisionRequest struct {
 	Header MessageHeader
 	Mode   uint32

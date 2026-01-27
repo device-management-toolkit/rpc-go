@@ -24,14 +24,33 @@ func TestInterpretControlMode(t *testing.T) {
 		input    int
 		expected string
 	}{
-		{"Mode0", 0, "pre-provisioning state"},
-		{"Mode1", 1, "activated in client control mode"},
-		{"Mode2", 2, "activated in admin control mode"},
-		{"Mode3", 3, "unknown state"},
+		{"Mode0", 0, "not activated"},
+		{"Mode1", 1, "client control mode"},
+		{"Mode2", 2, "admin control mode"},
+		{"Mode3", 3, "unknown control mode"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := InterpretControlMode(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestInterpretProvisioningState(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int
+		expected string
+	}{
+		{"State0", 0, "pre-provisioning"},
+		{"State1", 1, "in provisioning"},
+		{"State2", 2, "post-provisioning"},
+		{"State3", 3, "unknown provisioning state"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := InterpretProvisioningState(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

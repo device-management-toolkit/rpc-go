@@ -237,6 +237,14 @@ func (m *MockAMTCommand) GetControlMode() (int, error) {
 	return m.controlMode, nil
 }
 
+func (m *MockAMTCommand) GetProvisioningState() (int, error) {
+	if m.shouldErrorOn == "GetProvisioningState" {
+		return 0, errors.New("mock error")
+	}
+
+	return 0, nil
+}
+
 func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
 	if m.shouldErrorOn == "GetChangeEnabled" {
 		return amt.ChangeEnabledResponse(0), errors.New("mock error")
@@ -329,6 +337,14 @@ func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error)
 
 func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
 	return amt.SecureHBasedResponse{}, nil
+}
+
+func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	if m.shouldErrorOn == "StopConfiguration" {
+		return amt.StopConfigurationResponse{}, errors.New("mock error")
+	}
+
+	return amt.StopConfigurationResponse{Status: "Success"}, nil
 }
 
 func TestLocalActivationService_validateAMTState(t *testing.T) {
@@ -509,9 +525,9 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:          "error during unprovision",
+			name:          "error during StopConfiguration",
 			jsonOutput:    false,
-			shouldErrorOn: "Unprovision",
+			shouldErrorOn: "StopConfiguration",
 			wantErr:       true,
 		},
 	}
@@ -825,7 +841,7 @@ func TestLocalActivationService_dumpPfx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := service.dumpPfx(tt.pfxobj)
+			_, err := service.dumpPfx(tt.pfxobj)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("dumpPfx() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -874,7 +890,7 @@ func TestLocalActivationService_compareCertHashes(t *testing.T) {
 				},
 			}
 
-			err := service.compareCertHashes(tt.fingerprint)
+			err := service.compareCertHashes()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("compareCertHashes() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -1001,7 +1017,7 @@ func TestLocalActivationService_getProvisioningCertObj(t *testing.T) {
 		},
 	}
 
-	_, _, err := service.getProvisioningCertObj()
+	_, err := service.getProvisioningCertObj()
 	if err == nil {
 		t.Error("getProvisioningCertObj() should fail with invalid certificate")
 	}
@@ -1260,7 +1276,7 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 				},
 			}
 
-			err := service.compareCertHashes("test-fingerprint")
+			err := service.compareCertHashes()
 
 			// We expect an error during certificate conversion, which is acceptable
 			// This test primarily documents the multi-algorithm logic

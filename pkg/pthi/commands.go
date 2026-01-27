@@ -26,6 +26,7 @@ type Interface interface {
 	GetCodeVersions() (GetCodeVersionsResponse, error)
 	GetUUID() (uuid string, err error)
 	GetControlMode() (state int, err error)
+	GetProvisioningState() (state int, err error)
 	GetIsAMTEnabled() (uint8, error)
 	SetAmtOperationalState(state AMTOperationalState) (Status, error)
 	GetDNSSuffix() (suffix string, err error)
@@ -203,6 +204,30 @@ func (pthi Command) GetControlMode() (state int, err error) {
 	binary.Read(buf2, binary.LittleEndian, &response.State)
 
 	return int(response.State), nil
+}
+
+func (pthi Command) GetProvisioningState() (state int, err error) {
+	command := GetRequest{
+		Header: CreateRequestHeader(PROVISIONING_STATE_REQUEST, 0),
+	}
+
+	var bin_buf bytes.Buffer
+
+	binary.Write(&bin_buf, binary.LittleEndian, command)
+
+	result, err := pthi.Call(bin_buf.Bytes(), GET_REQUEST_SIZE)
+	if err != nil {
+		return -1, err
+	}
+
+	buf2 := bytes.NewBuffer(result)
+	response := GetProvisioningStateResponse{
+		Header: ReadHeaderResponse(buf2),
+	}
+
+	binary.Read(buf2, binary.LittleEndian, &response.ProvisioningState)
+
+	return int(response.ProvisioningState), nil
 }
 
 func (pthi Command) GetIsAMTEnabled() (uint8, error) {

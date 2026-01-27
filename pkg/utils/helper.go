@@ -27,13 +27,26 @@ var ErrUnsupportedCertAlgorithm = errors.New("unsupported certificate algorithm"
 func InterpretControlMode(mode int) string {
 	switch mode {
 	case 0:
-		return "pre-provisioning state"
+		return "not activated"
 	case 1:
-		return "activated in client control mode"
+		return "client control mode"
 	case 2:
-		return "activated in admin control mode"
+		return "admin control mode"
 	default:
-		return unknown + " state"
+		return unknown + " control mode"
+	}
+}
+
+func InterpretProvisioningState(state int) string {
+	switch state {
+	case 0:
+		return "pre-provisioning"
+	case 1:
+		return "in provisioning"
+	case 2:
+		return "post-provisioning"
+	default:
+		return unknown + " provisioning state"
 	}
 }
 
