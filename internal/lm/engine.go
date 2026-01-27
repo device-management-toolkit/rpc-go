@@ -162,6 +162,7 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 			// Handle known recoverable errors by returning early
 			if res.err != nil && (res.err.Error() == "empty response from AMT" || res.err.Error() == "no such device") {
 				log.Warn("AMT Unavailable, retrying...")
+
 				return nil
 			} else if res.err != nil {
 				return res.err
@@ -178,16 +179,19 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 				default:
 				}
 			}
+
 			timer.Reset(executionTimeout)
 
 			// If no more data to process, execution is complete
 			if bin_buf.Len() == 0 {
 				log.Debug("done EXECUTING.........")
+
 				return nil
 			}
 		case <-timer.C:
 			// Timeout expired - terminate execution to prevent infinite wait
 			log.Warnf("Execution timeout after %v", executionTimeout)
+
 			return nil
 		}
 	}
