@@ -184,6 +184,7 @@ func (u *UPID) String() string {
 	// If OEM Platform ID is not provisioned, show empty OEM ID
 	if oemAllZeros {
 		result += "\nOEM ID                  :\nCSME ID                 : " + csmeID
+
 		return result
 	}
 
@@ -195,6 +196,7 @@ func (u *UPID) String() string {
 
 	// Show both OEM and CSME IDs
 	result += "\nOEM ID                  : " + oemID + "\nCSME ID                 : " + csmeID
+
 	return result
 }
 
