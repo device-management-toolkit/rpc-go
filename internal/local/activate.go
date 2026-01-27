@@ -115,6 +115,18 @@ func (service *ProvisioningService) setupWsmanWithConfig(username, password stri
 }
 
 func (service *ProvisioningService) Activate() error {
+	// Log all service flags
+	log.WithFields(log.Fields{
+		"ControlMode":        service.flags.ControlMode,
+		"UseACM":             service.flags.UseACM,
+		"UseCCM":             service.flags.UseCCM,
+		"LocalTlsEnforced":   service.flags.LocalTlsEnforced,
+		"SkipCertCheck":      service.flags.SkipCertCheck,
+		"SkipAmtCertCheck":   service.flags.SkipAmtCertCheck,
+		"SkipIPRenew":        service.flags.SkipIPRenew,
+		"NewPassword":        "[REDACTED]",
+	}).Debug("Activation flags")
+
 	// Check if the device is already activated
 	if service.flags.ControlMode != ControlModePreProvisioning {
 		log.Error("Device is already activated")

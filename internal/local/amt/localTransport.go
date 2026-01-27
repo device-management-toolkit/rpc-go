@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/sirupsen/logrus"
@@ -40,9 +41,15 @@ func NewLocalTransport() *LocalTransport {
 	// defer close(lmErrorChannel)
 	// defer close(lmStatus)
 
+	logrus.Debug("LocalTransport - Initializing LME connection")
+	start := time.Now()
 	err := lm.local.Initialize()
+	elapsed := time.Since(start)
+
 	if err != nil {
-		logrus.Error(err)
+		logrus.Errorf("LocalTransport - Initialize failed after %v: %v", elapsed, err)
+	} else {
+		logrus.Debugf("LocalTransport - Initialize completed in %v", elapsed)
 	}
 
 	return lm

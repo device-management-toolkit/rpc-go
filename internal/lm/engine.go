@@ -39,6 +39,7 @@ func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *
 }
 
 func (lme *LMEConnection) Initialize() error {
+	log.Debug("Initalizing LME Connection with Protocol Version 1.0.9")
 	err := lme.Command.Open(true)
 	if err != nil {
 		log.Error(err)
