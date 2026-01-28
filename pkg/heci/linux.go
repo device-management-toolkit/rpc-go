@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"os"
 	"syscall"
+	"time"
 	"unsafe"
 
 	log "github.com/sirupsen/logrus"
@@ -42,20 +43,65 @@ func NewDriver() *Driver {
 	return &Driver{}
 }
 
+// ResetMEIDevice attempts to reset MEI device state by waiting for it to become available
+func (heci *Driver) ResetMEIDevice() error {
+	if heci.meiDevice != nil {
+		heci.meiDevice.Close()
+		heci.meiDevice = nil
+	}
+
+	log.Debug("Waiting for MEI device to reset...")
+	time.Sleep(10 * time.Second)
+
+	return nil
+}
+
 func (heci *Driver) Init(useLME, useWD bool) error {
 	var err error
 
-	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
-	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
-			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
-			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			log.Error("Cannot open MEI Device")
+	// Close existing connection if switching to LME to ensure clean state
+	if heci.meiDevice != nil && useLME {
+		heci.meiDevice.Close()
+		heci.meiDevice = nil
+
+		time.Sleep(3 * time.Second)
+	}
+
+	// For PTHI/WD, always reopen to ensure fresh connection
+	// For LME, only open if not already open
+	if !useLME || heci.meiDevice == nil {
+		// Close any existing connection for PTHI
+		if heci.meiDevice != nil && !useLME {
+			heci.meiDevice.Close()
+			heci.meiDevice = nil
 		}
 
-		return err
+		// Open MEI device with retry for device busy
+		for attempt := 1; attempt <= 2; attempt++ {
+			heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
+			if err == nil {
+				break
+			}
+
+			if err.Error() == "open /dev/mei0: permission denied" {
+				log.Error("need administrator privileges")
+
+				return err
+			} else if err.Error() == "open /dev/mei0: no such file or directory" {
+				log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+
+				return err
+			} else if err.Error() == "open /dev/mei0: device or resource busy" && attempt == 1 {
+				log.Debug("MEI device busy, waiting before retry...")
+				time.Sleep(5 * time.Second)
+
+				continue
+			} else {
+				log.Error("Cannot open MEI Device")
+
+				return err
+			}
+		}
 	}
 
 	data := CMEIConnectClientData{}
@@ -67,14 +113,7 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		data.data = MEI_IAMTHIF
 	}
 
-	// we try up to 3 times in case the resource/device is still busy from previous call.
-	for i := 0; i < 3; i++ {
-		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
-		if err == nil {
-			break
-		}
-	}
-
+	err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 	if err != nil {
 		return err
 	}
@@ -97,30 +136,76 @@ func (heci *Driver) GetBufferSize() uint32 {
 }
 
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
-	size, err := syscall.Write(int(heci.meiDevice.Fd()), buffer)
-	if err != nil {
+	// Validate file descriptor before attempting write
+	if heci.meiDevice == nil {
+		return 0, syscall.EBADF
+	}
+
+	// Retry write operations on interrupted system call
+	for i := 0; i < 3; i++ {
+		size, err := syscall.Write(int(heci.meiDevice.Fd()), buffer)
+		if err == nil {
+			return size, nil
+		}
+
+		// Retry on interrupted system call
+		if err == syscall.EINTR {
+			time.Sleep(50 * time.Millisecond)
+
+			continue
+		}
+
 		return 0, err
 	}
 
-	return size, nil
+	return 0, syscall.EINTR
 }
 
 func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
-	read, err := unix.Read(int(driver.meiDevice.Fd()), buffer)
-	if err != nil {
+	// Validate file descriptor before attempting read
+	if driver.meiDevice == nil {
+		return 0, syscall.EBADF
+	}
+
+	// Retry read operations on interrupted system call
+	for i := 0; i < 3; i++ {
+		read, err := unix.Read(int(driver.meiDevice.Fd()), buffer)
+		if err == nil {
+			return read, nil
+		}
+
+		// Retry on interrupted system call
+		if err == syscall.EINTR {
+			time.Sleep(50 * time.Millisecond)
+
+			continue
+		}
+
 		return 0, err
 	}
 
-	return read, nil
+	return 0, syscall.EINTR
 }
 
 func Ioctl(fd, op, arg uintptr) error {
-	_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
-	if ep != 0 {
+	// Retry IOCTL on interrupted system call (EINTR)
+	for i := 0; i < 3; i++ {
+		_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
+		if ep == 0 {
+			return nil
+		}
+
+		// Retry on interrupted system call (EINTR = 4)
+		if ep == syscall.EINTR {
+			time.Sleep(100 * time.Millisecond)
+
+			continue
+		}
+
 		return ep
 	}
 
-	return nil
+	return syscall.EINTR
 }
 
 func (heci *Driver) Close() {
