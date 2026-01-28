@@ -126,14 +126,14 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	return nil, nil, perr
 }
 
-// PrintHelp prints contextual help without invoking the help flag exit path.
+// PrintHelp prints contextual help by appending --help to the args and re-parsing.
+// This leverages Kong's built-in help mechanism which handles partial command trees safely.
 func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
-	ctx, err := kong.Trace(parser, args)
-	if err != nil {
-		return err
-	}
+	// Append --help to trigger Kong's help output
+	helpArgs := append(args, "--help")
+	_, _ = parser.Parse(helpArgs)
 
-	return kong.DefaultHelpPrinter(opts, ctx)
+	return nil
 }
 
 // Execute runs the parsed command with proper context
