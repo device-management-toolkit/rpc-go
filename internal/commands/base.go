@@ -84,7 +84,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
