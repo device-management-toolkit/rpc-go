@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -62,6 +63,7 @@ type LocalActivationConfig struct {
 	DNS                 string
 	Hostname            string
 	AMTPassword         string
+	MEBxPassword        string
 	ProvisioningCert    string
 	ProvisioningCertPwd string
 	FriendlyName        string
@@ -553,12 +555,57 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 
 // activateACMWithTLS performs ACM activation with TLS (new cleaner path)
 func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config) error {
-	// For TLS path, we just change the AMT password and commit
+	// For TLS path, we need to update the AMT password and then commit
 	// Setup WSMAN client with admin credentials, reusing the TLS config that has client certs
 	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
+
+	// Get general settings to obtain digest realm for password hashing
+	generalSettings, err := service.wsman.GetGeneralSettings()
+	if err != nil {
+		return fmt.Errorf("failed to get AMT general settings: %w", err)
+	}
+
+	// Create authentication challenge with new password
+	challenge := client.AuthChallenge{
+		Username: utils.AMTUserName,
+		Password: service.config.AMTPassword,
+		Realm:    generalSettings.Body.GetResponse.DigestRealm,
+	}
+
+	// Hash the credentials
+	hashedMessage := challenge.HashCredentials()
+
+	// Decode hex string to bytes
+	hashBytes, err := hex.DecodeString(hashedMessage)
+	if err != nil {
+		return fmt.Errorf("failed to decode hex string: %w", err)
+	}
+
+	// Encode to base64
+	encodedPassword := base64.StdEncoding.EncodeToString(hashBytes)
+
+	// Update the AMT password
+	_, err = service.wsman.UpdateAMTPassword(encodedPassword)
+	if err != nil {
+		return fmt.Errorf("failed to update AMT password: %w", err)
+	}
+
+	log.Info("Successfully updated AMT Password.")
+
+	// Set up MEBx with the provided password.
+	response, err := service.wsman.SetupMEBX(service.config.MEBxPassword)
+	log.Trace(response)
+
+	if err != nil {
+		log.Error("Failed to configure MEBx Password:", err)
+
+		return err
+	}
+
+	log.Info("Successfully updated MEBx Password.")
 
 	// Commit changes
 	result, err := service.wsman.CommitChanges()
@@ -569,6 +616,7 @@ func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config)
 	}
 
 	log.Debug(result)
+	log.Debug("AMT activation complete")
 
 	return nil
 }
