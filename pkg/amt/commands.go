@@ -130,6 +130,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	StopConfiguration() (StopConfigurationResponse, error)
+	GetCiraLog() (pthi.GetCiraLogResponse, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -545,4 +546,20 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 	}
 
 	return response, nil
+}
+
+func (amt AMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetCiraLog()
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	return result, nil
 }

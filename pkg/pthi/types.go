@@ -203,6 +203,11 @@ const (
 	START_CONFIGURATION_HBASED_RESPONSE = 0x480008b
 )
 
+const (
+	GET_CIRA_LOG_REQUEST  = 0x400008e
+	GET_CIRA_LOG_RESPONSE = 0x480008e
+)
+
 type AMTUnicodeString struct {
 	Length uint16
 	String [UNICODE_STRING_LEN]uint8
@@ -423,4 +428,122 @@ type StopConfigurationRequest struct {
 
 type StopConfigurationResponse struct {
 	Header ResponseMessageHeader
+}
+
+// CIRA Log structures
+const (
+	MAX_IPV6_ADDRESSES     = 5
+	MAX_CONNECTION_DETAILS = 2
+)
+
+type GetCiraLogRequest struct {
+	Header  MessageHeader
+	Version uint8
+}
+
+type IPv6Address struct {
+	Address [16]uint8
+}
+
+type IPv6AddressEntry struct {
+	Address IPv6Address
+	Type    uint8
+	State   uint8
+}
+
+type IPParameters struct {
+	DhcpMode              uint8
+	IpAddress             uint32
+	DefaultGatewayAddress uint32
+	PrimaryDnsAddress     uint32
+	SecondaryDnsAddress   uint32
+	DomainName            AMTANSIString
+	IPv6DefaultRouter     IPv6Address
+	PrimaryDNS            IPv6Address
+	SecondaryDNS          IPv6Address
+	IPv6AddressesCount    uint32
+	IPv6Addresses         [MAX_IPV6_ADDRESSES]IPv6AddressEntry
+}
+
+type InterfaceData struct {
+	InterfacePresent uint8
+	LinkStatus       uint8
+	IPParameters     IPParameters
+}
+
+type WirelessAdditionalData struct {
+	ProfileName AMTANSIString
+	HostControl uint8
+}
+
+type WiredAdditionalData struct {
+	AuthResult802_1x    uint8
+	AuthSubResult802_1x uint8
+	WiredMediaType      uint8
+	DiscreteLanStatus   uint8
+}
+
+type ConnectionDetail struct {
+	ConnectionStatus uint8
+	ProxyUsed        uint8
+	ProxyName        AMTANSIString
+	TcpFailureCode   uint8
+	TlsFailureCode   uint8
+}
+
+type TunnelClosureInfo struct {
+	ClosureTimestamp      uint32
+	ClosedByMps           uint8
+	APF_DISCONNECT_REASON uint8
+	ClosureReason         uint8
+}
+
+type CIRATunnelLogEntry struct {
+	Valid                         uint8
+	OpenTimestamp                 uint32
+	RemoteAccessConnectionTrigger uint8
+	MpsHostname                   AMTANSIString
+	ProxyUsed                     uint8
+	ProxyName                     AMTANSIString
+	AuthenticationMethod          uint8
+	ConnectedInterface            uint8
+	LastKeepAlive                 uint32
+	KeepAliveInterval             uint32
+	TunnelClosureInfo             TunnelClosureInfo
+}
+
+type CIRAFailedConnectionLogEntry struct {
+	Valid                         uint8
+	OpenTimestamp                 uint32
+	RemoteAccessConnectionTrigger uint8
+	MpsHostname                   AMTANSIString
+	AuthenticationMethod          uint8
+	InterfaceDataCount            uint32
+	InterfaceData                 [2]InterfaceData
+	WirelessAdditionalData        WirelessAdditionalData
+	WiredAdditionalData           WiredAdditionalData
+	ConnectedInterface            uint8
+	ConnectionDetailsCount        uint32
+	ConnectionDetails             [MAX_CONNECTION_DETAILS]ConnectionDetail
+	TunnelEstablishmentFailure    TunnelClosureInfo
+}
+
+type CIRAStatusSummary struct {
+	IsTunnelOpened            uint8
+	CurrentConnectionState    uint8
+	LastKeepAlive             uint32
+	KeepAliveInterval         uint32
+	LastConnectionStatus      uint8
+	LastConnectionTimestamp   uint32
+	LastTunnelStatus          uint8
+	LastTunnelOpenedTimestamp uint32
+	LastTunnelClosedTimestamp uint32
+}
+
+type GetCiraLogResponse struct {
+	Header                   ResponseMessageHeader
+	Version                  uint8
+	CiraStatusSummary        CIRAStatusSummary
+	LastFailedTunnelLogEntry CIRATunnelLogEntry
+	FailedConnectionLogEntry CIRAFailedConnectionLogEntry
 }

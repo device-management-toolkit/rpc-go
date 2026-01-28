@@ -44,6 +44,7 @@ type CLI struct {
 	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
 	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	CiraLog    commands.CiraLogCmd    `cmd:"ciralog" help:"Display CIRA (Client Initiated Remote Access) connection log and status"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed
