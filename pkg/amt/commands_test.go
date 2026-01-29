@@ -164,11 +164,43 @@ func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationRe
 	return pthi.StopConfigurationResponse{}, nil
 }
 
+// MockHOTHAMCommands mocks HOTHAM interface for testing
+type MockHOTHAMCommands struct{}
+
+func (c MockHOTHAMCommands) Open() error {
+	if flag {
+		return errors.New("The handle is invalid.")
+	}
+
+	return nil
+}
+
+func (c MockHOTHAMCommands) Close() {}
+
+func (c MockHOTHAMCommands) Call(command []byte, commandSize int) (result []byte, err error) {
+	return nil, nil
+}
+
+func (c MockHOTHAMCommands) GetFlogSize() (size uint32, err error) {
+	return 12, nil
+}
+
+func (c MockHOTHAMCommands) GetFlog() ([]byte, error) {
+	// Return mock FLOG data for testing
+	mockFlogData := []byte{
+		0x46, 0x4C, 0x4F, 0x47, // "FLOG" magic
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+	}
+
+	return mockFlogData, nil
+}
+
 var amt AMTCommand
 
 func init() {
 	amt = AMTCommand{}
 	amt.PTHI = MockPTHICommands{}
+	amt.HOTHAM = MockHOTHAMCommands{}
 }
 
 func TestInitializeNoError(t *testing.T) {
@@ -386,4 +418,16 @@ func TestChangeEnabledResponse(t *testing.T) {
 			assert.Equal(t, tt.expectTransition, cer.IsTransitionAllowed())
 		})
 	}
+}
+
+func TestGetFlog(t *testing.T) {
+	result, err := amt.GetFlog()
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Greater(t, len(result), 0)
+	// Verify it contains the expected mock data
+	assert.Equal(t, byte(0x46), result[0]) // 'F'
+	assert.Equal(t, byte(0x4C), result[1]) // 'L'
+	assert.Equal(t, byte(0x4F), result[2]) // 'O'
+	assert.Equal(t, byte(0x47), result[3]) // 'G'
 }

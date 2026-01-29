@@ -24,6 +24,7 @@ require (
 	github.com/geoffgarside/ber v1.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/kr/text v0.1.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/zalando/go-keyring v0.2.6 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 )
