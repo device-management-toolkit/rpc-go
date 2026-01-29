@@ -33,6 +33,11 @@ func (c *MockHECICommands) Init(useLME, useWD bool) error {
 
 	return mockInitErr
 }
+
+func (c *MockHECICommands) InitHOTHAM() error {
+	return mockInitErr
+}
+
 func (c *MockHECICommands) GetBufferSize() uint32 { return 5120 } // MaxMessageLength
 
 func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
