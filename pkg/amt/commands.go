@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 // TODO: Ensure pointers are freed properly throughout this file
@@ -129,6 +131,7 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 }
 
@@ -142,12 +145,14 @@ func ANSI2String(ansi pthi.AMTANSIString) string {
 }
 
 type AMTCommand struct {
-	PTHI pthi.Interface
+	PTHI   pthi.Interface
+	HOTHAM hotham.Interface
 }
 
 func NewAMTCommand() AMTCommand {
 	return AMTCommand{
-		PTHI: pthi.NewCommand(),
+		PTHI:   pthi.NewCommand(),
+		HOTHAM: hotham.NewCommand(),
 	}
 }
 
@@ -545,4 +550,38 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 	}
 
 	return response, nil
+}
+
+// GetFlog retrieves the CSME Flash Log (FLOG)
+func (amt AMTCommand) GetFlog() ([]byte, error) {
+	err := amt.HOTHAM.Open()
+	if err != nil {
+		log.Errorf("Failed to open HOTHAM interface: %v", err)
+
+		return nil, err
+	}
+
+	defer amt.HOTHAM.Close()
+
+	// First try GetFlogSize to check if FLOG is supported
+	flogSize, err := amt.HOTHAM.GetFlogSize()
+	if err != nil {
+		log.Errorf("GetFlogSize failed: %v", err)
+
+		return nil, fmt.Errorf("GetFlogSize failed: %w", err)
+	}
+
+	log.Infof("FLOG size: %d bytes", flogSize)
+
+	// Retrieve the FLOG data
+	flogData, err := amt.HOTHAM.GetFlog()
+	if err != nil {
+		log.Errorf("Failed to get FLOG data: %v", err)
+
+		return nil, err
+	}
+
+	log.Debugf("Successfully retrieved %d bytes of FLOG data", len(flogData))
+
+	return flogData, nil
 }

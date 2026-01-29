@@ -339,6 +339,10 @@ func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParamet
 	return amt.SecureHBasedResponse{}, nil
 }
 
+func (m *MockAMTCommand) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
 func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, error) {
 	if m.shouldErrorOn == "StopConfiguration" {
 		return amt.StopConfigurationResponse{}, errors.New("mock error")

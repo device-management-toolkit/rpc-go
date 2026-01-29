@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	setupapi "github.com/device-management-toolkit/rpc-go/v2/pkg/windows"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 )
 
@@ -34,6 +35,7 @@ type Driver struct {
 	PTHIGUID       windows.GUID
 	LMEGUID        windows.GUID
 	WDGUID         windows.GUID
+	HOTHAMGUID     windows.GUID
 	clientGUID     *windows.GUID
 	clientGUIDSize uint32
 }
@@ -86,14 +88,46 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return err
 }
 
-func (heci *Driver) FindDevices() error {
-	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
+func (heci *Driver) InitHOTHAM() error {
+	var err error
+
+	log.Trace("InitHOTHAM (Windows): Starting initialization")
+
+	// HOTHAM GUID
+	heci.HOTHAMGUID, err = windows.GUIDFromString("{082EE5A7-7C25-470A-9643-0C06F0466EA1}")
 	if err != nil {
+		log.Errorf("InitHOTHAM (Windows): Failed to parse HOTHAM GUID: %v", err)
 		return err
 	}
 
+	log.Tracef("InitHOTHAM (Windows): HOTHAM GUID: %s", heci.HOTHAMGUID.String())
+	heci.clientGUID = &heci.HOTHAMGUID
+
+	log.Trace("InitHOTHAM (Windows): Finding HECI devices")
+	err = heci.FindDevices()
+	if err != nil {
+		log.Errorf("InitHOTHAM (Windows): Failed to find devices: %v", err)
+		return err
+	}
+
+	log.Tracef("InitHOTHAM (Windows): Successfully initialized, buffer size: %d", heci.bufferSize)
+	return nil
+}
+
+func (heci *Driver) FindDevices() error {
+	log.Trace("FindDevices (Windows): Looking for HECI device")
+
+	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
+	if err != nil {
+		log.Errorf("FindDevices (Windows): Failed to parse device GUID: %v", err)
+		return err
+	}
+
+	log.Tracef("FindDevices (Windows): Device GUID: %s", deviceGUID.String())
+
 	deviceInfo, err := setupapi.SetupDiGetClassDevs(&deviceGUID, nil, 0, setupapi.DIGCF_PRESENT|setupapi.DIGCF_DEVICEINTERFACE)
 	if err != nil {
+		log.Errorf("FindDevices (Windows): SetupDiGetClassDevs failed: %v", err)
 		return err
 	}
 
@@ -180,6 +214,9 @@ func (heci *Driver) GetHeciVersion() error {
 }
 
 func (heci *Driver) ConnectHeciClient() error {
+	log.Trace("ConnectHeciClient (Windows): Connecting to MEI client")
+	log.Tracef("ConnectHeciClient (Windows): Client GUID: %s", heci.clientGUID.String())
+
 	properties := MEIConnectClientData{}
 	propertiesPacked := CMEIConnectClientData{}
 	propertiesSize := unsafe.Sizeof(propertiesPacked)
@@ -193,12 +230,17 @@ func (heci *Driver) ConnectHeciClient() error {
 		(uint32)(propertiesSize),
 	)
 	if err != nil {
+		log.Errorf("ConnectHeciClient (Windows): IOCTL failed: %v", err)
 		return err
 	}
+
+	log.Trace("ConnectHeciClient (Windows): IOCTL successful")
 
 	buf2 := bytes.NewBuffer(propertiesPacked.data[:])
 	binary.Read(buf2, binary.LittleEndian, &properties)
 	heci.bufferSize = properties.MaxMessageLength
+
+	log.Tracef("ConnectHeciClient (Windows): Max message length: %d, Protocol version: %d", properties.MaxMessageLength, properties.ProtocolVersion)
 
 	return nil
 }
