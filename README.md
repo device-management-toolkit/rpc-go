@@ -127,6 +127,39 @@ $ docker run --rm -it --device /dev/mei0 rpc-go:latest
 - Ensure all unit tests pass with `go test ./...`
 - Ensure code has been linted with `docker run --rm -v ${pwd}:/app -w /app golangci/golangci-lint:latest golangci-lint run -v`
 
+## Fuzz Testing
+
+The project includes fuzz tests to identify edge cases and potential panics in CLI command parsing. Fuzz testing uses Go's built-in fuzzing support (Go 1.18+).
+
+### Running Fuzz Tests Locally
+
+```bash
+# Run quick fuzz tests (30 seconds per test)
+make fuzz-short
+
+# Run extended fuzz tests (5 minutes per test)
+make fuzz
+
+# Run regression tests with existing corpus only
+make fuzz-regression
+
+# Run a specific fuzz test manually
+go test -fuzz=FuzzDeactivate -fuzztime=1m ./internal/cli
+```
+
+### Continuous Integration
+
+Fuzz tests run automatically in GitHub Actions:
+- **Pull Requests & Pushes**: Quick 30-second fuzz tests on each PR
+- **Scheduled (Weekly)**: Extended 10-minute fuzz tests every Monday
+- **Manual Trigger**: Run with custom duration via workflow_dispatch
+
+If fuzz testing discovers a crash, the failure inputs are uploaded as artifacts for investigation.
+
+### Seed Corpus
+
+The project maintains seed corpus files in `internal/cli/testdata/fuzz/` to ensure effective fuzzing coverage. These files represent valid and edge-case CLI commands that the fuzzer uses as starting points.
+
 ## Additional Resources
 
 - For detailed documentation and Getting Started, [visit the docs site](https://device-management-toolkit.github.io/docs).
