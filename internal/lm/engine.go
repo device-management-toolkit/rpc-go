@@ -15,12 +15,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	executionTimeout = 20 * time.Second
+)
+
 // LMConnection is struct for managing connection to LMS
 type LMEConnection struct {
 	Command    pthi.Command
 	Session    *apf.Session
 	ourChannel int
 	retries    int
+	mu         sync.Mutex
 }
 
 func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *LMEConnection {
@@ -123,26 +128,73 @@ func (lme *LMEConnection) Send(data []byte) error {
 	return nil
 }
 
+// execute processes APF protocol messages with Command interface in a loop until completion or timeout.
+// This method is thread-safe and ensures only one execution happens at a time using a mutex lock.
+// It implements a timeout as defined in executionTimeout that resets after each successful iteration.
 func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
+	// Acquire lock to ensure serialized execution and protect shared Command/Session resources
+	lme.mu.Lock()
+	defer lme.mu.Unlock()
+
+	// Start a timeout timer (executionTimeout) for the entire execution loop
+	timer := time.NewTimer(executionTimeout)
+	defer timer.Stop()
+
 	for {
-		result, err := lme.Command.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
-		if err != nil && (err.Error() == "empty response from AMT" || err.Error() == "no such device") {
-			log.Warn("AMT Unavailable, retrying...")
+		// Create buffered channel to receive Command.Call results from goroutine
+		resultChan := make(chan struct {
+			result []byte
+			err    error
+		}, 1)
 
-			break
-		} else if err != nil {
-			return err
-		}
+		// Execute Command.Call in goroutine to enable timeout monitoring
+		go func() {
+			result, err := lme.Command.Call(bin_buf.Bytes(), uint32(bin_buf.Len()))
+			resultChan <- struct {
+				result []byte
+				err    error
+			}{result, err}
+		}()
 
-		bin_buf = apf.Process(result, lme.Session)
-		if bin_buf.Len() == 0 {
-			log.Debug("done EXECUTING.........")
+		// Wait for either Command.Call to complete or timeout to expire
+		select {
+		case res := <-resultChan:
+			// Handle known recoverable errors by returning early
+			if res.err != nil && (res.err.Error() == "empty response from AMT" || res.err.Error() == "no such device") {
+				log.Warn("AMT Unavailable, retrying...")
 
-			break
+				return nil
+			} else if res.err != nil {
+				return res.err
+			}
+
+			// Process the result through APF protocol handler to get next message
+			bin_buf = apf.Process(res.result, lme.Session)
+
+			// Reset the timeout (executionTimeout) for the next iteration
+			// Drain the timer channel if it has already fired to prevent blocking
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+
+			timer.Reset(executionTimeout)
+
+			// If no more data to process, execution is complete
+			if bin_buf.Len() == 0 {
+				log.Debug("done EXECUTING.........")
+
+				return nil
+			}
+		case <-timer.C:
+			// Timeout expired - terminate execution to prevent infinite wait
+			log.Warnf("Execution timeout after %v", executionTimeout)
+
+			return nil
 		}
 	}
-
-	return nil
 }
 
 // Listen reads data from the LMS socket connection
