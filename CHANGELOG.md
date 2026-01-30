@@ -1,3 +1,10 @@
+## [2.48.16](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.15...v2.48.16) (2026-01-30)
+
+
+### Bug Fixes
+
+* **lme:** add timeout in lme-execute method ([bffd2d3](https://github.com/device-management-toolkit/rpc-go/commit/bffd2d322d3898b0a12e2af244387dc9aa15ccc6))
+
 ## [2.48.15](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.14...v2.48.15) (2026-01-15)
 
 
