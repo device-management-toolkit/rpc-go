@@ -35,6 +35,7 @@ type Driver struct {
 	PTHIGUID       windows.GUID
 	LMEGUID        windows.GUID
 	WDGUID         windows.GUID
+	UPIDGUID       windows.GUID
 	HOTHAMGUID     windows.GUID
 	clientGUID     *windows.GUID
 	clientGUIDSize uint32
@@ -72,6 +73,11 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	heci.UPIDGUID, err = windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	if err != nil {
+		return err
+	}
+
 	if useLME {
 		heci.clientGUID = &heci.LMEGUID
 	} else if useWD {
@@ -86,6 +92,24 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	}
 
 	return err
+}
+
+// InitWithGUID initializes the HECI driver with a specific GUID
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	// Type assert to windows.GUID
+	guidValue, ok := guid.(windows.GUID)
+	if !ok {
+		return errors.New("invalid GUID type for Windows, expected windows.GUID")
+	}
+
+	heci.clientGUID = &guidValue
+
+	err := heci.FindDevices()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (heci *Driver) InitHOTHAM() error {
@@ -116,7 +140,6 @@ func (heci *Driver) InitHOTHAM() error {
 
 func (heci *Driver) FindDevices() error {
 	log.Trace("FindDevices: Looking for HECI device")
-
 	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
 	if err != nil {
 		log.Errorf("FindDevices: Failed to parse device GUID: %v", err)
