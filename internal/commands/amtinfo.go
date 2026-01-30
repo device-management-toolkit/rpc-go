@@ -25,6 +25,7 @@ import (
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -45,6 +46,7 @@ type AmtInfoCmd struct {
 
 	// Identity flags
 	UUID      bool `help:"Show Unique Identifier" short:"u"`
+	UPID      bool `help:"Show Intel Unique Platform ID"`
 	Mode      bool `help:"Show Current Control Mode" short:"m"`
 	ProvState bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
 
@@ -111,7 +113,7 @@ func (cmd *AmtInfoCmd) IsUserCertRequested() bool {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
+	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
 }
 
@@ -180,6 +182,7 @@ type InfoResult struct {
 	RAS               *amt.RemoteAccessStatus      `json:"ras,omitempty"`
 	WiredAdapter      *amt.InterfaceSettings       `json:"wiredAdapter,omitempty"`
 	WirelessAdapter   *amt.InterfaceSettings       `json:"wirelessAdapter,omitempty"`
+	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	CertificateHashes map[string]amt.CertHashEntry `json:"certificateHashes,omitempty"`
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 }
@@ -390,6 +393,16 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 			log.Error("Failed to get UUID: ", err)
 		} else {
 			result.UUID = uuid
+		}
+	}
+
+	// Get UPID (Intel Unique Platform ID)
+	if showAll || cmd.UPID {
+		upidData, err := upid.NewClient().GetUPID()
+		if err != nil {
+			log.Trace("Failed to get UPID: ", err)
+		} else if upidData != nil {
+			result.UPID = upidData
 		}
 	}
 
@@ -608,6 +621,11 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("AMT IP Address\t\t: %s\n", result.WirelessAdapter.IPAddress)
 		fmt.Printf("OS IP Address\t\t: %s\n", result.WirelessAdapter.OsIPAddress)
 		fmt.Printf("MAC Address\t\t: %s\n", result.WirelessAdapter.MACAddress)
+	}
+
+	// Output UPID information
+	if (showAll || cmd.UPID) && result.UPID != nil {
+		fmt.Println(result.UPID.String())
 	}
 
 	// Output certificate hashes (system certs)

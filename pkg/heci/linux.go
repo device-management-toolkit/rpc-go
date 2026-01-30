@@ -10,6 +10,7 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 	"syscall"
 	"unsafe"
@@ -37,6 +38,9 @@ var MEI_LMEIF = [16]uint8{0xdb, 0xa4, 0x33, 0x67, 0x76, 0x04, 0x7b, 0x4e, 0xb3, 
 
 // Watchdog (WD)
 var MEI_WDIF = [16]uint8{0x6f, 0x9a, 0xb7, 0x05, 0x28, 0x46, 0x7f, 0x4d, 0x89, 0x9D, 0xA9, 0x15, 0x14, 0xCB, 0x32, 0xAB}
+
+// UPID (Unique Platform ID)
+var MEI_UPID = [16]uint8{0x79, 0x6c, 0x13, 0x92, 0xea, 0x5f, 0xfd, 0x4c, 0x98, 0x0e, 0x23, 0xbe, 0x07, 0xfa, 0x5e, 0x9f}
 
 // HOTHAM GUID
 // GUID: {082EE5A7-7C25-470A-9643-0C06F0466EA1}
@@ -92,6 +96,57 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.bufferSize = t.MaxMessageLength
 	heci.protocolVersion = t.ProtocolVersion // should be 4?
+
+	return nil
+}
+
+// InitWithGUID initializes the HECI driver with a specific GUID
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	var err error
+
+	// Type assert to [16]uint8
+	guidBytes, ok := guid.([16]uint8)
+	if !ok {
+		return errors.New("invalid GUID type for Linux, expected [16]uint8")
+	}
+
+	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
+	if err != nil {
+		if err.Error() == "open /dev/mei0: permission denied" {
+			log.Error("need administrator privileges")
+		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+			log.Error("MEI/driver is missing or the call to the HECI driver failed")
+		} else {
+			log.Error("Cannot open MEI Device")
+		}
+
+		return err
+	}
+
+	data := CMEIConnectClientData{}
+	data.data = guidBytes
+
+	// we try up to 3 times in case the resource/device is still busy from previous call.
+	for i := 0; i < 3; i++ {
+		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	t := MEIConnectClientData{}
+
+	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
+	if err != nil {
+		return err
+	}
+
+	heci.bufferSize = t.MaxMessageLength
+	heci.protocolVersion = t.ProtocolVersion
 
 	return nil
 }

@@ -34,6 +34,10 @@ func (c *MockHECICommands) Init(useLME, useWD bool) error {
 	return mockInitErr
 }
 
+func (c *MockHECICommands) InitWithGUID(guid interface{}) error {
+	return mockInitErr
+}
+
 func (c *MockHECICommands) InitHOTHAM() error {
 	return mockInitErr
 }
