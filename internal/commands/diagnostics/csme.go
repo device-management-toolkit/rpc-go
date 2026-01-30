@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	log "github.com/sirupsen/logrus"
@@ -18,29 +19,23 @@ import (
 type CSMECmd struct {
 	DiagnosticsBaseCmd
 
-	Flog FlogCmd `cmd:"flog" help:"Retrieve the CSME Flash Log (FLOG) and save it to a file"`
-}
-
-// FlogCmd represents the flog subcommand
-type FlogCmd struct {
-	DiagnosticsBaseCmd
-
-	Output string `help:"Output file path for the FLOG binary data" short:"o" required:""`
-}
-
-// Run executes the CSME diagnostics command (parent command - shows help).
-func (cmd *CSMECmd) Run(ctx *commands.Context) error {
-	return nil
+	Output string `help:"Output file path for the flash log binary data" short:"o"`
 }
 
 // Run executes the flog command
-func (cmd *FlogCmd) Run(ctx *commands.Context) error {
-	log.Debug("Starting FLOG retrieval")
+func (cmd *CSMECmd) Run(ctx *commands.Context) error {
+	log.Debug("Starting flash log retrieval")
+
+	// Generate default filename if not provided
+	if cmd.Output == "" {
+		timestamp := time.Now().Format("20060102_150405")
+		cmd.Output = fmt.Sprintf("%s_csme_flash_log.bin", timestamp)
+	}
 
 	// Retrieve the FLOG data
 	flogData, err := ctx.AMTCommand.GetFlog()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve FLOG: %w", err)
+		return fmt.Errorf("failed to retrieve flash log: %w", err)
 	}
 
 	// Ensure output directory exists
@@ -53,7 +48,7 @@ func (cmd *FlogCmd) Run(ctx *commands.Context) error {
 
 	// Write the binary FLOG data to file
 	if err := os.WriteFile(cmd.Output, flogData, 0o644); err != nil {
-		return fmt.Errorf("failed to write FLOG file: %w", err)
+		return fmt.Errorf("failed to write flash log file: %w", err)
 	}
 
 	fmt.Printf("CSME Flash Log (FLOG) successfully retrieved\n")
