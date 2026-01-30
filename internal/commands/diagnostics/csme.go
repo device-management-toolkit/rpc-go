@@ -22,7 +22,7 @@ type CSMECmd struct {
 	Output string `help:"Output file path for the flash log binary data" short:"o"`
 }
 
-// Run executes the flog command
+// Run executes the top-level "csme" diagnostics command, retrieving the CSME flash log (FLOG).
 func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 	log.Debug("Starting flash log retrieval")
 
@@ -54,7 +54,7 @@ func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 	fmt.Printf("CSME Flash Log (FLOG) successfully retrieved\n")
 	fmt.Printf("Output file: %s\n", cmd.Output)
 	fmt.Printf("Size: %d bytes\n", len(flogData))
-	log.Infof("FLOG data saved to: %s", cmd.Output)
+	log.Debugf("FLOG data saved to: %s", cmd.Output)
 
 	return nil
 }

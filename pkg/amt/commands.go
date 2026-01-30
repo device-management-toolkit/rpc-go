@@ -571,7 +571,7 @@ func (amt AMTCommand) GetFlog() ([]byte, error) {
 		return nil, fmt.Errorf("GetFlogSize failed: %w", err)
 	}
 
-	log.Infof("FLOG size: %d bytes", flogSize)
+	log.Tracef("FLOG size: %d bytes", flogSize)
 
 	// Retrieve the FLOG data
 	flogData, err := amt.HOTHAM.GetFlog()
