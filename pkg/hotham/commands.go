@@ -106,17 +106,17 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 	requestBytes := request.Header.Pack()
 
 	// Send request and receive response
-	// Expected response: 4 byte header + 2 byte uint16 size = 6 bytes
-	response, err := hotham.Call(requestBytes, 6)
+	// Expected response: 4 byte header + 4 byte uint32 size = 8 bytes
+	response, err := hotham.Call(requestBytes, 8)
 	if err != nil {
 		log.Errorf("GetFlogSize: HOTHAM Call failed: %v", err)
 
 		return 0, err
 	}
 
-	// Response should be at least 6 bytes (4 byte HOTHAM header + 2 byte size)
-	if len(response) < 6 {
-		log.Errorf("GetFlogSize: Invalid response size: got %d bytes, expected at least 6", len(response))
+	// Response should be at least 8 bytes (4 byte HOTHAM header + 4 byte uint32 size)
+	if len(response) < 8 {
+		log.Errorf("GetFlogSize: Invalid response size: got %d bytes, expected at least 8", len(response))
 
 		// Check if this is an error response
 		if len(response) == 4 {
@@ -135,12 +135,12 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 			}
 		}
 
-		return 0, fmt.Errorf("invalid response size: got %d bytes, expected at least 6", len(response))
+		return 0, fmt.Errorf("invalid response size: got %d bytes, expected at least 8", len(response))
 	}
 
-	// Parse response: [Header(4 bytes)][Size(2 bytes as uint16)]
-	// Size is at bytes 4-5 (little-endian uint16)
-	flogSize := uint32(response[4]) | (uint32(response[5]) << 8)
+	// Parse response: [Header(4 bytes)][Size(4 bytes as uint32)]
+	// Size is at bytes 4-7 (little-endian uint32)
+	flogSize := uint32(response[4]) | (uint32(response[5]) << 8) | (uint32(response[6]) << 16) | (uint32(response[7]) << 24)
 
 	log.Tracef("GetFlogSize: FLOG size = %d bytes (0x%x)", flogSize, flogSize)
 

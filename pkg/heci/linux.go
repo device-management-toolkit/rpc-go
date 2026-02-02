@@ -28,6 +28,8 @@ type Driver struct {
 const (
 	Device                   = "/dev/mei0"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
+	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
+	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
 )
 
 // PTHI
@@ -55,9 +57,9 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")
@@ -112,9 +114,9 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")
@@ -158,9 +160,9 @@ func (heci *Driver) InitHOTHAM() error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Errorf("Cannot open MEI Device: %v", err)
