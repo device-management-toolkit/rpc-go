@@ -6,6 +6,7 @@ package utils
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 
 	"golang.org/x/term"
@@ -17,6 +18,7 @@ var PR PasswordReader = new(RealPasswordReader)
 
 type PasswordReader interface {
 	ReadPassword() (string, error)
+	ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error)
 }
 
 type RealPasswordReader struct{}
@@ -36,4 +38,30 @@ func (pr *RealPasswordReader) ReadPassword() (string, error) {
 
 		return pass, nil
 	}
+}
+
+func (pr *RealPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	fmt.Print(prompt)
+
+	pw1, err := pr.ReadPassword()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Println()
+
+	fmt.Print(confirmPrompt)
+
+	pw2, err := pr.ReadPassword()
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Println()
+
+	if pw1 != pw2 {
+		return "", PasswordsDoNotMatch
+	}
+
+	return pw1, nil
 }

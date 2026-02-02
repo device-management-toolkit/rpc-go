@@ -27,9 +27,17 @@ func (mpr *MockPasswordReaderSuccess) ReadPassword() (string, error) {
 	return utils.TestPassword, nil
 }
 
+func (mpr *MockPasswordReaderSuccess) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return utils.TestPassword, nil
+}
+
 type MockPasswordReaderFail struct{}
 
 func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
+	return "", errors.New("Read password failed")
+}
+
+func (mpr *MockPasswordReaderFail) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
 	return "", errors.New("Read password failed")
 }
 
