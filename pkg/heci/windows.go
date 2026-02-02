@@ -116,8 +116,6 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 func (heci *Driver) InitHOTHAM() error {
 	var err error
 
-	log.Trace("InitHOTHAM: Opening MEI device")
-
 	// HOTHAM GUID
 	heci.HOTHAMGUID, err = windows.GUIDFromString("{082EE5A7-7C25-470A-9643-0C06F0466EA1}")
 	if err != nil {
@@ -127,15 +125,15 @@ func (heci *Driver) InitHOTHAM() error {
 
 	heci.clientGUID = &heci.HOTHAMGUID
 
-	log.Tracef("InitHOTHAM: Connecting to HOTHAM GUID: %s", heci.HOTHAMGUID.String())
-
 	err = heci.FindDevices()
 	if err != nil {
 		log.Errorf("InitHOTHAM: Failed to find devices: %v", err)
 		return err
 	}
 
-	log.Tracef("InitHOTHAM: Buffer size: %d, Protocol version: %d", heci.bufferSize, heci.protocolVersion)
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
+		heci.HOTHAMGUID.String(), heci.bufferSize, heci.protocolVersion)
+
 	return nil
 }
 

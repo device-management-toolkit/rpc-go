@@ -156,8 +156,6 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 func (heci *Driver) InitHOTHAM() error {
 	var err error
 
-	log.Trace("InitHOTHAM: Opening MEI device")
-
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
 		if err.Error() == errMsgPermissionDenied {
@@ -174,8 +172,6 @@ func (heci *Driver) InitHOTHAM() error {
 	data := CMEIConnectClientData{}
 	data.data = MEI_HOTHAM
 
-	log.Tracef("InitHOTHAM: Connecting to HOTHAM GUID: %x", MEI_HOTHAM)
-
 	// we try up to 3 times in case the resource/device is still busy from previous call.
 	for i := 0; i < 3; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
@@ -184,8 +180,6 @@ func (heci *Driver) InitHOTHAM() error {
 
 			break
 		}
-
-		log.Tracef("InitHOTHAM: Connection attempt %d failed: %v", i+1, err)
 	}
 
 	if err != nil {
@@ -206,7 +200,8 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.bufferSize = t.MaxMessageLength
 	heci.protocolVersion = t.ProtocolVersion
 
-	log.Tracef("InitHOTHAM: Buffer size: %d, Protocol version: %d", heci.bufferSize, heci.protocolVersion)
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %x, Buffer size: %d, Protocol version: %d",
+		MEI_HOTHAM, heci.bufferSize, heci.protocolVersion)
 
 	return nil
 }

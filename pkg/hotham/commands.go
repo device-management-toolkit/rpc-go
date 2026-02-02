@@ -5,6 +5,7 @@
 package hotham
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -116,7 +117,7 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 
 	// Response should be at least 8 bytes (4 byte HOTHAM header + 4 byte uint32 size)
 	if len(response) < 8 {
-		log.Errorf("GetFlogSize: Invalid response size: got %d bytes, expected at least 8", len(response))
+		log.Errorf("GetFlogSize: Invalid response size: got %d bytes, expected at least 8 bytes", len(response))
 
 		// Check if this is an error response
 		if len(response) == 4 {
@@ -135,12 +136,12 @@ func (hotham Command) GetFlogSize() (size uint32, err error) {
 			}
 		}
 
-		return 0, fmt.Errorf("invalid response size: got %d bytes, expected at least 8", len(response))
+		return 0, fmt.Errorf("invalid response size: got %d bytes, expected at least 8 bytes", len(response))
 	}
 
 	// Parse response: [Header(4 bytes)][Size(4 bytes as uint32)]
 	// Size is at bytes 4-7 (little-endian uint32)
-	flogSize := uint32(response[4]) | (uint32(response[5]) << 8) | (uint32(response[6]) << 16) | (uint32(response[7]) << 24)
+	flogSize := binary.LittleEndian.Uint32(response[4:8])
 
 	log.Tracef("GetFlogSize: FLOG size = %d bytes (0x%x)", flogSize, flogSize)
 
