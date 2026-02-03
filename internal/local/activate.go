@@ -18,12 +18,28 @@ import (
 	"encoding/pem"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
+)
+
+const (
+	// AMTServiceStabilizationDelay is the duration to wait after CommitChanges
+	// to allow AMT services to fully stabilize. This prevents "device did not respond"
+	// errors from remote connections.
+	AMTServiceStabilizationDelay = 5 * time.Second
+
+	// Control mode constants
+	ControlModePreProvisioning = 0
+	ControlModeCCM             = 1
+	ControlModeACM             = 2
+
+	// Unprovision mode constants
+	UnprovisionModePartial = 1
 )
 
 type CertsAndKeys struct {
@@ -43,9 +59,65 @@ type ProvisioningCertObj struct {
 	certificateAlgorithm x509.SignatureAlgorithm
 }
 
+// buildTLSCertificate creates a tls.Certificate from certsAndKeys
+func buildTLSCertificate(certsAndKeys CertsAndKeys) tls.Certificate {
+	certChain := make([][]byte, len(certsAndKeys.certs))
+	for i, cert := range certsAndKeys.certs {
+		certChain[i] = cert.Raw
+	}
+
+	return tls.Certificate{
+		Certificate: certChain,
+		PrivateKey:  certsAndKeys.keys[0],
+		Leaf:        certsAndKeys.certs[0],
+	}
+}
+
+// buildTLSConfigWithClientCert creates a TLS configuration with client certificate for mutual TLS
+func (service *ProvisioningService) buildTLSConfigWithClientCert(certsAndKeys CertsAndKeys) *tls.Config {
+	tlsConfig := config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
+
+	if !service.flags.LocalTlsEnforced {
+		return tlsConfig
+	}
+
+	tlsConfig.MinVersion = tls.VersionTLS12
+
+	// Safety check: ensure we have valid certificate data
+	if len(certsAndKeys.certs) == 0 || len(certsAndKeys.keys) == 0 {
+		log.Warn("No certificates or keys available for TLS client authentication")
+
+		return tlsConfig
+	}
+
+	tlsCert := buildTLSCertificate(certsAndKeys)
+	tlsConfig.Certificates = []tls.Certificate{tlsCert}
+
+	// Set GetClientCertificate callback for proper client certificate selection
+	clientCert := tlsCert
+	tlsConfig.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		log.Trace("Client certificate requested by server")
+
+		return &clientCert, nil
+	}
+
+	return tlsConfig
+}
+
+// setupWsmanWithConfig is a helper to reduce repetitive SetupWsmanClient calls
+func (service *ProvisioningService) setupWsmanWithConfig(username, password string, tlsConfig *tls.Config) error {
+	return service.interfacedWsmanMessage.SetupWsmanClient(
+		username,
+		password,
+		service.flags.LocalTlsEnforced,
+		log.GetLevel() == log.TraceLevel,
+		tlsConfig,
+	)
+}
+
 func (service *ProvisioningService) Activate() error {
 	// Check if the device is already activated
-	if service.flags.ControlMode != 0 {
+	if service.flags.ControlMode != ControlModePreProvisioning {
 		log.Error("Device is already activated")
 
 		return utils.UnableToActivate
@@ -66,43 +138,48 @@ func (service *ProvisioningService) Activate() error {
 
 	tlsConfig := &tls.Config{}
 
-	if service.flags.LocalTlsEnforced {
-		if service.flags.UseACM {
-			acmConfig := service.config.ACMSettings
+	var certsAndKeys CertsAndKeys // Cache parsed certificate to reuse in ActivateACM
 
-			certsAndKeys, err := convertPfxToObject(acmConfig.ProvisioningCert, acmConfig.ProvisioningCertPwd)
-			if err != nil {
-				return err
-			}
+	if service.flags.UseACM {
+		acmConfig := service.config.ACMSettings
+
+		// Parse certificate once and cache for reuse in ActivateACM
+		certsAndKeys, err = convertPfxToObject(acmConfig.ProvisioningCert, acmConfig.ProvisioningCertPwd)
+		if err != nil {
+			return err
+		}
+
+		if service.flags.LocalTlsEnforced {
 			// Use the AMT Certificate response to verify AMT device
 			startHBasedResponse, err := service.StartSecureHostBasedConfiguration(certsAndKeys)
 			if err != nil {
 				return err
 			}
 
-			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck)
-
-			tlsCert := tls.Certificate{
-				PrivateKey: certsAndKeys.keys[0],
-				Leaf:       certsAndKeys.certs[0],
-			}
-
-			for _, cert := range certsAndKeys.certs {
-				tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
-			}
-
-			tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, &startHBasedResponse, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
+			// NOTE: Client certificate is NOT added here during initial activation
+			// It will be added in ActivateACM() after password change and activation complete
+			// Adding it here causes EOF errors on AMT 20/21 during the activation process
 		} else {
-			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+			tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
 		}
 
 		tlsConfig.MinVersion = tls.VersionTLS12
+	} else if service.flags.LocalTlsEnforced {
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
+		tlsConfig.MinVersion = tls.VersionTLS12
 	}
 
-	service.interfacedWsmanMessage.SetupWsmanClient(lsa.Username, lsa.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	err = service.setupWsmanWithConfig(lsa.Username, lsa.Password, tlsConfig)
+	if err != nil {
+		log.Error("Failed to setup WSMAN client:", err)
+
+		return utils.AMTConnectionFailed
+	}
 
 	if service.flags.UseACM {
-		err = service.ActivateACM(!service.flags.LocalTlsEnforced)
+		// Pass cached certificate and LSA to avoid re-parsing and re-fetching
+		err = service.ActivateACM(!service.flags.LocalTlsEnforced, &lsa, certsAndKeys)
 		if err == nil {
 			log.Info("Status: Device activated in Admin Control Mode")
 		}
@@ -149,10 +226,11 @@ func (service *ProvisioningService) StartSecureHostBasedConfiguration(certsAndKe
 	return response, nil
 }
 
-func (service *ProvisioningService) ActivateACM(oldWay bool) error {
+// ActivateACM performs ACM activation with pre-parsed certificate and LSA credentials
+func (service *ProvisioningService) ActivateACM(oldWay bool, lsa *amt.LocalSystemAccount, certsAndKeys CertsAndKeys) error {
 	if oldWay {
-		// Extract the provisioning certificate
-		_, certObject, fingerprints, err := service.GetProvisioningCertObj()
+		// Extract the provisioning certificate object (reuse already parsed certsAndKeys)
+		certObject, fingerprints, err := dumpPfx(certsAndKeys)
 		if err != nil {
 			return err
 		}
@@ -196,36 +274,104 @@ func (service *ProvisioningService) ActivateACM(oldWay bool) error {
 
 		_, err = service.interfacedWsmanMessage.HostBasedSetupServiceAdmin(service.config.ACMSettings.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature)
 		if err != nil {
+			// AMT may return an error even after successful activation in certain scenarios.
+			// Verify the actual control mode before treating this as a failure.
 			controlMode, err := service.amtCommand.GetControlMode()
 			if err != nil {
 				return utils.ActivationFailedGetControlMode
 			}
 
-			if controlMode != 2 {
+			if controlMode != ControlModeACM {
 				return utils.ActivationFailedControlMode
 			}
 
+			// Device successfully activated despite error response
 			return nil
 		}
 	} else {
 		service.flags.NewPassword = service.config.ACMSettings.AMTPassword
 
-		err := service.ChangeAMTPassword()
+		// Build TLS config using helper function (reuses already-parsed certsAndKeys)
+		tlsConfig := service.buildTLSConfigWithClientCert(certsAndKeys)
+
+		// Setup WSMAN client with LSA credentials (reuses lsa from parent)
+		err := service.setupWsmanWithConfig(lsa.Username, lsa.Password, tlsConfig)
 		if err != nil {
-			log.Error(err.Error())
+			log.Error("Failed to setup WSMAN client with LSA credentials:", err)
 
 			return utils.ActivationFailed
+		}
+
+		err = service.ChangeAMTPassword()
+		if err != nil {
+			log.Error("PTHI activation succeeded but password configuration failed:", err.Error())
+			log.Warn("Attempting to rollback activation (unprovision device)...")
+
+			// Setup WSMAN client with cert checking disabled for unprovision
+			// Use LSA credentials since password was not successfully changed
+			// Temporarily override SkipCertCheck to disable verification for rollback
+			originalSkipCertCheck := service.flags.SkipCertCheck
+			service.flags.SkipCertCheck = true
+			rollbackTlsConfig := service.buildTLSConfigWithClientCert(certsAndKeys)
+			service.flags.SkipCertCheck = originalSkipCertCheck
+
+			// Setup WSMAN client for rollback with LSA credentials
+			if setupErr := service.setupWsmanWithConfig(lsa.Username, lsa.Password, rollbackTlsConfig); setupErr != nil {
+				log.Error("Failed to setup WSMAN client for rollback:", setupErr)
+				log.Error("Manually deactivate and retry activation with -n or -skipamtcertcheck flag")
+
+				return utils.ActivationFailed
+			}
+
+			// Try to unprovision back to pre-provisioning state
+			if _, unprovErr := service.interfacedWsmanMessage.Unprovision(UnprovisionModePartial); unprovErr != nil {
+				log.Error("Rollback failed - device remains in activated state:", unprovErr)
+				log.Error("Manually deactivate and retry activation with -n or -skipamtcertcheck flag")
+			} else {
+				log.Info("Rollback successful - device returned to pre-provisioning state")
+				log.Info("Retry activation with -n or -skipamtcertcheck flag")
+			}
+
+			return utils.ActivationFailed
+		}
+
+		// AMT may close TLS connection after password change
+		// Recreate WSMAN client with new password before continuing
+		// This is critical for AMT 20/21 which are more sensitive to stale TLS connections
+		if service.flags.LocalTlsEnforced {
+			log.Debug("Recreating WSMAN client after password change...")
+
+			err = service.setupWsmanWithConfig("admin", service.config.ACMSettings.AMTPassword, tlsConfig)
+			if err != nil {
+				log.Error("Failed to recreate WSMAN client after password change:", err)
+
+				return utils.ActivationFailed
+			}
+
+			log.Debug("WSMAN client recreated successfully")
 		}
 
 		// commit changes
 		result, err := service.interfacedWsmanMessage.CommitChanges()
-		if err != nil {
+		// AMT may close the connection after CommitChanges as services restart
+		// EOF errors during this phase are expected and don't indicate failure
+		if err != nil && !strings.Contains(err.Error(), "EOF") {
 			log.Error(err.Error())
 
 			return utils.ActivationFailed
 		}
 
-		log.Debug(result)
+		if err == nil {
+			log.Debug(result)
+		} else {
+			log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
+		}
+
+		// Allow AMT services to fully stabilize after CommitChanges
+		// This prevents "device did not respond" errors from remote connections
+		log.Debug("Waiting for AMT services to stabilize...")
+		time.Sleep(AMTServiceStabilizationDelay)
+		log.Debug("AMT activation complete")
 	}
 
 	return nil
@@ -257,22 +403,21 @@ func (service *ProvisioningService) ActivateCCM(tlsConfig *tls.Config) error {
 
 func (service *ProvisioningService) CCMCommit(tlsConfig *tls.Config) error {
 	// Setup WSMAN client with the AMT username and password
-	service.interfacedWsmanMessage.SetupWsmanClient(
-		"admin",
-		service.config.Password,
-		service.flags.LocalTlsEnforced,
-		log.GetLevel() == log.TraceLevel,
-		tlsConfig,
-	)
+	err := service.setupWsmanWithConfig("admin", service.config.Password, tlsConfig)
+	if err != nil {
+		log.Error("Failed to setup WSMAN client:", err)
+
+		return utils.ActivationFailed
+	}
 
 	// commit changes
-	_, err := service.interfacedWsmanMessage.CommitChanges()
+	_, err = service.interfacedWsmanMessage.CommitChanges()
 	if err != nil {
 		log.Error("Failed to activate device:", err)
 
 		log.Info("Putting the device back to pre-provisioning mode")
 
-		_, err = service.interfacedWsmanMessage.Unprovision(1)
+		_, err = service.interfacedWsmanMessage.Unprovision(UnprovisionModePartial)
 		if err != nil {
 			log.Error("Status: Unable to deactivate ", err)
 		}
@@ -436,34 +581,14 @@ func (service *ProvisioningService) signString(message []byte, privateKey crypto
 		return "", errors.New("not an RSA private key")
 	}
 
-	keyBytes := x509.MarshalPKCS1PrivateKey(rsaKey)
-	privatekeyPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: keyBytes,
-		},
-	)
-
-	block, _ := pem.Decode([]byte(string(privatekeyPEM)))
-	if block == nil {
-		return "", errors.New("failed to decode PEM block containing private key")
-	}
-
-	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		return "", errors.New("failed to parse private key")
-	}
-
 	hashed := sha256.Sum256(message)
 
-	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hashed[:])
+	signature, err := rsa.SignPKCS1v15(rand.Reader, rsaKey, crypto.SHA256, hashed[:])
 	if err != nil {
 		return "", errors.New("failed to sign message")
 	}
 
-	signatureBase64 := base64.StdEncoding.EncodeToString(signature)
-
-	return signatureBase64, nil
+	return base64.StdEncoding.EncodeToString(signature), nil
 }
 
 func (service *ProvisioningService) createSignedString(nonce, fwNonce []byte, privateKey crypto.PrivateKey) (string, error) {

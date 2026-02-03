@@ -43,16 +43,16 @@ func (service *ProvisioningService) AddWifiSettings() (err error) {
 			continue
 		}
 
-		log.Infof("deleting wifiSetting: %s", wifiSetting.InstanceID)
+		log.Info(fmt.Sprintf("deleting wifiSetting: %s", wifiSetting.InstanceID))
 
 		err := service.interfacedWsmanMessage.DeleteWiFiSetting(wifiSetting.InstanceID)
 		if err != nil {
-			log.Infof("unable to delete: %s %s", wifiSetting.InstanceID, err)
+			log.Info(fmt.Sprintf("unable to delete: %s %s", wifiSetting.InstanceID, err))
 
 			continue
 		}
 
-		log.Infof("successfully deleted wifiSetting: %s", wifiSetting.InstanceID)
+		log.Info(fmt.Sprintf("successfully deleted wifiSetting: %s", wifiSetting.InstanceID))
 	}
 
 	// Delete unused certificates
@@ -108,7 +108,7 @@ func (service *ProvisioningService) ProcessWifiConfig(wifiCfg *config.WifiConfig
 	// profile names can only be alphanumeric (not even dashes)
 	reAlphaNum := regexp.MustCompile("[^a-zA-Z0-9]+")
 	if reAlphaNum.MatchString(wifiCfg.ProfileName) {
-		log.Errorf("invalid wifi profile name: %s (only alphanumeric allowed)", wifiCfg.ProfileName)
+		log.Error(fmt.Sprintf("invalid wifi profile name: %s (only alphanumeric allowed)", wifiCfg.ProfileName))
 
 		return utils.MissingOrIncorrectWifiProfileName
 	}
@@ -221,14 +221,14 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 
 	token, err := service.GetAuthToken(url, credentials)
 	if err != nil {
-		log.Errorf("error getting auth token: %v", err)
+		log.Error(fmt.Sprintf("error getting auth token: %v", err))
 
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
 
 	devName, err := os.Hostname()
 	if err != nil {
-		log.Errorf("error getting auth token: %v", err)
+		log.Error(fmt.Sprintf("error getting auth token: %v", err))
 
 		return ieee8021xConfig, err
 	}
@@ -240,7 +240,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 
 	reqResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error while requesting EA: %v", err)
+		log.Error(fmt.Sprintf("error while requesting EA: %v", err))
 
 		return ieee8021xConfig, err
 	}
@@ -267,7 +267,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 	// Get DERkey
 	derKey, err := service.GetDERKey(handles)
 	if derKey == "" || err != nil {
-		log.Errorf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle)
+		log.Error(fmt.Sprintf("failed matching new amtKeyPairHandle: %s", handles.keyPairHandle))
 
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
@@ -279,7 +279,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 
 	KeyPairResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error generating 802.1x keypair: %v", err)
+		log.Error(fmt.Sprintf("error generating 802.1x keypair: %v", err))
 
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}
@@ -294,7 +294,7 @@ func (service *ProvisioningService) setIeee8021xConfigWithEA(ieee8021xConfig *co
 
 	eaResponse, err := service.EAConfigureRequest(url, token, reqProfile)
 	if err != nil {
-		log.Errorf("error signing the certificate: %v", err)
+		log.Error(fmt.Sprintf("error signing the certificate: %v", err))
 
 		return ieee8021xConfig, utils.WiFiConfigurationFailed
 	}

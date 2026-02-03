@@ -32,13 +32,28 @@ func rpcCheckAccess() int {
 
 //export rpcExec
 func rpcExec(Input *C.char, Output **C.char) int {
+
+	defer func() {
+		if r := recover(); r != nil {
+			println("Recovered panic: %v", r)
+		}
+	}()
+
 	// Save the current stdout and redirect temporarily
 	oldStdout := os.Stdout
-	rd, w, _ := os.Pipe()
-	os.Stdout = w
+	outR, outW, _ := os.Pipe()
+	os.Stdout = outW
+
+	// Save the current stderr and redirect temporarily
+	oldStderr := os.Stderr
+	os.Stderr = outW
+
+	// Redirect logger output too to avoid printing from rpc library
+	log.SetOutput(outW)
 
 	if accessStatus := rpcCheckAccess(); accessStatus != int(utils.Success) {
-		*Output = C.CString(AccessErrMsg)
+		log.Error(AccessErrMsg)
+		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
 
 		return accessStatus
 	}
@@ -52,6 +67,7 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	args, err := r.Read()
 	if err != nil {
 		log.Error(err.Error())
+		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
 
 		return utils.InvalidParameterCombination.Code
 	}
@@ -60,21 +76,14 @@ func rpcExec(Input *C.char, Output **C.char) int {
 
 	err = runRPC(args)
 	if err != nil {
-		*Output = C.CString("rpcExec failed: " + inputString)
+		log.Error("rpcExec failed: " + inputString)
+		errCode := handleError(err)
+		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
 
-		return handleError(err)
+		return errCode
 	}
 
-	// Save captured output to Output variable and restore stdout
-	w.Close()
-
-	var buf bytes.Buffer
-
-	io.Copy(&buf, rd)
-
-	os.Stdout = oldStdout
-
-	*Output = C.CString(buf.String())
+	captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
 
 	return int(utils.Success)
 }
@@ -89,4 +98,13 @@ func handleError(err error) int {
 
 		return utils.GenericFailure.Code
 	}
+}
+
+func captureAndRestoreOutput(writeFile *os.File, readFile *os.File, oldStdout *os.File, oldStderr *os.File, Output **C.char) {
+	writeFile.Close()
+	var outBuf bytes.Buffer
+	io.Copy(&outBuf, readFile)
+	os.Stdout = oldStdout
+	os.Stderr = oldStderr
+	*Output = C.CString(outBuf.String())
 }

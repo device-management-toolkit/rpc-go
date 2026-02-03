@@ -65,7 +65,7 @@ func (service *ProvisioningService) DeactivateACM() (err error) {
 
 	tlsConfig := &tls.Config{}
 	if service.flags.LocalTlsEnforced {
-		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck)
+		tlsConfig = config.GetTLSConfig(&service.flags.ControlMode, nil, service.flags.SkipCertCheck || service.flags.SkipAmtCertCheck)
 	}
 
 	err = service.interfacedWsmanMessage.SetupWsmanClient("admin", service.flags.Password, service.flags.LocalTlsEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)

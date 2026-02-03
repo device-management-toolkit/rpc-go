@@ -1,3 +1,40 @@
+## [2.48.16](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.15...v2.48.16) (2026-01-30)
+
+
+### Bug Fixes
+
+* **lme:** add timeout in lme-execute method ([bffd2d3](https://github.com/device-management-toolkit/rpc-go/commit/bffd2d322d3898b0a12e2af244387dc9aa15ccc6))
+
+## [2.48.15](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.14...v2.48.15) (2026-01-15)
+
+
+### Bug Fixes
+
+* workaround for fixing crash in formated logs ([996b559](https://github.com/device-management-toolkit/rpc-go/commit/996b5599a2ba23e4e5842d248f6b840f8e8568d2))
+
+## [2.48.14](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.13...v2.48.14) (2026-01-12)
+
+## [2.48.13](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.12...v2.48.13) (2026-01-06)
+
+
+### Bug Fixes
+
+* capturing stdout and stderr to output variable ([b6dc09e](https://github.com/device-management-toolkit/rpc-go/commit/b6dc09ebb1c6aadf8a708602d382ce9189747a11))
+
+## [2.48.12](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.11...v2.48.12) (2026-01-06)
+
+
+### Bug Fixes
+
+* apply SkipAmtCertCheck flag to all TLS configurations ([#1080](https://github.com/device-management-toolkit/rpc-go/issues/1080)) ([eb056e7](https://github.com/device-management-toolkit/rpc-go/commit/eb056e7ecc46aaf67e620abfeccedebc5ee92bf7)), closes [#1068](https://github.com/device-management-toolkit/rpc-go/issues/1068)
+
+## [2.48.11](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.10...v2.48.11) (2026-01-05)
+
+
+### Bug Fixes
+
+* bypasses hostname verification for AMT 19+ certificates with -n or -skipamtcertcheck ([#1071](https://github.com/device-management-toolkit/rpc-go/issues/1071)) ([41cc832](https://github.com/device-management-toolkit/rpc-go/commit/41cc832b9b83c52f2d30408f01f4b105824db215))
+
 ## [2.48.10](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.9...v2.48.10) (2025-12-10)
 
 

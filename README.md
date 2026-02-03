@@ -14,7 +14,7 @@ The Remote Provisioning Client (RPC) is an application that assists with activat
 
 ---
 
-**For detailed documentation** about Getting Started or other features of the Device Management Toolkit, see the [docs](https://device-management-toolkit.github.io/docs/).
+**For detailed documentation** about Getting Started or other features of the Device Management Toolkit, see the [docs](https://device-management-toolkit.github.io/docs/)
 
 ---
 
