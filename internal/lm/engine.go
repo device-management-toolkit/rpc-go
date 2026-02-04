@@ -12,6 +12,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -39,6 +40,9 @@ func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *
 }
 
 func (lme *LMEConnection) Initialize() error {
+	// Ensure any previous device handle is closed before opening a new one
+	lme.Command.Close()
+
 	err := lme.Command.Open(true)
 	if err != nil {
 		log.Error(err)
@@ -65,37 +69,44 @@ func (lme *LMEConnection) Initialize() error {
 func (lme *LMEConnection) Connect() error {
 	log.Debug("Sending APF_CHANNEL_OPEN")
 
-	channel := ((lme.ourChannel + 1) % 32)
-	if channel == 0 {
-		lme.ourChannel = 1
-	} else {
-		lme.ourChannel = channel
-	}
+	var lastErr error
 
-	lme.Session.WaitGroup.Add(1)
-	bin_buf := apf.ChannelOpen(lme.ourChannel)
-
-	err := lme.Command.Send(bin_buf.Bytes())
-	if err != nil {
-		lme.retries = lme.retries + 1
-		if lme.retries < 3 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
-			log.Warn(err.Error())
-			log.Warn("Retrying...")
-			// retry connection/initialization to device if it doesn't respond
-			err = lme.Initialize()
-			if err == nil {
-				return lme.Connect()
-			}
+	for attempts := 0; attempts < 4; attempts++ {
+		channel := ((lme.ourChannel + 1) % 32)
+		if channel == 0 {
+			lme.ourChannel = 1
 		} else {
-			log.Error(err)
+			lme.ourChannel = channel
 		}
 
-		return err
+		bin_buf := apf.ChannelOpen(lme.ourChannel)
+
+		err := lme.Command.Send(bin_buf.Bytes())
+		if err != nil {
+			lastErr = err
+			if attempts < 4 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
+				log.Warn(err.Error())
+				log.Warn("Retrying...")
+
+				if initErr := lme.Initialize(); initErr != nil {
+					return initErr
+				}
+
+				continue
+			}
+
+			log.Error(err)
+
+			return err
+		}
+
+		lme.retries = 0
+		lme.Session.WaitGroup.Add(1)
+
+		return nil
 	}
 
-	lme.retries = 0
-
-	return nil
+	return lastErr
 }
 
 // Send writes data to LMS TCP Socket
@@ -148,7 +159,7 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 // Listen reads data from the LMS socket connection
 func (lme *LMEConnection) Listen() {
 	go func() {
-		lme.Session.Timer = time.NewTimer(2 * time.Second)
+		lme.Session.Timer = time.NewTimer(utils.LMETimerTimeout * time.Second)
 		<-lme.Session.Timer.C
 
 		lme.Session.DataBuffer <- lme.Session.Tempdata
@@ -185,6 +196,7 @@ func (lme *LMEConnection) Listen() {
 }
 
 // Close closes the LME connection
+
 func (lme *LMEConnection) Close() error {
 	log.Debug("closing connection to lme")
 	lme.Command.Close()

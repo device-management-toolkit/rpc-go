@@ -27,6 +27,16 @@ const (
 	// MPSServerMaxLength is the max length of the servername
 	MPSServerMaxLength = 256
 
+	// Timeout constants
+	LMSConnectionTimeout    = 30   // seconds
+	LMSDialerTimeout        = 15   // seconds
+	HeciReadTimeout         = 10   // seconds
+	HeciRetryDelay          = 3000 // milliseconds
+	HeciReinitDelay         = 500  // milliseconds
+	HeciConnectRetryBackoff = 8000 // milliseconds
+	LMETimerTimeout         = 2    // seconds
+	WebSocketTimeout        = 30   // seconds
+
 	HelpHeader = "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
 
 	CommandActivate    = "activate"
