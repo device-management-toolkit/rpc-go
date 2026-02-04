@@ -341,40 +341,68 @@ func TestUnprovision(t *testing.T) {
 
 func TestChangeEnabledResponse(t *testing.T) {
 	tests := []struct {
-		value              uint8
-		expectNewInterface bool
-		expectEnabled      bool
-		expectTransition   bool
+		value                    uint8
+		expectNewInterface       bool
+		expectEnabled            bool
+		expectTransition         bool
+		expectSupportsSetOpState bool
+		expectTlsEnforced        bool
 	}{
 		{
-			value:              0x83,
-			expectNewInterface: true,
-			expectEnabled:      true,
-			expectTransition:   true,
+			value:                    0x83,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         true,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x82,
-			expectNewInterface: true,
-			expectEnabled:      true,
-			expectTransition:   false,
+			value:                    0x82,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         false,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x80,
-			expectNewInterface: true,
-			expectEnabled:      false,
-			expectTransition:   false,
+			value:                    0x80,
+			expectNewInterface:       true,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x02,
-			expectNewInterface: false,
-			expectEnabled:      true,
-			expectTransition:   false,
+			value:                    0x02,
+			expectNewInterface:       false,
+			expectEnabled:            true,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x00,
-			expectNewInterface: false,
-			expectEnabled:      false,
-			expectTransition:   false,
+			value:                    0x00,
+			expectNewInterface:       false,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        false,
+		},
+		{
+			value:                    0xC3,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         true,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        true,
+		},
+		{
+			value:                    0x40,
+			expectNewInterface:       false,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        true,
 		},
 	}
 	for _, tt := range tests {
@@ -383,6 +411,53 @@ func TestChangeEnabledResponse(t *testing.T) {
 			assert.Equal(t, tt.expectNewInterface, cer.IsNewInterfaceVersion())
 			assert.Equal(t, tt.expectEnabled, cer.IsAMTEnabled())
 			assert.Equal(t, tt.expectTransition, cer.IsTransitionAllowed())
+			assert.Equal(t, tt.expectSupportsSetOpState, cer.SupportsSetAmtOperationalState())
+			assert.Equal(t, tt.expectTlsEnforced, cer.IsTlsEnforcedOnLocalPorts())
+		})
+	}
+}
+
+func TestGetTransitionBlockedReason(t *testing.T) {
+	tests := []struct {
+		name           string
+		value          uint8
+		expectedReason string
+	}{
+		{
+			name:           "Transition allowed",
+			value:          0x83, // bits 7,1,0 set - new interface, enabled, transition allowed
+			expectedReason: "Transition is allowed",
+		},
+		{
+			name:           "Locked state (bits 7,6,5 set)",
+			value:          0xE0, // bits 7,6,5 set - locked
+			expectedReason: "Device is in locked state - requires unprovisioning first",
+		},
+		{
+			name:           "TLS enforced and provisioned (bits 7,6 set)",
+			value:          0xC0, // bits 7,6 set - TLS + new interface
+			expectedReason: "Device has TLS enforced and is likely provisioned - requires unprovisioning",
+		},
+		{
+			name:           "Old AMT version (bit 7 not set)",
+			value:          0x00, // no bits set - old interface
+			expectedReason: "AMT version does not support operational state transitions",
+		},
+		{
+			name:           "Restricted (bit 5 set)",
+			value:          0xA0, // bits 7,5 set - new interface + restricted
+			expectedReason: "Device has additional security restrictions or OEM policy lockdown",
+		},
+		{
+			name:           "Default blocked scenario",
+			value:          0x80, // only bit 7 set - new interface, but transition blocked
+			expectedReason: "Device is provisioned or has manufacturer restrictions - try unprovisioning",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cer := ChangeEnabledResponse(tt.value)
+			assert.Equal(t, tt.expectedReason, cer.GetTransitionBlockedReason())
 		})
 	}
 }

@@ -1,5 +1,5 @@
 /*********************************************************************
- * Copyright (c) Intel Corporation 2024
+ * Copyright (c) Intel Corporation 2026
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
@@ -25,7 +25,7 @@ func (cmd *EnableAMTCmd) Validate() error {
 
 // Run executes the enable AMT command
 func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
-	log.Info("Enabling AMT...")
+	log.Trace("Enabling AMT...")
 
 	// Step 1: Check if AMT operational state change is possible using STATE_INDEPENDENCE_IsChangeToAMTEnabled
 	changeEnabled, err := ctx.AMTCommand.GetChangeEnabled()
@@ -35,10 +35,13 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Log diagnostic information
-	log.Debugf("ChangeEnabled response: 0x%02X", uint8(changeEnabled))
-	log.Debugf("IsNewInterfaceVersion: %t", changeEnabled.IsNewInterfaceVersion())
-	log.Debugf("IsTransitionAllowed: %t", changeEnabled.IsTransitionAllowed())
-	log.Debugf("IsAMTEnabled: %t", changeEnabled.IsAMTEnabled())
+	log.Debugf(
+		"ChangeEnabled response: 0x%02X | IsNewInterfaceVersion: %t | IsTransitionAllowed: %t | IsAMTEnabled: %t",
+		uint8(changeEnabled),
+		changeEnabled.IsNewInterfaceVersion(),
+		changeEnabled.IsTransitionAllowed(),
+		changeEnabled.IsAMTEnabled(),
+	)
 
 	// Check if AMT is already enabled (Intel spec: if enabled, continue normal flow)
 	if changeEnabled.IsAMTEnabled() {
@@ -47,7 +50,7 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Check if this AMT version supports the SetAmtOperationalState mechanism
-	if !changeEnabled.IsNewInterfaceVersion() {
+	if !changeEnabled.SupportsSetAmtOperationalState() {
 		log.Errorf("This AMT version does not support SetAmtOperationalState mechanism (response: 0x%02X)", uint8(changeEnabled))
 		return fmt.Errorf("AMT version does not support SetAmtOperationalState - use legacy provisioning method")
 	}
@@ -56,8 +59,7 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 	// Even if not officially allowed, still attempt the operation
 	if !changeEnabled.IsTransitionAllowed() {
 		reason := changeEnabled.GetTransitionBlockedReason()
-		log.Warnf("AMT transition may be blocked (response: 0x%02X): %s", uint8(changeEnabled), reason)
-		log.Info("Attempting to enable AMT anyway...")
+		log.Warnf("AMT transition may be blocked (response: 0x%02X): %s; Attempting to enable AMT anyway...", uint8(changeEnabled), reason)
 	} else {
 		log.Info("AMT state change is supported and allowed - enabling AMT...")
 	}

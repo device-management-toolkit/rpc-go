@@ -96,16 +96,26 @@ type LocalSystemAccount struct {
 
 type ChangeEnabledResponse uint8
 
+const (
+	changeEnabledTransitionAllowedMask uint8 = 0x01
+	changeEnabledAMTEnabledMask        uint8 = 0x02
+	changeEnabledRestrictedMask        uint8 = 0x20
+	changeEnabledTlsEnforcedMask       uint8 = 0x40
+	changeEnabledNewInterfaceMask      uint8 = 0x80
+	changeEnabledTlsAndNewMask         uint8 = 0xC0
+	changeEnabledLockedMask            uint8 = 0xE0
+)
+
 func (r ChangeEnabledResponse) IsTransitionAllowed() bool {
-	return (r & 1) == 1
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
 }
 
 func (r ChangeEnabledResponse) IsAMTEnabled() bool {
-	return ((r >> 1) & 1) == 1
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
 }
 
 func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
-	return ((r >> 7) & 1) == 1
+	return (uint8(r) & changeEnabledNewInterfaceMask) == changeEnabledNewInterfaceMask
 }
 
 // SupportsSetAmtOperationalState checks if AMT version supports SetAmtOperationalState command (ME 16.1+)
@@ -114,7 +124,7 @@ func (r ChangeEnabledResponse) SupportsSetAmtOperationalState() bool {
 }
 
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {
-	return ((r >> 6) & 1) == 1
+	return (uint8(r) & changeEnabledTlsEnforcedMask) == changeEnabledTlsEnforcedMask
 }
 
 // GetTransitionBlockedReason provides specific reason why transition is blocked
@@ -127,27 +137,22 @@ func (r ChangeEnabledResponse) GetTransitionBlockedReason() string {
 	rawValue := uint8(r)
 
 	// Bit analysis for blocked transitions
-	if (rawValue & 0xE0) == 0xE0 {
-		// 0xE0 = bits 7,6,5 set = New+TLS+Reserved, disabled, locked
+	switch {
+	case (rawValue & changeEnabledLockedMask) == changeEnabledLockedMask:
+		// bits 7,6,5 set = New+TLS+Restricted, disabled, locked
 		return "Device is in locked state - requires unprovisioning first"
-	}
-
-	if (rawValue & 0xC0) == 0xC0 {
-		// 0xC0 = bits 7,6 set = New+TLS, but transition blocked
+	case (rawValue & changeEnabledTlsAndNewMask) == changeEnabledTlsAndNewMask:
+		// bits 7,6 set = New+TLS, but transition blocked
 		return "Device has TLS enforced and is likely provisioned - requires unprovisioning"
-	}
-
-	if !r.IsNewInterfaceVersion() {
+	case !r.SupportsSetAmtOperationalState():
 		return "AMT version does not support operational state transitions"
-	}
-
-	if (rawValue & 0x20) != 0 {
+	case (rawValue & changeEnabledRestrictedMask) != 0:
 		// Bit 5 set indicates additional restrictions
 		return "Device has additional security restrictions or OEM policy lockdown"
+	default:
+		// Default case for other blocked scenarios
+		return "Device is provisioned or has manufacturer restrictions - try unprovisioning"
 	}
-
-	// Default case for other blocked scenarios
-	return "Device is provisioned or has manufacturer restrictions - try unprovisioning"
 }
 
 type Interface interface {

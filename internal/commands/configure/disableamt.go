@@ -1,5 +1,5 @@
 /*********************************************************************
- * Copyright (c) Intel Corporation 2024
+ * Copyright (c) Intel Corporation 2026
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
@@ -24,24 +24,27 @@ func (cmd *DisableAMTCmd) Validate() error {
 }
 
 // Run executes the disable AMT command
-// Follows Intel specification:
+// Follows AMT specification:
 // 1. Use STATE_INDEPENDENCE_IsChangeToAMTEnabled to check if change is possible
 // 2. If transition allowed and AMT enabled, use MHC_SetAmtOperationalState to disable
 func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
-	log.Info("Disabling AMT...")
+	log.Trace("Disabling AMT...")
 
 	// Step 1: Check if AMT operational state change is possible using STATE_INDEPENDENCE_IsChangeToAMTEnabled
 	changeEnabled, err := ctx.AMTCommand.GetChangeEnabled()
 	if err != nil {
-		log.Error("Failed to get change enabled status: ", err)
+		log.Errorf("Disable AMT Failed :%v ", err)
 		return utils.AMTConnectionFailed
 	}
 
 	// Log diagnostic information
-	log.Debugf("ChangeEnabled response: 0x%02X", uint8(changeEnabled))
-	log.Debugf("IsNewInterfaceVersion: %t", changeEnabled.IsNewInterfaceVersion())
-	log.Debugf("IsTransitionAllowed: %t", changeEnabled.IsTransitionAllowed())
-	log.Debugf("IsAMTEnabled: %t", changeEnabled.IsAMTEnabled())
+	log.Debugf(
+		"ChangeEnabled response: 0x%02X | IsNewInterfaceVersion: %t | IsTransitionAllowed: %t | IsAMTEnabled: %t",
+		uint8(changeEnabled),
+		changeEnabled.IsNewInterfaceVersion(),
+		changeEnabled.IsTransitionAllowed(),
+		changeEnabled.IsAMTEnabled(),
+	)
 
 	// Check if AMT is already disabled
 	if !changeEnabled.IsAMTEnabled() {
@@ -50,7 +53,7 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Check if this AMT version supports the SetAmtOperationalState mechanism
-	if !changeEnabled.IsNewInterfaceVersion() {
+	if !changeEnabled.SupportsSetAmtOperationalState() {
 		log.Errorf("This AMT version does not support SetAmtOperationalState mechanism (response: 0x%02X)", uint8(changeEnabled))
 		return fmt.Errorf("AMT version does not support SetAmtOperationalState - use legacy provisioning method")
 	}
@@ -66,7 +69,7 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 			log.Info("Note: Device appears provisioned, but attempting disable for security purposes")
 		}
 
-		log.Info("Attempting to disable AMT anyway (disable operations are more permissive for security)...")
+		log.Info("Attempting to disable AMT (disable operations are more permissive for security)...")
 	} else {
 		log.Info("AMT state change is supported and allowed - disabling AMT...")
 	}
