@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
@@ -47,6 +48,16 @@ var MEI_UPID = [16]uint8{0x79, 0x6c, 0x13, 0x92, 0xea, 0x5f, 0xfd, 0x4c, 0x98, 0
 // HOTHAM GUID
 // GUID: {082EE5A7-7C25-470A-9643-0C06F0466EA1}
 var MEI_HOTHAM = [16]uint8{0xa7, 0xe5, 0x2e, 0x08, 0x25, 0x7c, 0x0a, 0x47, 0x96, 0x43, 0x0c, 0x06, 0xf0, 0x46, 0x6e, 0xa1}
+
+// formatGUID formats a [16]uint8 GUID array as a standard GUID string
+func formatGUID(guid [16]uint8) string {
+	return fmt.Sprintf("{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+		guid[3], guid[2], guid[1], guid[0],
+		guid[5], guid[4],
+		guid[7], guid[6],
+		guid[8], guid[9],
+		guid[10], guid[11], guid[12], guid[13], guid[14], guid[15])
+}
 
 func NewDriver() *Driver {
 	return &Driver{}
@@ -200,8 +211,8 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.bufferSize = t.MaxMessageLength
 	heci.protocolVersion = t.ProtocolVersion
 
-	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %x, Buffer size: %d, Protocol version: %d",
-		MEI_HOTHAM, heci.bufferSize, heci.protocolVersion)
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
+		formatGUID(MEI_HOTHAM), heci.bufferSize, heci.protocolVersion)
 
 	return nil
 }
