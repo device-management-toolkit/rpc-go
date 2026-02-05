@@ -153,7 +153,7 @@ func (r ChangeEnabledResponse) GetTransitionBlockedReason() string {
 		return "Device is in locked state - requires unprovisioning first"
 	case (rawValue & changeEnabledTlsAndNewMask) == changeEnabledTlsAndNewMask:
 		// bits 7,6 set = New+TLS, but transition blocked
-		return "Device has TLS enforced and is likely provisioned - requires unprovisioning"
+		return "Device has TLS enforced and is likely provisioned; requires unprovisioning first"
 	case !r.SupportsSetAmtOperationalState():
 		return "AMT version does not support operational state transitions"
 	case (rawValue & changeEnabledRestrictedMask) != 0:
@@ -161,7 +161,7 @@ func (r ChangeEnabledResponse) GetTransitionBlockedReason() string {
 		return "Device has additional security restrictions or OEM policy lockdown"
 	default:
 		// Default case for other blocked scenarios
-		return "Device is provisioned or has manufacturer restrictions - try unprovisioning"
+		return "Device is provisioned or has manufacturer restrictions"
 	}
 }
 

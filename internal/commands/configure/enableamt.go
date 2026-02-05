@@ -36,16 +36,15 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 
 	// Log diagnostic information
 	operationalStateLabel := "Disabled"
-	if (uint8(changeEnabled) & 0x02) == 0x02 {
+	if changeEnabled.IsAMTEnabled() {
 		operationalStateLabel = "Enabled"
 	}
-	log.Debugf(
-		"IsAMTChangeEnabled response: 0x%02X | Transition Allowed: %t | CurrentOperationalState: %s | IsNewInterfaceVersion: %t",
-		uint8(changeEnabled),
-		(uint8(changeEnabled)&0x01) == 0x01,
-		operationalStateLabel,
-		(uint8(changeEnabled)&0x80) == 0x80,
-	)
+	log.WithFields(log.Fields{
+		"transitionAllowed":       changeEnabled.IsTransitionAllowed(),
+		"currentOperationalState": operationalStateLabel,
+		"isNewInterfaceVersion":   changeEnabled.IsNewInterfaceVersion(),
+	}).Debugf("IsAMTChangeEnabled response: 0x%02X", uint8(changeEnabled))
+
 	// Check if AMT is already enabled (Intel spec: if enabled, continue normal flow)
 	if changeEnabled.IsAMTEnabled() {
 		log.Info("AMT is already enabled")
@@ -54,7 +53,7 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 
 	// Check if this AMT version supports the SetAmtOperationalState mechanism
 	if !changeEnabled.SupportsSetAmtOperationalState() {
-		log.Errorf("This AMT version does not support SetAmtOperationalState mechanism (response: 0x%02X)", uint8(changeEnabled))
+		log.Error("AMT does not support SetAmtOperationalState")
 		return fmt.Errorf("AMT version does not support SetAmtOperationalState - use legacy provisioning method")
 	}
 
@@ -62,21 +61,16 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 	// Even if not officially allowed, still attempt the operation
 	if !changeEnabled.IsTransitionAllowed() {
 		reason := changeEnabled.GetTransitionBlockedReason()
-		log.Warnf("AMT transition may be blocked (response: 0x%02X): %s; Attempting to enable AMT anyway...", uint8(changeEnabled), reason)
+		log.WithFields(log.Fields{
+			"reason": reason,
+		}).Warn("AMT transition may be blocked; attempting to enable anyway")
 	} else {
-		log.Info("AMT state change is supported and allowed - enabling AMT...")
+		log.Info("AMT state change allowed; enabling AMT")
 	}
 
 	// Step 2: Attempt to use MHC_SetAmtOperationalState to enable AMT
 	if err := ctx.AMTCommand.EnableAMT(); err != nil {
-		log.Error("Failed to enable AMT: ", err)
-
-		// Provide guidance on failure
-		if !changeEnabled.IsTransitionAllowed() {
-			log.Info("AMT Enable operation failed.")
-		}
-
-		return fmt.Errorf("failed to enable AMT: %w", err)
+		return fmt.Errorf("failed to enable AMT; retry after resetting device: %w", err)
 	}
 
 	log.Info("AMT enabled successfully")

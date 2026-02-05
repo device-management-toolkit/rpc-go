@@ -33,22 +33,20 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 	// Step 1: Check if AMT operational state change is possible using STATE_INDEPENDENCE_IsChangeToAMTEnabled
 	changeEnabled, err := ctx.AMTCommand.GetChangeEnabled()
 	if err != nil {
-		log.Errorf("Disable AMT Failed :%v ", err)
+		log.WithError(err).Error("Failed to get change enabled status")
 		return utils.AMTConnectionFailed
 	}
 
 	// Log diagnostic information
 	operationalStateLabel := "Disabled"
-	if (uint8(changeEnabled) & 0x02) == 0x02 {
+	if changeEnabled.IsAMTEnabled() {
 		operationalStateLabel = "Enabled"
 	}
-	log.Debugf(
-		"IsAMTChangeEnabled response: 0x%02X | Transition Allowed: %t | CurrentOperationalState: %s | IsNewInterfaceVersion: %t",
-		uint8(changeEnabled),
-		(uint8(changeEnabled)&0x01) == 0x01,
-		operationalStateLabel,
-		(uint8(changeEnabled)&0x80) == 0x80,
-	)
+	log.WithFields(log.Fields{
+		"transitionAllowed":       changeEnabled.IsTransitionAllowed(),
+		"currentOperationalState": operationalStateLabel,
+		"isNewInterfaceVersion":   changeEnabled.IsNewInterfaceVersion(),
+	}).Debugf("IsAMTChangeEnabled response: 0x%02X", uint8(changeEnabled))
 
 	// Check if AMT is already disabled
 	if !changeEnabled.IsAMTEnabled() {
@@ -58,7 +56,7 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 
 	// Check if this AMT version supports the SetAmtOperationalState mechanism
 	if !changeEnabled.SupportsSetAmtOperationalState() {
-		log.Errorf("This AMT version does not support SetAmtOperationalState mechanism (response: 0x%02X)", uint8(changeEnabled))
+		log.Errorf("This AMT version does not support SetAmtOperationalState (response: 0x%02X)", uint8(changeEnabled))
 		return fmt.Errorf("AMT version does not support SetAmtOperationalState - use legacy provisioning method")
 	}
 
@@ -66,22 +64,28 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 	// Even if not officially allowed, still attempt the operation
 	if !changeEnabled.IsTransitionAllowed() {
 		reason := changeEnabled.GetTransitionBlockedReason()
-		log.Warnf("AMT transition blocked (response: 0x%02X): %s", uint8(changeEnabled), reason)
 
 		// Provide specific guidance but proceed anyway for security
-		if uint8(changeEnabled)&0xE0 == 0xE0 || uint8(changeEnabled)&0xC0 == 0xC0 {
-			log.Info("Note: Device appears provisioned, but attempting disable for security purposes")
+		provisionedLikely := (uint8(changeEnabled)&0xE0) == 0xE0 || (uint8(changeEnabled)&0xC0) == 0xC0
+		if provisionedLikely {
+			log.WithFields(log.Fields{
+				"provisionedLikely": true,
+			}).Warnf(
+				"AMT transition blocked; device appears provisioned; attempting disable anyway (disable operations are more permissive for security)",
+			)
+		} else {
+			log.WithField("reason", reason).Warnf(
+				"AMT transition blocked; attempting to disable anyway (disable operations are more permissive for security)",
+			)
 		}
 
-		log.Info("Attempting to disable AMT (disable operations are more permissive for security)...")
 	} else {
-		log.Info("AMT state change is supported and allowed - disabling AMT...")
+		log.Info("AMT state change allowed; disabling AMT")
 	}
 
 	// Step 2: Use MHC_SetAmtOperationalState to disable AMT
 	if err := ctx.AMTCommand.DisableAMT(); err != nil {
-		log.Error("Failed to disable AMT: ", err)
-		return fmt.Errorf("failed to disable AMT: %w", err)
+		return fmt.Errorf("failed to disable AMT: %w, check if AMT has been activated", err)
 	}
 
 	log.Info("AMT disabled successfully")
