@@ -89,7 +89,7 @@ func (c MockPTHICommands) GetUUID() (uuid string, err error) {
 	return "\xd2?\x11\x1c%3\x94E\xa2rT\xb2\x03\x8b\xeb\a", nil
 }
 
-func (c MockPTHICommands) GetIsAMTEnabled() (state uint8, err error) {
+func (c MockPTHICommands) IsChangeToAMTEnabled() (state uint8, err error) {
 	return uint8(0x83), nil
 }
 
@@ -216,13 +216,13 @@ func TestGetVersionDataFromMEError(t *testing.T) {
 //		assert.Equal(t, "amt internal error", err.Error())
 //		assert.Equal(t, "", result)
 //	}
-func TestGetIsAMTEnabled(t *testing.T) {
+func TestIsChangeToAMTEnabled(t *testing.T) {
 	result, err := amt.GetChangeEnabled()
 	assert.NoError(t, err)
 	assert.True(t, result.IsAMTEnabled())
 }
 
-func TestGetIsAMTEnabledError(t *testing.T) {
+func TestIsChangeToAMTEnabledError(t *testing.T) {
 	flag1 = true
 	result, err := amt.GetChangeEnabled()
 	assert.Error(t, err)

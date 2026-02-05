@@ -110,7 +110,17 @@ func (r ChangeEnabledResponse) IsTransitionAllowed() bool {
 	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
 }
 
+// IsEnabledFlagSet indicates whether the Enabled bit (bit 0) is set.
+func (r ChangeEnabledResponse) IsEnabledFlagSet() bool {
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
+}
+
 func (r ChangeEnabledResponse) IsAMTEnabled() bool {
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
+}
+
+// IsCurrentOperationalStateEnabled indicates whether the CurrentOperationalState bit (bit 1) is set.
+func (r ChangeEnabledResponse) IsCurrentOperationalStateEnabled() bool {
 	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
 }
 
@@ -258,7 +268,7 @@ func (amt AMTCommand) GetChangeEnabled() (ChangeEnabledResponse, error) {
 
 	defer amt.PTHI.Close()
 
-	rawVal, err := amt.PTHI.GetIsAMTEnabled()
+	rawVal, err := amt.PTHI.IsChangeToAMTEnabled()
 	if err != nil {
 		return ChangeEnabledResponse(0), err
 	}

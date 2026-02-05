@@ -38,12 +38,16 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Log diagnostic information
+	operationalStateLabel := "Disabled"
+	if (uint8(changeEnabled) & 0x02) == 0x02 {
+		operationalStateLabel = "Enabled"
+	}
 	log.Debugf(
-		"ChangeEnabled response: 0x%02X | IsNewInterfaceVersion: %t | IsTransitionAllowed: %t | IsAMTEnabled: %t",
+		"IsAMTChangeEnabled response: 0x%02X | Transition Allowed: %t | CurrentOperationalState: %s | IsNewInterfaceVersion: %t",
 		uint8(changeEnabled),
-		changeEnabled.IsNewInterfaceVersion(),
-		changeEnabled.IsTransitionAllowed(),
-		changeEnabled.IsAMTEnabled(),
+		(uint8(changeEnabled)&0x01) == 0x01,
+		operationalStateLabel,
+		(uint8(changeEnabled)&0x80) == 0x80,
 	)
 
 	// Check if AMT is already disabled

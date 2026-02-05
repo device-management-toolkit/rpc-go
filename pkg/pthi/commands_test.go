@@ -344,7 +344,7 @@ func TestGetLocalSystemAccount(t *testing.T) {
 	assert.Equal(t, result.Account.Password, [CFG_MAX_ACL_USER_LENGTH]uint8{8, 7, 6, 5})
 }
 
-func TestGetIsAMTEnabled(t *testing.T) {
+func TestIsChangeToAMTEnabled(t *testing.T) {
 	numBytes = 4
 	enabledValue := uint8(0x82)
 	prepareMessage := GetStateIndependenceIsChangeToAMTEnabledResponse{
@@ -356,7 +356,7 @@ func TestGetIsAMTEnabled(t *testing.T) {
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
-	result, err := pthi.GetIsAMTEnabled()
+	result, err := pthi.IsChangeToAMTEnabled()
 	assert.NoError(t, err)
 	assert.NotEmpty(t, result)
 	assert.Equal(t, enabledValue, result)
