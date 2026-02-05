@@ -86,7 +86,7 @@ func PrepareInitialMessage(flags *flags.Flags) (Message, error) {
 // Connect is used to connect to the RPS Server
 func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 	log.Info("connecting to ", amt.URL)
-	log.Info(amt.URL)
+	log.Debugf("TLS certificate verification: %s", map[bool]string{true: "DISABLED (InsecureSkipVerify=true)", false: "ENABLED"}[skipCertCheck])
 
 	var err error
 
@@ -148,6 +148,8 @@ func (amt *AMTActivationServer) Send(data Message) error {
 	}
 
 	log.Debug("sending message to RPS")
+	log.Debugf("  -> Method: %s, Status: %s", data.Method, data.Status)
+	log.Tracef("  -> Full message: %s", string(dataToSend))
 
 	err = amt.Conn.WriteMessage(websocket.TextMessage, dataToSend)
 	if err != nil {
@@ -183,7 +185,8 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 
 // ProcessMessage inspects RPS messages, decodes the base64 payload from the server and relays it to LMS
 func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
-	log.Debug("received messages from RPS")
+	log.Debug("received message from RPS")
+	log.Tracef("  <- Raw message: %s", string(message))
 
 	activation := Message{}
 
@@ -194,10 +197,26 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 		return nil
 	}
 
+	log.Debugf("  <- Method: %s, Status: %s", activation.Method, activation.Status)
+
 	if activation.Method == "heartbeat_request" {
 		heartbeat, _ := amt.GenerateHeartbeatResponse(activation)
 
 		return heartbeat
+	}
+
+	// Handle TLS tunnel data - decode and pass through to LMS
+	if activation.Method == MethodTLSData {
+		msgPayload, err := base64.StdEncoding.DecodeString(activation.Payload)
+		if err != nil {
+			log.Error("Failed to decode tls_data payload:", err)
+
+			return nil
+		}
+
+		log.Debugf("TLS tunnel: passing through TLS data to LMS (%d bytes)", len(msgPayload))
+
+		return msgPayload
 	}
 
 	statusMessage := StatusMessage{}

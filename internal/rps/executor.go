@@ -17,13 +17,15 @@ import (
 )
 
 type Executor struct {
-	server          AMTActivationServer
-	localManagement lm.LocalMananger
-	isLME           bool
-	payload         Payload
-	data            chan []byte
-	errors          chan error
-	waitGroup       *sync.WaitGroup
+	server           AMTActivationServer
+	localManagement  lm.LocalMananger
+	isLME            bool
+	payload          Payload
+	data             chan []byte
+	errors           chan error
+	waitGroup        *sync.WaitGroup
+	localTlsEnforced bool
+	lmConnected      bool // tracks if LMS connection is active (for TLS tunnel persistence)
 }
 
 func NewExecutor(flags flags.Flags) (Executor, error) {
@@ -37,27 +39,30 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	}
 
 	client := Executor{
-		server:          NewAMTActivationServer(&flags),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
-		data:            lmDataChannel,
-		errors:          lmErrorChannel,
-		waitGroup:       &sync.WaitGroup{},
+		server:           NewAMTActivationServer(&flags),
+		localManagement:  lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
+		data:             lmDataChannel,
+		errors:           lmErrorChannel,
+		waitGroup:        &sync.WaitGroup{},
+		localTlsEnforced: flags.LocalTlsEnforced,
 	}
 
 	// TEST CONNECTION TO SEE IF LMS EXISTS
+	log.Debugf("Attempting LMS connection on port %s (TLS: %t)", port, flags.LocalTlsEnforced)
+
 	err := client.localManagement.Connect()
 	if err != nil {
 		if flags.LocalTlsEnforced {
 			return client, utils.LMSConnectionFailed
 		}
 		// client.localManagement.Close()
-		log.Trace("LMS not running.  Using LME Connection\n")
+		log.Debug("LMS not running, using LME Connection")
 
 		client.localManagement = lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
 		client.isLME = true
 		client.localManagement.Initialize()
 	} else {
-		log.Trace("Using existing LMS\n")
+		log.Debug("Using existing LMS connection")
 		client.localManagement.Close()
 	}
 
@@ -71,7 +76,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	return client, err
 }
 
-func (e Executor) MakeItSo(messageRequest Message) {
+func (e *Executor) MakeItSo(messageRequest Message) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -106,7 +111,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 	}
 }
 
-func (e Executor) HandleInterrupt() {
+func (e *Executor) HandleInterrupt() {
 	log.Info("interrupt")
 
 	// Cleanly close the connection by sending a close message and then
@@ -127,7 +132,7 @@ func (e Executor) HandleInterrupt() {
 	}
 }
 
-func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
+func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	msgPayload := e.server.ProcessMessage(dataFromServer)
 	if msgPayload == nil {
 		return true
@@ -135,59 +140,79 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return false
 	}
 
-	// send channel open
-	err := e.localManagement.Connect()
-	go e.localManagement.Listen()
-
-	if err != nil {
-		log.Error(err)
-
-		return true
+	// Detect TLS ClientHello - need to close old connection for new handshake
+	isTLSClientHello := len(msgPayload) >= 6 && msgPayload[0] == 0x16 && msgPayload[5] == 0x01
+	if isTLSClientHello && e.lmConnected {
+		e.localManagement.Close()
+		e.lmConnected = false
 	}
 
-	if e.isLME {
-		// wait for channel open confirmation
-		e.waitGroup.Wait()
-		log.Trace("Channel open confirmation received")
-	} else {
-		// with LMS we open/close websocket on every request, so setup close for when we're done handling LMS data
-		defer e.localManagement.Close()
+	if !e.localTlsEnforced || !e.lmConnected {
+		err := e.localManagement.Connect()
+		if err != nil {
+			log.Error(err)
+			return true
+		}
+		e.lmConnected = true
+
+		if e.isLME {
+			go e.localManagement.Listen()
+			e.waitGroup.Wait()
+		}
 	}
 
-	// send our data to LMX
-	err = e.localManagement.Send(msgPayload)
+	if !e.isLME {
+		go e.localManagement.Listen()
+	}
+
+	err := e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
-
 		return true
 	}
 
 	for {
 		select {
 		case dataFromLM := <-e.data:
+			if len(dataFromLM) == 0 {
+				if e.localTlsEnforced {
+					log.Warn("Empty response from LMS - sending connection_reset")
+					e.localManagement.Close()
+					e.lmConnected = false
+					resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
+					e.server.Send(resetMsg)
+				}
+				return false
+			}
+
 			e.HandleDataFromLM(dataFromLM)
 
 			if e.isLME {
 				e.waitGroup.Wait()
 			}
 
+			if !e.localTlsEnforced {
+				e.localManagement.Close()
+				e.lmConnected = false
+			}
+
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
-				log.Error("error from LMS")
-
+				log.Error("LMS error: ", errFromLMS)
 				return true
 			}
 		}
 	}
 }
 
-func (e Executor) HandleDataFromLM(data []byte) {
+func (e *Executor) HandleDataFromLM(data []byte) {
 	if len(data) > 0 {
-		log.Debug("received data from LMX")
-		log.Trace(string(data))
-
-		err := e.server.Send(e.payload.CreateMessageResponse(data))
+		method := "response"
+		if e.localTlsEnforced {
+			method = MethodTLSData
+		}
+		err := e.server.Send(e.payload.CreateMessageResponse(data, method))
 		if err != nil {
 			log.Error(err)
 		}

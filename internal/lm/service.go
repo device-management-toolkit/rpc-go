@@ -5,14 +5,12 @@
 package lm
 
 import (
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
 	"strings"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -42,7 +40,7 @@ func NewLMSConnection(address, port string, useTls bool, data chan []byte, error
 }
 
 func (lms *LMSConnection) Initialize() error {
-	return errors.New("not implemented")
+	return errors.New("not implemented5")
 }
 
 // Connect initializes TCP connection to LMS
@@ -53,7 +51,9 @@ func (lms *LMSConnection) Connect() error {
 		if lms.useTls {
 			log.Debug("connecting to lms over tls...")
 
-			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck))
+			//lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck))
+			lms.Connection, err = net.Dial("tcp4", lms.address+":"+lms.port)
+
 		} else {
 			log.Debug("connecting to lms...")
 
@@ -73,16 +73,8 @@ func (lms *LMSConnection) Connect() error {
 
 // Send writes data to LMS TCP Socket
 func (lms *LMSConnection) Send(data []byte) error {
-	log.Debug("sending message to LMS")
-
 	_, err := lms.Connection.Write(data)
-	if err != nil {
-		return err
-	}
-
-	log.Debug("sent message to LMS")
-
-	return nil
+	return err
 }
 
 // Close closes the LMS socket connection
@@ -103,30 +95,53 @@ func (lms *LMSConnection) Close() error {
 
 // Listen reads data from the LMS socket connection
 func (lms *LMSConnection) Listen() {
-	log.Debug("listening for lms messages...")
+	// For TLS mode, AMT may take 30+ seconds to reconfigure after TLS settings change.
+	// Use a longer timeout than RPS's delay_tls_timer (50s) so RPS times out first
+	// with a proper error rather than getting connection_reset.
+	readTimeout := 500 * time.Millisecond
+	if lms.useTls {
+		readTimeout = 60 * time.Second
+	}
 
-	duration, _ := time.ParseDuration("1s")
-	lms.Connection.SetDeadline(time.Now().Add(duration))
-
-	buf := make([]byte, 0, 8192) // big buffer
+	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
 
 	for {
+		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
+
 		n, err := lms.Connection.Read(tmp)
 		if err != nil {
-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
-				log.Println("read error:", err)
-
-				lms.errors <- err
+			if err != io.EOF && !strings.Contains(err.Error(), "i/o timeout") {
+				log.Println("LMS read error:", err)
+				lms.safeSendError(err)
 			}
-
 			break
 		}
 
 		buf = append(buf, tmp[:n]...)
+		readTimeout = 100 * time.Millisecond
 	}
 
-	lms.data <- buf
+	lms.Connection.SetReadDeadline(time.Time{})
+	lms.safeSendData(buf)
+}
 
-	log.Trace("done listening")
+// safeSendData sends data to the data channel, recovering from panic if channel is closed
+func (lms *LMSConnection) safeSendData(data []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("data channel closed, discarding response")
+		}
+	}()
+	lms.data <- data
+}
+
+// safeSendError sends error to the errors channel, recovering from panic if channel is closed
+func (lms *LMSConnection) safeSendError(err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("errors channel closed, discarding error")
+		}
+	}()
+	lms.errors <- err
 }

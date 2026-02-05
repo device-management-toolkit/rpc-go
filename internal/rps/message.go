@@ -59,7 +59,14 @@ type MessagePayload struct {
 	IPConfiguration   flags.IPConfiguration `json:"ipConfiguration"`
 	HostnameInfo      flags.HostnameInfo    `json:"hostnameInfo"`
 	FriendlyName      string                `json:"friendlyName,omitempty"`
+	TLSEnforced       bool                  `json:"tlsEnforced,omitempty"`
 }
+
+// MethodTLSData is the method type for TLS tunnel data passthrough
+const MethodTLSData = "tls_data"
+
+// MethodConnectionReset notifies RPS that the LMS connection was closed and needs to be re-established
+const MethodConnectionReset = "connection_reset"
 
 func NewPayload() Payload {
 	return Payload{
@@ -156,8 +163,12 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 		return payload, err
 	}
 
+	log.Debugf("Retrieved %d certificate hashes from AMT", len(hashes))
+
 	for _, v := range hashes {
 		payload.CertificateHashes = append(payload.CertificateHashes, v.Hash)
+		log.Debugf("  Certificate: %s (Active: %t, Default: %t)", v.Name, v.IsActive, v.IsDefault)
+		log.Tracef("    Hash: %s", v.Hash)
 	}
 
 	if dnsSuffix != "" {
@@ -221,6 +232,14 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 	}
 
 	payload.FriendlyName = flags.FriendlyName
+	payload.TLSEnforced = flags.LocalTlsEnforced
+
+	log.Debug("Creating initial message request")
+	log.Debugf("  AMT Version: %s, Build: %s, SKU: %s", payload.Version, payload.Build, payload.SKU)
+	log.Debugf("  UUID: %s, Hostname: %s, FQDN: %s", payload.UUID, payload.Hostname, payload.FQDN)
+	log.Debugf("  Current Mode: %d, TLS Enforced: %t", payload.CurrentMode, payload.TLSEnforced)
+	log.Debugf("  Certificate Hashes: %d", len(payload.CertificateHashes))
+
 	// convert struct to json
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -233,9 +252,9 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 }
 
 // CreateMessageResponse is used for creating a response to the server
-func (p Payload) CreateMessageResponse(payload []byte) Message {
-	message := Message{
-		Method:          "response",
+func (p Payload) CreateMessageResponse(payload []byte, method string) Message {
+	return Message{
+		Method:          method,
 		APIKey:          "key",
 		AppVersion:      utils.ProjectVersion,
 		ProtocolVersion: utils.ProtocolVersion,
@@ -243,6 +262,4 @@ func (p Payload) CreateMessageResponse(payload []byte) Message {
 		Message:         "ok",
 		Payload:         base64.StdEncoding.EncodeToString(payload),
 	}
-
-	return message
 }
