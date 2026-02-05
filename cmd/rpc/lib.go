@@ -15,10 +15,29 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+// ThreadSafeWriter is a thread-safe writer that collects output
+type ThreadSafeWriter struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (w *ThreadSafeWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *ThreadSafeWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
 
 //export rpcCheckAccess
 func rpcCheckAccess() int {
@@ -32,29 +51,79 @@ func rpcCheckAccess() int {
 
 //export rpcExec
 func rpcExec(Input *C.char, Output **C.char) int {
-
 	defer func() {
 		if r := recover(); r != nil {
 			println("Recovered panic: %v", r)
 		}
 	}()
 
-	// Save the current stdout and redirect temporarily
+	// Save the current stdout, stderr, and logger output
 	oldStdout := os.Stdout
-	outR, outW, _ := os.Pipe()
-	os.Stdout = outW
-
-	// Save the current stderr and redirect temporarily
 	oldStderr := os.Stderr
-	os.Stderr = outW
+	oldLogOutput := log.StandardLogger().Out
 
-	// Redirect logger output too to avoid printing from rpc library
-	log.SetOutput(outW)
+	// Create pipes to capture output
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		log.Error("Failed to create stdout pipe:", err)
+		*Output = C.CString("")
+		return utils.GenericFailure.Code
+	}
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		log.Error("Failed to create stderr pipe:", err)
+		*Output = C.CString("")
+		return utils.GenericFailure.Code
+	}
+
+	// Create a thread-safe writer to collect all output
+	outputWriter := &ThreadSafeWriter{}
+
+	// Redirect stdout, stderr, and logger
+	os.Stdout = wOut
+	os.Stderr = wErr
+	log.SetOutput(wOut)
+
+	// Use WaitGroup to track goroutines
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Goroutine to read from stdout pipe
+	go func() {
+		defer wg.Done()
+		io.Copy(outputWriter, rOut)
+	}()
+
+	// Goroutine to read from stderr pipe
+	go func() {
+		defer wg.Done()
+		io.Copy(outputWriter, rErr)
+	}()
+
+	// Ensure everything is restored and output is captured
+	defer func() {
+		// Close write ends of pipes to signal EOF to readers
+		wOut.Close()
+		wErr.Close()
+
+		// Wait for all readers to finish
+		wg.Wait()
+
+		// Restore original outputs
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+		log.SetOutput(oldLogOutput)
+
+		// Close read ends
+		rOut.Close()
+		rErr.Close()
+
+		// Set the output
+		*Output = C.CString(outputWriter.String())
+	}()
 
 	if accessStatus := rpcCheckAccess(); accessStatus != int(utils.Success) {
 		log.Error(AccessErrMsg)
-		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
-
 		return accessStatus
 	}
 
@@ -64,26 +133,19 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	r := csv.NewReader(strings.NewReader(inputString))
 	r.Comma = ' ' // space
 
-	args, err := r.Read()
-	if err != nil {
-		log.Error(err.Error())
-		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
-
+	args, readErr := r.Read()
+	if readErr != nil {
+		log.Error(readErr.Error())
 		return utils.InvalidParameterCombination.Code
 	}
 
 	args = append([]string{"rpc"}, args...)
 
-	err = runRPC(args)
-	if err != nil {
+	execErr := runRPC(args)
+	if execErr != nil {
 		log.Error("rpcExec failed: " + inputString)
-		errCode := handleError(err)
-		captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
-
-		return errCode
+		return handleError(execErr)
 	}
-
-	captureAndRestoreOutput(outW, outR, oldStdout, oldStderr, Output)
 
 	return int(utils.Success)
 }
@@ -98,13 +160,4 @@ func handleError(err error) int {
 
 		return utils.GenericFailure.Code
 	}
-}
-
-func captureAndRestoreOutput(writeFile *os.File, readFile *os.File, oldStdout *os.File, oldStderr *os.File, Output **C.char) {
-	writeFile.Close()
-	var outBuf bytes.Buffer
-	io.Copy(&outBuf, readFile)
-	os.Stdout = oldStdout
-	os.Stderr = oldStderr
-	*Output = C.CString(outBuf.String())
 }
