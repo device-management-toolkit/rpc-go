@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
@@ -99,6 +100,7 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 	var err error
 
 	websocketDialer := websocket.Dialer{
+		HandshakeTimeout: utils.WebSocketTimeout * time.Second,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: skipCertCheck, //nolint:gosec // self signed certs could be used
 		},
