@@ -21,6 +21,7 @@ type LMEConnection struct {
 	Session    *apf.Session
 	ourChannel int
 	retries    int
+	mu         sync.Mutex
 }
 
 func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *LMEConnection {
@@ -111,7 +112,9 @@ func (lme *LMEConnection) Send(data []byte) error {
 	binary.Write(&bin_buf, binary.BigEndian, channelData.DataLength)
 	binary.Write(&bin_buf, binary.BigEndian, channelData.Data)
 
+	lme.mu.Lock()
 	lme.Session.TXWindow -= lme.Session.TXWindow // hmmm
+	lme.mu.Unlock()
 
 	err := lme.Command.Send(bin_buf.Bytes())
 	if err != nil {
@@ -134,7 +137,9 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 			return err
 		}
 
+		lme.mu.Lock()
 		bin_buf = apf.Process(result, lme.Session)
+		lme.mu.Unlock()
 		if bin_buf.Len() == 0 {
 			log.Debug("done EXECUTING.........")
 
@@ -148,9 +153,14 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 // Listen reads data from the LMS socket connection
 func (lme *LMEConnection) Listen() {
 	go func() {
+		lme.mu.Lock()
 		lme.Session.Timer = time.NewTimer(2 * time.Second)
-		<-lme.Session.Timer.C
+		timerC := lme.Session.Timer.C
+		lme.mu.Unlock()
 
+		<-timerC
+
+		lme.mu.Lock()
 		lme.Session.DataBuffer <- lme.Session.Tempdata
 
 		lme.Session.Tempdata = []byte{}
@@ -158,6 +168,7 @@ func (lme *LMEConnection) Listen() {
 		var bin_buf bytes.Buffer
 
 		channelData := apf.ChannelClose(lme.Session.SenderChannel)
+		lme.mu.Unlock()
 		binary.Write(&bin_buf, binary.BigEndian, channelData.MessageType)
 		binary.Write(&bin_buf, binary.BigEndian, channelData.RecipientChannel)
 
@@ -171,7 +182,9 @@ func (lme *LMEConnection) Listen() {
 
 			break
 		} else {
+			lme.mu.Lock()
 			result := apf.Process(result2, lme.Session)
+			lme.mu.Unlock()
 			if result.Len() != 0 {
 				err2 = lme.execute(result)
 				if err2 != nil {
@@ -189,9 +202,11 @@ func (lme *LMEConnection) Close() error {
 	log.Debug("closing connection to lme")
 	lme.Command.Close()
 
+	lme.mu.Lock()
 	if lme.Session.Timer != nil {
 		lme.Session.Timer.Stop()
 	}
+	lme.mu.Unlock()
 
 	return nil
 }
