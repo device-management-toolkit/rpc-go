@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -193,12 +194,22 @@ func (service *ProvisioningService) StartSecureHostBasedConfiguration(certsAndKe
 	// create leaf certificate hash
 	var certHashByteArray [64]byte
 
-	leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
-	copy(certHashByteArray[:], leafHash[:])
-
 	certAlgo, err := utils.CheckCertificateAlgorithmSupported(certsAndKeys.certs[0].SignatureAlgorithm)
 	if err != nil {
 		return amt.SecureHBasedResponse{}, utils.ActivationFailedCertHash
+	}
+
+	// Generate hash based on certificate algorithm
+	switch certAlgo {
+	case 2: // SHA256
+		leafHash := sha256.Sum256(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	case 3: // SHA384
+		leafHash := sha512.Sum384(certsAndKeys.certs[0].Raw)
+		copy(certHashByteArray[:], leafHash[:])
+	default:
+		// Only SHA-256 and SHA-384 are supported for secure host-based configuration
+		return amt.SecureHBasedResponse{}, errors.New("unsupported certificate algorithm for activation")
 	}
 
 	// Call StartConfigurationHBased
@@ -219,12 +230,12 @@ func (service *ProvisioningService) StartSecureHostBasedConfiguration(certsAndKe
 func (service *ProvisioningService) ActivateACM(oldWay bool, lsa *amt.LocalSystemAccount, certsAndKeys CertsAndKeys) error {
 	if oldWay {
 		// Extract the provisioning certificate object (reuse already parsed certsAndKeys)
-		certObject, fingerPrint, err := dumpPfx(certsAndKeys)
+		certObject, fingerprints, err := dumpPfx(certsAndKeys)
 		if err != nil {
 			return err
 		}
 		// Check provisioning certificate is accepted by AMT
-		err = service.CompareCertHashes(fingerPrint)
+		err = service.CompareCertHashes(fingerprints)
 		if err != nil {
 			return err
 		}
@@ -417,20 +428,20 @@ func (service *ProvisioningService) CCMCommit(tlsConfig *tls.Config) error {
 	return nil
 }
 
-func (service *ProvisioningService) GetProvisioningCertObj() (CertsAndKeys, ProvisioningCertObj, string, error) {
+func (service *ProvisioningService) GetProvisioningCertObj() (CertsAndKeys, ProvisioningCertObj, map[string]string, error) {
 	config := service.config.ACMSettings
 
 	certsAndKeys, err := convertPfxToObject(config.ProvisioningCert, config.ProvisioningCertPwd)
 	if err != nil {
-		return certsAndKeys, ProvisioningCertObj{}, "", err
+		return certsAndKeys, ProvisioningCertObj{}, nil, err
 	}
 
-	result, fingerprint, err := dumpPfx(certsAndKeys)
+	result, fingerprints, err := dumpPfx(certsAndKeys)
 	if err != nil {
-		return certsAndKeys, ProvisioningCertObj{}, "", err
+		return certsAndKeys, ProvisioningCertObj{}, nil, err
 	}
 
-	return certsAndKeys, result, fingerprint, nil
+	return certsAndKeys, result, fingerprints, nil
 }
 
 func convertPfxToObject(pfxb64, passphrase string) (CertsAndKeys, error) {
@@ -459,20 +470,20 @@ func convertPfxToObject(pfxb64, passphrase string) (CertsAndKeys, error) {
 	return pfxOut, nil
 }
 
-func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
+func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, map[string]string, error) {
 	if len(pfxobj.certs) == 0 {
-		return ProvisioningCertObj{}, "", utils.ActivationFailedNoCertFound
+		return ProvisioningCertObj{}, nil, utils.ActivationFailedNoCertFound
 	}
 
 	if len(pfxobj.keys) == 0 {
-		return ProvisioningCertObj{}, "", utils.ActivationFailedNoPrivKeys
+		return ProvisioningCertObj{}, nil, utils.ActivationFailedNoPrivKeys
 	}
 
 	var provisioningCertificateObj ProvisioningCertObj
 
 	var certificateList []*CertificateObject
 
-	var fingerprint string
+	fingerprints := make(map[string]string)
 
 	for _, cert := range pfxobj.certs {
 		pemBlock := &pem.Block{
@@ -483,19 +494,23 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 		pem := utils.CleanPEM(string(pem.EncodeToMemory(pemBlock)))
 		certificateObject := CertificateObject{pem: pem, subject: cert.Subject.String(), issuer: cert.Issuer.String()}
 
-		// Get the fingerprint from the Root certificate
+		// Get the fingerprints from the Root certificate
 		if cert.Subject.String() == cert.Issuer.String() {
 			der := cert.Raw
-			hash := sha256.Sum256(der)
-			fingerprint = hex.EncodeToString(hash[:])
+			// SHA-384 (48 bytes) - Supported by AMT 16.1+
+			hashSHA384 := sha512.Sum384(der)
+			fingerprints["SHA384"] = hex.EncodeToString(hashSHA384[:])
+			// SHA-256 (32 bytes) - Supported by all AMT versions
+			hashSHA256 := sha256.Sum256(der)
+			fingerprints["SHA256"] = hex.EncodeToString(hashSHA256[:])
 		}
 
 		// Put all the certificateObjects into a single list
 		certificateList = append(certificateList, &certificateObject)
 	}
 
-	if fingerprint == "" {
-		return provisioningCertificateObj, "", utils.ActivationFailedNoRootCertFound
+	if len(fingerprints) == 0 {
+		return provisioningCertificateObj, nil, utils.ActivationFailedNoRootCertFound
 	}
 
 	// Add them to the certChain in order
@@ -509,18 +524,34 @@ func dumpPfx(pfxobj CertsAndKeys) (ProvisioningCertObj, string, error) {
 	// Add the certificate algorithm
 	provisioningCertificateObj.certificateAlgorithm = pfxobj.certs[0].SignatureAlgorithm
 
-	return provisioningCertificateObj, fingerprint, nil
+	return provisioningCertificateObj, fingerprints, nil
 }
 
-func (service *ProvisioningService) CompareCertHashes(fingerPrint string) error {
+// compareCertHashes compares certificate hash with AMT stored hashes
+// Uses pre-computed SHA-256 and SHA-384 fingerprints to support different AMT platforms
+func (service *ProvisioningService) CompareCertHashes(fingerprints map[string]string) error {
+	// Get all certificate hashes from AMT
 	result, err := service.amtCommand.GetCertificateHashes()
 	if err != nil {
 		return utils.ActivationFailedGetCertHash
 	}
 
+	// Try to match stored hash with corresponding algorithm
 	for _, v := range result {
-		if v.Hash == fingerPrint {
-			return nil
+		if v.Algorithm != "" {
+			// Algorithm specified: match SHA256 with SHA256, SHA384 with SHA384
+			if computedHash, exists := fingerprints[v.Algorithm]; exists {
+				if v.Hash == computedHash {
+					return nil
+				}
+			}
+		} else {
+			// Algorithm not specified: try all computed fingerprints
+			for _, computedHash := range fingerprints {
+				if v.Hash == computedHash {
+					return nil
+				}
+			}
 		}
 	}
 
