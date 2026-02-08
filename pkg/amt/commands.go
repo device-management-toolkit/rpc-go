@@ -128,6 +128,7 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	Close() error
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -163,6 +164,12 @@ func (amt AMTCommand) Initialize() error {
 
 	defer amt.PTHI.Close()
 
+	return nil
+}
+
+// Close closes the PTHI connection to release MEI device resources
+func (amt AMTCommand) Close() error {
+	amt.PTHI.Close()
 	return nil
 }
 

@@ -35,6 +35,7 @@ import (
 
 type WSMANer interface {
 	SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error
+	Close() error
 	Unprovision(int) (setupandconfiguration.Response, error)
 	PartialUnprovision() (setupandconfiguration.Response, error)
 	GetGeneralSettings() (general.Response, error)
