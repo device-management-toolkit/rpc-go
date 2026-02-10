@@ -1,0 +1,107 @@
+#*********************************************************************
+# Copyright (c) Intel Corporation 2021
+# SPDX-License-Identifier: Apache-2.0
+#*********************************************************************/
+
+name: Fuzz Testing
+
+on:
+  workflow_dispatch:
+    inputs:
+      fuzz_time:
+        description: 'Fuzz test duration (e.g., 30s, 5m, 1h)'
+        required: false
+        default: '5m'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-test:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
+    
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e
+        with:
+          egress-policy: audit
+
+      - name: Check out code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run custom duration fuzz tests (Manual)
+        run: |
+          FUZZ_TIME="${{ inputs.fuzz_time || '5m' }}"
+          echo "Running fuzz tests for ${FUZZ_TIME}"
+          go test -run=^$ -fuzz=^FuzzDeactivate$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzDeactivatePassword$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzDeactivateFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+
+      - name: Upload fuzz failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: fuzz-failures-go-${{ matrix.go-version }}
+          path: |
+            **/testdata/fuzz/*/
+            !**/.git/
+          retention-days: 30
+
+      - name: Check for new crash inputs
+        if: failure()
+        run: |
+          echo "::error::Fuzz testing found crashes. Review the uploaded artifacts."
+          find . -path "*/testdata/fuzz/*/crash-*" -o -path "*/testdata/fuzz/*/leak-*" | while read crash; do
+            echo "::error file=${crash}::Crash or leak detected: ${crash}"
+          done
+
+  fuzz-regression:
+    name: Fuzz Regression Testing
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e
+        with:
+          egress-policy: audit
+
+      - name: Check out code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run fuzz tests with existing corpus
+        run: |
+          # Run fuzz tests against the seed corpus without generating new inputs
+          # This ensures previously found issues don't regress
+          go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivate$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivatePassword$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivateFlagCombinations$ -fuzztime=1x
+
+      - name: Report regression test results
+        if: failure()
+        run: |
+          echo "::error::Regression detected in fuzz testing. A previously passing input now fails."
