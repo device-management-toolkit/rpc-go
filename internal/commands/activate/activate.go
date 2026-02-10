@@ -48,6 +48,7 @@ type ActivateCmd struct {
 	// Local configuration flags that can be loaded from YAML
 	ProvisioningCert    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
+	MEBxPassword        string `help:"MEBx password for AMT19+ TLS activation" env:"MEBX_PASSWORD" name:"mebxpassword"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
 }
@@ -293,7 +294,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, ctx.SkipAMTCertCheck)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -312,7 +313,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, ctx.SkipAMTCertCheck)
+		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 		if err := orch.ExecuteProfile(); err != nil {
 			return err
 		}
@@ -359,7 +360,7 @@ func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
 		return fmt.Errorf("failed to decrypt profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, ctx.SkipAMTCertCheck)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -381,6 +382,7 @@ func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 		Hostname:            cmd.Hostname,
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
+		MEBxPassword:        cmd.MEBxPassword,
 		FriendlyName:        cmd.FriendlyName,
 		SkipIPRenew:         cmd.SkipIPRenew,
 		StopConfig:          cmd.StopConfig,

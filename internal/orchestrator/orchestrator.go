@@ -29,6 +29,8 @@ type ProfileOrchestrator struct {
 	currentControlMode int
 	// optional current AMT password provided by caller (e.g., activate --password)
 	currentPassword string
+	// optional MEBx password provided by caller (e.g., activate --mebxpassword)
+	mebxPassword string
 	// global password argument to pass once to root rpc invocation
 	globalPassword string
 	// skip AMT certificate verification when connecting over TLS
@@ -37,13 +39,15 @@ type ProfileOrchestrator struct {
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
 // is treated as the existing AMT admin password and will be used to rotate to the profile's
-// AdminPassword without prompting when provided. The skipAMTCertCheck argument controls
-// whether AMT TLS certificate verification should be skipped for sub-commands.
-func NewProfileOrchestrator(cfg config.Configuration, currentPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
+// AdminPassword without prompting when provided. The mebxPassword argument is an optional
+// MEBx password to pass through to activation for AMT19+ TLS devices. The skipAMTCertCheck
+// argument controls whether AMT TLS certificate verification should be skipped for sub-commands.
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
 		profile:          cfg,
 		executor:         &CLIExecutor{},
 		currentPassword:  strings.TrimSpace(currentPassword),
+		mebxPassword:     strings.TrimSpace(mebxPassword),
 		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
 		skipAMTCertCheck: skipAMTCertCheck,
 	}
@@ -275,6 +279,16 @@ func (po *ProfileOrchestrator) executeActivation() error {
 		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
 			base = append(base, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
 		}
+
+		// Pass MEBx password for AMT19+ TLS activation; prefer profile value over CLI value
+		mebxPwd := po.profile.Configuration.AMTSpecific.MEBXPassword
+		if mebxPwd == "" {
+			mebxPwd = po.mebxPassword
+		}
+
+		if mebxPwd != "" {
+			base = append(base, "--mebxpassword", mebxPwd)
+		}
 	case "ccmactivate":
 		base = append(base, "--ccm")
 	default:
@@ -307,6 +321,15 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 	if po.profile.Configuration.AMTSpecific.MEBXPassword == "" ||
 		po.profile.Configuration.AMTSpecific.ControlMode != ACMMODE {
 		log.Info("MEBx password not configured or not in ACM mode, skipping MEBx configuration")
+
+		return nil
+	}
+
+	// If the device was in pre-provisioning at orchestration start, MEBx was already
+	// handled during activation (via --mebxpassword or retry logic), so skip the
+	// separate post-activation MEBx step.
+	if po.currentControlMode == 0 {
+		log.Info("MEBx password was set during activation, skipping separate MEBx configuration")
 
 		return nil
 	}
