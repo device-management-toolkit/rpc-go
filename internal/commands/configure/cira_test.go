@@ -109,6 +109,10 @@ type mockPasswordReader struct {
 
 func (m *mockPasswordReader) ReadPassword() (string, error) { return m.password, m.err }
 
+func (m *mockPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return m.password, m.err
+}
+
 func TestCIRACmd_Run(t *testing.T) {
 	t.Run("successful_cira_configuration", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
