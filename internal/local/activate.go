@@ -340,30 +340,153 @@ func (service *ProvisioningService) ActivateACM(oldWay bool, lsa *amt.LocalSyste
 			log.Debug("WSMAN client recreated successfully")
 		}
 
-		// commit changes
-		result, err := service.interfacedWsmanMessage.CommitChanges()
-		// AMT may close the connection after CommitChanges as services restart
-		// EOF errors during this phase are expected and don't indicate failure
-		if err != nil && !strings.Contains(err.Error(), "EOF") {
-			log.Error(err.Error())
+		// Handle MEBx configuration and commit with retry logic for error 2057
+		if err := service.setupMEBxAndCommit(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// setupMEBxAndCommit handles MEBx password configuration and CommitChanges
+// with retry logic for error 2057 on AMT19+ with TLS enforcement.
+// On irrecoverable failure it calls StopConfiguration so the device returns
+// to pre-provisioning state and activation can be retried.
+func (service *ProvisioningService) setupMEBxAndCommit() error {
+	// If MEBx password was explicitly provided, set it before commit
+	if service.flags.MEBxPassword != "" {
+		log.Info("MEBx password provided, setting MEBx password before commit")
+
+		if err := service.setMEBxAndCommit(service.flags.MEBxPassword); err != nil {
+			service.stopConfigOnFailure()
 
 			return utils.ActivationFailed
 		}
 
-		if err == nil {
-			log.Debug(result)
-		} else {
-			log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
-		}
-
-		// Allow AMT services to fully stabilize after CommitChanges
-		// This prevents "device did not respond" errors from remote connections
-		log.Debug("Waiting for AMT services to stabilize...")
-		time.Sleep(AMTServiceStabilizationDelay)
-		log.Debug("AMT activation complete")
+		return nil
 	}
 
+	// No MEBx password provided - try CommitChanges directly
+	result, err := service.interfacedWsmanMessage.CommitChanges()
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
+		if !isDataMissingError(err) {
+			log.Error(err.Error())
+			service.stopConfigOnFailure()
+
+			return utils.ActivationFailed
+		}
+
+		// Error 2057 (PT_STATUS_DATA_MISSING) - MEBx password required
+		log.Info("CommitChanges returned error 2057 (data missing), MEBx password required")
+
+		// Retry 1: Try using AMT password as MEBx password
+		log.Info("Attempting to set MEBx password using AMT password")
+
+		if err := service.setMEBxAndCommit(service.config.ACMSettings.AMTPassword); err == nil {
+			log.Info("MEBx password set to match AMT password")
+
+			return nil
+		}
+
+		// Retry 2: Prompt user for MEBx password
+		log.Info("AMT password did not work for MEBx, prompting for MEBx password")
+
+		prompted, err := service.promptMEBxPassword()
+		if err != nil {
+			log.Error("Failed to read MEBx password:", err)
+			service.stopConfigOnFailure()
+
+			return utils.ActivationFailed
+		}
+
+		if err := service.setMEBxAndCommit(prompted); err != nil {
+			service.stopConfigOnFailure()
+
+			return utils.ActivationFailed
+		}
+
+		return nil
+	}
+
+	if err == nil {
+		log.Debug(result)
+	} else {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
+	}
+
+	// Allow AMT services to fully stabilize after CommitChanges
+	log.Debug("Waiting for AMT services to stabilize...")
+	time.Sleep(AMTServiceStabilizationDelay)
+	log.Debug("AMT activation complete")
+
 	return nil
+}
+
+// setMEBxAndCommit sets the MEBx password and commits changes.
+func (service *ProvisioningService) setMEBxAndCommit(mebxPassword string) error {
+	_, err := service.interfacedWsmanMessage.SetupMEBX(mebxPassword)
+	if err != nil {
+		log.Error("Failed to set MEBx password:", err)
+
+		return err
+	}
+
+	result, err := service.interfacedWsmanMessage.CommitChanges()
+	// AMT may close the connection after CommitChanges as services restart
+	// EOF errors during this phase are expected and don't indicate failure
+	if err != nil && !strings.Contains(err.Error(), "EOF") {
+		log.Error("CommitChanges failed after setting MEBx password:", err)
+
+		return err
+	}
+
+	if err == nil {
+		log.Debug(result)
+	} else {
+		log.Debug("AMT services restarting after CommitChanges (connection closed as expected)")
+	}
+
+	// Allow AMT services to fully stabilize after CommitChanges
+	log.Debug("Waiting for AMT services to stabilize...")
+	time.Sleep(AMTServiceStabilizationDelay)
+	log.Debug("AMT activation complete")
+
+	return nil
+}
+
+// isDataMissingError checks if error is PT_STATUS_DATA_MISSING (2057).
+func isDataMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.Contains(err.Error(), "2057") || strings.Contains(err.Error(), "PT_STATUS_DATA_MISSING")
+}
+
+// stopConfigOnFailure transitions the device back to pre-provisioning state
+// after a failed activation attempt on TLS-enforced platforms.
+func (service *ProvisioningService) stopConfigOnFailure() {
+	log.Warn("Activation failed, attempting to stop configuration...")
+
+	_, err := service.amtCommand.StopConfiguration()
+	if err != nil {
+		log.Error("Failed to stop configuration:", err)
+	} else {
+		log.Info("Device returned to pre-provisioning state")
+	}
+}
+
+// promptMEBxPassword prompts user for MEBx password with confirmation.
+func (service *ProvisioningService) promptMEBxPassword() (string, error) {
+	var password string
+	if err := service.flags.ReadNewPasswordTo(&password, "MEBx Password"); err != nil {
+		return "", err
+	}
+
+	return password, nil
 }
 
 func (service *ProvisioningService) ActivateCCM(tlsConfig *tls.Config) error {
