@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"text/template"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -21,11 +22,6 @@ const (
 	unknownValue = "Unknown"
 	zeroIP       = "0.0.0.0"
 )
-
-type field struct {
-	label string
-	value string
-}
 
 // CIRACmd dumps CIRA-related firmware diagnostics.
 type CIRACmd struct {
@@ -72,231 +68,157 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 }
 
 func outputCiraLogText(w io.Writer, result pthi.GetCiraLogResponse) {
-	fmt.Fprintf(w, "Status = %d (%s)\n", result.Header.Status, result.Header.Status.String())
-	fmt.Fprintf(w, "Version = %d\n", result.Version)
-	fmt.Fprintln(w, "CiraStatusSummary:")
+	t := template.New("ciraLog").Funcs(template.FuncMap{
+		"getConnectionStateString":      getConnectionStateString,
+		"formatTimestamp":               formatTimestamp,
+		"getLastConnectionStatusString": getLastConnectionStatusString,
+		"getLastTunnelStatusString":     getLastTunnelStatusString,
+		"getConnectionTriggerString":    getConnectionTriggerString,
+		"ansiToString":                  ansiToString,
+		"getAuthenticationMethodString": getAuthenticationMethodString,
+		"getInterfaceTypeString":        getInterfaceTypeString,
+		"getHostControlString":          getHostControlString,
+		"getLinkStatusString":           getLinkStatusString,
+		"getDhcpModeString":             getDhcpModeString,
+		"formatIPv4":                    formatIPv4,
+		"formatIPv6":                    formatIPv6,
+		"getIPv6AddressTypeString":      getIPv6AddressTypeString,
+		"getIPv6AddressStateString":     getIPv6AddressStateString,
+		"getConnectionStatusString":     getConnectionStatusString,
+		"getTcpFailureCodeString":       getTcpFailureCodeString,
+		"getTlsFailureCodeString":       getTlsFailureCodeString,
+		"getClosedByString":             getClosedByString,
+		"getAPFDisconnectReasonString":  getAPFDisconnectReasonString,
+		"getClosureReasonString":        getClosureReasonString,
+		"getTunnelStatusString": func(opened uint8) string {
+			if opened == 1 {
+				return "Opened"
+			}
+			return "Closed"
+		},
+		"getProfileName": func(name [33]byte) string {
+			for i, b := range name {
+				if b == 0 {
+					return string(name[:i])
+				}
+			}
+			return string(name[:])
+		},
+	})
 
-	tunnelStatus := "Closed"
-	if result.CiraStatusSummary.IsTunnelOpened == 1 {
-		tunnelStatus = "Opened"
+	t, err := t.Parse(ciraLogTemplate)
+	if err != nil {
+		fmt.Fprintf(w, "Error parsing template: %v\n", err)
+		return
 	}
 
-	fields := []field{
-		{"IsTunnelOpened", fmt.Sprintf("%d (%s)", result.CiraStatusSummary.IsTunnelOpened, tunnelStatus)},
-		{"CurrentConnectionState",
-			fmt.Sprintf("%d (%s)",
-				result.CiraStatusSummary.CurrentConnectionState,
-				getConnectionStateString(result.CiraStatusSummary.CurrentConnectionState))},
-		{"LastKeepAlive(The time in which the last keepalive message was sent, 0 if not currently connected)",
-			fmt.Sprintf("%d(%s)",
-				result.CiraStatusSummary.LastKeepAlive,
-				formatTimestamp(result.CiraStatusSummary.LastKeepAlive))},
-		{"KeepAliveInterval(AMT's keepalive interval in seconds, valid only if currently connected)",
-			fmt.Sprint(result.CiraStatusSummary.KeepAliveInterval)},
-		{"LastConnectionStatus",
-			fmt.Sprintf("%d (%s)", result.CiraStatusSummary.LastConnectionStatus, getLastConnectionStatusString(result.CiraStatusSummary.LastConnectionStatus))},
-		{"LastConnectionTimestamp",
-			fmt.Sprintf("%d (%s)",
-				result.CiraStatusSummary.LastConnectionTimestamp,
-				formatTimestamp(result.CiraStatusSummary.LastConnectionTimestamp))},
-		{"LastTunnelStatus",
-			fmt.Sprintf("%d (%s)", result.CiraStatusSummary.LastTunnelStatus, getLastTunnelStatusString(result.CiraStatusSummary.LastTunnelStatus))},
-		{"LastTunnelOpenedTimestamp",
-			fmt.Sprintf("%d (%s)",
-				result.CiraStatusSummary.LastTunnelOpenedTimestamp,
-				formatTimestamp(result.CiraStatusSummary.LastTunnelOpenedTimestamp))},
-		{"LastTunnelClosedTimestamp",
-			fmt.Sprintf("%d (%s)",
-				result.CiraStatusSummary.LastTunnelClosedTimestamp,
-				formatTimestamp(result.CiraStatusSummary.LastTunnelClosedTimestamp))},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-
-	fmt.Fprintln(w, "LastFailedTunnelLogEntry:")
-	printTunnelLogEntry(w, result.LastFailedTunnelLogEntry)
-
-	fmt.Fprintln(w, "FailedConnectionLogEntry:")
-	printFailedConnectionLogEntry(w, result.FailedConnectionLogEntry)
-}
-
-func printTunnelLogEntry(w io.Writer, entry pthi.CIRATunnelLogEntry) {
-	fields := []field{
-		{"Valid", fmt.Sprint(entry.Valid)},
-		{"OpenTimestamp", fmt.Sprintf("%d (%s)", entry.OpenTimestamp, formatTimestamp(entry.OpenTimestamp))},
-		{"RemoteAccessConnectionTrigger", fmt.Sprintf("%d (%s)", entry.RemoteAccessConnectionTrigger,
-			getConnectionTriggerString(entry.RemoteAccessConnectionTrigger))},
-		{"MpsHostname", ansiToString(entry.MpsHostname)},
-		{"ProxyUsed(Indicates whether CIRA connection is over proxy)", fmt.Sprint(entry.ProxyUsed)},
-		{"ProxyName", ansiToString(entry.ProxyName)},
-		{"AuthenticationMethod", fmt.Sprintf("%d (%s)", entry.AuthenticationMethod, getAuthenticationMethodString(entry.AuthenticationMethod))},
-		{"ConnectedInterface", fmt.Sprintf("%d (%s)", entry.ConnectedInterface, getInterfaceTypeString(entry.ConnectedInterface))},
-		{"LastKeepAlive", fmt.Sprintf("%d (%s)", entry.LastKeepAlive, formatTimestamp(entry.LastKeepAlive))},
-		{"KeepAliveInterval", fmt.Sprint(entry.KeepAliveInterval)},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-
-	fmt.Fprintln(w, "\tTunnelClosureInfo:")
-	printTunnelClosureInfo(w, entry.TunnelClosureInfo)
-}
-
-func printFailedConnectionLogEntry(w io.Writer, entry pthi.CIRAFailedConnectionLogEntry) {
-	fields := []field{
-		{"Valid", fmt.Sprint(entry.Valid)},
-		{"OpenTimestamp", fmt.Sprintf("%d (%s)", entry.OpenTimestamp, formatTimestamp(entry.OpenTimestamp))},
-		{"RemoteAccessConnectionTrigger", fmt.Sprintf("%d (%s)", entry.RemoteAccessConnectionTrigger,
-			getConnectionTriggerString(entry.RemoteAccessConnectionTrigger))},
-		{"MpsHostname", ansiToString(entry.MpsHostname)},
-		{"AuthenticationMethod", fmt.Sprintf("%d (%s)", entry.AuthenticationMethod, getAuthenticationMethodString(entry.AuthenticationMethod))},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-
-	fmt.Fprintln(w, "\tInterfaceData:")
-
-	// InterfaceData is a fixed-size array of 2 items: [0]=Lan, [1]=Wireless
-	interfaceNames := []string{"Lan Item:", "Wireless Item:"}
-	for i := 0; i < 2; i++ {
-		fmt.Fprintf(w, "\t\t%s\n", interfaceNames[i])
-		printInterfaceData(w, entry.InterfaceData[i])
-	}
-
-	fmt.Fprintln(w, "\tWirelessAdditionalData:")
-	// Find null terminator in ProfileName byte array
-	profileName := ""
-
-	for i, b := range entry.WirelessAdditionalData.ProfileName {
-		if b == 0 {
-			profileName = string(entry.WirelessAdditionalData.ProfileName[:i])
-
-			break
-		}
-	}
-
-	fmt.Fprintf(w, "\t\tProfileName = %s\n", profileName)
-	fmt.Fprintf(w, "\t\tHostControl = %d (%s)\n", entry.WirelessAdditionalData.HostControl, getHostControlString(entry.WirelessAdditionalData.HostControl))
-
-	fmt.Fprintln(w, "\tWiredAdditionalData:")
-	fmt.Fprintf(w, "\t\t802.1xAuthenticationResult = %d\n", entry.WiredAdditionalData.AuthResult802_1x)
-	fmt.Fprintf(w, "\t\t802.1xAuthenticationSubResult = %d\n", entry.WiredAdditionalData.AuthSubResult802_1x)
-	fmt.Fprintf(w, "\t\tWiredMediaType = %d\n", entry.WiredAdditionalData.WiredMediaType)
-	fmt.Fprintf(w, "\t\tDiscreteLanStatus = %d\n", entry.WiredAdditionalData.DiscreteLanStatus)
-
-	fmt.Fprintf(w, "\tConnectedInterface = %d (%s)\n", entry.ConnectedInterface, getInterfaceTypeString(entry.ConnectedInterface))
-
-	fmt.Fprintln(w, "\tConnectionDetails:")
-
-	// ConnectionDetails is a fixed-size array of 2 items: [0]=Lan, [1]=Wireless
-	connectionNames := []string{"Lan Item:", "Wireless Item:"}
-	for i := 0; i < 2; i++ {
-		fmt.Fprintf(w, "\t\t%s\n", connectionNames[i])
-		printConnectionDetail(w, entry.ConnectionDetails[i])
-	}
-
-	fmt.Fprintln(w, "\tTunnelEstablishmentFailure:")
-	printTunnelClosureInfo(w, entry.TunnelEstablishmentFailure)
-}
-
-func printInterfaceData(w io.Writer, data pthi.InterfaceData) {
-	fields := []field{
-		{"\t\t\tInterfacePresent", fmt.Sprint(data.InterfacePresent)},
-		{"			LinkStatus", fmt.Sprintf("%d (%s)", data.LinkStatus, getLinkStatusString(data.LinkStatus))},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-
-	fmt.Fprintln(w, "\t\t\tIPParameters:")
-
-	ipFields := []field{
-		{"\t\t\t\tDhcpMode", fmt.Sprintf("%d (%s)", data.IPParameters.DhcpMode, getDhcpModeString(data.IPParameters.DhcpMode))},
-		{"\t\t\t\tIpAddress", formatIPv4(data.IPParameters.IpAddress)},
-		{"\t\t\t\tDefaultGatewayAddress", formatIPv4(data.IPParameters.DefaultGatewayAddress)},
-		{"\t\t\t\tPrimaryDnsAddress", formatIPv4(data.IPParameters.PrimaryDnsAddress)},
-		{"\t\t\t\tSecondaryDnsAddress", formatIPv4(data.IPParameters.SecondaryDnsAddress)},
-		{"\t\t\t\tDomainName", ansiToString(data.IPParameters.DomainName)},
-	}
-
-	for _, f := range ipFields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-
-	// Always print IPv6 fields - they are physically present in structure, just zero when disabled
-	fmt.Fprintln(w, "\t\t\t\tIPv6DefaultRouter:")
-	fmt.Fprintf(w, "\t\t\t\t\tAddress = %s\n", formatIPv6(data.IPParameters.IPv6DefaultRouter))
-	fmt.Fprintln(w, "\t\t\t\tPrimaryDNS:")
-	fmt.Fprintf(w, "\t\t\t\t\tAddress = %s\n", formatIPv6(data.IPParameters.PrimaryDNS))
-	fmt.Fprintln(w, "\t\t\t\tSecondaryDNS:")
-	fmt.Fprintf(w, "\t\t\t\t\tAddress = %s\n", formatIPv6(data.IPParameters.SecondaryDNS))
-	fmt.Fprintln(w, "\t\t\t\tIPv6Addresses:")
-
-	// IPv6Addresses is a fixed array of 6
-	for i := 0; i < pthi.MAX_IPV6_ADDRESSES; i++ {
-		printIPv6AddressEntry(w, data.IPParameters.IPv6Addresses[i])
+	err = t.Execute(w, result)
+	if err != nil {
+		fmt.Fprintf(w, "Error executing template: %v\n", err)
 	}
 }
 
-func printIPv6AddressEntry(w io.Writer, entry pthi.IPv6AddressEntry) {
-	fmt.Fprintf(w, "\t\t\t\t\tAddress = %s\n", formatIPv6(entry.Address))
-	fmt.Fprintf(w, "\t\t\t\t\tType = %d (%s)\n", entry.Type, getIPv6AddressTypeString(entry.Type))
-	fmt.Fprintf(w, "\t\t\t\t\tState = %d (%s)\n", entry.State, getIPv6AddressStateString(entry.State))
-}
+const ciraLogTemplate = `Status = {{printf "%d" .Header.Status}} ({{.Header.Status}})
+Version = {{.Version}}
+CiraStatusSummary:
+	IsTunnelOpened = {{.CiraStatusSummary.IsTunnelOpened}} ({{getTunnelStatusString .CiraStatusSummary.IsTunnelOpened}})
+	CurrentConnectionState = {{.CiraStatusSummary.CurrentConnectionState}} ({{getConnectionStateString .CiraStatusSummary.CurrentConnectionState}})
+	LastKeepAlive(The time in which the last keepalive message was sent, 0 if not currently connected) = {{.CiraStatusSummary.LastKeepAlive}}({{.CiraStatusSummary.LastKeepAlive | formatTimestamp}})
+	KeepAliveInterval(AMT's keepalive interval in seconds, valid only if currently connected) = {{.CiraStatusSummary.KeepAliveInterval}}
+	LastConnectionStatus = {{.CiraStatusSummary.LastConnectionStatus}} ({{getLastConnectionStatusString .CiraStatusSummary.LastConnectionStatus}})
+	LastConnectionTimestamp = {{.CiraStatusSummary.LastConnectionTimestamp}} ({{.CiraStatusSummary.LastConnectionTimestamp | formatTimestamp}})
+	LastTunnelStatus = {{.CiraStatusSummary.LastTunnelStatus}} ({{getLastTunnelStatusString .CiraStatusSummary.LastTunnelStatus}})
+	LastTunnelOpenedTimestamp = {{.CiraStatusSummary.LastTunnelOpenedTimestamp}} ({{.CiraStatusSummary.LastTunnelOpenedTimestamp | formatTimestamp}})
+	LastTunnelClosedTimestamp = {{.CiraStatusSummary.LastTunnelClosedTimestamp}} ({{.CiraStatusSummary.LastTunnelClosedTimestamp | formatTimestamp}})
+LastFailedTunnelLogEntry:
+	Valid = {{.LastFailedTunnelLogEntry.Valid}}
+	OpenTimestamp = {{.LastFailedTunnelLogEntry.OpenTimestamp}} ({{.LastFailedTunnelLogEntry.OpenTimestamp | formatTimestamp}})
+	RemoteAccessConnectionTrigger = {{.LastFailedTunnelLogEntry.RemoteAccessConnectionTrigger}} ({{getConnectionTriggerString .LastFailedTunnelLogEntry.RemoteAccessConnectionTrigger}})
+	MpsHostname = {{ansiToString .LastFailedTunnelLogEntry.MpsHostname}}
+	ProxyUsed(Indicates whether CIRA connection is over proxy) = {{.LastFailedTunnelLogEntry.ProxyUsed}}
+	ProxyName = {{ansiToString .LastFailedTunnelLogEntry.ProxyName}}
+	AuthenticationMethod = {{.LastFailedTunnelLogEntry.AuthenticationMethod}} ({{getAuthenticationMethodString .LastFailedTunnelLogEntry.AuthenticationMethod}})
+	ConnectedInterface = {{.LastFailedTunnelLogEntry.ConnectedInterface}} ({{getInterfaceTypeString .LastFailedTunnelLogEntry.ConnectedInterface}})
+	LastKeepAlive = {{.LastFailedTunnelLogEntry.LastKeepAlive}} ({{.LastFailedTunnelLogEntry.LastKeepAlive | formatTimestamp}})
+	KeepAliveInterval = {{.LastFailedTunnelLogEntry.KeepAliveInterval}}
+	TunnelClosureInfo:
+		ClosureTimestamp = {{.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureTimestamp}} ({{.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureTimestamp | formatTimestamp}})
+		ClosedBy = {{.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosedByMps}} ({{getClosedByString .LastFailedTunnelLogEntry.TunnelClosureInfo.ClosedByMps}})
+		APF_DISCONNECT_REASON = {{.LastFailedTunnelLogEntry.TunnelClosureInfo.APF_DISCONNECT_REASON}} ({{getAPFDisconnectReasonString .LastFailedTunnelLogEntry.TunnelClosureInfo.APF_DISCONNECT_REASON}})
+		ClosureReason = {{.LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureReason}} ({{getClosureReasonString .LastFailedTunnelLogEntry.TunnelClosureInfo.ClosureReason}})
+FailedConnectionLogEntry:
+	Valid = {{.FailedConnectionLogEntry.Valid}}
+	OpenTimestamp = {{.FailedConnectionLogEntry.OpenTimestamp}} ({{.FailedConnectionLogEntry.OpenTimestamp | formatTimestamp}})
+	RemoteAccessConnectionTrigger = {{.FailedConnectionLogEntry.RemoteAccessConnectionTrigger}} ({{getConnectionTriggerString .FailedConnectionLogEntry.RemoteAccessConnectionTrigger}})
+	MpsHostname = {{ansiToString .FailedConnectionLogEntry.MpsHostname}}
+	AuthenticationMethod = {{.FailedConnectionLogEntry.AuthenticationMethod}} ({{getAuthenticationMethodString .FailedConnectionLogEntry.AuthenticationMethod}})
+	InterfaceData:
+{{- range $i, $e := .FailedConnectionLogEntry.InterfaceData}}
+		{{if eq $i 0}}Lan Item:{{else}}Wireless Item:{{end}}
+			InterfacePresent = {{$e.InterfacePresent}}
+			LinkStatus = {{$e.LinkStatus}} ({{getLinkStatusString $e.LinkStatus}})
+			IPParameters:
+				DhcpMode = {{$e.IPParameters.DhcpMode}} ({{getDhcpModeString $e.IPParameters.DhcpMode}})
+				IpAddress = {{formatIPv4 $e.IPParameters.IpAddress}}
+				DefaultGatewayAddress = {{formatIPv4 $e.IPParameters.DefaultGatewayAddress}}
+				PrimaryDnsAddress = {{formatIPv4 $e.IPParameters.PrimaryDnsAddress}}
+				SecondaryDnsAddress = {{formatIPv4 $e.IPParameters.SecondaryDnsAddress}}
+				DomainName = {{ansiToString $e.IPParameters.DomainName}}
+				IPv6DefaultRouter:
+					Address = {{formatIPv6 $e.IPParameters.IPv6DefaultRouter}}
+				PrimaryDNS:
+					Address = {{formatIPv6 $e.IPParameters.PrimaryDNS}}
+				SecondaryDNS:
+					Address = {{formatIPv6 $e.IPParameters.SecondaryDNS}}
+				IPv6Addresses:
+{{- range $j, $addr := $e.IPParameters.IPv6Addresses}}
+					Address = {{formatIPv6 $addr.Address}}
+					Type = {{$addr.Type}} ({{getIPv6AddressTypeString $addr.Type}})
+					State = {{$addr.State}} ({{getIPv6AddressStateString $addr.State}})
+{{- end}}
+{{- end}}
+	WirelessAdditionalData:
+		ProfileName = {{getProfileName .FailedConnectionLogEntry.WirelessAdditionalData.ProfileName}}
+		HostControl = {{.FailedConnectionLogEntry.WirelessAdditionalData.HostControl}} ({{getHostControlString .FailedConnectionLogEntry.WirelessAdditionalData.HostControl}})
+	WiredAdditionalData:
+		802.1xAuthenticationResult = {{.FailedConnectionLogEntry.WiredAdditionalData.AuthResult802_1x}}
+		802.1xAuthenticationSubResult = {{.FailedConnectionLogEntry.WiredAdditionalData.AuthSubResult802_1x}}
+		WiredMediaType = {{.FailedConnectionLogEntry.WiredAdditionalData.WiredMediaType}}
+		DiscreteLanStatus = {{.FailedConnectionLogEntry.WiredAdditionalData.DiscreteLanStatus}}
+	ConnectedInterface = {{.FailedConnectionLogEntry.ConnectedInterface}} ({{getInterfaceTypeString .FailedConnectionLogEntry.ConnectedInterface}})
+	ConnectionDetails:
+{{- range $i, $e := .FailedConnectionLogEntry.ConnectionDetails}}
+		{{if eq $i 0}}Lan Item:{{else}}Wireless Item:{{end}}
+			ConnectionStatus = {{$e.ConnectionStatus}} ({{getConnectionStatusString $e.ConnectionStatus}})
+			ProxyUsed = {{$e.ProxyUsed}}
+			ProxyName = {{ansiToString $e.ProxyName}}
+			TcpFailureCode = {{$e.TcpFailureCode}} ({{getTcpFailureCodeString $e.TcpFailureCode}})
+			TlsFailureCode = {{$e.TlsFailureCode}} ({{getTlsFailureCodeString $e.TlsFailureCode}})
+{{- end}}
+	TunnelEstablishmentFailure:
+		ClosureTimestamp = {{.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureTimestamp}} ({{.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureTimestamp | formatTimestamp}})
+		ClosedBy = {{.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosedByMps}} ({{getClosedByString .FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosedByMps}})
+		APF_DISCONNECT_REASON = {{.FailedConnectionLogEntry.TunnelEstablishmentFailure.APF_DISCONNECT_REASON}} ({{getAPFDisconnectReasonString .FailedConnectionLogEntry.TunnelEstablishmentFailure.APF_DISCONNECT_REASON}})
+		ClosureReason = {{.FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureReason}} ({{getClosureReasonString .FailedConnectionLogEntry.TunnelEstablishmentFailure.ClosureReason}})
+`
 
-func printConnectionDetail(w io.Writer, detail pthi.ConnectionDetail) {
-	fields := []field{
-		{"\t\t\tConnectionStatus", fmt.Sprintf("%d (%s)", detail.ConnectionStatus, getConnectionStatusString(detail.ConnectionStatus))},
-		{"\t\t\tProxyUsed", fmt.Sprint(detail.ProxyUsed)},
-		{"\t\t\tProxyName", ansiToString(detail.ProxyName)},
-		{"\t\t\tTcpFailureCode", fmt.Sprintf("%d (%s)", detail.TcpFailureCode, getTcpFailureCodeString(detail.TcpFailureCode))},
-		{"\t\t\tTlsFailureCode", fmt.Sprintf("%d (%s)", detail.TlsFailureCode, getTlsFailureCodeString(detail.TlsFailureCode))},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t%s = %s\n", f.label, f.value)
-	}
-}
-
-func printTunnelClosureInfo(w io.Writer, info pthi.TunnelClosureInfo) {
-	fields := []field{
-		{"ClosureTimestamp", fmt.Sprintf("%d (%s)", info.ClosureTimestamp, formatTimestamp(info.ClosureTimestamp))},
-		{"ClosedBy", fmt.Sprintf("%d (%s)", info.ClosedByMps, getClosedByString(info.ClosedByMps))},
-		{"APF_DISCONNECT_REASON", fmt.Sprintf("%d (%s)", info.APF_DISCONNECT_REASON, getAPFDisconnectReasonString(info.APF_DISCONNECT_REASON))},
-		{"ClosureReason", fmt.Sprintf("%d (%s)", info.ClosureReason, getClosureReasonString(info.ClosureReason))},
-	}
-
-	for _, f := range fields {
-		fmt.Fprintf(w, "\t\t%s = %s\n", f.label, f.value)
-	}
-}
 
 // Helper functions
 func ansiToString(ansi pthi.AMTANSIString) string {
-	// If Length field is not set or invalid, scan for null terminator
-	length := ansi.Length
-	if length == 0 || length > uint16(len(ansi.Buffer)) {
-		// Find null terminator
-		for i, b := range ansi.Buffer {
-			if b == 0 {
-				length = uint16(i)
+	// If Length is valid (non-zero and fits in buffer), use it directly
+	if ansi.Length > 0 && int(ansi.Length) <= len(ansi.Buffer) {
+		return string(ansi.Buffer[:ansi.Length])
+	}
 
-				break
-			}
-		}
-
-		if length == 0 {
-			return ""
+	// Otherwise, scan for null terminator
+	for i, b := range ansi.Buffer {
+		if b == 0 {
+			return string(ansi.Buffer[:i])
 		}
 	}
 
-	return string(ansi.Buffer[:length])
+	// Fallback: return entire buffer if no null terminator found
+	return string(ansi.Buffer[:])
 }
 
 func formatTimestamp(ts uint32) string {
@@ -314,11 +236,12 @@ func formatIPv4(ip uint32) string {
 		return zeroIP
 	}
 
-	return fmt.Sprintf("%d.%d.%d.%d",
-		byte(ip&0xFF),
-		byte((ip>>8)&0xFF),
-		byte((ip>>16)&0xFF),
-		byte((ip>>24)&0xFF))
+	return net.IP([]byte{
+		byte(ip),
+		byte(ip >> 8),
+		byte(ip >> 16),
+		byte(ip >> 24),
+	}).String()
 }
 
 func formatIPv6(addr pthi.IPv6Address) string {
@@ -342,135 +265,68 @@ func formatIPv6(addr pthi.IPv6Address) string {
 	return ip.String()
 }
 
-func getConnectionStateString(state uint8) string {
-	switch state {
-	case 0:
-		return "Inside Enterprise"
-	case 1:
-		return "Inside Corporate Environment, outside Enterprise"
-	case 2:
-		return "Outside Enterprise"
-	default:
-		return unknownValue
-	}
-}
 
-func getConnectionTriggerString(trigger uint8) string {
-	switch trigger {
-	case 0:
-		return "User Initiated"
-	case 1:
-		return "Alert"
-	case 2:
-		return "Periodic"
-	default:
-		return unknownValue
+var (
+	connectionStates = map[uint8]string{
+		0: "Inside Enterprise",
+		1: "Inside Corporate Environment, outside Enterprise",
+		2: "Outside Enterprise",
 	}
-}
 
-func getInterfaceTypeString(iface uint8) string {
-	switch iface {
-	case 0:
-		return "INTERFACE_TYPE_WIRED"
-	case 1:
-		return "INTERFACE_TYPE_WIRELESS"
-	case 2:
-		return "INTERFACE_TYPE_NONE"
-	default:
-		return unknownValue
+	connectionTriggers = map[uint8]string{
+		0: "User Initiated",
+		1: "Alert",
+		2: "Periodic",
 	}
-}
 
-func getDhcpModeString(mode uint8) string {
-	switch mode {
-	case 0:
-		return "Disabled"
-	case 1:
-		return "Reserved"
-	case 2:
-		return "Enabled"
-	default:
-		return unknownValue
+	interfaceTypes = map[uint8]string{
+		0: "INTERFACE_TYPE_WIRED",
+		1: "INTERFACE_TYPE_WIRELESS",
+		2: "INTERFACE_TYPE_NONE",
 	}
-}
 
-func getAuthenticationMethodString(method uint8) string {
-	switch method {
-	case 1:
-		return "MutualTLS"
-	case 2:
-		return "Username and password"
-	default:
-		return unknownValue
+	dhcpModes = map[uint8]string{
+		0: "Disabled",
+		1: "Reserved",
+		2: "Enabled",
 	}
-}
 
-func getIPv6AddressTypeString(addrType uint8) string {
-	switch addrType {
-	case 0:
-		return "CFG_Ipv6_ADDR_TYPE_LINK_LOCAL"
-	case 1:
-		return "CFG_Ipv6_ADDR_TYPE_GLOBAL"
-	case 2:
-		return "CFG_Ipv6_ADDR_TYPE_STATELESS"
-	case 3:
-		return "CFG_Ipv6_ADDR_TYPE_STATEFUL"
-	default:
-		return unknownValue
+	authMethods = map[uint8]string{
+		1: "MutualTLS",
+		2: "Username and password",
 	}
-}
 
-func getIPv6AddressStateString(state uint8) string {
-	switch state {
-	case 0:
-		return "CFG_Ipv6_ADDR_STATE_TENTATIVE"
-	case 1:
-		return "CFG_Ipv6_ADDR_STATE_PREFERRED"
-	case 2:
-		return "CFG_Ipv6_ADDR_STATE_DEPRECATED"
-	default:
-		return unknownValue
+	ipv6AddressTypes = map[uint8]string{
+		0: "CFG_Ipv6_ADDR_TYPE_LINK_LOCAL",
+		1: "CFG_Ipv6_ADDR_TYPE_GLOBAL",
+		2: "CFG_Ipv6_ADDR_TYPE_STATELESS",
+		3: "CFG_Ipv6_ADDR_TYPE_STATEFUL",
 	}
-}
 
-func getConnectionStatusString(status uint32) string {
-	switch status {
-	case 0:
-		return "CIRA_LOG_CONNECTION_STATUS_NA"
-	case 1:
-		return "CIRA_LOG_CONNECTION_STATUS_INTERNAL_ERROR"
-	case 2:
-		return "CIRA_LOG_CONNECTION_STATUS_ERROR_DNS"
-	case 3:
-		return "CIRA_LOG_CONNECTION_STATUS_ERROR_TCP"
-	case 4:
-		return "CIRA_LOG_CONNECTION_STATUS_ERROR_TLS"
-	case 5:
-		return "CIRA_LOG_CONNECTION_STATUS_SUCCESS"
-	default:
-		return unknownValue
+	ipv6AddressStates = map[uint8]string{
+		0: "CFG_Ipv6_ADDR_STATE_TENTATIVE",
+		1: "CFG_Ipv6_ADDR_STATE_PREFERRED",
+		2: "CFG_Ipv6_ADDR_STATE_DEPRECATED",
 	}
-}
 
-func getTcpFailureCodeString(code uint32) string {
-	switch code {
-	case 0:
-		return "CIRA_LOGGER_TCP_ERR_SUCCESS"
-	case 1:
-		return "CIRA_LOGGER_TCP_ERR_GENERAL_FAILURE"
-	case 2:
-		return "CIRA_LOGGER_TCP_ERR_TIMED_OUT"
-	case 3:
-		return "CIRA_LOGGER_TCP_ERR_CONNECTION_RESET"
-	case 4:
-		return "CIRA_LOGGER_TCP_ERR_DESTINATION_UNREACHABLE"
-	default:
-		return unknownValue
+	connectionStatuses = map[uint32]string{
+		0: "CIRA_LOG_CONNECTION_STATUS_NA",
+		1: "CIRA_LOG_CONNECTION_STATUS_INTERNAL_ERROR",
+		2: "CIRA_LOG_CONNECTION_STATUS_ERROR_DNS",
+		3: "CIRA_LOG_CONNECTION_STATUS_ERROR_TCP",
+		4: "CIRA_LOG_CONNECTION_STATUS_ERROR_TLS",
+		5: "CIRA_LOG_CONNECTION_STATUS_SUCCESS",
 	}
-}
 
-func getAPFDisconnectReasonString(reason uint8) string {
-	reasons := map[uint8]string{
+	tcpFailureCodes = map[uint32]string{
+		0: "CIRA_LOGGER_TCP_ERR_SUCCESS",
+		1: "CIRA_LOGGER_TCP_ERR_GENERAL_FAILURE",
+		2: "CIRA_LOGGER_TCP_ERR_TIMED_OUT",
+		3: "CIRA_LOGGER_TCP_ERR_CONNECTION_RESET",
+		4: "CIRA_LOGGER_TCP_ERR_DESTINATION_UNREACHABLE",
+	}
+
+	apfDisconnectReasons = map[uint8]string{
 		0:  "APF_DISCONNECT_INVALID_REASON_CODE",
 		1:  "APF_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT",
 		2:  "APF_DISCONNECT_PROTOCOL_ERROR",
@@ -490,157 +346,191 @@ func getAPFDisconnectReasonString(reason uint8) string {
 		16: "APF_DISCONNECT_CONNECTION_TIMED_OUT",
 	}
 
-	if str, ok := reasons[reason]; ok {
-		return str
+	closureReasons = map[uint8]string{
+		0: "AMT_CLOSE_REASON_USER_INITIATE_REQUEST",
+		1: "AMT_CLOSE_REASON_TUNNEL_TIMER_EXPIRED",
+		2: "AMT_CLOSE_REASON_INTERNAL_ERROR",
+		3: "AMT_CLOSE_REASON_KEEP_ALIVE_EXPIRED",
+		4: "AMT_CLOSE_REASON_TCP_SOCKET_ERROR",
 	}
 
+	hostControls = map[uint8]string{
+		0: "AMT",
+		1: "Host",
+	}
+
+	closedByEntities = map[uint8]string{
+		0: "AMT",
+		1: "MPS",
+	}
+
+	linkStatuses = map[uint8]string{
+		0: "Down",
+		1: "Up",
+	}
+
+	tlsFailureCodes = map[int32]string{
+		0:   "close_notify",
+		10:  "unexpected_message",
+		20:  "bad_record_mac",
+		21:  "decryption_failed_RESERVED",
+		22:  "record_overflow",
+		30:  "decompression_failure_RESERVED",
+		40:  "handshake_failure",
+		41:  "no_certificate_RESERVED",
+		42:  "bad_certificate",
+		43:  "unsupported_certificate",
+		44:  "certificate_revoked",
+		45:  "certificate_expired",
+		46:  "certificate_unknown",
+		47:  "illegal_parameter",
+		48:  "unknown_ca",
+		49:  "access_denied",
+		50:  "decode_error",
+		51:  "decrypt_error",
+		60:  "export_restriction_RESERVED",
+		70:  "protocol_version",
+		71:  "insufficient_security",
+		80:  "internal_error",
+		86:  "inappropriate_fallback",
+		90:  "user_canceled",
+		100: "no_renegotiation_RESERVED",
+		109: "missing_extension",
+		110: "unsupported_extension",
+		111: "certificate_unobtainable_RESERVED",
+		112: "unrecognized_name",
+		113: "bad_certificate_status_response",
+		114: "bad_certificate_hash_value_RESERVED",
+		115: "unknown_psk_identity",
+		116: "certificate_required",
+		120: "no_application_protocol",
+	}
+
+	lastConnectionStatuses = map[uint8]string{
+		0: "Connection established successfully",
+		1: "Failed to connect",
+	}
+
+	lastTunnelStatuses = map[uint8]string{
+		0: "Session opened and closed successfully",
+		1: "Session failed due to an error",
+	}
+)
+
+func getConnectionStateString(state uint8) string {
+	if val, ok := connectionStates[state]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getConnectionTriggerString(trigger uint8) string {
+	if val, ok := connectionTriggers[trigger]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getInterfaceTypeString(iface uint8) string {
+	if val, ok := interfaceTypes[iface]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getDhcpModeString(mode uint8) string {
+	if val, ok := dhcpModes[mode]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getAuthenticationMethodString(method uint8) string {
+	if val, ok := authMethods[method]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getIPv6AddressTypeString(addrType uint8) string {
+	if val, ok := ipv6AddressTypes[addrType]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getIPv6AddressStateString(state uint8) string {
+	if val, ok := ipv6AddressStates[state]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getConnectionStatusString(status uint32) string {
+	if val, ok := connectionStatuses[status]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getTcpFailureCodeString(code uint32) string {
+	if val, ok := tcpFailureCodes[code]; ok {
+		return val
+	}
+	return unknownValue
+}
+
+func getAPFDisconnectReasonString(reason uint8) string {
+	if val, ok := apfDisconnectReasons[reason]; ok {
+		return val
+	}
 	return unknownValue
 }
 
 func getClosureReasonString(reason uint8) string {
-	switch reason {
-	case 0:
-		return "AMT_CLOSE_REASON_USER_INITIATE_REQUEST"
-	case 1:
-		return "AMT_CLOSE_REASON_TUNNEL_TIMER_EXPIRED"
-	case 2:
-		return "AMT_CLOSE_REASON_INTERNAL_ERROR"
-	case 3:
-		return "AMT_CLOSE_REASON_KEEP_ALIVE_EXPIRED"
-	case 4:
-		return "AMT_CLOSE_REASON_TCP_SOCKET_ERROR"
-	default:
-		return unknownValue
+	if val, ok := closureReasons[reason]; ok {
+		return val
 	}
+	return unknownValue
 }
 
 func getHostControlString(control uint8) string {
-	switch control {
-	case 0:
-		return "AMT"
-	case 1:
-		return "Host"
-	default:
-		return unknownValue
+	if val, ok := hostControls[control]; ok {
+		return val
 	}
+	return unknownValue
 }
 
 func getClosedByString(closedBy uint8) string {
-	switch closedBy {
-	case 0:
-		return "AMT"
-	case 1:
-		return "MPS"
-	default:
-		return unknownValue
+	if val, ok := closedByEntities[closedBy]; ok {
+		return val
 	}
+	return unknownValue
 }
 
 func getLinkStatusString(status uint8) string {
-	switch status {
-	case 0:
-		return "Down"
-	case 1:
-		return "Up"
-	default:
-		return unknownValue
+	if val, ok := linkStatuses[status]; ok {
+		return val
 	}
+	return unknownValue
 }
 
 func getTlsFailureCodeString(code int32) string {
-	// TLS alert descriptions
-	switch code {
-	case 0:
-		return "close_notify"
-	case 10:
-		return "unexpected_message"
-	case 20:
-		return "bad_record_mac"
-	case 21:
-		return "decryption_failed_RESERVED"
-	case 22:
-		return "record_overflow"
-	case 30:
-		return "decompression_failure_RESERVED"
-	case 40:
-		return "handshake_failure"
-	case 41:
-		return "no_certificate_RESERVED"
-	case 42:
-		return "bad_certificate"
-	case 43:
-		return "unsupported_certificate"
-	case 44:
-		return "certificate_revoked"
-	case 45:
-		return "certificate_expired"
-	case 46:
-		return "certificate_unknown"
-	case 47:
-		return "illegal_parameter"
-	case 48:
-		return "unknown_ca"
-	case 49:
-		return "access_denied"
-	case 50:
-		return "decode_error"
-	case 51:
-		return "decrypt_error"
-	case 60:
-		return "export_restriction_RESERVED"
-	case 70:
-		return "protocol_version"
-	case 71:
-		return "insufficient_security"
-	case 80:
-		return "internal_error"
-	case 86:
-		return "inappropriate_fallback"
-	case 90:
-		return "user_canceled"
-	case 100:
-		return "no_renegotiation_RESERVED"
-	case 109:
-		return "missing_extension"
-	case 110:
-		return "unsupported_extension"
-	case 111:
-		return "certificate_unobtainable_RESERVED"
-	case 112:
-		return "unrecognized_name"
-	case 113:
-		return "bad_certificate_status_response"
-	case 114:
-		return "bad_certificate_hash_value_RESERVED"
-	case 115:
-		return "unknown_psk_identity"
-	case 116:
-		return "certificate_required"
-	case 120:
-		return "no_application_protocol"
-	default:
-		return fmt.Sprintf("unknown_alert_%d", code)
+	if val, ok := tlsFailureCodes[code]; ok {
+		return val
 	}
+	return fmt.Sprintf("unknown_alert_%d", code)
 }
 
 func getLastConnectionStatusString(status uint8) string {
-	switch status {
-	case 0:
-		return "Connection established successfully"
-	case 1:
-		return "Failed to connect"
-	default:
-		return unknownValue
+	if val, ok := lastConnectionStatuses[status]; ok {
+		return val
 	}
+	return unknownValue
 }
 
 func getLastTunnelStatusString(status uint8) string {
-	switch status {
-	case 0:
-		return "Session opened and closed successfully"
-	case 1:
-		return "Session failed due to an error"
-	default:
-		return unknownValue
+	if val, ok := lastTunnelStatuses[status]; ok {
+		return val
 	}
-}
+	return unknownValue
