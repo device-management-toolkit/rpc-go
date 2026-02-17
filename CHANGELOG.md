@@ -1,3 +1,16 @@
+# [2.49.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.16...v2.49.0) (2026-02-17)
+
+
+### Bug Fixes
+
+* addresses amt19+ activation on new machines ([#1162](https://github.com/device-management-toolkit/rpc-go/issues/1162)) ([e56715b](https://github.com/device-management-toolkit/rpc-go/commit/e56715bac4d256c89359b45a9aa5fd9780e5c4bc))
+* updating redirection log proccess using thread safe and buffer ([36b0a07](https://github.com/device-management-toolkit/rpc-go/commit/36b0a07698b0a96cdf9b88b038ac0efde9d582d7))
+
+
+### Features
+
+* support for SHA-384 provisioning certificates in rpc-go ([#1078](https://github.com/device-management-toolkit/rpc-go/issues/1078)) ([a60c97d](https://github.com/device-management-toolkit/rpc-go/commit/a60c97d3228c7a675e9d049aaaba18d934828243))
+
 ## [2.48.16](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.15...v2.48.16) (2026-01-30)
 
 
