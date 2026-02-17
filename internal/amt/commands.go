@@ -128,6 +128,7 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	StopConfiguration() (StopConfigurationResponse, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {

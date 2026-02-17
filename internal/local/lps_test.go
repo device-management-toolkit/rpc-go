@@ -217,9 +217,25 @@ func (MockWSMAN) GeneratePKCS10RequestEx(keyPair, nullSignedCertificateRequest s
 var (
 	mockCommitChangesErr         error = nil
 	mockCommitChangesReturnValue int   = 0
+	// mockCommitChangesErrs allows sequenced errors for retry testing.
+	// When non-nil, each call pops the first element; when empty, falls back to mockCommitChangesErr.
+	mockCommitChangesErrs []error = nil
 )
 
 func (m MockWSMAN) CommitChanges() (response setupandconfiguration.Response, err error) {
+	if len(mockCommitChangesErrs) > 0 {
+		e := mockCommitChangesErrs[0]
+		mockCommitChangesErrs = mockCommitChangesErrs[1:]
+
+		return setupandconfiguration.Response{
+			Body: setupandconfiguration.Body{
+				CommitChanges_OUTPUT: setupandconfiguration.CommitChanges_OUTPUT{
+					ReturnValue: setupandconfiguration.ReturnValue(mockCommitChangesReturnValue),
+				},
+			},
+		}, e
+	}
+
 	return setupandconfiguration.Response{
 		Body: setupandconfiguration.Body{
 			CommitChanges_OUTPUT: setupandconfiguration.CommitChanges_OUTPUT{
@@ -894,6 +910,12 @@ func (c MockAMT) PartialUnprovision() (int, error) { return 0, nil }
 
 func (c MockAMT) StartConfigurationHBased(amt2.SecureHBasedParameters) (amt2.SecureHBasedResponse, error) {
 	return amt2.SecureHBasedResponse{}, nil
+}
+
+var mockStopConfigurationErr error = nil
+
+func (c MockAMT) StopConfiguration() (amt2.StopConfigurationResponse, error) {
+	return amt2.StopConfigurationResponse{}, mockStopConfigurationErr
 }
 
 type ResponseFuncArray []func(w http.ResponseWriter, r *http.Request)

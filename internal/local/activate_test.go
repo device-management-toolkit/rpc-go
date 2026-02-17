@@ -8,6 +8,7 @@ package local
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"testing"
 
 	amt2 "github.com/device-management-toolkit/rpc-go/v2/internal/amt"
@@ -187,6 +188,242 @@ func TestDumpPfx(t *testing.T) {
 	certsAndKeys.certs = []*x509.Certificate{{}}
 	_, _, err = dumpPfx(certsAndKeys)
 	assert.NotNil(t, err)
+}
+
+func TestIsDataMissingError(t *testing.T) {
+	t.Run("returns true for error containing 2057", func(t *testing.T) {
+		assert.True(t, isDataMissingError(errors.New("error code 2057")))
+	})
+	t.Run("returns true for error containing PT_STATUS_DATA_MISSING", func(t *testing.T) {
+		assert.True(t, isDataMissingError(errors.New("PT_STATUS_DATA_MISSING")))
+	})
+	t.Run("returns false for other errors", func(t *testing.T) {
+		assert.False(t, isDataMissingError(errors.New("some other error")))
+	})
+	t.Run("returns false for nil error", func(t *testing.T) {
+		assert.False(t, isDataMissingError(nil))
+	})
+}
+
+func TestSetupMEBxAndCommit(t *testing.T) {
+	resetMocks := func() {
+		mockCommitChangesErr = nil
+		mockCommitChangesErrs = nil
+		mockSetupAndConfigurationErr = nil
+		mockStopConfigurationErr = nil
+	}
+
+	t.Run("succeeds with MEBx password provided", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.MEBxPassword = "MebxP@ss1"
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+
+		err := lps.setupMEBxAndCommit()
+		assert.NoError(t, err)
+	})
+
+	t.Run("fails with MEBx password provided when SetupMEBX errors", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.MEBxPassword = "MebxP@ss1"
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+		mockSetupAndConfigurationErr = errTestError
+
+		err := lps.setupMEBxAndCommit()
+		assert.Equal(t, utils.ActivationFailed, err)
+
+		mockSetupAndConfigurationErr = nil
+	})
+
+	t.Run("succeeds without MEBx when CommitChanges works", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+
+		err := lps.setupMEBxAndCommit()
+		assert.NoError(t, err)
+	})
+
+	t.Run("succeeds with EOF error from CommitChanges", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+		mockCommitChangesErr = errors.New("EOF")
+
+		err := lps.setupMEBxAndCommit()
+		assert.NoError(t, err)
+
+		mockCommitChangesErr = nil
+	})
+
+	t.Run("fails on non-2057 CommitChanges error", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+		mockCommitChangesErr = errors.New("some other error")
+
+		err := lps.setupMEBxAndCommit()
+		assert.Equal(t, utils.ActivationFailed, err)
+
+		mockCommitChangesErr = nil
+	})
+
+	t.Run("retries with AMT password on 2057 error and succeeds", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+		// First CommitChanges returns 2057, then second (after SetupMEBX) succeeds
+		mockCommitChangesErrs = []error{errors.New("error 2057"), nil}
+
+		err := lps.setupMEBxAndCommit()
+		assert.NoError(t, err)
+	})
+
+	t.Run("fails with MEBx password when CommitChanges errors after SetupMEBX", func(t *testing.T) {
+		resetMocks()
+
+		f := &flags.Flags{}
+		f.MEBxPassword = "MebxP@ss1"
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		lps := setupService(f)
+		mockCommitChangesErr = errors.New("commit failed")
+
+		err := lps.setupMEBxAndCommit()
+		assert.Equal(t, utils.ActivationFailed, err)
+
+		mockCommitChangesErr = nil
+	})
+}
+
+func TestSetMEBxAndCommit(t *testing.T) {
+	t.Run("succeeds on happy path", func(t *testing.T) {
+		mockSetupAndConfigurationErr = nil
+		mockCommitChangesErr = nil
+
+		lps := setupService(&flags.Flags{})
+
+		err := lps.setMEBxAndCommit("P@ssw0rd")
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error when SetupMEBX fails", func(t *testing.T) {
+		mockSetupAndConfigurationErr = errTestError
+
+		lps := setupService(&flags.Flags{})
+
+		err := lps.setMEBxAndCommit("P@ssw0rd")
+		assert.Error(t, err)
+
+		mockSetupAndConfigurationErr = nil
+	})
+
+	t.Run("returns error when CommitChanges fails", func(t *testing.T) {
+		mockSetupAndConfigurationErr = nil
+		mockCommitChangesErr = errors.New("commit failed")
+
+		lps := setupService(&flags.Flags{})
+
+		err := lps.setMEBxAndCommit("P@ssw0rd")
+		assert.Error(t, err)
+
+		mockCommitChangesErr = nil
+	})
+
+	t.Run("succeeds with EOF error from CommitChanges", func(t *testing.T) {
+		mockSetupAndConfigurationErr = nil
+		mockCommitChangesErr = errors.New("EOF")
+
+		lps := setupService(&flags.Flags{})
+
+		err := lps.setMEBxAndCommit("P@ssw0rd")
+		assert.NoError(t, err)
+
+		mockCommitChangesErr = nil
+	})
+}
+
+func TestStopConfigOnFailure(t *testing.T) {
+	t.Run("calls StopConfiguration successfully", func(t *testing.T) {
+		mockStopConfigurationErr = nil
+
+		lps := setupService(&flags.Flags{})
+		// Should not panic
+		lps.stopConfigOnFailure()
+	})
+
+	t.Run("handles StopConfiguration error gracefully", func(t *testing.T) {
+		mockStopConfigurationErr = errTestError
+
+		lps := setupService(&flags.Flags{})
+		// Should not panic
+		lps.stopConfigOnFailure()
+
+		mockStopConfigurationErr = nil
+	})
+}
+
+func TestActivateACMWithTLSAndMEBx(t *testing.T) {
+	testCerts := getTestCerts()
+
+	// Mock LSA
+	lsa := &amt2.LocalSystemAccount{
+		Username: "admin",
+		Password: "testpass",
+	}
+
+	t.Run("TLS activation with MEBx password succeeds", func(t *testing.T) {
+		mockCommitChangesErr = nil
+		mockCommitChangesErrs = nil
+		mockSetupAndConfigurationErr = nil
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		f.LocalConfig.ACMSettings.ProvisioningCert = testCerts.Pfxb64
+		f.LocalConfig.ACMSettings.ProvisioningCertPwd = testCerts.PfxPassword
+		f.MEBxPassword = "MebxP@ss1"
+		f.LocalTlsEnforced = true
+		lps := setupService(f)
+
+		certsAndKeys, err := convertPfxToObject(testCerts.Pfxb64, testCerts.PfxPassword)
+		assert.NoError(t, err)
+
+		err = lps.ActivateACM(false, lsa, certsAndKeys)
+		assert.NoError(t, err)
+	})
+
+	t.Run("TLS activation with 2057 retry using AMT password succeeds", func(t *testing.T) {
+		mockSetupAndConfigurationErr = nil
+
+		f := &flags.Flags{}
+		f.LocalConfig.ACMSettings.AMTPassword = "P@ssw0rd"
+		f.LocalConfig.ACMSettings.ProvisioningCert = testCerts.Pfxb64
+		f.LocalConfig.ACMSettings.ProvisioningCertPwd = testCerts.PfxPassword
+		f.LocalTlsEnforced = true
+		lps := setupService(f)
+		// First CommitChanges returns 2057, then second (after SetupMEBX with AMT password) succeeds
+		mockCommitChangesErrs = []error{errors.New("error 2057"), nil}
+
+		certsAndKeys, err := convertPfxToObject(testCerts.Pfxb64, testCerts.PfxPassword)
+		assert.NoError(t, err)
+
+		err = lps.ActivateACM(false, lsa, certsAndKeys)
+		assert.NoError(t, err)
+
+		mockCommitChangesErrs = nil
+	})
 }
 
 // Test for StartSecureHostBasedConfiguration with different certificate algorithms
