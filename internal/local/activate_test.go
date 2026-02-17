@@ -425,3 +425,114 @@ func TestActivateACMWithTLSAndMEBx(t *testing.T) {
 		mockCommitChangesErrs = nil
 	})
 }
+
+// Test for StartSecureHostBasedConfiguration with different certificate algorithms
+func TestStartSecureHostBasedConfiguration(t *testing.T) {
+	tests := []struct {
+		name     string
+		certAlgo x509.SignatureAlgorithm
+		wantErr  bool
+	}{
+		{
+			name:     "SHA256 algorithm - should succeed",
+			certAlgo: x509.SHA256WithRSA,
+			wantErr:  false,
+		},
+		{
+			name:     "SHA384 algorithm - should succeed",
+			certAlgo: x509.SHA384WithRSA,
+			wantErr:  false,
+		},
+		{
+			name:     "Unknown algorithm - should fail",
+			certAlgo: x509.UnknownSignatureAlgorithm,
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &flags.Flags{}
+			service := setupService(f)
+
+			cert := &x509.Certificate{
+				SignatureAlgorithm: tt.certAlgo,
+				Raw:                []byte("test-cert-data"),
+			}
+
+			certsAndKeys := CertsAndKeys{
+				certs: []*x509.Certificate{cert},
+				keys:  []interface{}{"test-key"},
+			}
+
+			_, err := service.StartSecureHostBasedConfiguration(certsAndKeys)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("StartSecureHostBasedConfiguration() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Test for CompareCertHashes with multi-algorithm support (SHA256 and SHA384)
+func TestCompareCertHashes(t *testing.T) {
+	testCerts := getTestCerts()
+
+	tests := []struct {
+		name       string
+		mockHashes []amt2.CertHashEntry
+		wantErr    bool
+	}{
+		{
+			name: "SHA256 algorithm match - should succeed",
+			mockHashes: []amt2.CertHashEntry{
+				{
+					Hash:      testCerts.Root.Fingerprint,
+					Algorithm: "SHA256",
+					IsActive:  true,
+					IsDefault: true,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "No matching hash - should fail",
+			mockHashes: []amt2.CertHashEntry{
+				{
+					Hash:      "wronghash1234567890abcdef",
+					Algorithm: "SHA256",
+					IsActive:  true,
+					IsDefault: true,
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &flags.Flags{}
+			f.LocalConfig.ACMSettings.ProvisioningCert = testCerts.Pfxb64
+			f.LocalConfig.ACMSettings.ProvisioningCertPwd = testCerts.PfxPassword
+			service := setupService(f)
+			mockCertHashes = tt.mockHashes
+
+			// Parse the PFX and get fingerprints
+			certsAndKeys, err := convertPfxToObject(testCerts.Pfxb64, testCerts.PfxPassword)
+			if err != nil {
+				t.Fatalf("Failed to parse PFX: %v", err)
+			}
+
+			_, fingerprints, err := dumpPfx(certsAndKeys)
+			if err != nil {
+				t.Fatalf("Failed to dump PFX: %v", err)
+			}
+
+			err = service.CompareCertHashes(fingerprints)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompareCertHashes() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
