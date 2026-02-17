@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
@@ -28,6 +29,8 @@ type Driver struct {
 const (
 	Device                   = "/dev/mei0"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
+	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
+	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
 )
 
 // PTHI
@@ -46,6 +49,16 @@ var MEI_UPID = [16]uint8{0x79, 0x6c, 0x13, 0x92, 0xea, 0x5f, 0xfd, 0x4c, 0x98, 0
 // GUID: {082EE5A7-7C25-470A-9643-0C06F0466EA1}
 var MEI_HOTHAM = [16]uint8{0xa7, 0xe5, 0x2e, 0x08, 0x25, 0x7c, 0x0a, 0x47, 0x96, 0x43, 0x0c, 0x06, 0xf0, 0x46, 0x6e, 0xa1}
 
+// formatGUID formats a [16]uint8 GUID array as a standard GUID string
+func formatGUID(guid [16]uint8) string {
+	return fmt.Sprintf("{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+		guid[3], guid[2], guid[1], guid[0],
+		guid[5], guid[4],
+		guid[7], guid[6],
+		guid[8], guid[9],
+		guid[10], guid[11], guid[12], guid[13], guid[14], guid[15])
+}
+
 func NewDriver() *Driver {
 	return &Driver{}
 }
@@ -55,9 +68,9 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")
@@ -112,9 +125,9 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")
@@ -154,13 +167,11 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 func (heci *Driver) InitHOTHAM() error {
 	var err error
 
-	log.Trace("InitHOTHAM: Opening MEI device")
-
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Errorf("Cannot open MEI Device: %v", err)
@@ -172,8 +183,6 @@ func (heci *Driver) InitHOTHAM() error {
 	data := CMEIConnectClientData{}
 	data.data = MEI_HOTHAM
 
-	log.Tracef("InitHOTHAM: Connecting to HOTHAM GUID: %x", MEI_HOTHAM)
-
 	// we try up to 3 times in case the resource/device is still busy from previous call.
 	for i := 0; i < 3; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
@@ -182,8 +191,6 @@ func (heci *Driver) InitHOTHAM() error {
 
 			break
 		}
-
-		log.Tracef("InitHOTHAM: Connection attempt %d failed: %v", i+1, err)
 	}
 
 	if err != nil {
@@ -204,7 +211,8 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.bufferSize = t.MaxMessageLength
 	heci.protocolVersion = t.ProtocolVersion
 
-	log.Tracef("InitHOTHAM: Buffer size: %d, Protocol version: %d", heci.bufferSize, heci.protocolVersion)
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
+		formatGUID(MEI_HOTHAM), heci.bufferSize, heci.protocolVersion)
 
 	return nil
 }

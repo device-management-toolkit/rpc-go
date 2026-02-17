@@ -107,7 +107,7 @@ type GetFlogSizeRequest struct {
 // GetFlogSizeResponse contains the Flash Log size
 type GetFlogSizeResponse struct {
 	Header HOTHAMHeader
-	Size   uint16 // Size in bytes
+	Size   uint32 // Size in bytes (UINT32 per spec)
 }
 
 // GetFlogRequest requests the Flash Log data
