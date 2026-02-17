@@ -1,0 +1,42 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go
+{
+    "name": "Go (Standard - no MEI device, only Lms supported)",
+    // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+    "image": "mcr.microsoft.com/devcontainers/go:1.25-trixie",
+    // Features to add to the dev container. More info: https://containers.dev/features.
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "installOhMyZsh": true,
+            "installOhMyZshConfig": true,
+            "configureZshAsDefaultShell": true
+        }
+    },
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    "forwardPorts": [
+        8181
+    ],
+    "containerEnv": {
+        "HTTP_PROXY": "${localEnv:HTTP_PROXY:}",
+        "HTTPS_PROXY": "${localEnv:HTTPS_PROXY:}",
+        "NO_PROXY": "${localEnv:NO_PROXY:}",
+        "http_proxy": "${localEnv:http_proxy:}",
+        "https_proxy": "${localEnv:https_proxy:}",
+        "no_proxy": "${localEnv:no_proxy:}"
+    },
+    "postCreateCommand": "sed -i 's/\\r$//' .devcontainer/post-create.sh && /bin/bash .devcontainer/post-create.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "waderyan.gitblame",
+                "shd101wyy.markdown-preview-enhanced",
+                "artisanbytecrafter.poptheme",
+                "ryu1kn.text-marker"
+            ],
+            "settings": {
+                "workbench.colorTheme": "Pop Light"
+            }
+        }
+    }
+}
