@@ -82,7 +82,10 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error) {
 	var cli CLI
 
-	helpOpts := kong.HelpOptions{Compact: true}
+	helpOpts := kong.HelpOptions{
+		Compact:        true,
+		ValueFormatter: kong.DefaultHelpValueFormatter,
+	}
 
 	// Build kong options with YAML configuration resolver (if file exists)
 	kongOpts := []kong.Option{
