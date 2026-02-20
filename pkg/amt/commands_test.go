@@ -93,6 +93,10 @@ func (c MockPTHICommands) IsChangeToAMTEnabled() (state uint8, err error) {
 	return uint8(0x83), nil
 }
 
+func (c MockPTHICommands) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
+}
+
 var (
 	SetOperationsStateStatus       = pthi.Status(0)
 	SetOperationsStateError  error = nil
