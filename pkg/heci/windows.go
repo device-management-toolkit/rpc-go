@@ -159,6 +159,14 @@ func (heci *Driver) FindDevices() error {
 
 	edi, err := setupapi.SetupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
 	if err != nil {
+		// Clean up device info before returning
+		setupapi.SetupDiDestroyDeviceInfoList(deviceInfo)
+		// Check if this is a "no devices found" error (ERROR_NO_MORE_ITEMS = 259)
+		if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(259) {
+			log.Error("MEI/HECI driver not found or no Intel ME devices present")
+			return errors.New("MEI/HECI driver not found. Please ensure the Intel Management Engine Interface driver is installed")
+		}
+		log.Errorf("FindDevices: SetupDiEnumDeviceInterfaces failed: %v", err)
 		return err
 	}
 
@@ -198,11 +206,13 @@ func (heci *Driver) FindDevices() error {
 
 	err = heci.GetHeciVersion()
 	if err != nil {
+		heci.meiDevice = 0
 		return err
 	}
 
 	err = heci.ConnectHeciClient()
 	if err != nil {
+		heci.meiDevice = 0
 		return err
 	}
 
@@ -246,7 +256,7 @@ func (heci *Driver) ConnectHeciClient() error {
 		(uint32)(propertiesSize),
 	)
 	if err != nil {
-		log.Errorf("ConnectHeciClient: IOCTL failed: %v", err)
+		log.Tracef("ConnectHeciClient: IOCTL failed: %v", err)
 		return err
 	}
 
@@ -342,6 +352,12 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 }
 
 func (heci *Driver) Close() {
-	windows.CloseHandle(heci.meiDevice)
+	// NOTE: We intentionally do NOT call CloseHandle here. On some versions of
+	// the Intel MEI driver (e.g. rolled-back/older drivers), calling CloseHandle
+	// on the MEI device file handle after ConnectHeciClient triggers a null-pointer
+	// execute-AV in the driver's kernel close dispatch routine, crashing the process.
+	// Since rpc is a short-lived CLI process, the OS will clean up all open handles
+	// when the process exits, so not closing explicitly is safe and correct.
+	heci.meiDevice = 0
 	heci.bufferSize = 0
 }
