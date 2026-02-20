@@ -1362,3 +1362,173 @@ func TestInfoService_getOSIPAddress_CompleteScenarios(t *testing.T) {
 		})
 	}
 }
+
+// TestInfoService_GetAMTInfo_WSMANFallback tests the WSMAN fallback when MPS hostname is empty
+func TestInfoService_GetAMTInfo_WSMANFallback(t *testing.T) {
+	tests := []struct {
+		name          string
+		rasFlag       bool
+		rasHECIResult amt.RemoteAccessStatus
+		controlMode   int
+		password      string
+		wantMPSHost   string
+		wantMPSPort   int
+	}{
+		{
+			name:    "link down - no password available",
+			rasFlag: true,
+			rasHECIResult: amt.RemoteAccessStatus{
+				NetworkStatus: "outside enterprise",
+				RemoteStatus:  "not connected",
+				RemoteTrigger: "user initiated",
+				MPSHostname:   "",
+			},
+			controlMode: 1,
+			password:    "", // No password
+			wantMPSHost: "",
+			wantMPSPort: 0,
+		},
+		{
+			name:    "link down - device not provisioned",
+			rasFlag: true,
+			rasHECIResult: amt.RemoteAccessStatus{
+				NetworkStatus: "outside enterprise",
+				RemoteStatus:  "not connected",
+				RemoteTrigger: "user initiated",
+				MPSHostname:   "",
+			},
+			controlMode: 0, // Not provisioned
+			password:    "testpass",
+			wantMPSHost: "",
+			wantMPSPort: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+
+			mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(tt.rasHECIResult, nil)
+
+			if tt.rasHECIResult.MPSHostname == "" && tt.password != "" {
+				mockAMT.EXPECT().GetControlMode().Return(tt.controlMode, nil)
+			}
+
+			service := &InfoService{
+				amtCommand: mockAMT,
+				password:   tt.password,
+			}
+
+			cmd := &AmtInfoCmd{Ras: tt.rasFlag}
+			result, err := service.GetAMTInfo(cmd)
+
+			assert.NoError(t, err)
+
+			if tt.rasFlag {
+				assert.NotNil(t, result.RAS)
+				assert.Equal(t, tt.wantMPSHost, result.RAS.MPSHostname)
+				assert.Equal(t, tt.wantMPSPort, result.RAS.MPSPort)
+			}
+		})
+	}
+}
+
+// TestInfoService_OutputText_WithMPSPort tests text output formatting with MPS port
+func TestInfoService_OutputText_WithMPSPort(t *testing.T) {
+	tests := []struct {
+		name        string
+		result      *InfoResult
+		cmd         *AmtInfoCmd
+		wantContain []string
+	}{
+		{
+			name: "RAS with MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "outside enterprise",
+					RemoteStatus:  "not connected",
+					RemoteTrigger: "user initiated",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       4433,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			wantContain: []string{
+				"RAS Network",
+				"RAS Remote Status",
+				"RAS Trigger",
+				"RAS MPS Hostname\t: mps.example.com",
+				"RAS MPS Port\t\t: 4433",
+			},
+		},
+		{
+			name: "RAS without MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "inside enterprise",
+					RemoteStatus:  "connected",
+					RemoteTrigger: "user initiated",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       0,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			wantContain: []string{
+				"RAS MPS Hostname\t: mps.example.com",
+			},
+		},
+		{
+			name: "All flag with MPS port",
+			result: &InfoResult{
+				AMT: "16.1.25",
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "outside enterprise",
+					RemoteStatus:  "not connected",
+					RemoteTrigger: "user initiated",
+					MPSHostname:   "mps.fallback.com",
+					MPSPort:       8080,
+				},
+			},
+			cmd: &AmtInfoCmd{All: true},
+			wantContain: []string{
+				"Version\t\t\t: 16.1.25",
+				"RAS MPS Hostname\t: mps.fallback.com",
+				"RAS MPS Port\t\t: 8080",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewInfoService(nil)
+
+			// Capture stdout
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err := service.OutputText(tt.result, tt.cmd)
+
+			w.Close()
+
+			out, _ := io.ReadAll(r)
+			os.Stdout = oldStdout
+
+			assert.NoError(t, err)
+
+			output := string(out)
+
+			for _, want := range tt.wantContain {
+				assert.Contains(t, output, want, "Output should contain: %s", want)
+			}
+
+			// Verify port is NOT shown when it's 0
+			if tt.result.RAS != nil && tt.result.RAS.MPSPort == 0 {
+				assert.NotContains(t, output, "RAS MPS Port")
+			}
+		})
+	}
+}
