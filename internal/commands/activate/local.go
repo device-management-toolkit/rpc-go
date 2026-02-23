@@ -159,6 +159,11 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 	// Convert Kong CLI flags to activation config
 	config := cmd.toActivationConfig(ctx)
 
+	// Close any existing WSMAN client from AMTBaseCmd to release MEI device before local activation
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+	}
+
 	// Create and run the activation service
 	service := NewLocalActivationService(ctx.AMTCommand, config, ctx)
 	service.localTLSEnforced = cmd.LocalTLSEnforced
@@ -232,6 +237,10 @@ func (cmd *LocalActivateCmd) toActivationConfig(ctx *commands.Context) LocalActi
 // Activate performs the local AMT activation
 func (service *LocalActivationService) Activate() error {
 	log.Infof("Starting local AMT activation in %s mode", service.config.Mode)
+
+	// Close any existing WSMAN client from AMTBaseCmd (via EnsureWSMAN) to release MEI device
+	// This is needed because activateCCM/activateACM will create their own WSMAN clients
+	// Note: We don't defer close here since activateCCM/activateACM manage their own WSMAN lifecycle
 
 	// Step 1: Validate current AMT state
 	if err := service.validateAMTState(); err != nil {
@@ -349,6 +358,9 @@ func (service *LocalActivationService) activateCCM() error {
 		return utils.AMTConnectionFailed
 	}
 
+	// Close the AMT command to release the MEI device before creating WSMAN client
+	service.amtCommand.Close()
+
 	// Setup TLS configuration
 	tlsConfig := &tls.Config{}
 
@@ -359,6 +371,8 @@ func (service *LocalActivationService) activateCCM() error {
 
 	// Create WSMAN client
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
+	// Ensure we close the WSMAN client to release the MEI device
+	defer service.wsman.Close()
 
 	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
@@ -421,6 +435,9 @@ func (service *LocalActivationService) activateACM() error {
 		return utils.AMTConnectionFailed
 	}
 
+	// Close the AMT command to release the MEI device before creating WSMAN client
+	service.amtCommand.Close()
+
 	// Setup TLS configuration for ACM, if applicable
 	tlsConfig, err := service.setupACMTLSConfig()
 	if err != nil {
@@ -429,6 +446,8 @@ func (service *LocalActivationService) activateACM() error {
 
 	// Create WSMAN client
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
+	// Ensure we close the WSMAN client to release the MEI device
+	defer service.wsman.Close()
 
 	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
