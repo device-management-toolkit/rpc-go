@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -49,6 +50,7 @@ type LocalActivateCmd struct {
 	// ACM/CCM specific settings
 	ProvisioningCert    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
+	MEBxPassword        string `help:"MEBx password for AMT19+ TLS activation" env:"MEBX_PASSWORD" name:"mebxpassword"`
 
 	// Additional options
 	FriendlyName string `help:"Friendly name to associate with this device" name:"name"`
@@ -62,6 +64,7 @@ type LocalActivationConfig struct {
 	DNS                 string
 	Hostname            string
 	AMTPassword         string
+	MEBxPassword        string
 	ProvisioningCert    string
 	ProvisioningCertPwd string
 	FriendlyName        string
@@ -217,6 +220,7 @@ func (cmd *LocalActivateCmd) toActivationConfig(ctx *commands.Context) LocalActi
 		DNS:                 cmd.DNS,
 		Hostname:            cmd.Hostname,
 		AMTPassword:         ctx.AMTPassword,
+		MEBxPassword:        cmd.MEBxPassword,
 		ProvisioningCert:    cmd.ProvisioningCert,
 		ProvisioningCertPwd: cmd.ProvisioningCertPwd,
 		FriendlyName:        cmd.FriendlyName,
@@ -553,14 +557,144 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 
 // activateACMWithTLS performs ACM activation with TLS (new cleaner path)
 func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config) error {
-	// For TLS path, we just change the AMT password and commit
+	// For TLS path, we need to update the AMT password and then commit
 	// Setup WSMAN client with admin credentials, reusing the TLS config that has client certs
 	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
 	}
 
-	// Commit changes
+	// Get general settings to obtain digest realm for password hashing
+	generalSettings, err := service.wsman.GetGeneralSettings()
+	if err != nil {
+		return fmt.Errorf("failed to get AMT general settings: %w", err)
+	}
+
+	// Create authentication challenge with new password
+	challenge := client.AuthChallenge{
+		Username: utils.AMTUserName,
+		Password: service.config.AMTPassword,
+		Realm:    generalSettings.Body.GetResponse.DigestRealm,
+	}
+
+	// Hash the credentials
+	hashedMessage := challenge.HashCredentials()
+
+	// Decode hex string to bytes
+	hashBytes, err := hex.DecodeString(hashedMessage)
+	if err != nil {
+		return fmt.Errorf("failed to decode hex string: %w", err)
+	}
+
+	// Encode to base64
+	encodedPassword := base64.StdEncoding.EncodeToString(hashBytes)
+
+	// Update the AMT password
+	_, err = service.wsman.UpdateAMTPassword(encodedPassword)
+	if err != nil {
+		return fmt.Errorf("failed to update AMT password: %w", err)
+	}
+
+	log.Info("Successfully updated AMT Password.")
+
+	// Handle MEBx configuration and commit with retry logic for error 2057
+	if err := service.setupMEBxAndCommit(); err != nil {
+		return err
+	}
+
+	log.Debug("AMT activation complete")
+
+	return nil
+}
+
+// setupMEBxAndCommit handles MEBx password configuration and CommitChanges
+// with retry logic for error 2057 (PT_STATUS_DATA_MISSING) on AMT19+ with TLS enforcement.
+// On irrecoverable failure it calls StopConfiguration so the device returns to
+// pre-provisioning state and activation can be retried.
+func (service *LocalActivationService) setupMEBxAndCommit() error {
+	// If MEBx password was explicitly provided, use it directly
+	if service.config.MEBxPassword != "" {
+		if err := service.setMEBxAndCommit(service.config.MEBxPassword); err != nil {
+			service.stopConfigOnFailure()
+
+			return err
+		}
+
+		return nil
+	}
+
+	// No MEBx password provided — try CommitChanges directly
+	result, err := service.wsman.CommitChanges()
+	if err == nil {
+		log.Debug(result)
+
+		return nil
+	}
+
+	// If not a 2057 error, fail immediately
+	if !isDataMissingError(err) {
+		log.Error(err.Error())
+		service.stopConfigOnFailure()
+
+		return utils.ActivationFailed
+	}
+
+	// Error 2057: device requires MEBx password (AMT19+ TLS)
+	log.Info("CommitChanges returned error 2057 (PT_STATUS_DATA_MISSING); MEBx password is required")
+
+	// Retry 1: try using AMT password as MEBx password
+	log.Info("Attempting to set MEBx password to match AMT password...")
+
+	if retryErr := service.setMEBxAndCommit(service.config.AMTPassword); retryErr == nil {
+		log.Info("MEBx password was not provided. Successfully set MEBx password to match AMT password.")
+
+		return nil
+	}
+
+	// Retry 2: prompt user for MEBx password
+	log.Warn("AMT password did not work for MEBx. Prompting for MEBx password...")
+
+	mebxPwd, promptErr := promptMEBxPassword()
+	if promptErr != nil {
+		service.stopConfigOnFailure()
+
+		return fmt.Errorf("failed to read MEBx password: %w", promptErr)
+	}
+
+	if commitErr := service.setMEBxAndCommit(mebxPwd); commitErr != nil {
+		service.stopConfigOnFailure()
+
+		return commitErr
+	}
+
+	return nil
+}
+
+// stopConfigOnFailure transitions the device back to pre-provisioning state
+// after a failed activation attempt on TLS-enforced platforms, so that
+// activation can be retried.
+func (service *LocalActivationService) stopConfigOnFailure() {
+	log.Info("Activation failed; putting device back to pre-provisioning state")
+
+	_, err := service.amtCommand.StopConfiguration()
+	if err != nil {
+		log.Error("Failed to stop configuration: ", err)
+	}
+}
+
+// setMEBxAndCommit sets the MEBx password and commits changes.
+func (service *LocalActivationService) setMEBxAndCommit(mebxPassword string) error {
+	response, err := service.wsman.SetupMEBX(mebxPassword)
+	log.Trace(response)
+
+	if err != nil {
+		log.Error("Failed to configure MEBx Password:", err)
+
+		return err
+	}
+
+	log.Info("Successfully updated MEBx Password.")
+
 	result, err := service.wsman.CommitChanges()
 	if err != nil {
 		log.Error(err.Error())
@@ -571,6 +705,29 @@ func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config)
 	log.Debug(result)
 
 	return nil
+}
+
+// isDataMissingError checks if an error is PT_STATUS_DATA_MISSING (error code 2057).
+func isDataMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.Contains(err.Error(), "2057")
+}
+
+// promptMEBxPassword prompts the user for a MEBx password with confirmation.
+func promptMEBxPassword() (string, error) {
+	password, err := utils.PR.ReadPasswordWithConfirmation("MEBx Password: ", "Confirm MEBx Password: ")
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(password) == "" {
+		return "", fmt.Errorf("MEBx password cannot be empty")
+	}
+
+	return password, nil
 }
 
 // activateACMLegacy performs ACM activation using the legacy certificate-based method
