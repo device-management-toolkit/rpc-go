@@ -13,6 +13,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
@@ -352,6 +353,10 @@ func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, err
 	}
 
 	return amt.StopConfigurationResponse{Status: "Success"}, nil
+}
+
+func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
 }
 
 func TestLocalActivationService_validateAMTState(t *testing.T) {
