@@ -47,8 +47,9 @@ import (
 type WSMANer = interfaces.WSMANer
 
 type GoWSMANMessages struct {
-	wsmanMessages wsman.Messages
-	target        string
+	wsmanMessages  wsman.Messages
+	target         string
+	localTransport *LocalTransport
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -103,7 +104,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		if err != nil {
 			logrus.Info("Failed to connect to LMS, using local transport instead.")
 
-			clientParams.Transport = NewLocalTransport()
+			g.localTransport = NewLocalTransport()
+			clientParams.Transport = g.localTransport
 		} else {
 			logrus.Info("Successfully connected to LMS.")
 			con.Close()
@@ -111,6 +113,15 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	}
 
 	g.wsmanMessages = wsman.NewMessages(clientParams)
+
+	return nil
+}
+
+// Close closes any open local transport connections
+func (g *GoWSMANMessages) Close() error {
+	if g.localTransport != nil {
+		return g.localTransport.Close()
+	}
 
 	return nil
 }
