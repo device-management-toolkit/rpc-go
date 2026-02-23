@@ -109,6 +109,10 @@ func (c MockAMT) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
 }
 
+func (c MockAMT) Close() error {
+	return nil
+}
+
 var p Payload
 
 func (c MockAMT) InitiateLMS() {}
