@@ -1,3 +1,10 @@
+## [2.49.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.0...v2.49.1) (2026-02-23)
+
+
+### Bug Fixes
+
+* prevent crash when MEI driver on fresh Windows 11 install is not updated ([4cbec7f](https://github.com/device-management-toolkit/rpc-go/commit/4cbec7f5a0035d6e6a9cb4077d546f10ed9c1f68))
+
 # [2.49.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.16...v2.49.0) (2026-02-17)
 
 
