@@ -8,12 +8,15 @@ package amt
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/sirupsen/logrus"
 )
 
@@ -42,10 +45,23 @@ func NewLocalTransport() *LocalTransport {
 
 	err := lm.local.Initialize()
 	if err != nil {
-		logrus.Error(err)
+		if errors.Is(err, heci.ErrReadTimeout) || strings.Contains(err.Error(), "heci read timeout") {
+			logrus.Warn(err)
+		} else {
+			logrus.Error(err)
+		}
 	}
 
 	return lm
+}
+
+// Close closes the LME connection and releases the MEI device
+func (l *LocalTransport) Close() error {
+	if l.local != nil {
+		return l.local.Close()
+	}
+
+	return nil
 }
 
 // Custom dialer function
@@ -59,6 +75,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 		return nil, err
 	}
+
 	// wait for channel open confirmation
 	l.waitGroup.Wait()
 	logrus.Trace("Channel open confirmation received")
@@ -70,7 +87,10 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	var responseReader *bufio.Reader
+	var (
+		responseReader *bufio.Reader
+		respErr        error
+	)
 
 	err = l.local.Send(rawRequest)
 	if err != nil {
@@ -94,9 +114,20 @@ Loop:
 			if errFromLMS != nil {
 				logrus.Error("error from LMS")
 
-				break Loop
+				respErr = errFromLMS
 			}
+
+			break Loop
 		}
+	}
+
+	// If we exited without any data, propagate the last error (or a generic one) instead of panicking.
+	if responseReader == nil {
+		if respErr == nil {
+			respErr = fmt.Errorf("no response from LME")
+		}
+
+		return nil, respErr
 	}
 
 	response, err := http.ReadResponse(responseReader, r)
