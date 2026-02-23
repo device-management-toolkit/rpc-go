@@ -57,6 +57,8 @@ func TestParse(t *testing.T) {
 				mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				// Mock GetControlMode to return a valid provisioned state (1) for amtinfo validation
 				mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+				// Mock Close to satisfy cleanup
+				mockAMT.EXPECT().Close().Return(nil).AnyTimes()
 			}
 
 			ctx, cli, err := Parse(tt.args, mockAMT)

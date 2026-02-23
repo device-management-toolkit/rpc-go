@@ -5,10 +5,12 @@
 package rps
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -19,10 +21,12 @@ type Executor struct {
 	server          AMTActivationServer
 	localManagement lm.LocalMananger
 	isLME           bool
+	lmeConnected    bool
 	payload         Payload
 	data            chan []byte
 	errors          chan error
 	waitGroup       *sync.WaitGroup
+	lastError       error
 }
 type ExecutorConfig struct {
 	URL              string
@@ -78,7 +82,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	return client, err
 }
 
-func (e Executor) MakeItSo(messageRequest Message) {
+func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -90,7 +94,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 	if err != nil {
 		log.Error(err.Error())
 
-		return
+		return fmt.Errorf("failed to send activation request: %w", err)
 	}
 
 	defer e.localManagement.Close()
@@ -103,12 +107,12 @@ func (e Executor) MakeItSo(messageRequest Message) {
 				close(e.data)
 				close(e.errors)
 
-				return
+				return e.lastError
 			}
 		case <-interrupt:
 			e.HandleInterrupt()
 
-			return
+			return fmt.Errorf("interrupted by user")
 		}
 	}
 }
@@ -134,35 +138,60 @@ func (e Executor) HandleInterrupt() {
 	}
 }
 
-func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
+func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	msgPayload := e.server.ProcessMessage(dataFromServer)
 	if msgPayload == nil {
+		log.Info("RPS sent terminal message (success/error), ending activation flow")
+
 		return true
 	} else if string(msgPayload) == "heartbeat" {
+		log.Debug("Received heartbeat from RPS, continuing")
+
 		return false
 	}
 
-	// send channel open
-	err := e.localManagement.Connect()
-	go e.localManagement.Listen()
+	log.Debug("RPS sent activation data, processing...")
 
-	if err != nil {
-		log.Error(err)
+	// AMT closes APF channels after each response, so we must open a new channel
+	// for each request. However, the Listen goroutine stays running (reads from /dev/mei0).
+	if e.isLME && !e.lmeConnected {
+		// First LME message: start persistent Listen goroutine
+		log.Debug("LME: First message - starting persistent Listen goroutine")
 
-		return true
+		go e.localManagement.Listen()
+
+		e.lmeConnected = true
 	}
 
 	if e.isLME {
-		// wait for channel open confirmation
+		// LME: Open fresh channel for each request (AMT closes after each response)
+		log.Debug("LME: Opening new APF channel for this request")
+
+		err := e.localManagement.Connect()
+		if err != nil {
+			log.Error(err)
+
+			return true
+		}
+
+		// Wait for AMT to confirm channel is open
 		e.waitGroup.Wait()
 		log.Trace("Channel open confirmation received")
 	} else {
-		// with LMS we open/close websocket on every request, so setup close for when we're done handling LMS data
+		// LMS: open/close connection for every request
+		err := e.localManagement.Connect()
+		if err != nil {
+			log.Error(err)
+
+			return true
+		}
+
+		go e.localManagement.Listen()
 		defer e.localManagement.Close()
 	}
 
 	// send our data to LMX
-	err = e.localManagement.Send(msgPayload)
+	err := e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
 
@@ -172,19 +201,37 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	for {
 		select {
 		case dataFromLM := <-e.data:
+			log.Debug("Received response from LME, forwarding to RPS")
 			e.HandleDataFromLM(dataFromLM)
-
-			if e.isLME {
-				e.waitGroup.Wait()
-			}
+			log.Debug("Response sent to RPS, waiting for next RPS message")
+			// Note: For subsequent LME messages, we reuse the connection
+			// No need to wait for anything - just return after sending response to RPS
 
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
-				log.Error("error from LMS")
+				// Filter out "heci read timeout" - it's a normal timeout from the HECI driver
+				// when waiting for data. Real data comes through the e.data channel.
+				if errFromLMS.Error() == "heci read timeout" {
+					log.Debug("heci read timeout (normal driver timeout, not an error)")
+
+					continue
+				}
+
+				log.Error("error from LMS: ", errFromLMS)
+				// Only terminate on real errors, not normal connection closure
+				e.lastError = fmt.Errorf("LME/LMS error: %w", errFromLMS)
 
 				return true
 			}
+		case <-time.After(utils.AMTResponseTimeout * time.Second):
+			// Timeout waiting for response from AMT/LME
+			// This indicates AMT is not responding - treat as an error
+			log.Error("Timeout waiting for LME response - AMT not responding")
+
+			e.lastError = fmt.Errorf("timeout waiting for AMT response after %d seconds", utils.AMTResponseTimeout)
+
+			return true
 		}
 	}
 }
