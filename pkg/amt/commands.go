@@ -55,6 +55,7 @@ type RemoteAccessStatus struct {
 	RemoteStatus  string `json:"remoteStatus"`
 	RemoteTrigger string `json:"remoteTrigger"`
 	MPSHostname   string `json:"mpsHostname"`
+	MPSPort       int    `json:"mpsPort,omitempty"`
 }
 
 // CertHashEntry is the GO struct for holding Cert Hash Entries

@@ -483,6 +483,34 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		ras, err := s.amtCommand.GetRemoteAccessConnectionStatus()
 		if err == nil {
 			result.RAS = &ras
+
+			// If MPS info is incomplete (link down or HECI limitation), try to get it from WSMAN
+			// This requires AMT password and WSMAN client setup
+			if (ras.MPSHostname == "" || ras.MPSPort == 0) && s.password != "" {
+				// Get control mode if not already retrieved
+				if controlMode == -1 {
+					var cmErr error
+
+					controlMode, cmErr = s.amtCommand.GetControlMode()
+					if cmErr != nil {
+						log.Debug("Could not retrieve control mode for WSMAN fallback: ", cmErr)
+					}
+				}
+
+				// Only attempt WSMAN retrieval if device is provisioned
+				if controlMode != 0 {
+					hostname, port, wsmanErr := s.getMPSInfoFromWSMAN(controlMode)
+					if wsmanErr == nil {
+						if ras.MPSHostname == "" {
+							result.RAS.MPSHostname = hostname
+						}
+
+						result.RAS.MPSPort = port
+					} else {
+						log.Debug("Could not retrieve MPS info from WSMAN: ", wsmanErr)
+					}
+				}
+			}
 		}
 	}
 
@@ -599,6 +627,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("RAS Remote Status\t: %s\n", result.RAS.RemoteStatus)
 		fmt.Printf("RAS Trigger\t\t: %s\n", result.RAS.RemoteTrigger)
 		fmt.Printf("RAS MPS Hostname\t: %s\n", result.RAS.MPSHostname)
+
+		if result.RAS.MPSPort > 0 {
+			fmt.Printf("RAS MPS Port\t\t: %d\n", result.RAS.MPSPort)
+		}
 	}
 
 	// Output wired adapter information
@@ -817,4 +849,44 @@ func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert,
 	}
 
 	return userCertMap, nil
+}
+
+// getMPSInfoFromWSMAN retrieves MPS hostname and port via WSMAN when HECI returns empty
+// This is useful when network link is down and HECI cannot provide MPS info
+func (s *InfoService) getMPSInfoFromWSMAN(controlMode int) (hostname string, port int, err error) {
+	// Return early if device is not provisioned
+	if controlMode == 0 {
+		return "", 0, fmt.Errorf("device is in pre-provisioning mode, MPS info not available")
+	}
+
+	// Always create a fresh WSMAN client for MPS fallback to ensure
+	// it properly respects the skipAMTCertCheck setting from command line
+	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+	// Setup TLS configuration
+	var tlsConfig *tls.Config
+	if s.localTLSEnforced {
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+	} else {
+		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
+	}
+
+	if err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		return "", 0, fmt.Errorf("failed to setup WSMAN client: %w", err)
+	}
+
+	// Get MPS Service Access Points
+	mpsSAPs, err := wsmanClient.GetMPSSAP()
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", err)
+	}
+
+	if len(mpsSAPs) < 1 {
+		return "", 0, fmt.Errorf("no MPS configured")
+	}
+
+	log.Tracef("WSMAN GetMPSSAP returned: AccessInfo=%s, Port=%d", mpsSAPs[0].AccessInfo, mpsSAPs[0].Port)
+
+	// Return the first MPS configuration (typically there's only one)
+	return mpsSAPs[0].AccessInfo, mpsSAPs[0].Port, nil
 }
