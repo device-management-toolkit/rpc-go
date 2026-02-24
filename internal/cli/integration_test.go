@@ -70,6 +70,7 @@ func TestCLIIntegration(t *testing.T) {
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+				m.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			expectError: false,
 			expectedCmd: "amtinfo",
@@ -82,6 +83,7 @@ func TestCLIIntegration(t *testing.T) {
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+				m.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			expectError: false,
 			expectedCmd: "amtinfo",
@@ -99,6 +101,7 @@ func TestCLIIntegration(t *testing.T) {
 				m.EXPECT().Initialize().Return(nil).AnyTimes()
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				m.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+				m.EXPECT().Close().Return(nil).AnyTimes()
 			},
 			expectError: false,
 			expectedCmd: "amtinfo",
@@ -257,6 +260,10 @@ func TestCLIArgumentValidation(t *testing.T) {
 			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 			// Allow GetControlMode to be called during AfterApply for amtinfo commands
 			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+			// Allow Close to be called for cleanup
+			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
+			// Allow Close to be called during cleanup
+			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
 
 			_, _, err := Parse(tt.args, mockAMT)
 

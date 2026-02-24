@@ -359,6 +359,10 @@ func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
 }
 
+func (m *MockAMTCommand) Close() error {
+	return nil
+}
+
 func TestLocalActivationService_validateAMTState(t *testing.T) {
 	tests := []struct {
 		name        string

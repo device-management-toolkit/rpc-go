@@ -48,6 +48,15 @@ func NewLocalTransport() *LocalTransport {
 	return lm
 }
 
+// Close closes the LME connection and releases the MEI device
+func (l *LocalTransport) Close() error {
+	if l.local != nil {
+		return l.local.Close()
+	}
+
+	return nil
+}
+
 // Custom dialer function
 func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// send channel open
@@ -70,7 +79,10 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	var responseReader *bufio.Reader
+	var (
+		responseReader *bufio.Reader
+		respErr        error
+	)
 
 	err = l.local.Send(rawRequest)
 	if err != nil {
@@ -94,9 +106,20 @@ Loop:
 			if errFromLMS != nil {
 				logrus.Error("error from LMS")
 
-				break Loop
+				respErr = errFromLMS
 			}
+
+			break Loop
 		}
+	}
+
+	// If we exited without any data, propagate the last error (or a generic one) instead of panicking.
+	if responseReader == nil {
+		if respErr == nil {
+			respErr = fmt.Errorf("no response from LME")
+		}
+
+		return nil, respErr
 	}
 
 	response, err := http.ReadResponse(responseReader, r)

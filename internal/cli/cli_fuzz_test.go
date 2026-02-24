@@ -32,6 +32,7 @@ func setupMockAMT(ctrl *gomock.Controller) *mock.MockInterface {
 	mockAMTCommand.EXPECT().Unprovision().Return(0, nil).AnyTimes()
 	mockAMTCommand.EXPECT().EnableAMT().Return(nil).AnyTimes()
 	mockAMTCommand.EXPECT().DisableAMT().Return(nil).AnyTimes()
+	mockAMTCommand.EXPECT().Close().Return(nil).AnyTimes()
 
 	return mockAMTCommand
 }
