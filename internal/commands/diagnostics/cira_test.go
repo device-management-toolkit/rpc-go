@@ -115,6 +115,7 @@ func TestCIRACommand_GetCiraLogError(t *testing.T) {
 	// Setup mock to return error
 	mockAMT := mock.NewMockInterface(ctrl)
 	expectedErr := errors.New("failed to retrieve CIRA log")
+
 	mockAMT.EXPECT().GetCiraLog().Return(pthi.GetCiraLogResponse{}, expectedErr)
 
 	// Create command
@@ -133,20 +134,17 @@ func TestCIRACommand_GetCiraLogError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to retrieve CIRA log")
 }
 
-func TestCIRACommand_EmptyResponse(t *testing.T) {
+func TestCIRACommand_UnsupportedFirmware(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	// Create a temporary directory for test output
 	tempDir := t.TempDir()
-	outputFile := filepath.Join(tempDir, "test_cira_empty.txt")
+	outputFile := filepath.Join(tempDir, "test_cira_unsupported.txt")
 
-	// Mock empty CIRA log response
-	mockCiraResponse := pthi.GetCiraLogResponse{}
-
-	// Setup mock
+	// Setup mock to return empty response error (firmware doesn't support CIRA Log)
 	mockAMT := mock.NewMockInterface(ctrl)
-	mockAMT.EXPECT().GetCiraLog().Return(mockCiraResponse, nil)
+	mockAMT.EXPECT().GetCiraLog().Return(pthi.GetCiraLogResponse{}, errors.New("empty response from AMT"))
 
 	// Create command
 	cmd := CIRACmd{
@@ -158,12 +156,14 @@ func TestCIRACommand_EmptyResponse(t *testing.T) {
 		AMTCommand: mockAMT,
 	}
 
-	// Execute command - should handle empty response
+	// Execute command - should return unsupported error
 	err := cmd.Run(ctx)
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "CIRA Log feature is not supported in this firmware version")
 
-	// Verify file was created
-	assert.FileExists(t, outputFile)
+	// Verify file was not created
+	_, statErr := os.Stat(outputFile)
+	assert.True(t, os.IsNotExist(statErr))
 }
 
 func TestCIRACommand_BinaryParsingValidation(t *testing.T) {

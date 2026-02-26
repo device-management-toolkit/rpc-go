@@ -49,6 +49,11 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 	// Get CIRA log from firmware
 	result, err := ctx.AMTCommand.GetCiraLog()
 	if err != nil {
+		// Empty response indicates this firmware version does not support CIRA Log
+		if err.Error() == "empty response from AMT" {
+			return fmt.Errorf("CIRA Log feature is not supported in this firmware version")
+		}
+
 		return err
 	}
 
