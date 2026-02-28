@@ -1,5 +1,25 @@
 {
     "version": "0.2.0",
+    "inputs": [
+        {
+            "id": "serverAddress",
+            "type": "promptString",
+            "description": "Enter the Server Address (e.g. localhost:8443)",
+            "default": "localhost:8443"
+        },
+        {
+            "id": "profileName",
+            "type": "promptString",
+            "description": "Enter the Profile Name",
+            "default": "profile"
+        },
+        {
+            "id": "dnsSuffix",
+            "type": "promptString",
+            "description": "Enter the DNS Suffix (optional, leave blank to skip)",
+            "default": "vprodemo.com"
+        }
+    ],
     "configurations": [
         {
             "name": "Activate Device",
@@ -10,11 +30,15 @@
             "args": [
                 "activate",
                 "-u",
-                "wss://[server]/activate",
+                "wss://${input:serverAddress}/activate",
                 "--profile",
-                "[profile]",
+                "${input:profileName}",
                 "-n",
                 "-v"
+                // use if required "-d=${input:dnsSuffix}"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         },
@@ -33,6 +57,9 @@
                 "-v",
                 "--acm"
             ],
+            "buildFlags": [
+                "-race"
+            ],
             "console": "integratedTerminal"
         },
         {
@@ -43,6 +70,9 @@
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "amtinfo"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         },
@@ -55,10 +85,13 @@
             "args": [
                 "deactivate",
                 "-u",
-                "wss://[server]/activate",
+                "wss://${input:serverAddress}/activate",
                 "-f",
                 "-n",
                 "-v"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         },
@@ -71,9 +104,10 @@
             "args": [
                 "deactivate",
                 "--local",
-                "--config",
-                "${workspaceFolder}/config.yaml",
                 "-v"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         },
@@ -87,9 +121,12 @@
                 "maintenance",
                 "deviceinfo",
                 "-u",
-                "wss://[server]/activate",
+                "wss://${input:serverAddress}/activate",
                 "-n",
                 "-v"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         },
@@ -103,6 +140,9 @@
                 "configure",
                 "mebx"
             ],
+            "buildFlags": [
+                "-race"
+            ],
             "console": "integratedTerminal"
         },
         {
@@ -113,6 +153,9 @@
             "program": "${workspaceFolder}/cmd/rpc/main.go",
             "args": [
                 "version"
+            ],
+            "buildFlags": [
+                "-race"
             ],
             "console": "integratedTerminal"
         }
