@@ -574,27 +574,40 @@ func TestDeactivateCmd_ResolveGUID(t *testing.T) {
 // Test setupTLSConfig function
 func TestSetupTLSConfig(t *testing.T) {
 	t.Run("TLS config with LocalTLSEnforced false", func(t *testing.T) {
-		cmd := &DeactivateCmd{}
-		cmd.LocalTLSEnforced = true
-		ctx := &Context{ControlMode: ControlModeACM}
+		cmd := &DeactivateCmd{
+			AMTBaseCmd: AMTBaseCmd{
+				ControlMode: ControlModeACM,
+			},
+		}
+		cmd.LocalTLSEnforced = false
+		ctx := &Context{
+			ControlMode:      ControlModeACM,
+			SkipAMTCertCheck: true, // Should be ignored when not enforced
+		}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
 		assert.NotNil(t, tlsConfig)
+		// When TLS is not enforced locally, we expect default config which has InsecureSkipVerify false
 		assert.False(t, tlsConfig.InsecureSkipVerify)
 	})
 
 	t.Run("TLS config with LocalTLSEnforced true", func(t *testing.T) {
-		cmd := &DeactivateCmd{}
+		cmd := &DeactivateCmd{
+			AMTBaseCmd: AMTBaseCmd{
+				ControlMode: ControlModeACM,
+			},
+		}
 		cmd.LocalTLSEnforced = true
 		ctx := &Context{
-			SkipCertCheck: true,
+			SkipCertCheck: true, // Should be ignored by setupTLSConfig
 			ControlMode:   ControlModeACM,
 		}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
 		assert.NotNil(t, tlsConfig)
-		// The actual config setup depends on the config.GetTLSConfig implementation
+		// When LocalTLSEnforced is true, we use SkipAMTCertCheck (which is false here)
+		assert.False(t, tlsConfig.InsecureSkipVerify)
 	})
 }
