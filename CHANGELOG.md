@@ -1,3 +1,10 @@
+# [3.0.0-beta.5](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.4...v3.0.0-beta.5) (2026-03-02)
+
+
+### Features
+
+* return not supported error when running cira diag cmd on unsupported platform ([4340900](https://github.com/device-management-toolkit/rpc-go/commit/4340900fd8522fc717258ca3dda2ba6fdf505db6)), closes [#1183](https://github.com/device-management-toolkit/rpc-go/issues/1183)
+
 # [3.0.0-beta.4](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.3...v3.0.0-beta.4) (2026-02-20)
 
 
