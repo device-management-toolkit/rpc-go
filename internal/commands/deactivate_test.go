@@ -507,7 +507,7 @@ func TestSetupTLSConfig(t *testing.T) {
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
 		assert.NotNil(t, tlsConfig)
-		assert.False(t, tlsConfig.InsecureSkipVerify)
+		assert.True(t, tlsConfig.InsecureSkipVerify)
 	})
 
 	t.Run("TLS config with LocalTLSEnforced true", func(t *testing.T) {

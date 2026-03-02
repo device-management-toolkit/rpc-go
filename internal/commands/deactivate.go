@@ -105,6 +105,7 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 		Verbose:          ctx.Verbose,
 		SkipCertCheck:    ctx.SkipCertCheck,
 		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
+		LocalTlsEnforced: cmd.LocalTLSEnforced,
 		Force:            cmd.Force,
 		TenantID:         ctx.TenantID,
 	}
