@@ -18,9 +18,12 @@ import (
 
 // generates a TLS configuration based on the provided mode.
 func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
-	tlsConfig := &tls.Config{}
-
-	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
+	tlsConfig := &tls.Config{
+		// LMS serves a self-signed AMT certificate that is not in the system trust store.
+		// We skip the default verification step so the connection can proceed on loopback
+		// while still allowing custom verification below when enabled.
+		InsecureSkipVerify: true,
+	}
 
 	if *mode == 0 { // pre-provisioning mode
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
@@ -32,7 +35,7 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertC
 		}
 	} else {
 		// default tls config if device is in ACM or CCM
-		log.Trace("Setting default TLS Config for ACM/CCM mode")
+		log.Trace("Skipping AMT certificate verification for ACM/CCM mode (loopback TLS)")
 	}
 
 	return tlsConfig
