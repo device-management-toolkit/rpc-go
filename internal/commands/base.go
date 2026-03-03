@@ -41,25 +41,35 @@ type AMTBaseCmd struct {
 	afterApplied bool `kong:"-"`
 }
 
-// ValidatePasswordIfNeeded prompts for password if required and not already provided
-// EnsureAMTPassword prompts (once) if the command requires an AMT password and ctx.AMTPassword is empty.
+// EnsureAMTPassword prompts for an AMT password when required and ctx.AMTPassword is empty.
+// For non-activated devices (control mode 0), it also prompts for password confirmation to prevent typos.
 func (cmd *AMTBaseCmd) EnsureAMTPassword(ctx *Context, requirer PasswordRequirer) error {
 	if !requirer.RequiresAMTPassword() {
 		return nil
 	}
 
 	if strings.TrimSpace(ctx.AMTPassword) != "" {
-		return nil
+		return nil // Password already provided, no prompting
 	}
 
-	fmt.Print("AMT Password: ")
+	var pw string
 
-	pw, err := utils.PR.ReadPassword()
+	var err error
+
+	// If device not activated (control mode 0), require confirmation
+	if cmd.ControlMode == 0 {
+		pw, err = utils.PR.ReadPasswordWithConfirmation("AMT Password: ", "Confirm AMT Password: ")
+	} else {
+		fmt.Print("AMT Password: ")
+
+		pw, err = utils.PR.ReadPassword()
+
+		fmt.Println()
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to read AMT password: %w", err)
 	}
-
-	fmt.Println()
 
 	if pw == "" {
 		return fmt.Errorf("password cannot be empty")
@@ -84,7 +94,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}

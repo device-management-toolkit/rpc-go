@@ -10,8 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/bits"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
+	log "github.com/sirupsen/logrus"
 )
 
 type Command struct {
@@ -26,7 +28,8 @@ type Interface interface {
 	GetCodeVersions() (GetCodeVersionsResponse, error)
 	GetUUID() (uuid string, err error)
 	GetControlMode() (state int, err error)
-	GetIsAMTEnabled() (uint8, error)
+	GetProvisioningState() (state int, err error)
+	IsChangeToAMTEnabled() (uint8, error)
 	SetAmtOperationalState(state AMTOperationalState) (Status, error)
 	GetDNSSuffix() (suffix string, err error)
 	GetCertificateHashes(hashHandles AMTHashHandles) (hashEntryList []CertHashEntry, err error)
@@ -36,6 +39,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [CERT_HASH_MAX_LENGTH]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [MAX_SUFFIX_LENGTH * MAX_DNS_SUFFIXES]byte) (StartConfigurationHBasedResponse, error)
 	StopConfiguration() (response StopConfigurationResponse, err error)
+	GetCiraLog() (response GetCiraLogResponse, err error)
 }
 
 func NewCommand() Command {
@@ -205,7 +209,31 @@ func (pthi Command) GetControlMode() (state int, err error) {
 	return int(response.State), nil
 }
 
-func (pthi Command) GetIsAMTEnabled() (uint8, error) {
+func (pthi Command) GetProvisioningState() (state int, err error) {
+	command := GetRequest{
+		Header: CreateRequestHeader(PROVISIONING_STATE_REQUEST, 0),
+	}
+
+	var bin_buf bytes.Buffer
+
+	binary.Write(&bin_buf, binary.LittleEndian, command)
+
+	result, err := pthi.Call(bin_buf.Bytes(), GET_REQUEST_SIZE)
+	if err != nil {
+		return -1, err
+	}
+
+	buf2 := bytes.NewBuffer(result)
+	response := GetProvisioningStateResponse{
+		Header: ReadHeaderResponse(buf2),
+	}
+
+	binary.Read(buf2, binary.LittleEndian, &response.ProvisioningState)
+
+	return int(response.ProvisioningState), nil
+}
+
+func (pthi Command) IsChangeToAMTEnabled() (uint8, error) {
 	command := GetStateIndependenceIsChangeToAMTEnabledRequest{
 		Command:       0x5,
 		ByteCount:     0x2,
@@ -576,6 +604,61 @@ func (pthi Command) StopConfiguration() (response StopConfigurationResponse, err
 	buf2 := bytes.NewBuffer(result)
 	response = StopConfigurationResponse{
 		Header: ReadHeaderResponse(buf2),
+	}
+
+	return response, nil
+}
+
+func (pthi Command) GetCiraLog() (response GetCiraLogResponse, err error) {
+	command := GetCiraLogRequest{
+		Header:  CreateRequestHeader(GET_CIRA_LOG_REQUEST, 1),
+		Version: 0,
+	}
+
+	var binBuf bytes.Buffer
+
+	binary.Write(&binBuf, binary.LittleEndian, command)
+
+	// Trace log request bytes
+	requestBytes := binBuf.Bytes()
+	log.Tracef("GetCiraLog Request (%d bytes): %v", len(requestBytes), requestBytes)
+
+	result, err := pthi.Call(binBuf.Bytes(), 13) // 12 bytes header + 1 byte version
+	if err != nil {
+		return GetCiraLogResponse{}, err
+	}
+
+	// Trace log response bytes
+	log.Tracef("GetCiraLog Response (%d bytes): %v", len(result), result)
+
+	buf2 := bytes.NewBuffer(result)
+	response = GetCiraLogResponse{
+		Header: ReadHeaderResponse(buf2),
+	}
+
+	// Read CIRA log response payload (little-endian by default)
+	var payload struct {
+		Version                  uint8
+		CiraStatusSummary        CIRAStatusSummary
+		LastFailedTunnelLogEntry CIRATunnelLogEntry
+		FailedConnectionLogEntry CIRAFailedConnectionLogEntry
+	}
+	if err = binary.Read(buf2, binary.LittleEndian, &payload); err != nil {
+		return GetCiraLogResponse{}, err
+	}
+
+	response.Version = payload.Version
+	response.CiraStatusSummary = payload.CiraStatusSummary
+	response.LastFailedTunnelLogEntry = payload.LastFailedTunnelLogEntry
+	response.FailedConnectionLogEntry = payload.FailedConnectionLogEntry
+
+	// IPv4 fields are stored in network order; swap byte order after the bulk read.
+	for i := range response.FailedConnectionLogEntry.InterfaceData {
+		ipParams := &response.FailedConnectionLogEntry.InterfaceData[i].IPParameters
+		ipParams.IpAddress = bits.ReverseBytes32(ipParams.IpAddress)
+		ipParams.DefaultGatewayAddress = bits.ReverseBytes32(ipParams.DefaultGatewayAddress)
+		ipParams.PrimaryDnsAddress = bits.ReverseBytes32(ipParams.PrimaryDnsAddress)
+		ipParams.SecondaryDnsAddress = bits.ReverseBytes32(ipParams.SecondaryDnsAddress)
 	}
 
 	return response, nil

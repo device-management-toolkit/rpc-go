@@ -29,20 +29,42 @@ type ProfileOrchestrator struct {
 	currentControlMode int
 	// optional current AMT password provided by caller (e.g., activate --password)
 	currentPassword string
+	// optional MEBx password provided by caller (e.g., activate --mebxpassword)
+	mebxPassword string
 	// global password argument to pass once to root rpc invocation
 	globalPassword string
+	// skip AMT certificate verification when connecting over TLS
+	skipAMTCertCheck bool
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
 // is treated as the existing AMT admin password and will be used to rotate to the profile's
-// AdminPassword without prompting when provided.
-func NewProfileOrchestrator(cfg config.Configuration, currentPassword string) *ProfileOrchestrator {
+// AdminPassword without prompting when provided. The mebxPassword argument is an optional
+// MEBx password to pass through to activation for AMT19+ TLS devices. The skipAMTCertCheck
+// argument controls whether AMT TLS certificate verification should be skipped for sub-commands.
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
-		profile:         cfg,
-		executor:        &CLIExecutor{},
-		currentPassword: strings.TrimSpace(currentPassword),
-		globalPassword:  strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		profile:          cfg,
+		executor:         &CLIExecutor{},
+		currentPassword:  strings.TrimSpace(currentPassword),
+		mebxPassword:     strings.TrimSpace(mebxPassword),
+		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		skipAMTCertCheck: skipAMTCertCheck,
 	}
+}
+
+// baseArgs returns the common CLI arguments including global flags like password and skip-amt-cert-check.
+func (po *ProfileOrchestrator) baseArgs() []string {
+	args := []string{"rpc"}
+	if po.skipAMTCertCheck {
+		args = append(args, "--skip-amt-cert-check")
+	}
+
+	if po.globalPassword != "" {
+		args = append(args, "--password", po.globalPassword)
+	}
+
+	return args
 }
 
 // ExecuteProfile orchestrates the execution of all commands based on the profile
@@ -121,7 +143,12 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		return fmt.Errorf("TLS configuration failed: %w", err)
 	}
 
-	// Step 8: HTTP Proxy configuration
+	// Step 8: CIRA configuration
+	if err := po.executeCIRAConfiguration(); err != nil {
+		return fmt.Errorf("CIRA configuration failed: %w", err)
+	}
+
+	// Step 9: HTTP Proxy configuration
 	if err := po.executeHTTPProxyConfiguration(); err != nil {
 		return fmt.Errorf("HTTP proxy configuration failed: %w", err)
 	}
@@ -166,6 +193,10 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		if po.skipAMTCertCheck {
+			change = append(change, "--skip-amt-cert-check")
+		}
+
 		if cerr := po.executor.Execute(change); cerr == nil {
 			log.Info("AMT password updated to profile value using provided current password; retrying previous operation")
 
@@ -202,6 +233,10 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 
 		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
 		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+		if po.skipAMTCertCheck {
+			change = append(change, "--skip-amt-cert-check")
+		}
+
 		if cerr := po.executor.Execute(change); cerr != nil {
 			lower := strings.ToLower(cerr.Error())
 			if attempt < maxTries && (strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "incorrect user name") || strings.Contains(lower, "log on failed") || strings.Contains(lower, "auth")) {
@@ -231,11 +266,7 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 	log.Infof("Executing activation with control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 
-	base := []string{"rpc"}
-	if po.globalPassword != "" { // add global password once
-		base = append(base, "--password", po.globalPassword)
-	}
-
+	base := po.baseArgs()
 	base = append(base, "activate")
 
 	switch po.profile.Configuration.AMTSpecific.ControlMode {
@@ -247,6 +278,16 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
 			base = append(base, "--provisioningCertPwd", po.profile.Configuration.AMTSpecific.ProvisioningCertPwd)
+		}
+
+		// Pass MEBx password for AMT19+ TLS activation; prefer profile value over CLI value
+		mebxPwd := po.profile.Configuration.AMTSpecific.MEBXPassword
+		if mebxPwd == "" {
+			mebxPwd = po.mebxPassword
+		}
+
+		if mebxPwd != "" {
+			base = append(base, "--mebxpassword", mebxPwd)
 		}
 	case "ccmactivate":
 		base = append(base, "--ccm")
@@ -265,11 +306,7 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 		return fmt.Errorf("ACM upgrade requires provisioning certificate and password")
 	}
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "activate", "--acm", "--local")
 	// no special flag needed; local activation will auto-upgrade CCM->ACM when ACM mode is requested
 
@@ -288,13 +325,18 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 		return nil
 	}
 
-	log.Info("Executing MEBx password configuration")
+	// If the device was in pre-provisioning at orchestration start, MEBx was already
+	// handled during activation (via --mebxpassword or retry logic), so skip the
+	// separate post-activation MEBx step.
+	if po.currentControlMode == 0 {
+		log.Info("MEBx password was set during activation, skipping separate MEBx configuration")
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
+		return nil
 	}
 
+	log.Info("Executing MEBx password configuration")
+
+	args := po.baseArgs()
 	args = append(args, "configure", "mebx", "--mebxpassword", po.profile.Configuration.AMTSpecific.MEBXPassword)
 
 	return po.executeWithPasswordFallback(args)
@@ -310,11 +352,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 
 	log.Info("Executing AMT features configuration")
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "amtfeatures")
 
 	if redirection.Services.KVM {
@@ -363,11 +401,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	log.Info("Executing wired network configuration")
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "wired")
 
 	if wired.DHCPEnabled {
@@ -402,11 +436,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	log.Info("Executing WiFi sync configuration")
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "wifisync")
 
 	// Pass through explicit values from the strongly-typed profile
@@ -421,11 +451,7 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	// Always purge existing Wi-Fi profiles before applying new ones
 	log.Info("Purging existing AMT wireless profiles before applying new configuration")
 
-	purgeArgs := []string{"rpc"}
-	if po.globalPassword != "" {
-		purgeArgs = append(purgeArgs, "--password", po.globalPassword)
-	}
-
+	purgeArgs := po.baseArgs()
 	purgeArgs = append(purgeArgs, "configure", "wireless", "--purge")
 
 	if err := po.executeWithPasswordFallback(purgeArgs); err != nil {
@@ -451,11 +477,7 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 
 // executeWirelessProfile configures a single wireless profile
 func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessProfile) error {
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "wireless")
 
 	args = append(args, "--profileName", profile.ProfileName)
@@ -524,11 +546,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 
 	log.Info("Executing TLS configuration")
 
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "tls")
 
 	// Determine TLS mode
@@ -568,6 +586,47 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	return po.executeWithPasswordFallback(args)
 }
 
+// executeCIRAConfiguration performs CIRA (Cloud-Initiated Remote Access) configuration
+func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
+	cira := po.profile.Configuration.AMTSpecific.CIRA
+
+	// Check if CIRA is configured (need at least address and cert)
+	if cira.MPSAddress == "" || cira.MPSCert == "" {
+		log.Info("No CIRA configuration specified, skipping")
+
+		return nil
+	}
+
+	log.Info("Executing CIRA configuration")
+
+	args := po.baseArgs()
+	args = append(args, "configure", "cira")
+
+	// MPS Address is required
+	args = append(args, "--mps-address", cira.MPSAddress)
+
+	// MPS Certificate is required
+	args = append(args, "--mps-cert", cira.MPSCert)
+
+	// MPS Password - if not provided, the CLI will prompt
+	if cira.MPSPassword != "" {
+		args = append(args, "--mpspassword", cira.MPSPassword)
+	}
+
+	if cira.GenerateRandomPassword {
+		args = append(args, "--generateRandomPassword")
+	}
+
+	// Environment Detection - optional
+	if len(cira.EnvironmentDetection) > 0 {
+		// Join multiple environment detection strings with comma
+		envDetection := strings.Join(cira.EnvironmentDetection, ",")
+		args = append(args, "--envdetection", envDetection)
+	}
+
+	return po.executeWithPasswordFallback(args)
+}
+
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
 func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
 	proxies := po.profile.Configuration.Network.Proxies
@@ -591,11 +650,7 @@ func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
 
 // executeHTTPProxy configures a single HTTP proxy
 func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "proxy")
 
 	args = append(args, "--address", proxy.Address)
@@ -625,6 +680,10 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
 		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		if po.skipAMTCertCheck {
+			change = append(change, "--skip-amt-cert-check")
+		}
+
 		if err := po.executor.Execute(change); err == nil {
 			log.Info("AMT password aligned to profile value using provided current password")
 
@@ -637,11 +696,7 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// If the provided password is already set, this succeeds and changes nothing.
 	// If authentication fails (wrong password), our fallback will prompt for the
 	// current password, rotate to the profile value, and retry.
-	args := []string{"rpc"}
-	if po.globalPassword != "" {
-		args = append(args, "--password", po.globalPassword)
-	}
-
+	args := po.baseArgs()
 	args = append(args, "configure", "amtpassword", "--newamtpassword", newPass)
 
 	return po.executeWithPasswordFallback(args)

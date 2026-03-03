@@ -13,6 +13,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/diagnostics"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -39,11 +40,12 @@ type CLI struct {
 	// Shared server authentication flags for remote flows (optional)
 	commands.ServerAuthFlags
 
-	AmtInfo    commands.AmtInfoCmd    `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
-	Version    commands.VersionCmd    `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
-	Activate   activate.ActivateCmd   `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
-	Deactivate commands.DeactivateCmd `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
-	Configure  configure.ConfigureCmd `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
+	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
+	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
+	Configure   configure.ConfigureCmd     `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
+	Diagnostics diagnostics.DiagnosticsCmd `cmd:"diagnostics" aliases:"diag" help:"Collect firmware-level diagnostics"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed
@@ -124,14 +126,14 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	return nil, nil, perr
 }
 
-// PrintHelp prints contextual help without invoking the help flag exit path.
+// PrintHelp prints contextual help by appending --help to the args and re-parsing.
+// This leverages Kong's built-in help mechanism which handles partial command trees safely.
 func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
-	ctx, err := kong.Trace(parser, args)
-	if err != nil {
-		return err
-	}
+	// Append --help to trigger Kong's help output
+	helpArgs := append(args, "--help")
+	_, _ = parser.Parse(helpArgs)
 
-	return kong.DefaultHelpPrinter(opts, ctx)
+	return nil
 }
 
 // Execute runs the parsed command with proper context

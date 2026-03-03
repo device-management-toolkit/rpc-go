@@ -13,6 +13,8 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
@@ -113,6 +115,7 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				Hostname:            "test-host",
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
+				MEBxPassword:        "mebx-pwd",
 				FriendlyName:        "test-device",
 				SkipIPRenew:         true,
 			},
@@ -121,6 +124,7 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				DNS:                 "test.dns",
 				Hostname:            "test-host",
 				AMTPassword:         "password123",
+				MEBxPassword:        "mebx-pwd",
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
 				FriendlyName:        "test-device",
@@ -237,6 +241,14 @@ func (m *MockAMTCommand) GetControlMode() (int, error) {
 	return m.controlMode, nil
 }
 
+func (m *MockAMTCommand) GetProvisioningState() (int, error) {
+	if m.shouldErrorOn == "GetProvisioningState" {
+		return 0, errors.New("mock error")
+	}
+
+	return 0, nil
+}
+
 func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
 	if m.shouldErrorOn == "GetChangeEnabled" {
 		return amt.ChangeEnabledResponse(0), errors.New("mock error")
@@ -329,6 +341,22 @@ func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error)
 
 func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
 	return amt.SecureHBasedResponse{}, nil
+}
+
+func (m *MockAMTCommand) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	if m.shouldErrorOn == "StopConfiguration" {
+		return amt.StopConfigurationResponse{}, errors.New("mock error")
+	}
+
+	return amt.StopConfigurationResponse{Status: "Success"}, nil
+}
+
+func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
 }
 
 func TestLocalActivationService_validateAMTState(t *testing.T) {
@@ -509,9 +537,9 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:          "error during unprovision",
+			name:          "error during StopConfiguration",
 			jsonOutput:    false,
-			shouldErrorOn: "Unprovision",
+			shouldErrorOn: "StopConfiguration",
 			wantErr:       true,
 		},
 	}
@@ -825,7 +853,7 @@ func TestLocalActivationService_dumpPfx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := service.dumpPfx(tt.pfxobj)
+			_, err := service.dumpPfx(tt.pfxobj)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("dumpPfx() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -874,7 +902,7 @@ func TestLocalActivationService_compareCertHashes(t *testing.T) {
 				},
 			}
 
-			err := service.compareCertHashes(tt.fingerprint)
+			err := service.compareCertHashes()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("compareCertHashes() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -949,7 +977,7 @@ func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 		}
 	}()
 
-	_ = service.activateACMWithTLS()
+	_ = service.activateACMWithTLS(nil)
 }
 
 // Test for activateACMLegacy function coverage
@@ -966,7 +994,7 @@ func TestLocalActivationService_activateACMLegacy(t *testing.T) {
 	}
 
 	// Test that it fails due to invalid certificate first
-	err := service.activateACMLegacy()
+	err := service.activateACMLegacy(nil)
 	if err == nil {
 		t.Error("activateACMLegacy() should fail with invalid certificate")
 	}
@@ -1001,7 +1029,7 @@ func TestLocalActivationService_getProvisioningCertObj(t *testing.T) {
 		},
 	}
 
-	_, _, err := service.getProvisioningCertObj()
+	_, err := service.getProvisioningCertObj()
 	if err == nil {
 		t.Error("getProvisioningCertObj() should fail with invalid certificate")
 	}
@@ -1260,7 +1288,7 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 				},
 			}
 
-			err := service.compareCertHashes("test-fingerprint")
+			err := service.compareCertHashes()
 
 			// We expect an error during certificate conversion, which is acceptable
 			// This test primarily documents the multi-algorithm logic
@@ -1269,6 +1297,128 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsDataMissingError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "error containing 2057",
+			err:  errors.New("CommitChanges failed: error code 2057"),
+			want: true,
+		},
+		{
+			name: "error with PT_STATUS_DATA_MISSING and 2057",
+			err:  errors.New("PT_STATUS_DATA_MISSING (2057)"),
+			want: true,
+		},
+		{
+			name: "unrelated error",
+			err:  errors.New("connection timeout"),
+			want: false,
+		},
+		{
+			name: "error with similar but different number",
+			err:  errors.New("error code 20570"),
+			want: true, // substring match includes this
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDataMissingError(tt.err)
+			if got != tt.want {
+				t.Errorf("isDataMissingError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptMEBxPassword(t *testing.T) {
+	tests := []struct {
+		name      string
+		password  string
+		confirmFn func(prompt, confirmPrompt string) (string, error)
+		wantErr   bool
+		errMsg    string
+	}{
+		{
+			name:     "matching passwords",
+			password: "P@ssw0rd!",
+			confirmFn: func(_, _ string) (string, error) {
+				return "P@ssw0rd!", nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "mismatched passwords",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", utils.PasswordsDoNotMatch
+			},
+			wantErr: true,
+			errMsg:  "PasswordsDoNotMatch",
+		},
+		{
+			name:     "empty password",
+			password: "",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", nil
+			},
+			wantErr: true,
+			errMsg:  "cannot be empty",
+		},
+		{
+			name: "read fails",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", errors.New("read error")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			utils.PR = &mockConfirmPasswordReader{
+				confirmFn: tt.confirmFn,
+			}
+
+			defer func() { utils.PR = new(utils.RealPasswordReader) }()
+
+			got, err := promptMEBxPassword()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("promptMEBxPassword() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr && got != tt.password {
+				t.Errorf("promptMEBxPassword() = %v, want %v", got, tt.password)
+			}
+
+			if tt.wantErr && tt.errMsg != "" && err != nil && !contains(err.Error(), tt.errMsg) {
+				t.Errorf("promptMEBxPassword() error = %v, want error containing %q", err, tt.errMsg)
+			}
+		})
+	}
+}
+
+// mockConfirmPasswordReader mocks the PasswordReader interface for prompt testing
+type mockConfirmPasswordReader struct {
+	confirmFn func(prompt, confirmPrompt string) (string, error)
+}
+
+func (m *mockConfirmPasswordReader) ReadPassword() (string, error) {
+	return "", errors.New("unexpected call to ReadPassword")
+}
+
+func (m *mockConfirmPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return m.confirmFn(prompt, confirmPrompt)
 }
 
 // MockAMTCommandWithCustomHashes extends MockAMTCommand for hash testing

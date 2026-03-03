@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 // TODO: Ensure pointers are freed properly throughout this file
@@ -96,20 +98,73 @@ type LocalSystemAccount struct {
 
 type ChangeEnabledResponse uint8
 
+const (
+	changeEnabledTransitionAllowedMask uint8 = 0x01
+	changeEnabledAMTEnabledMask        uint8 = 0x02
+	changeEnabledRestrictedMask        uint8 = 0x20
+	changeEnabledTlsEnforcedMask       uint8 = 0x40
+	changeEnabledNewInterfaceMask      uint8 = 0x80
+	changeEnabledTlsAndNewMask         uint8 = 0xC0
+	changeEnabledLockedMask            uint8 = 0xE0
+)
+
 func (r ChangeEnabledResponse) IsTransitionAllowed() bool {
-	return (r & 1) == 1
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
+}
+
+// IsEnabledFlagSet indicates whether the Enabled bit (bit 0) is set.
+func (r ChangeEnabledResponse) IsEnabledFlagSet() bool {
+	return (uint8(r) & changeEnabledTransitionAllowedMask) == changeEnabledTransitionAllowedMask
 }
 
 func (r ChangeEnabledResponse) IsAMTEnabled() bool {
-	return ((r >> 1) & 1) == 1
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
+}
+
+// IsCurrentOperationalStateEnabled indicates whether the CurrentOperationalState bit (bit 1) is set.
+func (r ChangeEnabledResponse) IsCurrentOperationalStateEnabled() bool {
+	return (uint8(r) & changeEnabledAMTEnabledMask) == changeEnabledAMTEnabledMask
 }
 
 func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
-	return ((r >> 7) & 1) == 1
+	return (uint8(r) & changeEnabledNewInterfaceMask) == changeEnabledNewInterfaceMask
+}
+
+// SupportsSetAmtOperationalState checks if AMT version supports SetAmtOperationalState command (ME 16.1+)
+func (r ChangeEnabledResponse) SupportsSetAmtOperationalState() bool {
+	return r.IsNewInterfaceVersion() // Bit 7 indicates ME 16.1+ interface support
 }
 
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {
-	return ((r >> 6) & 1) == 1
+	return (uint8(r) & changeEnabledTlsEnforcedMask) == changeEnabledTlsEnforcedMask
+}
+
+// GetTransitionBlockedReason provides specific reason why transition is blocked
+func (r ChangeEnabledResponse) GetTransitionBlockedReason() string {
+	if r.IsTransitionAllowed() {
+		return "Transition is allowed"
+	}
+
+	// Decode specific bits to determine exact reason
+	rawValue := uint8(r)
+
+	// Bit analysis for blocked transitions
+	switch {
+	case (rawValue & changeEnabledLockedMask) == changeEnabledLockedMask:
+		// bits 7,6,5 set = New+TLS+Restricted, disabled, locked
+		return "Device is in locked state - requires unprovisioning first"
+	case (rawValue & changeEnabledTlsAndNewMask) == changeEnabledTlsAndNewMask:
+		// bits 7,6 set = New+TLS, but transition blocked
+		return "Device has TLS enforced and is likely provisioned; requires unprovisioning first"
+	case !r.SupportsSetAmtOperationalState():
+		return "AMT version does not support operational state transitions"
+	case (rawValue & changeEnabledRestrictedMask) != 0:
+		// Bit 5 set indicates additional restrictions
+		return "Device has additional security restrictions or OEM policy lockdown"
+	default:
+		// Default case for other blocked scenarios
+		return "Device is provisioned or has manufacturer restrictions"
+	}
 }
 
 type Interface interface {
@@ -120,6 +175,7 @@ type Interface interface {
 	GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error)
 	GetUUID() (string, error)
 	GetControlMode() (int, error)
+	GetProvisioningState() (int, error)
 	GetOSDNSSuffix() (string, error)
 	GetDNSSuffix() (string, error)
 	GetCertificateHashes() ([]CertHashEntry, error)
@@ -128,6 +184,9 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	GetFlog() ([]byte, error)
+	StopConfiguration() (StopConfigurationResponse, error)
+	GetCiraLog() (pthi.GetCiraLogResponse, error)
 }
 
 func ANSI2String(ansi pthi.AMTANSIString) string {
@@ -140,12 +199,14 @@ func ANSI2String(ansi pthi.AMTANSIString) string {
 }
 
 type AMTCommand struct {
-	PTHI pthi.Interface
+	PTHI   pthi.Interface
+	HOTHAM hotham.Interface
 }
 
 func NewAMTCommand() AMTCommand {
 	return AMTCommand{
-		PTHI: pthi.NewCommand(),
+		PTHI:   pthi.NewCommand(),
+		HOTHAM: hotham.NewCommand(),
 	}
 }
 
@@ -215,7 +276,7 @@ func (amt AMTCommand) GetChangeEnabled() (ChangeEnabledResponse, error) {
 
 	defer amt.PTHI.Close()
 
-	rawVal, err := amt.PTHI.GetIsAMTEnabled()
+	rawVal, err := amt.PTHI.IsChangeToAMTEnabled()
 	if err != nil {
 		return ChangeEnabledResponse(0), err
 	}
@@ -292,6 +353,23 @@ func (amt AMTCommand) GetControlMode() (int, error) {
 	defer amt.PTHI.Close()
 
 	result, err := amt.PTHI.GetControlMode()
+	if err != nil {
+		return -1, err
+	}
+
+	return result, nil
+}
+
+// GetProvisioningState ...
+func (amt AMTCommand) GetProvisioningState() (int, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return -1, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetProvisioningState()
 	if err != nil {
 		return -1, err
 	}
@@ -526,4 +604,54 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 	}
 
 	return response, nil
+}
+
+// GetFlog retrieves the CSME Flash Log (FLOG)
+func (amt AMTCommand) GetFlog() ([]byte, error) {
+	err := amt.HOTHAM.Open()
+	if err != nil {
+		log.Errorf("Failed to open HOTHAM interface: %v", err)
+
+		return nil, err
+	}
+
+	defer amt.HOTHAM.Close()
+
+	// First try GetFlogSize to check if FLOG is supported
+	flogSize, err := amt.HOTHAM.GetFlogSize()
+	if err != nil {
+		log.Errorf("GetFlogSize failed: %v", err)
+
+		return nil, fmt.Errorf("GetFlogSize failed: %w", err)
+	}
+
+	log.Tracef("FLOG size: %d bytes", flogSize)
+
+	// Retrieve the FLOG data
+	flogData, err := amt.HOTHAM.GetFlog()
+	if err != nil {
+		log.Errorf("Failed to get FLOG data: %v", err)
+
+		return nil, err
+	}
+
+	log.Debugf("Successfully retrieved %d bytes of FLOG data", len(flogData))
+
+	return flogData, nil
+}
+
+func (amt AMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetCiraLog()
+	if err != nil {
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	return result, nil
 }

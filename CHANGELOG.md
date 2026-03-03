@@ -1,3 +1,37 @@
+# [3.0.0-beta.5](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.4...v3.0.0-beta.5) (2026-03-02)
+
+
+### Features
+
+* return not supported error when running cira diag cmd on unsupported platform ([4340900](https://github.com/device-management-toolkit/rpc-go/commit/4340900fd8522fc717258ca3dda2ba6fdf505db6)), closes [#1183](https://github.com/device-management-toolkit/rpc-go/issues/1183)
+
+# [3.0.0-beta.4](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.3...v3.0.0-beta.4) (2026-02-20)
+
+
+### Bug Fixes
+
+* prevent crash when MEI driver on fresh Windows 11 install is not updated ([4c92093](https://github.com/device-management-toolkit/rpc-go/commit/4c92093b1176de379bf6e0e2ebfeb0df6aafb51d))
+
+# [3.0.0-beta.3](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.2...v3.0.0-beta.3) (2025-12-02)
+
+
+### Features
+
+* add cira to orchestrator ([b796a54](https://github.com/device-management-toolkit/rpc-go/commit/b796a54b585739407586935d5d09265d468c891a))
+
+# [3.0.0-beta.2](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.1...v3.0.0-beta.2) (2025-11-10)
+
+# [3.0.0-beta.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v3.0.0-beta.1) (2025-11-05)
+
+
+* feat!: begin 3.0 beta series ([a888af2](https://github.com/device-management-toolkit/rpc-go/commit/a888af26c2a1f98c8fa815172a34cb77fe472f8c))
+
+
+### BREAKING CHANGES
+
+* see migration-guide.md for the command and flag syntax overhaul, profile/config realignment,
+and the new restful profile activation flow.
+
 ## [2.48.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.1...v2.48.2) (2025-07-03)
 
 

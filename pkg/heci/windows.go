@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	setupapi "github.com/device-management-toolkit/rpc-go/v2/pkg/windows"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 )
 
@@ -29,13 +30,16 @@ func ctl_code(device_type, function, method, access uint32) uint32 {
 }
 
 type Driver struct {
-	meiDevice      windows.Handle
-	bufferSize     uint32
-	PTHIGUID       windows.GUID
-	LMEGUID        windows.GUID
-	WDGUID         windows.GUID
-	clientGUID     *windows.GUID
-	clientGUIDSize uint32
+	meiDevice       windows.Handle
+	bufferSize      uint32
+	protocolVersion uint8
+	PTHIGUID        windows.GUID
+	LMEGUID         windows.GUID
+	WDGUID          windows.GUID
+	UPIDGUID        windows.GUID
+	HOTHAMGUID      windows.GUID
+	clientGUID      *windows.GUID
+	clientGUIDSize  uint32
 }
 
 type HeciVersion struct {
@@ -70,6 +74,11 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	heci.UPIDGUID, err = windows.GUIDFromString("{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}")
+	if err != nil {
+		return err
+	}
+
 	if useLME {
 		heci.clientGUID = &heci.LMEGUID
 	} else if useWD {
@@ -86,14 +95,58 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return err
 }
 
+// InitWithGUID initializes the HECI driver with a specific GUID
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	// Type assert to windows.GUID
+	guidValue, ok := guid.(windows.GUID)
+	if !ok {
+		return errors.New("invalid GUID type for Windows, expected windows.GUID")
+	}
+
+	heci.clientGUID = &guidValue
+
+	err := heci.FindDevices()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (heci *Driver) InitHOTHAM() error {
+	var err error
+
+	// HOTHAM GUID
+	heci.HOTHAMGUID, err = windows.GUIDFromString("{082EE5A7-7C25-470A-9643-0C06F0466EA1}")
+	if err != nil {
+		log.Errorf("InitHOTHAM: Failed to parse HOTHAM GUID: %v", err)
+		return err
+	}
+
+	heci.clientGUID = &heci.HOTHAMGUID
+
+	err = heci.FindDevices()
+	if err != nil {
+		log.Errorf("InitHOTHAM: Failed to find devices: %v", err)
+		return err
+	}
+
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
+		heci.HOTHAMGUID.String(), heci.bufferSize, heci.protocolVersion)
+
+	return nil
+}
+
 func (heci *Driver) FindDevices() error {
 	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
 	if err != nil {
+		log.Errorf("FindDevices: Failed to parse device GUID: %v", err)
 		return err
 	}
 
 	deviceInfo, err := setupapi.SetupDiGetClassDevs(&deviceGUID, nil, 0, setupapi.DIGCF_PRESENT|setupapi.DIGCF_DEVICEINTERFACE)
 	if err != nil {
+		log.Errorf("FindDevices: SetupDiGetClassDevs failed: %v", err)
 		return err
 	}
 
@@ -106,6 +159,14 @@ func (heci *Driver) FindDevices() error {
 
 	edi, err := setupapi.SetupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
 	if err != nil {
+		// Clean up device info before returning
+		setupapi.SetupDiDestroyDeviceInfoList(deviceInfo)
+		// Check if this is a "no devices found" error (ERROR_NO_MORE_ITEMS = 259)
+		if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(259) {
+			log.Error("MEI/HECI driver not found or no Intel ME devices present")
+			return errors.New("MEI/HECI driver not found. Please ensure the Intel Management Engine Interface driver is installed")
+		}
+		log.Errorf("FindDevices: SetupDiEnumDeviceInterfaces failed: %v", err)
 		return err
 	}
 
@@ -145,11 +206,13 @@ func (heci *Driver) FindDevices() error {
 
 	err = heci.GetHeciVersion()
 	if err != nil {
+		heci.meiDevice = 0
 		return err
 	}
 
 	err = heci.ConnectHeciClient()
 	if err != nil {
+		heci.meiDevice = 0
 		return err
 	}
 
@@ -193,12 +256,14 @@ func (heci *Driver) ConnectHeciClient() error {
 		(uint32)(propertiesSize),
 	)
 	if err != nil {
+		log.Tracef("ConnectHeciClient: IOCTL failed: %v", err)
 		return err
 	}
 
 	buf2 := bytes.NewBuffer(propertiesPacked.data[:])
 	binary.Read(buf2, binary.LittleEndian, &properties)
 	heci.bufferSize = properties.MaxMessageLength
+	heci.protocolVersion = properties.ProtocolVersion
 
 	return nil
 }
@@ -287,6 +352,12 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 }
 
 func (heci *Driver) Close() {
-	windows.CloseHandle(heci.meiDevice)
+	// NOTE: We intentionally do NOT call CloseHandle here. On some versions of
+	// the Intel MEI driver (e.g. rolled-back/older drivers), calling CloseHandle
+	// on the MEI device file handle after ConnectHeciClient triggers a null-pointer
+	// execute-AV in the driver's kernel close dispatch routine, crashing the process.
+	// Since rpc is a short-lived CLI process, the OS will clean up all open handles
+	// when the process exits, so not closing explicitly is safe and correct.
+	heci.meiDevice = 0
 	heci.bufferSize = 0
 }

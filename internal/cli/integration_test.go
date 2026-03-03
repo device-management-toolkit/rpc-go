@@ -22,6 +22,10 @@ func (pr *prMockSuccess) ReadPassword() (string, error) {
 	return utils.TestPassword, nil
 }
 
+func (pr *prMockSuccess) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return utils.TestPassword, nil
+}
+
 func TestCLIIntegration(t *testing.T) {
 	// Always mock password prompts in this test suite to avoid EOF on stdin.
 	oldPR := utils.PR

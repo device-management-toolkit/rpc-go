@@ -14,12 +14,51 @@ import (
 
 // MockPasswordReader for testing password prompting
 type MockPasswordReader struct {
-	password string
-	err      error
+	passwords []string // passwords to return in sequence
+	index     int
+	err       error
 }
 
 func (m *MockPasswordReader) ReadPassword() (string, error) {
-	return m.password, m.err
+	if m.err != nil {
+		return "", m.err
+	}
+
+	if len(m.passwords) == 0 {
+		return "", nil
+	}
+
+	pw := m.passwords[m.index]
+	if m.index < len(m.passwords)-1 {
+		m.index++
+	}
+
+	return pw, nil
+}
+
+func (m *MockPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+
+	if len(m.passwords) < 2 {
+		// Single password means both are the same (matching)
+		if len(m.passwords) == 1 {
+			return m.passwords[0], nil
+		}
+
+		return "", nil
+	}
+
+	pw1 := m.passwords[0]
+	pw2 := m.passwords[1]
+	m.index = 2
+
+	if pw1 != pw2 {
+		return "", utils.PasswordsDoNotMatch
+	}
+
+	return pw1, nil
 }
 
 // MockPasswordRequirer for testing password requirements
@@ -35,9 +74,10 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 	tests := []struct {
 		name          string
 		ctxPassword   string
-		mockPassword  string
+		mockPasswords []string
 		mockError     error
 		requiresPass  bool
+		controlMode   int
 		expectedError bool
 		expectedPass  string
 	}{
@@ -48,10 +88,25 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 			expectedPass: "existing-password",
 		},
 		{
-			name:         "password prompted successfully",
-			mockPassword: "prompted-password",
-			requiresPass: true,
-			expectedPass: "prompted-password",
+			name:          "password prompted successfully - activated device",
+			mockPasswords: []string{"prompted-password"},
+			requiresPass:  true,
+			controlMode:   1, // activated (CCM)
+			expectedPass:  "prompted-password",
+		},
+		{
+			name:          "password prompted successfully - not activated with matching confirmation",
+			mockPasswords: []string{"new-password", "new-password"},
+			requiresPass:  true,
+			controlMode:   0, // not activated
+			expectedPass:  "new-password",
+		},
+		{
+			name:          "password mismatch - not activated device",
+			mockPasswords: []string{"password1", "password2"},
+			requiresPass:  true,
+			controlMode:   0, // not activated
+			expectedError: true,
 		},
 		{
 			name:          "password prompting fails",
@@ -64,6 +119,13 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 			requiresPass: false,
 			expectedPass: "",
 		},
+		{
+			name:          "activated device ACM - single prompt",
+			mockPasswords: []string{"acm-password"},
+			requiresPass:  true,
+			controlMode:   2, // activated (ACM)
+			expectedPass:  "acm-password",
+		},
 	}
 
 	for _, tt := range tests {
@@ -72,9 +134,9 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 
 			defer func() { utils.PR = originalPR }()
 
-			utils.PR = &MockPasswordReader{password: tt.mockPassword, err: tt.mockError}
+			utils.PR = &MockPasswordReader{passwords: tt.mockPasswords, err: tt.mockError}
 
-			cmd := &AMTBaseCmd{}
+			cmd := &AMTBaseCmd{ControlMode: tt.controlMode}
 			ctx := &Context{AMTPassword: tt.ctxPassword}
 			requirer := &MockPasswordRequirer{requiresPassword: tt.requiresPass}
 
@@ -87,6 +149,22 @@ func TestAMTBaseCmd_EnsureAMTPassword(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAMTBaseCmd_EnsureAMTPassword_PasswordsDoNotMatch(t *testing.T) {
+	originalPR := utils.PR
+
+	defer func() { utils.PR = originalPR }()
+
+	utils.PR = &MockPasswordReader{passwords: []string{"pass1", "pass2"}}
+
+	cmd := &AMTBaseCmd{ControlMode: 0} // not activated
+	ctx := &Context{}
+	requirer := &MockPasswordRequirer{requiresPassword: true}
+
+	err := cmd.EnsureAMTPassword(ctx, requirer)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, utils.PasswordsDoNotMatch)
 }
 
 func TestAMTBaseCmd_RequiresAMTPassword(t *testing.T) {

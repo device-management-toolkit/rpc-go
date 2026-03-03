@@ -10,6 +10,8 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
 	"syscall"
 	"unsafe"
@@ -27,6 +29,8 @@ type Driver struct {
 const (
 	Device                   = "/dev/mei0"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
+	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
+	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
 )
 
 // PTHI
@@ -38,6 +42,23 @@ var MEI_LMEIF = [16]uint8{0xdb, 0xa4, 0x33, 0x67, 0x76, 0x04, 0x7b, 0x4e, 0xb3, 
 // Watchdog (WD)
 var MEI_WDIF = [16]uint8{0x6f, 0x9a, 0xb7, 0x05, 0x28, 0x46, 0x7f, 0x4d, 0x89, 0x9D, 0xA9, 0x15, 0x14, 0xCB, 0x32, 0xAB}
 
+// UPID (Unique Platform ID)
+var MEI_UPID = [16]uint8{0x79, 0x6c, 0x13, 0x92, 0xea, 0x5f, 0xfd, 0x4c, 0x98, 0x0e, 0x23, 0xbe, 0x07, 0xfa, 0x5e, 0x9f}
+
+// HOTHAM GUID
+// GUID: {082EE5A7-7C25-470A-9643-0C06F0466EA1}
+var MEI_HOTHAM = [16]uint8{0xa7, 0xe5, 0x2e, 0x08, 0x25, 0x7c, 0x0a, 0x47, 0x96, 0x43, 0x0c, 0x06, 0xf0, 0x46, 0x6e, 0xa1}
+
+// formatGUID formats a [16]uint8 GUID array as a standard GUID string
+func formatGUID(guid [16]uint8) string {
+	return fmt.Sprintf("{%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+		guid[3], guid[2], guid[1], guid[0],
+		guid[5], guid[4],
+		guid[7], guid[6],
+		guid[8], guid[9],
+		guid[10], guid[11], guid[12], guid[13], guid[14], guid[15])
+}
+
 func NewDriver() *Driver {
 	return &Driver{}
 }
@@ -47,9 +68,9 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if err.Error() == errMsgPermissionDenied {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")
@@ -88,6 +109,110 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.bufferSize = t.MaxMessageLength
 	heci.protocolVersion = t.ProtocolVersion // should be 4?
+
+	return nil
+}
+
+// InitWithGUID initializes the HECI driver with a specific GUID
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	var err error
+
+	// Type assert to [16]uint8
+	guidBytes, ok := guid.([16]uint8)
+	if !ok {
+		return errors.New("invalid GUID type for Linux, expected [16]uint8")
+	}
+
+	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
+	if err != nil {
+		if err.Error() == errMsgPermissionDenied {
+			log.Error("need administrator privileges")
+		} else if err.Error() == errMsgNoSuchFile {
+			log.Error("MEI/driver is missing or the call to the HECI driver failed")
+		} else {
+			log.Error("Cannot open MEI Device")
+		}
+
+		return err
+	}
+
+	data := CMEIConnectClientData{}
+	data.data = guidBytes
+
+	// we try up to 3 times in case the resource/device is still busy from previous call.
+	for i := 0; i < 3; i++ {
+		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	t := MEIConnectClientData{}
+
+	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
+	if err != nil {
+		return err
+	}
+
+	heci.bufferSize = t.MaxMessageLength
+	heci.protocolVersion = t.ProtocolVersion
+
+	return nil
+}
+
+func (heci *Driver) InitHOTHAM() error {
+	var err error
+
+	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
+	if err != nil {
+		if err.Error() == errMsgPermissionDenied {
+			log.Error("need administrator privileges")
+		} else if err.Error() == errMsgNoSuchFile {
+			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+		} else {
+			log.Errorf("Cannot open MEI Device: %v", err)
+		}
+
+		return err
+	}
+
+	data := CMEIConnectClientData{}
+	data.data = MEI_HOTHAM
+
+	// we try up to 3 times in case the resource/device is still busy from previous call.
+	for i := 0; i < 3; i++ {
+		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
+		if err == nil {
+			log.Tracef("InitHOTHAM: Connected successfully on attempt %d", i+1)
+
+			break
+		}
+	}
+
+	if err != nil {
+		log.Errorf("InitHOTHAM: Failed to connect to HOTHAM GUID after 3 attempts: %v", err)
+
+		return err
+	}
+
+	t := MEIConnectClientData{}
+
+	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
+	if err != nil {
+		log.Errorf("InitHOTHAM: Failed to parse connection data: %v", err)
+
+		return err
+	}
+
+	heci.bufferSize = t.MaxMessageLength
+	heci.protocolVersion = t.ProtocolVersion
+
+	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
+		formatGUID(MEI_HOTHAM), heci.bufferSize, heci.protocolVersion)
 
 	return nil
 }
