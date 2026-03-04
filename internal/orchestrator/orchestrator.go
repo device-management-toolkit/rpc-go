@@ -177,14 +177,19 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 		return err
 	}
 
-	// Heuristically detect auth errors
+	// Heuristically detect auth errors.
+	// Exclude TLS/certificate errors first — they contain "auth" in "authority"
+	// and must not trigger password rotation.
 	lower := strings.ToLower(err.Error())
-	// Broaden detection to common AMT web UI messages and generic auth indicators
+	if strings.Contains(lower, "tls") || strings.Contains(lower, "x509") || strings.Contains(lower, "certificate") {
+		return err
+	}
+
 	if !strings.Contains(lower, "401") &&
 		!strings.Contains(lower, "unauthorized") &&
 		!strings.Contains(lower, "incorrect user name") &&
 		!strings.Contains(lower, "log on failed") &&
-		!strings.Contains(lower, "auth") {
+		!strings.Contains(lower, "authentication") {
 		return err
 	}
 
@@ -590,8 +595,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 	cira := po.profile.Configuration.AMTSpecific.CIRA
 
-	// Check if CIRA is configured (need at least address and cert)
-	if cira.MPSAddress == "" || cira.MPSCert == "" {
+	if cira.MPSAddress == "" {
 		log.Info("No CIRA configuration specified, skipping")
 
 		return nil
@@ -600,28 +604,22 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 	log.Info("Executing CIRA configuration")
 
 	args := po.baseArgs()
+
 	args = append(args, "configure", "cira")
 
-	// MPS Address is required
 	args = append(args, "--mps-address", cira.MPSAddress)
 
-	// MPS Certificate is required
-	args = append(args, "--mps-cert", cira.MPSCert)
+	if cira.MPSCert != "" {
+		args = append(args, "--mps-cert", cira.MPSCert)
+	}
 
-	// MPS Password - if not provided, the CLI will prompt
+
 	if cira.MPSPassword != "" {
 		args = append(args, "--mpspassword", cira.MPSPassword)
 	}
 
-	if cira.GenerateRandomPassword {
-		args = append(args, "--generateRandomPassword")
-	}
-
-	// Environment Detection - optional
 	if len(cira.EnvironmentDetection) > 0 {
-		// Join multiple environment detection strings with comma
-		envDetection := strings.Join(cira.EnvironmentDetection, ",")
-		args = append(args, "--envdetection", envDetection)
+		args = append(args, "--envdetection", strings.Join(cira.EnvironmentDetection, ","))
 	}
 
 	return po.executeWithPasswordFallback(args)

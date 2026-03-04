@@ -6,12 +6,16 @@
 package activate
 
 import (
+	"bufio"
 	"fmt"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	log "github.com/sirupsen/logrus"
@@ -270,9 +274,10 @@ func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 	return remoteCmd.Run(ctx)
 }
 
-// runHttpProfileFullflow fetches a profile over HTTP(S) and runs the orchestrator
+// runHttpProfileFullflow fetches a profile over HTTP(S) and runs the orchestrator.
+// Order: authenticate → fetch profile → resolve passwords → add device (with passwords) → execute.
 func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
-	// Reuse ProfileFetcher
+	// Build the fetcher with all credentials — it handles authentication internally
 	fetcher := &profile.ProfileFetcher{
 		URL:           cmd.URL,
 		Token:         ctx.AuthToken,
@@ -287,21 +292,148 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		fetcher.ClientKey = cmd.Key
 	}
 
+	// Authenticate once using the fetcher's own auth logic, then reuse the token
+	token, err := fetcher.GetToken()
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Set the token on the fetcher so FetchProfile() skips re-authentication
+	fetcher.Token = token
+
 	cfg, err := fetcher.FetchProfile()
 	if err != nil {
 		return fmt.Errorf("failed to fetch profile: %w", err)
+	}
+
+	// Resolve AMT/MEBx/MPS passwords — generate random ones when the profile requests it.
+	// This happens before device registration so the console already has the correct passwords.
+	amtPassword, mebxPassword, mpsPassword, err := profile.ResolvePasswords(&cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve passwords: %w", err)
+	}
+
+	// Resolve console base URL and device GUID for device registration and potential cleanup.
+	consoleBaseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	if err != nil {
+		return fmt.Errorf("failed to resolve console info: %w", err)
+	}
+
+	// Add device to console with resolved passwords
+	if err := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword); err != nil {
+		log.Warnf("Failed to add device to console: %v", err)
+
+		if !cmd.promptUserToProceed(err) {
+			return fmt.Errorf("activation aborted: %w", err)
+		}
+
+		log.Info("Proceeding with activation despite add-device failure")
 	}
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
+		// When CIRA configuration fails, clear the MPS password from the console
+		// to avoid confusing users with a stale password in the device record.
+		if strings.Contains(err.Error(), "CIRA") && mpsPassword != "" {
+			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+		}
+
 		return err
 	}
 
 	log.Info("Profile fullflow completed successfully")
 
 	return nil
+}
+
+// resolveConsoleInfo extracts the console base URL from the fetcher and determines the device GUID.
+func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, fetcher *profile.ProfileFetcher) (string, string, error) {
+	parsed, err := url.Parse(fetcher.URL)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid URL: %w", err)
+	}
+
+	consoleBaseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	guid := cmd.UUID
+	if guid == "" && ctx.AMTCommand != nil {
+		guid, err = ctx.AMTCommand.GetUUID()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get device UUID: %w", err)
+		}
+	}
+
+	return consoleBaseURL, guid, nil
+}
+
+// clearMPSPasswordFromConsole removes the MPS password from the device record in the console.
+// This is called when CIRA configuration fails so users are not confused by a stale password.
+func (cmd *ActivateCmd) clearMPSPasswordFromConsole(consoleBaseURL, token, guid string, skipCertCheck bool) {
+	if guid == "" {
+		log.Warn("Cannot clear MPS password: device GUID is unknown")
+
+		return
+	}
+
+	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, guid, skipCertCheck); err != nil {
+		log.Warnf("Failed to clear MPS password from console after CIRA failure: %v", err)
+	} else {
+		log.Info("MPS password cleared from console after CIRA configuration failure")
+	}
+}
+
+// addDeviceToConsole registers or updates the device in the console database before activation.
+// It tries POST first; if the device already exists, it falls back to PATCH.
+func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword string) error {
+	hostname := cmd.Hostname
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+	}
+
+	payload := device.DevicePayload{
+		GUID:         guid,
+		Hostname:     hostname,
+		FriendlyName: cmd.FriendlyName,
+		Tags:         []string{},
+		MPSUsername:  "admin",
+		Username:     "admin",
+		Password:     amtPassword,
+		MEBXPassword: mebxPassword,
+		MPSPassword:  mpsPassword,
+	}
+
+	err := device.AddDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck)
+	if err == nil {
+		return nil
+	}
+
+	// If POST failed (device likely already exists), try PATCH to update.
+	log.Debugf("POST failed (%v), attempting PATCH to update existing device", err)
+
+	if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck); updateErr != nil {
+		return fmt.Errorf("add failed: %w; update also failed: %v", err, updateErr)
+	}
+
+	return nil
+}
+
+// promptUserToProceed asks the user whether to continue with activation after a failure.
+func (cmd *ActivateCmd) promptUserToProceed(err error) bool {
+	fmt.Printf("Failed to add device to console: %v\n", err)
+	fmt.Print("Do you want to proceed with activation? (y/n): ")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	answer, readErr := reader.ReadString('\n')
+	if readErr != nil {
+		return false
+	}
+
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	return answer == "y" || answer == "yes"
 }
 
 // runLocalProfileFullflow loads a local profile file (optionally decrypt) and runs the orchestrator
