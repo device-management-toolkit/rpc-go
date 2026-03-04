@@ -7,6 +7,7 @@ package cli
 
 import (
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
@@ -18,6 +19,13 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+const (
+	amtInitializeMaxAttempts = 4
+	amtInitializeBackoff     = 2 * time.Second
+)
+
+var sleepForAMTRetry = time.Sleep
 
 // Global flags that apply to all commands
 type Globals struct {
@@ -140,7 +148,7 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 func Execute(args []string) error {
 	// Check AMT access first
 	amtCommand := amt.NewAMTCommand()
-	if err := amtCommand.Initialize(); err != nil {
+	if err := initializeAMTWithRetry(amtCommand); err != nil {
 		log.Error("Failed to execute due to access issues. " +
 			"Please ensure that Intel ME is present, " +
 			"the MEI driver is installed, " +
@@ -150,6 +158,24 @@ func Execute(args []string) error {
 	}
 
 	return ExecuteWithAMT(args, amtCommand)
+}
+
+func initializeAMTWithRetry(amtCommand amt.Interface) error {
+	var err error
+
+	for attempt := 1; attempt <= amtInitializeMaxAttempts; attempt++ {
+		err = amtCommand.Initialize()
+		if err == nil {
+			return nil
+		}
+
+		if attempt < amtInitializeMaxAttempts {
+			log.Warnf("AMT initialize failed (attempt %d/%d): %v. Retrying in %s...", attempt, amtInitializeMaxAttempts, err, amtInitializeBackoff)
+			sleepForAMTRetry(amtInitializeBackoff)
+		}
+	}
+
+	return err
 }
 
 // ExecuteWithAMT runs the parsed command with a provided AMT command (useful for testing)
