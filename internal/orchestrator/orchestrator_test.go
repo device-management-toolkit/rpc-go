@@ -44,7 +44,7 @@ func TestNewProfileOrchestrator(t *testing.T) {
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "admin123"
 
-	po := NewProfileOrchestrator(cfg, "current-pwd", "mebx-pwd", true)
+	po := NewProfileOrchestrator(cfg, "current-pwd", "mebx-pwd", true, false)
 
 	if po.currentPassword != "current-pwd" {
 		t.Errorf("currentPassword = %q, want %q", po.currentPassword, "current-pwd")
@@ -66,7 +66,7 @@ func TestNewProfileOrchestrator(t *testing.T) {
 func TestNewProfileOrchestrator_TrimSpaces(t *testing.T) {
 	cfg := config.Configuration{}
 
-	po := NewProfileOrchestrator(cfg, "  pwd  ", "  mebx  ", false)
+	po := NewProfileOrchestrator(cfg, "  pwd  ", "  mebx  ", false, false)
 
 	if po.currentPassword != "pwd" {
 		t.Errorf("currentPassword = %q, want %q", po.currentPassword, "pwd")
@@ -84,7 +84,7 @@ func TestExecuteActivation_ACM_WithMEBxFromProfile(t *testing.T) {
 	cfg.Configuration.AMTSpecific.ProvisioningCertPwd = "cert-pwd"
 	cfg.Configuration.AMTSpecific.MEBXPassword = "profile-mebx"
 
-	po := NewProfileOrchestrator(cfg, "", "cli-mebx", false)
+	po := NewProfileOrchestrator(cfg, "", "cli-mebx", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 
@@ -113,7 +113,7 @@ func TestExecuteActivation_ACM_WithMEBxFromCLI(t *testing.T) {
 	cfg.Configuration.AMTSpecific.ProvisioningCertPwd = "cert-pwd"
 	// No MEBXPassword in profile
 
-	po := NewProfileOrchestrator(cfg, "", "cli-mebx", false)
+	po := NewProfileOrchestrator(cfg, "", "cli-mebx", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 
@@ -137,7 +137,7 @@ func TestExecuteActivation_ACM_NoMEBx(t *testing.T) {
 	cfg.Configuration.AMTSpecific.ProvisioningCert = "cert-data"
 	cfg.Configuration.AMTSpecific.ProvisioningCertPwd = "cert-pwd"
 
-	po := NewProfileOrchestrator(cfg, "", "", false)
+	po := NewProfileOrchestrator(cfg, "", "", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 
@@ -158,7 +158,7 @@ func TestExecuteActivation_CCM_NoMEBx(t *testing.T) {
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.ControlMode = "ccmactivate"
 
-	po := NewProfileOrchestrator(cfg, "", "some-mebx", false)
+	po := NewProfileOrchestrator(cfg, "", "some-mebx", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 
@@ -181,7 +181,7 @@ func TestExecuteMEBxConfiguration_SkipWhenPreProvisioning(t *testing.T) {
 	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
 	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
 
-	po := NewProfileOrchestrator(cfg, "", "", false)
+	po := NewProfileOrchestrator(cfg, "", "", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 	po.currentControlMode = 0 // pre-provisioning
@@ -202,7 +202,7 @@ func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
 	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
 
-	po := NewProfileOrchestrator(cfg, "", "", false)
+	po := NewProfileOrchestrator(cfg, "", "", false, false)
 	mock := newMockExecutor()
 	po.executor = mock
 	po.currentControlMode = 2 // already in ACM
@@ -220,5 +220,15 @@ func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 	argsStr := strings.Join(mock.executedArgs[0], " ")
 	if !strings.Contains(argsStr, "configure mebx --mebxpassword mebx-pwd") {
 		t.Errorf("expected MEBx configure command, got: %s", argsStr)
+	}
+}
+
+func TestBaseArgs_PropagatesVerbose(t *testing.T) {
+	po := NewProfileOrchestrator(config.Configuration{}, "", "", false, true)
+	args := po.baseArgs()
+	argsStr := strings.Join(args, " ")
+
+	if !strings.Contains(argsStr, "--verbose") {
+		t.Errorf("expected --verbose in args, got: %s", argsStr)
 	}
 }

@@ -35,6 +35,8 @@ type ProfileOrchestrator struct {
 	globalPassword string
 	// skip AMT certificate verification when connecting over TLS
 	skipAMTCertCheck bool
+	// logging flags to propagate to child rpc invocations
+	verbose bool
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
@@ -42,7 +44,7 @@ type ProfileOrchestrator struct {
 // AdminPassword without prompting when provided. The mebxPassword argument is an optional
 // MEBx password to pass through to activation for AMT19+ TLS devices. The skipAMTCertCheck
 // argument controls whether AMT TLS certificate verification should be skipped for sub-commands.
-func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
+func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassword string, skipAMTCertCheck, verbose bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
 		profile:          cfg,
 		executor:         &CLIExecutor{},
@@ -50,12 +52,17 @@ func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassw
 		mebxPassword:     strings.TrimSpace(mebxPassword),
 		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
 		skipAMTCertCheck: skipAMTCertCheck,
+		verbose:          verbose,
 	}
 }
 
 // baseArgs returns the common CLI arguments including global flags like password and skip-amt-cert-check.
 func (po *ProfileOrchestrator) baseArgs() []string {
 	args := []string{"rpc"}
+	if po.verbose {
+		args = append(args, "--verbose")
+	}
+
 	if po.skipAMTCertCheck {
 		args = append(args, "--skip-amt-cert-check")
 	}

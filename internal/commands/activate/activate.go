@@ -294,7 +294,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck, ctx.Verbose)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
@@ -313,7 +313,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck, ctx.Verbose)
 		if err := orch.ExecuteProfile(); err != nil {
 			return err
 		}
@@ -360,7 +360,7 @@ func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
 		return fmt.Errorf("failed to decrypt profile: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck, ctx.Verbose)
 	if err := orch.ExecuteProfile(); err != nil {
 		return err
 	}
