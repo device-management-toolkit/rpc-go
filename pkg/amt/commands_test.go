@@ -340,6 +340,7 @@ func TestGetRemoteAccessConnectionStatus(t *testing.T) {
 	assert.Equal(t, "not connected", result.RemoteStatus)
 	assert.Equal(t, "user initiated", result.RemoteTrigger)
 	assert.Equal(t, "Test", result.MPSHostname)
+	assert.Equal(t, 0, result.MPSPort) // HECI does not return port
 }
 
 func TestGetLANInterfaceSettingsTrue(t *testing.T) {

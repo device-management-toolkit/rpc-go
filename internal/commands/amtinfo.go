@@ -71,22 +71,18 @@ type AmtInfoCmd struct {
 	URL  string `help:"Endpoint URL of the devices API (e.g., https://mps.example.com/api/v1/devices)" name:"url"`
 }
 
-// RequiresAMTPassword indicates whether this command requires AMT password
-// For amtinfo, password is only required for user certificate operations
+// RequiresAMTPassword indicates whether this command requires AMT password.
+// amtinfo never requires a password prompt — it uses the Local System Account (LSA) for WSMAN.
 func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
-	log.Trace("Checking if amtinfo requires AMT password")
-	// Password is required for user cert operations when device is provisioned (control mode != 0).
-	return cmd.IsUserCertRequested() && cmd.GetControlMode() != 0
+	return false
 }
 
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
-	// For amtinfo, skip WSMAN setup unless user certificates are explicitly requested.
-	// Avoid any hardware/driver access during validation to keep tests hermetic.
-	cmd.SkipWSMANSetup = !cmd.UserCert && !cmd.All
+	// amtinfo handles its own WSMAN setup internally via ensureWSMANClient (using LSA).
+	cmd.SkipWSMANSetup = true
 
 	log.Trace("Validating amtinfo command")
-	// Defer password prompting to Run(), where control mode is available (set in AfterApply).
 
 	// Basic validation for sync mode
 	if cmd.Sync {
@@ -106,11 +102,6 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	return nil
 }
 
-// IsUserCertRequested checks if user certificates are requested
-func (cmd *AmtInfoCmd) IsUserCertRequested() bool {
-	return cmd.UserCert || cmd.All
-}
-
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
@@ -119,16 +110,7 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 
 // Run executes the amtinfo command
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
-	// If user requested user certificates or --all, prompt for password at runtime.
 	log.Trace("Running amtinfo command")
-
-	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
-		return err
-	}
-	// If password now present and user certs requested, build WSMAN client
-	if err := cmd.EnsureWSMAN(ctx); err != nil {
-		return err
-	}
 
 	service := NewInfoService(ctx.AMTCommand)
 	service.jsonOutput = ctx.JsonOutput
@@ -136,7 +118,6 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	service.localTLSEnforced = cmd.LocalTLSEnforced
 	// Use AMT-specific skip flag for WSMAN/TLS to firmware
 	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
-	// Reuse the already-initialized WSMAN client from AMTBaseCmd (initialized in AfterApply when userCert is requested)
 	service.wsman = cmd.GetWSManClient()
 
 	// If syncing, ensure we collect full device info regardless of selective flags
@@ -478,10 +459,42 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	// Ensure WSMAN client is set up once for any operations that need it (RAS, UserCert)
+	if showAll || cmd.Ras || cmd.UserCert {
+		if controlMode == -1 {
+			controlMode, controlModeErr = s.amtCommand.GetControlMode()
+		}
+
+		if controlModeErr == nil {
+			if err := s.ensureWSMANClient(controlMode); err != nil {
+				log.Debug("WSMAN client setup failed, WSMAN features unavailable: ", err)
+			}
+		}
+	}
+
 	// Get RAS (Remote Access Status)
 	if showAll || cmd.Ras {
+		// Try WSMAN first for MPS hostname + port
+		var (
+			wsmanHostname string
+			wsmanPort     int
+			wsmanErr      error
+		)
+
+		wsmanHostname, wsmanPort, wsmanErr = s.getMPSInfoFromWSMAN()
+		if wsmanErr != nil {
+			log.Debug("Failed to get MPS info from WSMAN, will use HECI: ", wsmanErr)
+		}
+
+		// Always call HECI for NetworkStatus, RemoteStatus, RemoteTrigger
 		ras, err := s.amtCommand.GetRemoteAccessConnectionStatus()
 		if err == nil {
+			if wsmanErr == nil {
+				// WSMAN succeeded: use WSMAN hostname + port
+				ras.MPSHostname = wsmanHostname
+				ras.MPSPort = wsmanPort
+			}
+			// If WSMAN failed, HECI hostname is already in ras.MPSHostname; port stays 0
 			result.RAS = &ras
 		}
 	}
@@ -512,24 +525,13 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
-	// Get user certificates (requires WSMAN client setup)
-	if showAll || cmd.UserCert {
-		// Get control mode if not already retrieved
-		if controlMode == -1 {
-			controlMode, _ = s.amtCommand.GetControlMode()
-		}
-
-		if controlMode == 0 {
-			log.Debug("Device is in pre-provisioning mode, user certificates are not available")
-		}
-
-		if s.password != "" {
-			userCerts, err := s.getUserCertificates(controlMode)
-			if err != nil {
-				log.Error("Failed to get user certificates: ", err)
-			} else {
-				result.UserCerts = userCerts
-			}
+	// Get user certificates (WSMAN client already set up above)
+	if cmd.All || cmd.UserCert {
+		userCerts, err := s.getUserCertificates()
+		if err != nil {
+			log.Error("Failed to get user certificates: ", err)
+		} else {
+			result.UserCerts = userCerts
 		}
 	}
 
@@ -599,6 +601,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		fmt.Printf("RAS Remote Status\t: %s\n", result.RAS.RemoteStatus)
 		fmt.Printf("RAS Trigger\t\t: %s\n", result.RAS.RemoteTrigger)
 		fmt.Printf("RAS MPS Hostname\t: %s\n", result.RAS.MPSHostname)
+
+		if result.RAS.MPSPort > 0 {
+			fmt.Printf("RAS MPS Port\t\t: %d\n", result.RAS.MPSPort)
+		}
 	}
 
 	// Output wired adapter information
@@ -653,7 +659,7 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 	}
 
 	// Output user certificates (separate from system certs)
-	if showAll || cmd.UserCert {
+	if cmd.All || cmd.UserCert {
 		if len(result.UserCerts) > 0 {
 			fmt.Println("---Public Key Certs---")
 
@@ -762,59 +768,108 @@ func (s *InfoService) getMajorVersion(version string) (int, error) {
 	return majorVersion, nil
 }
 
-// getUserCertificates retrieves public key certificates via WSMAN
-func (s *InfoService) getUserCertificates(controlMode int) (map[string]UserCert, error) {
-	// Control mode is passed as parameter to avoid duplicate checks
-	if controlMode == 0 {
-		return nil, fmt.Errorf("device is in pre-provisioning mode, user certificates are not available")
-	}
-
-	// Prefer an existing, already-initialized WSMAN client to avoid duplicate LMS connections/logs
-	var wsmanClient interfaces.WSMANer
+// ensureWSMANClient sets up s.wsman once if not already initialized.
+// Uses the AMT password if available, otherwise falls back to LSA credentials.
+func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	if s.wsman != nil {
-		wsmanClient = s.wsman
-	} else {
-		// Create and setup a temporary client as a fallback
-		wsmanClient = localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-		// Setup TLS configuration
-		var tlsConfig *tls.Config
-		if s.localTLSEnforced {
-			tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
-		} else {
-			tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
-		}
-
-		if err := wsmanClient.SetupWsmanClient("admin", s.password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
-			return nil, fmt.Errorf("failed to setup WSMAN client: %w", err)
-		}
+		return nil
 	}
 
-	// Get public key certificates
-	publicKeyCerts, err := wsmanClient.GetPublicKeyCerts()
+	if controlMode == 0 {
+		return fmt.Errorf("device is in pre-provisioning mode")
+	}
+
+	username := "admin"
+	password := s.password
+
+	// If no password provided, use local system account credentials
+	if password == "" {
+		lsa, err := s.amtCommand.GetLocalSystemAccount()
+		if err != nil {
+			return fmt.Errorf("failed to get local system account: %w", err)
+		}
+
+		username = lsa.Username
+		password = lsa.Password
+	}
+
+	// Check LMS connectivity before attempting WSMAN setup to avoid local transport fallback which hangs.
+	port := utils.LMSPort
+	if s.localTLSEnforced {
+		port = utils.LMSTLSPort
+	}
+
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+
+	conn, err := dialer.DialContext(context.Background(), "tcp4", utils.LMSAddress+":"+port)
+	if err != nil {
+		return fmt.Errorf("LMS not available: %w", err)
+	}
+
+	conn.Close()
+
+	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+	var tlsConfig *tls.Config
+	if s.localTLSEnforced {
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+	} else {
+		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
+	}
+
+	if err := wsmanClient.SetupWsmanClient(username, password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		return fmt.Errorf("failed to setup WSMAN client: %w", err)
+	}
+
+	s.wsman = wsmanClient
+
+	return nil
+}
+
+// getUserCertificates retrieves public key certificates via WSMAN
+func (s *InfoService) getUserCertificates() (map[string]UserCert, error) {
+	if s.wsman == nil {
+		return nil, fmt.Errorf("WSMAN client not available")
+	}
+
+	publicKeyCerts, err := s.wsman.GetPublicKeyCerts()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key certificates: %w", err)
 	}
 
-	// Process certificates into user cert map
 	userCertMap := make(map[string]UserCert)
 
 	for _, cert := range publicKeyCerts {
-		// Get certificate name from CN in subject, fallback to InstanceID
 		name := utils.GetTokenFromKeyValuePairs(cert.Subject, "CN")
 		if name == "" {
 			name = cert.InstanceID
 		}
 
-		userCert := UserCert{
+		userCertMap[name] = UserCert{
 			Subject:                cert.Subject,
 			Issuer:                 cert.Issuer,
 			TrustedRootCertificate: cert.TrustedRootCertificate,
 			ReadOnlyCertificate:    cert.ReadOnlyCertificate,
 		}
-
-		userCertMap[name] = userCert
 	}
 
 	return userCertMap, nil
+}
+
+// getMPSInfoFromWSMAN retrieves MPS hostname and port via WSMAN ManagementPresenceRemoteSAP.
+func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err error) {
+	if s.wsman == nil {
+		return "", 0, fmt.Errorf("WSMAN client not available")
+	}
+
+	items, err := s.wsman.GetMPSSAP()
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", err)
+	}
+
+	if len(items) == 0 {
+		return "", 0, fmt.Errorf("no MPS entries found")
+	}
+
+	return items[0].AccessInfo, items[0].Port, nil
 }
