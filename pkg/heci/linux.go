@@ -29,8 +29,11 @@ type Driver struct {
 	protocolVersion uint8
 	useLME          bool
 	useWD           bool
-	// Issue #6 fix: Add mutex to protect device handle access
+	// Protect device handle access across concurrent Send/Receive/reinit/Close paths.
 	mu sync.RWMutex
+	// Throttle repeated poll warning logs during transient device instability.
+	lastPollWarnLogTime time.Time
+	suppressedPollWarns int
 }
 
 const (
@@ -38,6 +41,7 @@ const (
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
 	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
 	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
+	pollWarnLogInterval      = 15 * time.Second
 )
 
 // PTHI
@@ -245,7 +249,7 @@ func (heci *Driver) GetBufferSize() uint32 {
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
 	//log.Tracef("heci send len=%d", len(buffer))
 
-	// Issue #6 fix: Protect device handle access with read lock
+	// Protect device handle access with read lock.
 	heci.mu.RLock()
 	fd := int(heci.meiDevice.Fd())
 	heci.mu.RUnlock()
@@ -255,7 +259,7 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 		if errors.Is(err, syscall.ENODEV) || err.Error() == "no such device" {
 			log.Warn("mei device unavailable, reinitializing")
 
-			// Issue #6 fix: Use write lock during reinitialization
+			// Use write lock during reinitialization.
 			heci.mu.Lock()
 			_ = heci.meiDevice.Close()
 
@@ -274,7 +278,7 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 			size, err = syscall.Write(fd, buffer)
 		}
 
-		// Issue #5 fix: Increase EBUSY retry attempts from 1 to 3 with exponential backoff
+		// Increase EBUSY retry attempts from 1 to 3 with exponential backoff.
 		if errors.Is(err, syscall.EBUSY) {
 			for attempt := 0; attempt < 3; attempt++ {
 				log.Warnf("mei write busy, retrying (attempt %d/3)", attempt+1)
@@ -301,7 +305,7 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 }
 
 func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
-	// Issue #6 fix: Protect device handle access with read lock
+	// Protect device handle access with read lock.
 	driver.mu.RLock()
 	fd := int(driver.meiDevice.Fd())
 	driver.mu.RUnlock()
@@ -345,9 +349,9 @@ func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int
 		}
 
 		if pfd[0].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-			log.Warnf("heci poll error revents=0x%x; reinitializing", pfd[0].Revents)
+			driver.logPollReinitWarning(pfd[0].Revents)
 
-			// Issue #6 fix: Use write lock during reinitialization
+			// Use write lock during reinitialization.
 			driver.mu.Lock()
 			_ = driver.meiDevice.Close()
 
@@ -367,6 +371,27 @@ func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int
 			continue
 		}
 	}
+}
+
+func (driver *Driver) logPollReinitWarning(revents int16) {
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+
+	now := time.Now()
+	if driver.lastPollWarnLogTime.IsZero() || now.Sub(driver.lastPollWarnLogTime) >= pollWarnLogInterval {
+		if driver.suppressedPollWarns > 0 {
+			log.Warnf("heci poll warn revents=0x%x; reinitializing (suppressed %d similar events)", revents, driver.suppressedPollWarns)
+			driver.suppressedPollWarns = 0
+		} else {
+			log.Warnf("heci poll warn revents=0x%x; reinitializing", revents)
+		}
+
+		driver.lastPollWarnLogTime = now
+
+		return
+	}
+
+	driver.suppressedPollWarns++
 }
 
 func Ioctl(fd, op, arg uintptr) error {

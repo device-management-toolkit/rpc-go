@@ -82,6 +82,8 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	return client, err
 }
 
+// MakeItSo uses a pointer receiver because it updates executor state (lmeConnected, lastError)
+// across the activation loop.
 func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
