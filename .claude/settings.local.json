@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(where docker:*)",
+      "Bash(docker:*)",
+      "WebFetch(domain:hub.docker.com)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
