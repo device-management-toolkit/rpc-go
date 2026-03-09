@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
@@ -42,7 +43,11 @@ func NewLocalTransport() *LocalTransport {
 
 	err := lm.local.Initialize()
 	if err != nil {
-		logrus.Error(err)
+		if strings.Contains(err.Error(), "heci read timeout") {
+			logrus.Warn(err)
+		} else {
+			logrus.Error(err)
+		}
 	}
 
 	return lm

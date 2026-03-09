@@ -244,10 +244,6 @@ func (cmd *LocalActivateCmd) toActivationConfig(ctx *commands.Context) LocalActi
 func (service *LocalActivationService) Activate() error {
 	log.Infof("Starting local AMT activation in %s mode", service.config.Mode)
 
-	// Close any existing WSMAN client from AMTBaseCmd (via EnsureWSMAN) to release MEI device
-	// This is needed because activateCCM/activateACM will create their own WSMAN clients
-	// Note: We don't defer close here since activateCCM/activateACM manage their own WSMAN lifecycle
-
 	// Step 1: Validate current AMT state
 	if err := service.validateAMTState(); err != nil {
 		return err

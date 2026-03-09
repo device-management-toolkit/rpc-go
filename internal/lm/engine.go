@@ -7,6 +7,7 @@ package lm
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,7 +46,7 @@ func (lme *LMEConnection) Initialize() error {
 
 	err := lme.Command.Open(true)
 	if err != nil {
-		log.Error(err)
+		logLMEError(err)
 
 		return err
 	}
@@ -57,7 +58,7 @@ func (lme *LMEConnection) Initialize() error {
 
 	err = lme.execute(bin_buf)
 	if err != nil {
-		log.Error(err)
+		logLMEError(err)
 
 		return err
 	}
@@ -69,7 +70,7 @@ func (lme *LMEConnection) Initialize() error {
 func (lme *LMEConnection) Connect() error {
 	log.Debug("Sending APF_CHANNEL_OPEN")
 
-	// Issue #7 fix: Reset session state before new connection
+	// Reset session state before new connection.
 	if lme.Session.Timer != nil {
 		lme.Session.Timer.Stop()
 		// Reset the existing timer instead of creating a new one
@@ -106,8 +107,8 @@ func (lme *LMEConnection) Connect() error {
 				if initErr := lme.Initialize(); initErr != nil {
 					return initErr
 				}
-				// Issue #1 fix: Add delay after Initialize to give device time to stabilize
-				time.Sleep(utils.HeciRetryDelay * time.Millisecond)
+				// Add delay after Initialize to give device time to stabilize.
+				utils.Pause(utils.HeciRetryDelay / 1000)
 
 				continue
 			}
@@ -124,6 +125,20 @@ func (lme *LMEConnection) Connect() error {
 	}
 
 	return lastErr
+}
+
+func logLMEError(err error) {
+	if err == nil {
+		return
+	}
+
+	if strings.Contains(err.Error(), "heci read timeout") {
+		log.Warn(err)
+
+		return
+	}
+
+	log.Error(err)
 }
 
 // Send writes data to LMS TCP Socket
@@ -218,7 +233,7 @@ func (lme *LMEConnection) Listen() {
 		result2, bytesRead, err2 := lme.Command.Receive()
 		if bytesRead == 0 || err2 != nil {
 			log.Trace("NO MORE DATA TO READ")
-			// Issue #3 fix: Send error to channel before exiting to prevent deadlock
+			// Send error to channel before exiting to prevent deadlock.
 			// But don't panic if channel is closed
 			if err2 != nil {
 				select {
