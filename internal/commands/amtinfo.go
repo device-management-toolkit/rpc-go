@@ -61,7 +61,7 @@ type AmtInfoCmd struct {
 
 	// Certificate flags
 	Cert     bool `help:"Show System Certificate Hashes" short:"c"`
-	UserCert bool `help:"Show User Certificates only (AMT password required)" name:"userCert"`
+	UserCert bool `help:"Show User Certificates only" name:"userCert"`
 
 	// Special flags
 	All bool `help:"Show All AMT Information" short:"A"`
