@@ -6,12 +6,20 @@
 package activate
 
 import (
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	log "github.com/sirupsen/logrus"
@@ -287,21 +295,215 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		fetcher.ClientKey = cmd.Key
 	}
 
+	// Authenticate once using the fetcher's own auth logic, then reuse the token
+	token, err := fetcher.GetToken()
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	if token != "" {
+		fetcher.Token = token
+	}
+
 	cfg, err := fetcher.FetchProfile()
 	if err != nil {
 		return fmt.Errorf("failed to fetch profile: %w", err)
+	}
+
+	// Resolve AMT/MEBx/MPS passwords — generate random ones when the profile requests it.
+	amtPassword, mebxPassword, mpsPassword, err := profile.ResolvePasswords(&cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve passwords: %w", err)
+	}
+
+	// Resolve console base URL and device GUID for device registration and potential cleanup.
+	consoleBaseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	if err != nil {
+		return fmt.Errorf("failed to resolve console info: %w", err)
+	}
+
+	// Add device to console with resolved passwords
+	hasCIRA := cfg.Configuration.AMTSpecific.CIRA.MPSAddress != ""
+
+	addDeviceFailed := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg)
+	if addDeviceFailed != nil {
+		return fmt.Errorf("failed to add device to console: %w", addDeviceFailed)
 	}
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
+		// When CIRA configuration fails, clear the MPS password from the console
+		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
+			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+		}
+
 		return err
 	}
 
 	log.Info("Profile fullflow completed successfully")
 
 	return nil
+}
+
+// extracts the console base URL from the fetcher and determines the device GUID.
+func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, fetcher *profile.ProfileFetcher) (string, string, error) {
+	parsed, err := url.Parse(fetcher.URL)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid URL: %w", err)
+	}
+
+	consoleBaseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	guid := cmd.UUID
+	if guid == "" && ctx.AMTCommand != nil {
+		guid, err = ctx.AMTCommand.GetUUID()
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get device UUID: %w", err)
+		}
+	}
+
+	return consoleBaseURL, guid, nil
+}
+
+// removes the MPS password from the device record in the console.
+func (cmd *ActivateCmd) clearMPSPasswordFromConsole(consoleBaseURL, token, guid string, skipCertCheck bool) {
+	if guid == "" {
+		log.Warn("Cannot clear MPS password: device GUID is unknown")
+
+		return
+	}
+
+	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, guid, skipCertCheck); err != nil {
+		log.Warnf("failed to clear MPS password: %v", err)
+	} else {
+		log.Info("MPS password cleared after CIRA failure")
+	}
+}
+
+// addDeviceToConsole registers or updates the device in the console before activation.
+func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword string, hasCIRA bool, cfg *config.Configuration) error {
+	hostname := cmd.Hostname
+	if hostname == "" {
+		if hasCIRA {
+			hostname, _ = os.Hostname()
+		} else {
+			hostname = getLocalIP()
+		}
+	}
+
+	friendlyName := cmd.FriendlyName
+	if friendlyName == "" {
+		friendlyName, _ = os.Hostname()
+		if friendlyName == "" {
+			friendlyName = hostname
+		}
+	}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+
+	payload := device.DevicePayload{
+		GUID:            guid,
+		Hostname:        hostname,
+		FriendlyName:    friendlyName,
+		Tags:            cfg.Tags,
+		Username:        "admin",
+		Password:        amtPassword,
+		MEBXPassword:    mebxPassword,
+		UseTLS:          useTLS,
+		AllowSelfSigned: allowSelfSigned,
+	}
+
+	if hasCIRA {
+		payload.MPSUsername = "admin"
+		payload.MPSPassword = mpsPassword
+	} else {
+		payload.MPSUsername = ""
+		payload.MPSPassword = ""
+	}
+
+	err := device.AddDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck)
+	if err == nil {
+		return nil
+	}
+
+	// Only fall back to PATCH when the device already exists (HTTP 409 Conflict).
+	var statusErr *device.StatusError
+	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
+		log.Debugf("Device already exists in console, updating device credentials")
+
+		if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck); updateErr != nil {
+			return fmt.Errorf("update also failed: %v", updateErr)
+		}
+
+		return nil
+	}
+
+	return err
+}
+
+// resolveTLSFlags determines UseTLS and AllowSelfSigned for the device payload.
+// 1. If the profile has TLS enabled → both true.
+// 2. Otherwise query the device's current Remote TLS settings via WSMAN:
+//   - Remote TLS enabled with AcceptNonSecureConnections=false → both true.
+//   - All other cases → both false.
+func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allowSelfSigned bool) {
+	if cfg.Configuration.TLS.Enabled {
+		return true, true
+	}
+
+	if cmd.WSMan == nil {
+		log.Debug("WSMAN not available, skipping TLS settings check")
+
+		return false, false
+	}
+
+	enumerateRsp, err := cmd.WSMan.EnumerateTLSSettingData()
+	if err != nil {
+		log.Warnf("Failed to enumerate TLS settings: %v", err)
+
+		return false, false
+	}
+
+	pullRsp, err := cmd.WSMan.PullTLSSettingData(enumerateRsp.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		log.Warnf("Failed to pull TLS settings: %v", err)
+
+		return false, false
+	}
+
+	for _, item := range pullRsp.Body.PullResponse.SettingDataItems {
+		if item.InstanceID == configure.RemoteTLSInstanceId && item.Enabled && !item.AcceptNonSecureConnections {
+			return true, true
+		}
+	}
+
+	return false, false
+}
+
+// getLocalIP returns the first non-loopback IPv4 address, falling back to os.Hostname().
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet.IP.IsLoopback() {
+				continue
+			}
+
+			if ip4 := ipNet.IP.To4(); ip4 != nil {
+				return ip4.String()
+			}
+		}
+	}
+
+	h, err := os.Hostname()
+	if err == nil && h != "" {
+		return h
+	}
+
+	return "unknown"
 }
 
 // runLocalProfileFullflow loads a local profile file (optionally decrypt) and runs the orchestrator

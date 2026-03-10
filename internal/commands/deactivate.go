@@ -8,8 +8,12 @@ package commands
 import (
 	"crypto/tls"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -40,6 +44,7 @@ type DeactivateCmd struct {
 	PartialUnprovision bool   `help:"Partially unprovision the device. Only supported with -local flag" name:"partial"`
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
 	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
+	UUID               string `help:"UUID override" name:"uuid"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -51,6 +56,19 @@ func (cmd *DeactivateCmd) RequiresAMTPassword() bool {
 
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *DeactivateCmd) Validate() error {
+	// deactivate locally then delete device from db — allow with --local
+	if cmd.URL != "" {
+		lower := strings.ToLower(cmd.URL)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			// HTTP console flow — partial unprovision not supported
+			if cmd.PartialUnprovision {
+				return fmt.Errorf("partial unprovisioning is not supported with HTTP(S) --url")
+			}
+
+			return nil
+		}
+	}
+
 	// Ensure either local mode or URL is provided, but not both
 	if cmd.Local && cmd.URL != "" {
 		return fmt.Errorf("provide either a 'url' or a 'local', but not both")
@@ -71,6 +89,13 @@ func (cmd *DeactivateCmd) Validate() error {
 
 // Run executes the deactivate command
 func (cmd *DeactivateCmd) Run(ctx *Context) error {
+	if cmd.URL != "" {
+		lower := strings.ToLower(cmd.URL)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			return cmd.executeHttpConsoleDeactivate(ctx)
+		}
+	}
+
 	// Resolve AMT password (only when required)
 	if cmd.RequiresAMTPassword() {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
@@ -111,6 +136,82 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 
 	// Execute via RPS
 	return rps.ExecuteCommand(req)
+}
+
+// authenticate, then deactivate locally and delete device from db.
+func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
+	parsed, err := url.Parse(cmd.URL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	consoleBaseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	// Authenticate with the console
+	token, err := cmd.authenticateWithConsole(ctx, consoleBaseURL)
+	if err != nil {
+		return fmt.Errorf("console authentication failed: %w", err)
+	}
+
+	// Resolve device GUID
+	guid, err := cmd.resolveGUID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve device GUID: %w", err)
+	}
+
+	// Ensure AMT password for local deactivation
+	if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+		return err
+	}
+
+	if err := cmd.EnsureWSMAN(ctx); err != nil {
+		return err
+	}
+
+	// Perform local deactivation
+	if err := cmd.executeLocalDeactivate(ctx); err != nil {
+		return err
+	}
+
+	// Best-effort console cleanup — device is already deactivated at this point.
+	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck); err != nil {
+		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
+	}
+
+	return nil
+}
+
+// authenticateWithConsole obtains a bearer token from the console using the provided credentials.
+func (cmd *DeactivateCmd) authenticateWithConsole(ctx *Context, consoleBaseURL string) (string, error) {
+	// Direct token provided — use it
+	if ctx.AuthToken != "" {
+		return ctx.AuthToken, nil
+	}
+
+	// Username/password — exchange for a token
+	if ctx.AuthUsername != "" && ctx.AuthPassword != "" {
+		return profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+	}
+
+	return "", fmt.Errorf("authentication required: provide --auth-token or --auth-username and --auth-password")
+}
+
+// resolveGUID determines the device GUID from the command flags or the AMT hardware.
+func (cmd *DeactivateCmd) resolveGUID(ctx *Context) (string, error) {
+	if cmd.UUID != "" {
+		return cmd.UUID, nil
+	}
+
+	if ctx.AMTCommand != nil {
+		guid, err := ctx.AMTCommand.GetUUID()
+		if err != nil {
+			return "", fmt.Errorf("failed to get device UUID: %w", err)
+		}
+
+		return guid, nil
+	}
+
+	return "", fmt.Errorf("unable to determine device GUID; provide --uuid")
 }
 
 // executeLocalDeactivate handles local deactivation

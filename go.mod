@@ -8,7 +8,7 @@ go 1.25.0
 require (
 	github.com/alecthomas/kong v1.14.0
 	github.com/alecthomas/kong-yaml v0.2.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.37.0
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.38.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
@@ -24,7 +24,6 @@ require (
 	github.com/geoffgarside/ber v1.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/kr/text v0.1.0 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/zalando/go-keyring v0.2.6 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 )
