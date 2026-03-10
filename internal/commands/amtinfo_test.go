@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
@@ -135,6 +136,8 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -189,6 +192,8 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -227,6 +232,8 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -280,6 +287,8 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -357,6 +366,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 					NetworkStatus: "connected",
 					RemoteStatus:  "connected",
@@ -432,11 +442,12 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 			cmd:  &AmtInfoCmd{UserCert: true},
 			setupMock: func(m *mock.MockInterface) {
 				m.EXPECT().GetControlMode().Return(1, nil) // Provisioned mode
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
-				// UserCert should be disabled due to missing password
-				assert.Empty(t, result.CertificateHashes)
+				// UserCert unavailable because WSMAN client setup failed (no LSA in test)
+				assert.Nil(t, result.UserCerts)
 			},
 		},
 		{
@@ -900,6 +911,8 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 			name: "GetRemoteAccessConnectionStatus error",
 			cmd:  &AmtInfoCmd{Ras: true},
 			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, errors.New("RAS not available"))
 			},
 			wantErr: false,
@@ -988,20 +1001,16 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		validate  func(*testing.T, *InfoResult)
 	}{
 		{
-			name: "UserCert with password provided",
+			name: "UserCert without WSMAN available",
 			cmd:  &AmtInfoCmd{UserCert: true},
 			setupMock: func(m *mock.MockInterface) {
-				// Mock GetControlMode call for UserCert check
-				m.EXPECT().GetControlMode().Return(1, nil) // Return "Admin Control Mode" (provisioned)
-				// Note: WSMAN client setup will fail in tests since there's no real device
-				// This is expected behavior - the user cert retrieval will fail but the command should not error
+				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
-				// UserCerts should be empty since WSMAN client setup fails in tests
-				assert.Empty(t, result.UserCerts)
-				// No other fields should be populated since only UserCert flag is set
-				assert.Empty(t, result.CertificateHashes)
+				// UserCerts should be nil since WSMAN client setup fails
+				assert.Nil(t, result.UserCerts)
 			},
 		},
 		{
@@ -1064,6 +1073,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 				m.EXPECT().GetChangeEnabled().Return(response, nil)
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
 				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -1109,6 +1119,88 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 	}
 }
 
+func TestInfoService_GetAMTInfo_RAS_WSMANSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	// Only RAS flag set; controlMode starts at -1 so GetControlMode will be called
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
+		{AccessInfo: "wsman-mps.example.com", Port: 4433},
+	}, nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "connected",
+		RemoteStatus:  "connected",
+		RemoteTrigger: "user",
+		MPSHostname:   "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	// WSMAN hostname + port should override HECI hostname
+	assert.Equal(t, "wsman-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 4433, result.RAS.MPSPort)
+	// Status fields come from HECI
+	assert.Equal(t, "connected", result.RAS.NetworkStatus)
+	assert.Equal(t, "connected", result.RAS.RemoteStatus)
+	assert.Equal(t, "user", result.RAS.RemoteTrigger)
+}
+
+func TestInfoService_GetAMTInfo_RAS_WSMANFallbackToHECI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetMPSSAP().Return(nil, errors.New("WSMAN error"))
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "connected",
+		RemoteStatus:  "not connected",
+		RemoteTrigger: "alert",
+		MPSHostname:   "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	// WSMAN failed, so HECI hostname is used and port stays 0
+	assert.Equal(t, "heci-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 0, result.RAS.MPSPort)
+	assert.Equal(t, "connected", result.RAS.NetworkStatus)
+}
+
+func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+
+	// Control mode 0 = pre-provisioning; ensureWSMANClient skips setup, so WSMAN falls back to HECI
+	mockAMT.EXPECT().GetControlMode().Return(0, nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		MPSHostname: "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	assert.Equal(t, "heci-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 0, result.RAS.MPSPort)
+}
+
 func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1150,6 +1242,40 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			validate: func(t *testing.T, output string) {
 				assert.Contains(t, output, "DNS Suffix\t\t: example.com")
 				assert.Contains(t, output, "DNS Suffix (OS)\t\t: ")
+			},
+		},
+		{
+			name: "RAS with MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "connected",
+					RemoteTrigger: "user",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       4433,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "RAS MPS Hostname\t: mps.example.com")
+				assert.Contains(t, output, "RAS MPS Port\t\t: 4433")
+			},
+		},
+		{
+			name: "RAS without MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "not connected",
+					RemoteTrigger: "alert",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       0,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "RAS MPS Hostname\t: mps.example.com")
+				assert.NotContains(t, output, "RAS MPS Port")
 			},
 		},
 		{
