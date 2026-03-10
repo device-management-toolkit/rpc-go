@@ -1,3 +1,10 @@
+# [3.0.0-beta.6](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.5...v3.0.0-beta.6) (2026-03-10)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
 # [3.0.0-beta.5](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.4...v3.0.0-beta.5) (2026-03-02)
 
 
@@ -31,6 +38,13 @@
 
 * see migration-guide.md for the command and flag syntax overhaul, profile/config realignment,
 and the new restful profile activation flow.
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-10)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
 
 ## [2.48.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.1...v2.48.2) (2025-07-03)
 
