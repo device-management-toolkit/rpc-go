@@ -8,6 +8,7 @@ package amt
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,7 +45,7 @@ func NewLocalTransport() *LocalTransport {
 
 	err := lm.local.Initialize()
 	if err != nil {
-		if strings.Contains(err.Error(), "heci read timeout") {
+		if errors.Is(err, heci.ErrReadTimeout) || strings.Contains(err.Error(), "heci read timeout") {
 			logrus.Warn(err)
 		} else {
 			logrus.Error(err)
@@ -73,6 +75,7 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 		return nil, err
 	}
+
 	// wait for channel open confirmation
 	l.waitGroup.Wait()
 	logrus.Trace("Channel open confirmation received")

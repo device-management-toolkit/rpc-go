@@ -29,6 +29,7 @@ type Driver struct {
 	protocolVersion uint8
 	useLME          bool
 	useWD           bool
+	useGUIDClient   bool
 	// Protect device handle access across concurrent Send/Receive/reinit/Close paths.
 	mu sync.RWMutex
 	// Throttle repeated poll warning logs during transient device instability.
@@ -74,9 +75,18 @@ func NewDriver() *Driver {
 	return &Driver{}
 }
 
+// Init configures the HECI driver for IAMTHIF, LME, or WD operation.
 func (heci *Driver) Init(useLME, useWD bool) error {
+	heci.mu.Lock()
+	defer heci.mu.Unlock()
+
+	return heci.initLocked(useLME, useWD)
+}
+
+func (heci *Driver) initLocked(useLME, useWD bool) error {
 	heci.useLME = useLME
 	heci.useWD = useWD
+	heci.useGUIDClient = false
 
 	var err error
 
@@ -140,12 +150,25 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 // InitWithGUID initializes the HECI driver with a specific GUID
 func (heci *Driver) InitWithGUID(guid interface{}) error {
+	heci.mu.Lock()
+	defer heci.mu.Unlock()
+
+	heci.useLME = false
+	heci.useWD = false
+	heci.useGUIDClient = true
+
 	var err error
 
 	// Type assert to [16]uint8
 	guidBytes, ok := guid.([16]uint8)
 	if !ok {
 		return errors.New("invalid GUID type for Linux, expected [16]uint8")
+	}
+
+	// Close any previous device handle before reopening.
+	if heci.meiDevice != nil {
+		_ = heci.meiDevice.Close()
+		heci.meiDevice = nil
 	}
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
@@ -164,7 +187,6 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	data := CMEIConnectClientData{}
 	data.data = guidBytes
 
-	// we try up to 3 times in case the resource/device is still busy from previous call.
 	for i := 0; i < 3; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 		if err == nil {
@@ -177,7 +199,6 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	}
 
 	t := MEIConnectClientData{}
-
 	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
 	if err != nil {
 		return err
@@ -189,8 +210,22 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	return nil
 }
 
+// InitHOTHAM configures the HECI driver for the HOTHAM GUID interface.
 func (heci *Driver) InitHOTHAM() error {
+	heci.mu.Lock()
+	defer heci.mu.Unlock()
+
+	heci.useLME = false
+	heci.useWD = false
+	heci.useGUIDClient = true
+
 	var err error
+
+	// Close any previous device handle before reopening.
+	if heci.meiDevice != nil {
+		_ = heci.meiDevice.Close()
+		heci.meiDevice = nil
+	}
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
@@ -208,7 +243,6 @@ func (heci *Driver) InitHOTHAM() error {
 	data := CMEIConnectClientData{}
 	data.data = MEI_HOTHAM
 
-	// we try up to 3 times in case the resource/device is still busy from previous call.
 	for i := 0; i < 3; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 		if err == nil {
@@ -242,40 +276,56 @@ func (heci *Driver) InitHOTHAM() error {
 	return nil
 }
 
+// GetBufferSize returns the max message size negotiated with the HECI client.
 func (heci *Driver) GetBufferSize() uint32 {
 	return heci.bufferSize
 }
 
+// SendMessage writes a payload to the active HECI interface.
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
 	//log.Tracef("heci send len=%d", len(buffer))
 
-	// Protect device handle access with read lock.
+	// Hold read lock for fd lookup + write to avoid close/re-init races.
 	heci.mu.RLock()
+	if heci.meiDevice == nil {
+		heci.mu.RUnlock()
+
+		return 0, ErrDeviceNotInitialized
+	}
+
 	fd := int(heci.meiDevice.Fd())
+	size, err := syscall.Write(fd, buffer)
 	heci.mu.RUnlock()
 
-	size, err := syscall.Write(fd, buffer)
 	if err != nil {
 		if errors.Is(err, syscall.ENODEV) || err.Error() == "no such device" {
 			log.Warn("mei device unavailable, reinitializing")
 
 			// Use write lock during reinitialization.
 			heci.mu.Lock()
-			_ = heci.meiDevice.Close()
+			if heci.meiDevice != nil {
+				_ = heci.meiDevice.Close()
+				heci.meiDevice = nil
+			}
+
+			if heci.useGUIDClient {
+				heci.mu.Unlock()
+
+				return 0, ErrDeviceNotInitialized
+			}
 
 			time.Sleep(utils.HeciRetryDelay * time.Millisecond)
 
-			if initErr := heci.Init(heci.useLME, heci.useWD); initErr != nil {
+			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
 				heci.mu.Unlock()
 
 				return 0, initErr
 			}
 
 			fd = int(heci.meiDevice.Fd())
+			size, err = syscall.Write(fd, buffer)
 
 			heci.mu.Unlock()
-
-			size, err = syscall.Write(fd, buffer)
 		}
 
 		// Increase EBUSY retry attempts from 1 to 3 with exponential backoff.
@@ -286,10 +336,16 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 				time.Sleep(delay)
 
 				heci.mu.RLock()
+				if heci.meiDevice == nil {
+					heci.mu.RUnlock()
+
+					return 0, ErrDeviceNotInitialized
+				}
+
 				fd = int(heci.meiDevice.Fd())
+				size, err = syscall.Write(fd, buffer)
 				heci.mu.RUnlock()
 
-				size, err = syscall.Write(fd, buffer)
 				if !errors.Is(err, syscall.EBUSY) {
 					break
 				}
@@ -304,24 +360,30 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 	return size, nil
 }
 
-func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
-	// Protect device handle access with read lock.
-	driver.mu.RLock()
-	fd := int(driver.meiDevice.Fd())
-	driver.mu.RUnlock()
-
+// ReceiveMessage reads a payload from the active HECI interface.
+func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, err error) {
 	deadline := time.Now().Add(utils.HeciReadTimeout * time.Second)
 
 	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return 0, errors.New("heci read timeout")
+			return 0, ErrReadTimeout
 		}
 
 		timeoutMs := int(remaining.Milliseconds())
 		if timeoutMs == 0 {
 			timeoutMs = 1
 		}
+
+		heci.mu.RLock()
+		if heci.meiDevice == nil {
+			heci.mu.RUnlock()
+
+			return 0, ErrDeviceNotInitialized
+		}
+
+		fd := int(heci.meiDevice.Fd())
+		heci.mu.RUnlock()
 
 		pfd := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 
@@ -331,67 +393,90 @@ func (driver *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int
 				continue
 			}
 
+			if pollErr == unix.EBADF {
+				return 0, ErrDeviceNotInitialized
+			}
+
 			return 0, pollErr
 		}
 
 		if n == 0 {
-			return 0, errors.New("heci read timeout")
+			return 0, ErrReadTimeout
 		}
 
 		if pfd[0].Revents&unix.POLLIN != 0 {
 			//log.Tracef("heci poll revents=0x%x", pfd[0].Revents)
 			read, readErr := unix.Read(fd, buffer)
+
 			if readErr == unix.EINTR {
 				continue
+			}
+
+			if readErr == unix.EBADF {
+				return 0, ErrDeviceNotInitialized
 			}
 
 			return read, readErr
 		}
 
 		if pfd[0].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
-			driver.logPollReinitWarning(pfd[0].Revents)
+			heci.logPollReinitWarning(pfd[0].Revents)
 
 			// Use write lock during reinitialization.
-			driver.mu.Lock()
-			_ = driver.meiDevice.Close()
+			heci.mu.Lock()
+			if heci.meiDevice == nil {
+				heci.mu.Unlock()
+
+				return 0, ErrDeviceNotInitialized
+			}
+
+			if heci.meiDevice != nil {
+				_ = heci.meiDevice.Close()
+				heci.meiDevice = nil
+			}
+
+			if heci.useGUIDClient {
+				heci.mu.Unlock()
+
+				return 0, ErrDeviceNotInitialized
+			}
 
 			time.Sleep(utils.HeciReinitDelay * time.Millisecond)
 
-			if initErr := driver.Init(driver.useLME, driver.useWD); initErr != nil {
-				driver.mu.Unlock()
+			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
+				heci.mu.Unlock()
 
 				return 0, initErr
 			}
 
-			fd = int(driver.meiDevice.Fd())
 			deadline = time.Now().Add(utils.HeciReadTimeout * time.Second)
 
-			driver.mu.Unlock()
+			heci.mu.Unlock()
 
 			continue
 		}
 	}
 }
 
-func (driver *Driver) logPollReinitWarning(revents int16) {
-	driver.mu.Lock()
-	defer driver.mu.Unlock()
+func (heci *Driver) logPollReinitWarning(revents int16) {
+	heci.mu.Lock()
+	defer heci.mu.Unlock()
 
 	now := time.Now()
-	if driver.lastPollWarnLogTime.IsZero() || now.Sub(driver.lastPollWarnLogTime) >= pollWarnLogInterval {
-		if driver.suppressedPollWarns > 0 {
-			log.Warnf("heci poll warn revents=0x%x; reinitializing (suppressed %d similar events)", revents, driver.suppressedPollWarns)
-			driver.suppressedPollWarns = 0
+	if heci.lastPollWarnLogTime.IsZero() || now.Sub(heci.lastPollWarnLogTime) >= pollWarnLogInterval {
+		if heci.suppressedPollWarns > 0 {
+			log.Warnf("heci poll warn revents=0x%x; reinitializing (suppressed %d similar events)", revents, heci.suppressedPollWarns)
+			heci.suppressedPollWarns = 0
 		} else {
 			log.Warnf("heci poll warn revents=0x%x; reinitializing", revents)
 		}
 
-		driver.lastPollWarnLogTime = now
+		heci.lastPollWarnLogTime = now
 
 		return
 	}
 
-	driver.suppressedPollWarns++
+	heci.suppressedPollWarns++
 }
 
 func Ioctl(fd, op, arg uintptr) error {

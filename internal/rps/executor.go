@@ -5,6 +5,8 @@
 package rps
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -103,12 +106,15 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 
 	for {
 		select {
-		case dataFromServer := <-rpsDataChannel:
+		case dataFromServer, ok := <-rpsDataChannel:
+			if !ok {
+				e.lastError = errors.New("rps connection closed unexpectedly")
+
+				return e.lastError
+			}
+
 			shallIReturn := e.HandleDataFromRPS(dataFromServer)
 			if shallIReturn { // quits the loop -- we're either done or reached a point where we need to stop
-				close(e.data)
-				close(e.errors)
-
 				return e.lastError
 			}
 		case <-interrupt:
@@ -129,9 +135,6 @@ func (e Executor) HandleInterrupt() {
 	// 	log.Error("Connection close failed", err)
 	// 	return
 	// }
-	close(e.data)
-	close(e.errors)
-
 	err := e.server.Close()
 	if err != nil {
 		log.Error("Connection close failed", err)
@@ -141,8 +144,14 @@ func (e Executor) HandleInterrupt() {
 }
 
 func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
-	msgPayload := e.server.ProcessMessage(dataFromServer)
-	if msgPayload == nil {
+	msgPayload, terminal, err := e.server.ProcessMessage(dataFromServer)
+	if err != nil {
+		e.lastError = err
+
+		return true
+	}
+
+	if terminal {
 		log.Info("RPS sent terminal message (success/error), ending activation flow")
 
 		return true
@@ -171,18 +180,36 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 		err := e.localManagement.Connect()
 		if err != nil {
+			e.lastError = fmt.Errorf("failed to open LME channel: %w", err)
 			log.Error(err)
 
 			return true
 		}
 
-		// Wait for AMT to confirm channel is open
-		e.waitGroup.Wait()
-		log.Trace("Channel open confirmation received")
+		// Wait for AMT to confirm channel is open, but do not block indefinitely.
+		channelOpenCtx, channelOpenCancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
+		defer channelOpenCancel()
+
+		channelOpenDone := make(chan struct{})
+		go func() {
+			e.waitGroup.Wait()
+			close(channelOpenDone)
+		}()
+
+		select {
+		case <-channelOpenDone:
+			log.Trace("Channel open confirmation received")
+		case <-channelOpenCtx.Done():
+			log.Error("Timeout waiting for LME channel open confirmation - AMT not responding")
+			e.lastError = fmt.Errorf("timeout waiting for AMT channel open confirmation after %d seconds", utils.AMTResponseTimeout)
+
+			return true
+		}
 	} else {
 		// LMS: open/close connection for every request
 		err := e.localManagement.Connect()
 		if err != nil {
+			e.lastError = fmt.Errorf("failed to connect to LMS: %w", err)
 			log.Error(err)
 
 			return true
@@ -193,12 +220,16 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	}
 
 	// send our data to LMX
-	err := e.localManagement.Send(msgPayload)
+	err = e.localManagement.Send(msgPayload)
 	if err != nil {
+		e.lastError = fmt.Errorf("failed to send payload to LME/LMS: %w", err)
 		log.Error(err)
 
 		return true
 	}
+
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
+	defer cancel()
 
 	for {
 		select {
@@ -212,9 +243,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
-				// Filter out "heci read timeout" - it's a normal timeout from the HECI driver
-				// when waiting for data. Real data comes through the e.data channel.
-				if errFromLMS.Error() == "heci read timeout" {
+				// HECI read timeout is expected while polling for data.
+				if errors.Is(errFromLMS, heci.ErrReadTimeout) {
 					log.Debug("heci read timeout (normal driver timeout, not an error)")
 
 					continue
@@ -226,7 +256,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 				return true
 			}
-		case <-time.After(utils.AMTResponseTimeout * time.Second):
+		case <-timeoutCtx.Done():
 			// Timeout waiting for response from AMT/LME
 			// This indicates AMT is not responding - treat as an error
 			log.Error("Timeout waiting for LME response - AMT not responding")

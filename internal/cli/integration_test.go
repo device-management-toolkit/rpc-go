@@ -262,8 +262,6 @@ func TestCLIArgumentValidation(t *testing.T) {
 			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 			// Allow Close to be called for cleanup
 			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
-			// Allow Close to be called during cleanup
-			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
 
 			_, _, err := Parse(tt.args, mockAMT)
 

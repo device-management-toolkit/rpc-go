@@ -7,11 +7,13 @@ package lm
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -72,7 +74,12 @@ func (lme *LMEConnection) Connect() error {
 
 	// Reset session state before new connection.
 	if lme.Session.Timer != nil {
-		lme.Session.Timer.Stop()
+		if !lme.Session.Timer.Stop() {
+			select {
+			case <-lme.Session.Timer.C:
+			default:
+			}
+		}
 		// Reset the existing timer instead of creating a new one
 		// (timer goroutine is waiting on this timer's channel)
 		lme.Session.Timer.Reset(utils.LMETimerTimeout * time.Second)
@@ -100,7 +107,7 @@ func (lme *LMEConnection) Connect() error {
 		err := lme.Command.Send(bin_buf.Bytes())
 		if err != nil {
 			lastErr = err
-			if attempts < 4 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
+			if attempts < 3 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
 				log.Warn(err.Error())
 				log.Warn("Retrying...")
 
@@ -132,7 +139,7 @@ func logLMEError(err error) {
 		return
 	}
 
-	if strings.Contains(err.Error(), "heci read timeout") {
+	if errors.Is(err, heci.ErrReadTimeout) || strings.Contains(err.Error(), "heci read timeout") {
 		log.Warn(err)
 
 		return
@@ -231,17 +238,27 @@ func (lme *LMEConnection) Listen() {
 
 	for {
 		result2, bytesRead, err2 := lme.Command.Receive()
-		if bytesRead == 0 || err2 != nil {
+		if err2 != nil {
+			if errors.Is(err2, heci.ErrReadTimeout) {
+				log.Trace("heci read timeout while listening; continuing")
+
+				continue
+			}
+
 			log.Trace("NO MORE DATA TO READ")
 			// Send error to channel before exiting to prevent deadlock.
 			// But don't panic if channel is closed
-			if err2 != nil {
-				select {
-				case lme.Session.ErrorBuffer <- err2:
-				default:
-					log.Debug("Error channel closed, exiting Listen")
-				}
+			select {
+			case lme.Session.ErrorBuffer <- err2:
+			default:
+				log.Debug("Error channel closed, exiting Listen")
 			}
+
+			break
+		}
+
+		if bytesRead == 0 {
+			log.Trace("NO MORE DATA TO READ")
 
 			break
 		} else {
