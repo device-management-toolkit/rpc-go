@@ -1,3 +1,10 @@
+# [3.0.0-beta.7](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.6...v3.0.0-beta.7) (2026-03-11)
+
+
+### Bug Fixes
+
+* remove outdated AMT password required text from userCert help ([#1207](https://github.com/device-management-toolkit/rpc-go/issues/1207)) ([dc5e25c](https://github.com/device-management-toolkit/rpc-go/commit/dc5e25c63ac0da75117d4543cbe7f8e82ba186d0)), closes [#1140](https://github.com/device-management-toolkit/rpc-go/issues/1140)
+
 # [3.0.0-beta.6](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.5...v3.0.0-beta.6) (2026-03-10)
 
 
