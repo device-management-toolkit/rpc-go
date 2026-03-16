@@ -229,11 +229,11 @@ type MockHECI struct {
 	CallCount   int
 	SendFunc    func(buffer []byte, done *uint32) (uint32, error)
 	ReceiveFunc func(buffer []byte, done *uint32) (uint32, error)
-	InitFunc    func(useLME bool, useWD bool) error
+	InitFunc    func(useLME, useWD bool) error
 	CloseFunc   func()
 }
 
-func (m *MockHECI) Init(useLME bool, useWD bool) error {
+func (m *MockHECI) Init(useLME, useWD bool) error {
 	if m.InitFunc != nil {
 		return m.InitFunc(useLME, useWD)
 	}

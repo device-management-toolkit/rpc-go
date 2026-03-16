@@ -88,6 +88,10 @@ func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.Secur
 	return amt.SecureHBasedResponse{}, nil
 }
 
+func (c MockAMT) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	return amt.StopConfigurationResponse{}, nil
+}
+
 var p Payload
 
 func (c MockAMT) InitiateLMS() {}

@@ -6,7 +6,6 @@
 package flags
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -82,21 +81,10 @@ func TestHandleActivateCommandWithFriendlyName(t *testing.T) {
 }
 
 func TestHandleActivateCommandWithENV(t *testing.T) {
-	if err := os.Setenv("DNS_SUFFIX", "envdnssuffix.com"); err != nil {
-		t.Error(err)
-	}
-
-	if err := os.Setenv("HOSTNAME", "envhostname"); err != nil {
-		t.Error(err)
-	}
-
-	if err := os.Setenv("PROFILE", "envprofile"); err != nil {
-		t.Error(err)
-	}
-
-	if err := os.Setenv("AMT_PASSWORD", "envpassword"); err != nil {
-		t.Error(err)
-	}
+	t.Setenv("DNS_SUFFIX", "envdnssuffix.com")
+	t.Setenv("HOSTNAME", "envhostname")
+	t.Setenv("PROFILE", "envprofile")
+	t.Setenv("AMT_PASSWORD", "envpassword")
 
 	args := []string{"./rpc", "activate", "-u", "wss://localhost"}
 	flags := NewFlags(args, MockPRSuccess)
@@ -106,44 +94,34 @@ func TestHandleActivateCommandWithENV(t *testing.T) {
 	assert.Equal(t, "envprofile", flags.Profile)
 	assert.Equal(t, utils.CommandActivate, flags.Command)
 	assert.Equal(t, "envpassword", flags.Password)
-	os.Clearenv()
 }
 
 func TestActivateOverrideUUID(t *testing.T) {
-	if err := os.Setenv("PROFILE", "envprofile"); err != nil {
-		t.Error(err)
-	}
+	t.Setenv("PROFILE", "envprofile")
 
 	args := []string{"./rpc", "activate", "-u", "wss://localhost", "-uuid", "4c2e8db8-1c7a-00ea-279c-d17395b1f584"}
 	flags := NewFlags(args, MockPRSuccess)
 	rc := flags.ParseFlags()
 	assert.Equal(t, nil, rc)
 	assert.Equal(t, flags.UUID, "4c2e8db8-1c7a-00ea-279c-d17395b1f584")
-	os.Clearenv()
 }
 
 func TestActivateInvalidUUID(t *testing.T) {
-	if err := os.Setenv("PROFILE", "envprofile"); err != nil {
-		t.Error(err)
-	}
+	t.Setenv("PROFILE", "envprofile")
 
 	args := []string{"./rpc", "activate", "-u", "wss://localhost", "-uuid", "12345"}
 	flags := NewFlags(args, MockPRSuccess)
 	rc := flags.ParseFlags()
 	assert.Equal(t, utils.InvalidUUID, rc)
-	os.Clearenv()
 }
 
 func TestActivateIncorrectParameterCombinationLocalAndUUID(t *testing.T) {
-	if err := os.Setenv("AMT_PASSWORD", "envpassword"); err != nil {
-		t.Error(err)
-	}
+	t.Setenv("AMT_PASSWORD", "envpassword")
 
 	args := []string{"./rpc", "activate", "-ccm", "-local", "-uuid", "12345678-1234-1234-1234-123456789012"}
 	flags := NewFlags(args, MockPRSuccess)
 	rc := flags.ParseFlags()
 	assert.Equal(t, utils.InvalidParameterCombination, rc)
-	os.Clearenv()
 }
 
 func TestHandleActivateCommandIncorrectCommandLineParameters(t *testing.T) {
@@ -271,4 +249,73 @@ func TestHandleActivateCommandLocal(t *testing.T) {
 			assert.Equal(t, utils.CommandActivate, flags.Command)
 		})
 	}
+}
+
+func TestValidateConfigV2MEBxPassword(t *testing.T) {
+	t.Run("populates MEBxPassword from configV2", func(t *testing.T) {
+		f := NewFlags([]string{"./rpc", "activate"}, MockPRSuccess)
+		f.LocalConfigV2.Configuration.AMTSpecific.ControlMode = "acmactivate"
+		f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
+		f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCert = "cert"
+		f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCertPwd = "pwd"
+		f.LocalConfigV2.Configuration.AMTSpecific.MEBXPassword = "ConfigMebxP@ss"
+
+		err := f.ValidateConfigV2()
+		assert.NoError(t, err)
+		assert.Equal(t, "ConfigMebxP@ss", f.MEBxPassword)
+	})
+
+	t.Run("does not override command-line MEBxPassword with configV2", func(t *testing.T) {
+		f := NewFlags([]string{"./rpc", "activate"}, MockPRSuccess)
+		f.MEBxPassword = "CLIMebxP@ss"
+		f.LocalConfigV2.Configuration.AMTSpecific.ControlMode = "acmactivate"
+		f.LocalConfigV2.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
+		f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCert = "cert"
+		f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCertPwd = "pwd"
+		f.LocalConfigV2.Configuration.AMTSpecific.MEBXPassword = "ConfigMebxP@ss"
+
+		err := f.ValidateConfigV2()
+		assert.NoError(t, err)
+		assert.Equal(t, "CLIMebxP@ss", f.MEBxPassword)
+	})
+}
+
+func TestHandleActivateCommandMEBxPassword(t *testing.T) {
+	t.Run("parses -mebxpassword flag", func(t *testing.T) {
+		args := []string{"./rpc", "activate", "-u", "wss://localhost", "-profile", "profileName", "-mebxpassword", "MebxP@ss1"}
+		flags := NewFlags(args, MockPRSuccess)
+		rc := flags.ParseFlags()
+		assert.Equal(t, nil, rc)
+		assert.Equal(t, "MebxP@ss1", flags.MEBxPassword)
+	})
+
+	t.Run("mebxpassword defaults to empty when not provided", func(t *testing.T) {
+		args := []string{"./rpc", "activate", "-u", "wss://localhost", "-profile", "profileName"}
+		flags := NewFlags(args, MockPRSuccess)
+		rc := flags.ParseFlags()
+		assert.Equal(t, nil, rc)
+		assert.Equal(t, "", flags.MEBxPassword)
+	})
+
+	t.Run("mebxpassword from MEBX_PASSWORD env var", func(t *testing.T) {
+		t.Setenv("MEBX_PASSWORD", "EnvMebxP@ss")
+		t.Setenv("PROFILE", "envprofile")
+
+		args := []string{"./rpc", "activate", "-u", "wss://localhost"}
+		flags := NewFlags(args, MockPRSuccess)
+		rc := flags.ParseFlags()
+		assert.Equal(t, nil, rc)
+		assert.Equal(t, "EnvMebxP@ss", flags.MEBxPassword)
+	})
+
+	t.Run("mebxpassword with local ACM activation", func(t *testing.T) {
+		args := strings.Fields("./rpc activate -local -acm -mebxpassword MebxP@ss1" +
+			" -amtPassword " + trickyPassword +
+			" -provisioningCert MIIW/gIBAzCCFroGCSqGSIb3DQEHAaCCFqsEghanMIIWozCCBgwGCSqGSIb3DQEHAaCCBf0EggX5MIIF9TCCBfEGCyqGSIb3DQEMCgECoIIE/jCCBPowHAYKKoZIhvc" +
+			" -provisioningCertPwd " + trickyPassword)
+		flags := NewFlags(args, MockPRSuccess)
+		rc := flags.ParseFlags()
+		assert.Equal(t, nil, rc)
+		assert.Equal(t, "MebxP@ss1", flags.MEBxPassword)
+	})
 }

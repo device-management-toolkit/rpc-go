@@ -35,6 +35,7 @@ func (f *Flags) handleActivateCommand() error {
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.AMTPassword, "amtPassword", utils.LookupEnv("AMT_PASSWORD"), "amt password")
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCert, "provisioningCert", utils.LookupEnv("PROVISIONING_CERT"), "provisioning certificate")
 	f.amtActivateCommand.StringVar(&f.LocalConfig.ACMSettings.ProvisioningCertPwd, "provisioningCertPwd", utils.LookupEnv("PROVISIONING_CERT_PASSWORD"), "provisioning certificate password")
+	f.amtActivateCommand.StringVar(&f.MEBxPassword, "mebxpassword", utils.LookupEnv("MEBX_PASSWORD"), "MEBx password for AMT19+ TLS activation")
 	f.amtActivateCommand.BoolVar(&f.LocalConfig.StopConfiguration, "stopConfig", false, "transitions AMT from in-provisioning state back to pre-provisioning state")
 
 	if len(f.commandLineArgs) == 2 {
@@ -236,6 +237,11 @@ func (f *Flags) ValidateConfigV2() error {
 		}
 
 		f.LocalConfig.ACMSettings.ProvisioningCertPwd = f.LocalConfigV2.Configuration.AMTSpecific.ProvisioningCertPwd
+	}
+
+	// Set MEBx password from config if available
+	if f.MEBxPassword == "" && f.LocalConfigV2.Configuration.AMTSpecific.MEBXPassword != "" {
+		f.MEBxPassword = f.LocalConfigV2.Configuration.AMTSpecific.MEBXPassword
 	}
 
 	return nil
