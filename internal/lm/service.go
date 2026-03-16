@@ -5,14 +5,12 @@
 package lm
 
 import (
-	"crypto/tls"
+	"context"
 	"errors"
 	"io"
 	"net"
-	"strings"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -51,13 +49,15 @@ func (lms *LMSConnection) Connect() error {
 
 	if lms.Connection == nil {
 		if lms.useTls {
-			log.Debug("connecting to lms over tls...")
+			log.Debug("connecting to lms (tunnel mode)...")
 
-			lms.Connection, err = tls.Dial("tcp4", lms.address+":"+lms.port, config.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck))
+			dialer := &net.Dialer{}
+			lms.Connection, err = dialer.DialContext(context.Background(), "tcp4", lms.address+":"+lms.port)
 		} else {
 			log.Debug("connecting to lms...")
 
-			lms.Connection, err = net.Dial("tcp4", lms.address+":"+lms.port)
+			dialer := &net.Dialer{}
+			lms.Connection, err = dialer.DialContext(context.Background(), "tcp4", lms.address+":"+lms.port)
 		}
 
 		if err != nil {
@@ -73,16 +73,9 @@ func (lms *LMSConnection) Connect() error {
 
 // Send writes data to LMS TCP Socket
 func (lms *LMSConnection) Send(data []byte) error {
-	log.Debug("sending message to LMS")
-
 	_, err := lms.Connection.Write(data)
-	if err != nil {
-		return err
-	}
 
-	log.Debug("sent message to LMS")
-
-	return nil
+	return err
 }
 
 // Close closes the LMS socket connection
@@ -103,30 +96,61 @@ func (lms *LMSConnection) Close() error {
 
 // Listen reads data from the LMS socket connection
 func (lms *LMSConnection) Listen() {
-	log.Debug("listening for lms messages...")
+	// For TLS mode, AMT may take 30+ seconds to reconfigure after TLS settings change.
+	// Use a longer timeout than RPS's delay_tls_timer (50s) so RPS times out first
+	// with a proper error rather than getting connection_reset.
+	readTimeout := 500 * time.Millisecond
+	subsequentReadTimeout := 100 * time.Millisecond
 
-	duration, _ := time.ParseDuration("1s")
-	lms.Connection.SetDeadline(time.Now().Add(duration))
+	if lms.useTls {
+		readTimeout = 60 * time.Second
+		// For TLS mode, use longer subsequent timeout as AMT may be slow between response chunks
+		// especially for operations like AddTrustedRootCertificate that write to non-volatile storage
+		subsequentReadTimeout = 2 * time.Second
+	}
 
-	buf := make([]byte, 0, 8192) // big buffer
+	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
 
 	for {
+		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
+
 		n, err := lms.Connection.Read(tmp)
 		if err != nil {
-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
-				log.Println("read error:", err)
-
-				lms.errors <- err
+			var netErr net.Error
+			if err != io.EOF && (!errors.As(err, &netErr) || !netErr.Timeout()) {
+				log.Println("LMS read error:", err)
+				lms.safeSendError(err)
 			}
-
 			break
 		}
 
 		buf = append(buf, tmp[:n]...)
+		readTimeout = subsequentReadTimeout
 	}
 
-	lms.data <- buf
+	lms.Connection.SetReadDeadline(time.Time{})
+	lms.safeSendData(buf)
+}
 
-	log.Trace("done listening")
+// safeSendData sends data to the data channel, recovering from panic if channel is closed
+func (lms *LMSConnection) safeSendData(data []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("data channel closed, discarding response")
+		}
+	}()
+
+	lms.data <- data
+}
+
+// safeSendError sends error to the errors channel, recovering from panic if channel is closed
+func (lms *LMSConnection) safeSendError(err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("errors channel closed, discarding error")
+		}
+	}()
+
+	lms.errors <- err
 }

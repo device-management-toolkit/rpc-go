@@ -199,7 +199,7 @@ func TestCreateActivationRequestWithDNSSuffix(t *testing.T) {
 }
 
 func TestCreateActivationResponse(t *testing.T) {
-	result := p.CreateMessageResponse([]byte("123"))
+	result := p.CreateMessageResponse([]byte("123"), "response")
 	assert.Equal(t, "response", result.Method)
 	assert.Equal(t, "key", result.APIKey)
 	assert.Equal(t, "ok", result.Status)
