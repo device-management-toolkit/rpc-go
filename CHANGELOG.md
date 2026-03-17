@@ -1,3 +1,10 @@
+# [3.0.0-beta.8](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.7...v3.0.0-beta.8) (2026-03-17)
+
+
+### Bug Fixes
+
+* retry AMT initialize with backoff ([#1192](https://github.com/device-management-toolkit/rpc-go/issues/1192)) ([2f535c9](https://github.com/device-management-toolkit/rpc-go/commit/2f535c938477794f3e2a4f0db1e2a0f21dadbe39))
+
 # [3.0.0-beta.7](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.6...v3.0.0-beta.7) (2026-03-11)
 
 
