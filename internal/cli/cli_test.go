@@ -74,12 +74,30 @@ func TestParse(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, ctx)
 			assert.NotNil(t, cli)
-
 			if tt.expected != "" {
 				// Check that the correct command was selected
 				assert.Equal(t, tt.expected, ctx.Selected().Name)
 			}
 		})
+	}
+}
+
+func TestParse_WSManCommandAliases(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+
+	aliasArgs := [][]string{
+		{"rpc", "diag", "wsman", "list"},
+		{"rpc", "diag", "ws-man", "list"},
+	}
+
+	for _, args := range aliasArgs {
+		ctx, cli, err := Parse(args, mockAMT)
+		assert.NoError(t, err)
+		assert.NotNil(t, ctx)
+		assert.NotNil(t, cli)
 	}
 }
 

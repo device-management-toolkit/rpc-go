@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -73,16 +75,16 @@ type classResult struct {
 	XML   string `json:"-" xml:",cdata"`
 }
 
-type unsupportedClassData struct {
+type classFetchErrorData struct {
 	Class   string `json:"class" xml:"Class"`
 	Status  string `json:"status" xml:"Status"`
 	Message string `json:"message" xml:"Message"`
 }
 
-type classFetchErrorData struct {
-	Class   string `json:"class" xml:"Class"`
-	Status  string `json:"status" xml:"Status"`
-	Message string `json:"message" xml:"Message"`
+type rawWSMANClassData struct {
+	Class       string `json:"class" xml:"Class"`
+	ResourceURI string `json:"resourceUri" xml:"ResourceURI"`
+	XMLOutput   string `json:"xmlOutput" xml:"XMLOutput"`
 }
 
 type xmlResults struct {
@@ -92,55 +94,55 @@ type xmlResults struct {
 
 var wsmanClassFetchers = map[string]classFetcher{
 	"AMT_8021XProfile":                    fetchAMT8021XProfile,
-	"AMT_AssetTable":                      unsupportedClassFetcher("AMT_AssetTable"),
-	"AMT_AssetTableService":               unsupportedClassFetcher("AMT_AssetTableService"),
+	"AMT_AssetTable":                      rawWSMANClassFetcher("AMT_AssetTable"),
+	"AMT_AssetTableService":               rawWSMANClassFetcher("AMT_AssetTableService"),
 	"AMT_AuditLog":                        fetchAMTAuditLog,
 	"AMT_BootCapabilities":                fetchAMTBootCapabilities,
 	"AMT_BootSettingData":                 fetchAMTBootSettingData,
-	"AMT_CryptographicCapabilities":       unsupportedClassFetcher("AMT_CryptographicCapabilities"),
+	"AMT_CryptographicCapabilities":       rawWSMANClassFetcher("AMT_CryptographicCapabilities"),
 	"AMT_EnvironmentDetectionSettingData": fetchAMTEnvironmentDetectionSettingData,
-	"AMT_EventLogEntry":                   unsupportedClassFetcher("AMT_EventLogEntry"),
+	"AMT_EventLogEntry":                   rawWSMANClassFetcher("AMT_EventLogEntry"),
 	"AMT_EthernetPortSettings":            fetchAMTEthernetPortSettings,
 	"AMT_GeneralSettings":                 fetchAMTGeneralSettings,
-	"AMT_Hdr8021Filter":                   unsupportedClassFetcher("AMT_Hdr8021Filter"),
+	"AMT_Hdr8021Filter":                   rawWSMANClassFetcher("AMT_Hdr8021Filter"),
 	"AMT_ManagementPresenceRemoteSAP":     fetchAMTManagementPresenceRemoteSAP,
 	"AMT_MessageLog":                      fetchAMTMessageLog,
 	"AMT_RedirectionService":              fetchAMTRedirectionService,
-	"AMT_RemoteAccessCapabilities":        fetchAMTRemoteAccessCapabilities,
+	"AMT_RemoteAccessCapabilities":        rawWSMANClassFetcher("AMT_RemoteAccessCapabilities"),
 	"AMT_RemoteAccessPolicyAppliesToMPS":  fetchAMTRemoteAccessPolicyAppliesToMPS,
 	"AMT_RemoteAccessPolicyRule":          fetchAMTRemoteAccessPolicyRule,
 	"AMT_SetupAndConfigurationService":    fetchAMTSetupAndConfigurationService,
-	"AMT_SystemPowerScheme":               unsupportedClassFetcher("AMT_SystemPowerScheme"),
-	"AMT_TimeSynchronizationService":      fetchAMTTimeSynchronizationService,
+	"AMT_SystemPowerScheme":               rawWSMANClassFetcher("AMT_SystemPowerScheme"),
+	"AMT_TimeSynchronizationService":      rawWSMANClassFetcher("AMT_TimeSynchronizationService"),
 	"AMT_UserInitiatedConnectionService":  fetchAMTUserInitiatedConnectionService,
-	"AMT_WiFiPortConfigurationService":    fetchAMTWiFiPortConfigurationService,
-	"CIM_BIOSFeature":                     unsupportedClassFetcher("CIM_BIOSFeature"),
+	"AMT_WiFiPortConfigurationService":    rawWSMANClassFetcher("AMT_WiFiPortConfigurationService"),
+	"CIM_BIOSFeature":                     rawWSMANClassFetcher("CIM_BIOSFeature"),
 	"CIM_BIOSElement":                     fetchCIMBIOSElement,
 	"CIM_Card":                            fetchCIMCard,
 	"CIM_Chassis":                         fetchCIMChassis,
 	"CIM_ComputerSystemPackage":           fetchCIMComputerSystemPackage,
-	"CIM_EthernetPort":                    unsupportedClassFetcher("CIM_EthernetPort"),
+	"CIM_EthernetPort":                    rawWSMANClassFetcher("CIM_EthernetPort"),
 	"CIM_KVMRedirectionSAP":               fetchCIMKVMRedirectionSAP,
-	"CIM_PowerManagementCapabilities":     unsupportedClassFetcher("CIM_PowerManagementCapabilities"),
+	"CIM_PowerManagementCapabilities":     rawWSMANClassFetcher("CIM_PowerManagementCapabilities"),
 	"CIM_PowerManagementService":          fetchCIMPowerManagementService,
 	"CIM_Processor":                       fetchCIMProcessor,
-	"CIM_RedirectionService":              unsupportedClassFetcher("CIM_RedirectionService"),
+	"CIM_RedirectionService":              rawWSMANClassFetcher("CIM_RedirectionService"),
 	"CIM_SoftwareIdentity":                fetchCIMSoftwareIdentity,
-	"CIM_WiFiEndpoint":                    unsupportedClassFetcher("CIM_WiFiEndpoint"),
-	"CIM_WiFiEndpointCapabilities":        unsupportedClassFetcher("CIM_WiFiEndpointCapabilities"),
-	"CIM_WiFiEndpointSettings":            fetchCIMWiFiEndpointSettings,
-	"CIM_WiFiPort":                        fetchCIMWiFiPort,
-	"CIM_WiFiPortCapabilities":            unsupportedClassFetcher("CIM_WiFiPortCapabilities"),
+	"CIM_WiFiEndpoint":                    rawWSMANClassFetcher("CIM_WiFiEndpoint"),
+	"CIM_WiFiEndpointCapabilities":        rawWSMANClassFetcher("CIM_WiFiEndpointCapabilities"),
+	"CIM_WiFiEndpointSettings":            rawWSMANClassFetcher("CIM_WiFiEndpointSettings"),
+	"CIM_WiFiPort":                        rawWSMANClassFetcher("CIM_WiFiPort"),
+	"CIM_WiFiPortCapabilities":            rawWSMANClassFetcher("CIM_WiFiPortCapabilities"),
 	"IPS_HostBasedSetupService":           fetchIPSHostBasedSetupService,
-	"IPS_HostBootReason":                  unsupportedClassFetcher("IPS_HostBootReason"),
-	"IPS_HostIPSettings":                  unsupportedClassFetcher("IPS_HostIPSettings"),
+	"IPS_HostBootReason":                  rawWSMANClassFetcher("IPS_HostBootReason"),
+	"IPS_HostIPSettings":                  rawWSMANClassFetcher("IPS_HostIPSettings"),
 	"IPS_HTTPProxyAccessPoint":            fetchIPSHTTPProxyAccessPoint,
 	"IPS_IEEE8021xSettings":               fetchIPSIEEE8021xSettings,
-	"IPS_IPv6PortSettings":                unsupportedClassFetcher("IPS_IPv6PortSettings"),
+	"IPS_IPv6PortSettings":                rawWSMANClassFetcher("IPS_IPv6PortSettings"),
 	"IPS_KVMRedirectionSettingData":       fetchIPSKVMRedirectionSettingData,
-	"IPS_LANEndpoint":                     unsupportedClassFetcher("IPS_LANEndpoint"),
+	"IPS_LANEndpoint":                     rawWSMANClassFetcher("IPS_LANEndpoint"),
 	"IPS_OptInService":                    fetchIPSOptInService,
-	"IPS_ProvisioningRecordLog":           unsupportedClassFetcher("IPS_ProvisioningRecordLog"),
+	"IPS_ProvisioningRecordLog":           rawWSMANClassFetcher("IPS_ProvisioningRecordLog"),
 	"IPS_ScreenSettingData":               fetchIPSScreenSettingData,
 	"IPS_SecIOService":                    fetchIPSSecIOService,
 }
@@ -394,10 +396,6 @@ func renderTableResults(results []classResult) ([]byte, error) {
 }
 
 func extractClassInstances(className string, data any) ([][]tableRow, error) {
-	if _, ok := data.(unsupportedClassData); ok {
-		return nil, nil
-	}
-
 	if _, ok := data.(classFetchErrorData); ok {
 		return nil, nil
 	}
@@ -566,7 +564,12 @@ func fetchAMTEnvironmentDetectionSettingData(messages wsman.Messages) (any, erro
 }
 
 func fetchAMTMessageLog(messages wsman.Messages) (any, error) {
-	return messages.AMT.MessageLog.GetRecords(1, 390)
+	enumerateResponse, err := messages.AMT.MessageLog.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.MessageLog.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
 }
 
 func fetchAMTEthernetPortSettings(messages wsman.Messages) (any, error) {
@@ -591,10 +594,6 @@ func fetchAMTRedirectionService(messages wsman.Messages) (any, error) {
 	return messages.AMT.RedirectionService.Get()
 }
 
-func fetchAMTRemoteAccessCapabilities(messages wsman.Messages) (any, error) {
-	return messages.AMT.RemoteAccessService.Get()
-}
-
 func fetchAMTRemoteAccessPolicyRule(messages wsman.Messages) (any, error) {
 	enumerateResponse, err := messages.AMT.RemoteAccessPolicyRule.Enumerate()
 	if err != nil {
@@ -617,16 +616,8 @@ func fetchAMTSetupAndConfigurationService(messages wsman.Messages) (any, error) 
 	return messages.AMT.SetupAndConfigurationService.Get()
 }
 
-func fetchAMTWiFiPortConfigurationService(messages wsman.Messages) (any, error) {
-	return messages.AMT.WiFiPortConfigurationService.Get()
-}
-
 func fetchAMTUserInitiatedConnectionService(messages wsman.Messages) (any, error) {
 	return messages.AMT.UserInitiatedConnectionService.Get()
-}
-
-func fetchAMTTimeSynchronizationService(messages wsman.Messages) (any, error) {
-	return messages.AMT.TimeSynchronizationService.GetLowAccuracyTimeSynch()
 }
 
 func fetchCIMBIOSElement(messages wsman.Messages) (any, error) {
@@ -675,24 +666,6 @@ func fetchCIMKVMRedirectionSAP(messages wsman.Messages) (any, error) {
 	return messages.CIM.KVMRedirectionSAP.Get()
 }
 
-func fetchCIMWiFiEndpointSettings(messages wsman.Messages) (any, error) {
-	enumerateResponse, err := messages.CIM.WiFiEndpointSettings.Enumerate()
-	if err != nil {
-		return nil, err
-	}
-
-	return messages.CIM.WiFiEndpointSettings.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
-}
-
-func fetchCIMWiFiPort(messages wsman.Messages) (any, error) {
-	enumerateResponse, err := messages.CIM.WiFiPort.Enumerate()
-	if err != nil {
-		return nil, err
-	}
-
-	return messages.CIM.WiFiPort.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
-}
-
 func fetchIPSHostBasedSetupService(messages wsman.Messages) (any, error) {
 	return messages.IPS.HostBasedSetupService.Get()
 }
@@ -722,12 +695,118 @@ func fetchIPSHTTPProxyAccessPoint(messages wsman.Messages) (any, error) {
 	return messages.IPS.HTTPProxyAccessPointService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
 }
 
-func unsupportedClassFetcher(className string) classFetcher {
+func rawWSMANClassFetcher(className string) classFetcher {
 	return func(messages wsman.Messages) (any, error) {
-		return unsupportedClassData{
-			Class:   className,
-			Status:  "not_supported",
-			Message: "not exposed by current go-wsman-messages API",
+		resourceURI, err := classResourceURI(className)
+		if err != nil {
+			return nil, err
+		}
+
+		enumerationContext, err := wsmanEnumerate(messages, resourceURI)
+		if err != nil {
+			return nil, err
+		}
+
+		pullXML, err := wsmanPull(messages, resourceURI, enumerationContext)
+		if err != nil {
+			return nil, err
+		}
+
+		return rawWSMANClassData{
+			Class:       className,
+			ResourceURI: resourceURI,
+			XMLOutput:   pullXML,
 		}, nil
 	}
+}
+
+func classResourceURI(className string) (string, error) {
+	switch {
+	case strings.HasPrefix(className, "AMT_"):
+		return "http://intel.com/wbem/wscim/1/amt-schema/1/" + className, nil
+	case strings.HasPrefix(className, "CIM_"):
+		return "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/" + className, nil
+	case strings.HasPrefix(className, "IPS_"):
+		return "http://intel.com/wbem/wscim/1/ips-schema/1/" + className, nil
+	default:
+		return "", fmt.Errorf("unsupported class prefix for %s", className)
+	}
+}
+
+func wsmanEnumerate(messages wsman.Messages, resourceURI string) (string, error) {
+	toAddress := wsmanEndpoint(messages)
+	envelope := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="%s" xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsen="http://schemas.xmlsoap.org/ws/2004/09/enumeration"><soap:Header><wsa:To>%s</wsa:To><wsa:ReplyTo><wsa:Address soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo><wsa:Action soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate</wsa:Action><wsman:MaxEnvelopeSize soap:mustUnderstand="true">51200</wsman:MaxEnvelopeSize><wsa:MessageID>uuid:%s</wsa:MessageID><wsman:ResourceURI soap:mustUnderstand="true">%s</wsman:ResourceURI><wsman:OperationTimeout>PT60.000S</wsman:OperationTimeout></soap:Header><soap:Body><wsen:Enumerate /></soap:Body></soap:Envelope>`, resourceURI, toAddress, uuid.NewString(), resourceURI)
+
+	response, err := messages.Client.Post(envelope)
+	if err != nil {
+		return "", err
+	}
+
+	var root xmlNode
+	if err := xml.Unmarshal(response, &root); err != nil {
+		return "", err
+	}
+
+	node := findFirstNodeByLocalName(root, "EnumerationContext")
+	if node == nil {
+		return "", fmt.Errorf("enumeration context not found in response")
+	}
+
+	enumerationContext := strings.TrimSpace(nodeInnerText(*node))
+	if enumerationContext == "" {
+		return "", fmt.Errorf("empty enumeration context in response")
+	}
+
+	return enumerationContext, nil
+}
+
+func wsmanPull(messages wsman.Messages, resourceURI, enumerationContext string) (string, error) {
+	escapedContext := html.EscapeString(enumerationContext)
+	toAddress := wsmanEndpoint(messages)
+	envelope := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="%s" xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsen="http://schemas.xmlsoap.org/ws/2004/09/enumeration"><soap:Header><wsa:To>%s</wsa:To><wsa:ReplyTo><wsa:Address soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo><wsa:Action soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull</wsa:Action><wsman:MaxEnvelopeSize soap:mustUnderstand="true">51200</wsman:MaxEnvelopeSize><wsa:MessageID>uuid:%s</wsa:MessageID><wsman:ResourceURI soap:mustUnderstand="true">%s</wsman:ResourceURI><wsman:OperationTimeout>PT60.000S</wsman:OperationTimeout></soap:Header><soap:Body><wsen:Pull><wsen:EnumerationContext>%s</wsen:EnumerationContext><wsen:MaxElements>101</wsen:MaxElements></wsen:Pull></soap:Body></soap:Envelope>`, resourceURI, toAddress, uuid.NewString(), resourceURI, escapedContext)
+
+	response, err := messages.Client.Post(envelope)
+	if err != nil {
+		return "", err
+	}
+
+	return string(response), nil
+}
+
+func findFirstNodeByLocalName(node xmlNode, localName string) *xmlNode {
+	if node.XMLName.Local == localName {
+		matched := node
+
+		return &matched
+	}
+
+	for _, child := range node.Children {
+		matched := findFirstNodeByLocalName(child, localName)
+		if matched != nil {
+			return matched
+		}
+	}
+
+	return nil
+}
+
+func wsmanEndpoint(messages wsman.Messages) string {
+	target, ok := messages.Client.(*client.Target)
+	if !ok {
+		return "/wsman"
+	}
+
+	value := reflect.ValueOf(target)
+	if value.Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+
+	endpointField := value.FieldByName("endpoint")
+	if endpointField.IsValid() && endpointField.Kind() == reflect.String {
+		if endpoint := endpointField.String(); endpoint != "" {
+			return endpoint
+		}
+	}
+
+	return "/wsman"
 }

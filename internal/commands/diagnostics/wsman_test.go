@@ -197,14 +197,14 @@ func TestRenderResults_Table(t *testing.T) {
 	assert.True(t, strings.Contains(output, "0"))
 }
 
-func TestRenderResults_TableNoInstancesForUnsupported(t *testing.T) {
+func TestRenderResults_TableNoInstancesForFetchError(t *testing.T) {
 	results := []classResult{
 		{
 			Class: "AMT_AssetTable",
-			Data: unsupportedClassData{
+			Data: classFetchErrorData{
 				Class:   "AMT_AssetTable",
-				Status:  "not_supported",
-				Message: "not exposed",
+				Status:  "fetch_failed",
+				Message: "mock fetch error",
 			},
 		},
 	}
@@ -214,7 +214,7 @@ func TestRenderResults_TableNoInstancesForUnsupported(t *testing.T) {
 
 	output := string(rendered)
 	assert.True(t, strings.Contains(output, "No instances found for class: AMT_AssetTable"))
-	assert.False(t, strings.Contains(output, "not_supported"))
+	assert.False(t, strings.Contains(output, "fetch_failed"))
 }
 
 func TestRenderResults_UnsupportedFormat(t *testing.T) {
