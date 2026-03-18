@@ -445,6 +445,7 @@ func (service *LocalActivationService) currentControlMode() (int, error) {
 	if err := service.amtCommand.Initialize(); err != nil {
 		return 0, err
 	}
+	defer service.amtCommand.Close()
 
 	mode, err := service.amtCommand.GetControlMode()
 	if err != nil {

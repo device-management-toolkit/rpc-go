@@ -102,12 +102,12 @@ func (lme *LMEConnection) Connect() error {
 			lme.ourChannel = channel
 		}
 
-		binBuf := apf.ChannelOpen(lme.ourChannel)
+		bin_buf := apf.ChannelOpen(lme.ourChannel)
 
-		err := lme.Command.Send(binBuf.Bytes())
+		err := lme.Command.Send(bin_buf.Bytes())
 		if err != nil {
 			lastErr = err
-			if attempts < 3 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
+			if attempts < 4 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
 				log.Warn(err.Error())
 				log.Warn("Retrying...")
 
@@ -153,17 +153,12 @@ func (lme *LMEConnection) Send(data []byte) error {
 	log.Debug("sending message to LME")
 	log.Trace(string(data))
 
-	var bin_buf bytes.Buffer
-
-	channelData := apf.ChannelData(lme.Session.SenderChannel, data)
-	binary.Write(&bin_buf, binary.BigEndian, channelData.MessageType)
-	binary.Write(&bin_buf, binary.BigEndian, channelData.RecipientChannel)
-	binary.Write(&bin_buf, binary.BigEndian, channelData.DataLength)
-	binary.Write(&bin_buf, binary.BigEndian, channelData.Data)
+	// Use the proper APF serialization function instead of manual binary.Write
+	channelDataBytes := apf.BuildChannelDataBytes(lme.Session.SenderChannel, data)
 
 	lme.Session.TXWindow -= lme.Session.TXWindow // hmmm
 
-	err := lme.Command.Send(bin_buf.Bytes())
+	err := lme.Command.Send(channelDataBytes)
 	if err != nil {
 		return err
 	}
@@ -219,13 +214,10 @@ func (lme *LMEConnection) Listen() {
 
 				lme.Session.Tempdata = []byte{}
 
-				var binBuf bytes.Buffer
+				// Use the proper APF serialization function instead of manual binary.Write
+				channelCloseBytes := apf.BuildChannelCloseBytes(lme.Session.SenderChannel)
 
-				channelData := apf.ChannelClose(lme.Session.SenderChannel)
-				binary.Write(&binBuf, binary.BigEndian, channelData.MessageType)
-				binary.Write(&binBuf, binary.BigEndian, channelData.RecipientChannel)
-
-				lme.Command.Send(binBuf.Bytes())
+				lme.Command.Send(channelCloseBytes)
 			case <-timerDone:
 				if lme.Session.Timer != nil {
 					lme.Session.Timer.Stop()
@@ -238,27 +230,17 @@ func (lme *LMEConnection) Listen() {
 
 	for {
 		result2, bytesRead, err2 := lme.Command.Receive()
-		if err2 != nil {
-			if errors.Is(err2, heci.ErrReadTimeout) {
-				log.Trace("heci read timeout while listening; continuing")
-
-				continue
-			}
-
+		if bytesRead == 0 || err2 != nil {
 			log.Trace("NO MORE DATA TO READ")
 			// Send error to channel before exiting to prevent deadlock.
 			// But don't panic if channel is closed
-			select {
-			case lme.Session.ErrorBuffer <- err2:
-			default:
-				log.Debug("Error channel closed, exiting Listen")
+			if err2 != nil {
+				select {
+				case lme.Session.ErrorBuffer <- err2:
+				default:
+					log.Debug("Error channel closed, exiting Listen")
+				}
 			}
-
-			break
-		}
-
-		if bytesRead == 0 {
-			log.Trace("NO MORE DATA TO READ")
 
 			break
 		} else {

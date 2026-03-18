@@ -69,10 +69,12 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		LogAMTMessages: logAMTMessages,
 	}
 
+	probeTimeout := time.Duration(utils.LMSDialerTimeout) * time.Second
+
 	if clientParams.UseTLS {
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 
 		dialer := &cryptotls.Dialer{
@@ -95,14 +97,14 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			defer conn.Close()
 		}
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 
 		dialer := &net.Dialer{}
 
 		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
 		if err != nil {
-			logrus.Info("Failed to connect to LMS, using local transport instead.")
+			logrus.Info("LMS not active, using local transport instead.")
 
 			g.localTransport = NewLocalTransport()
 			clientParams.Transport = g.localTransport

@@ -166,15 +166,6 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 	// AMT closes APF channels after each response, so we must open a new channel
 	// for each request. However, the Listen goroutine stays running (reads from /dev/mei0).
-	if e.isLME && !e.lmeConnected {
-		// First LME message: start persistent Listen goroutine
-		log.Debug("LME: First message - starting persistent Listen goroutine")
-
-		go e.localManagement.Listen()
-
-		e.lmeConnected = true
-	}
-
 	if e.isLME {
 		// LME: Open fresh channel for each request (AMT closes after each response)
 		log.Debug("LME: Opening new APF channel for this request")
@@ -186,28 +177,20 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 			return true
 		}
+		// After the first successful Connect/channel-open, start the persistent Listen goroutine.
+		// This avoids running Listen concurrently with the initial session/channel initialization.
+		if !e.lmeConnected {
+			log.Debug("LME: First message - starting persistent Listen goroutine")
 
-		// Wait for AMT to confirm channel is open, but do not block indefinitely.
-		channelOpenCtx, channelOpenCancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
-		defer channelOpenCancel()
+			go e.localManagement.Listen()
 
-		channelOpenDone := make(chan struct{})
-
-		go func() {
-			e.waitGroup.Wait()
-			close(channelOpenDone)
-		}()
-
-		select {
-		case <-channelOpenDone:
-			log.Trace("Channel open confirmation received")
-		case <-channelOpenCtx.Done():
-			log.Error("Timeout waiting for LME channel open confirmation - AMT not responding")
-
-			e.lastError = fmt.Errorf("timeout waiting for AMT channel open confirmation after %d seconds", utils.AMTResponseTimeout)
-
-			return true
+			e.lmeConnected = true
 		}
+
+		// Wait for APF channel-open confirmation before sending request data.
+		// This avoids sending APF channel data on a channel AMT has not confirmed yet.
+		e.waitGroup.Wait()
+		log.Trace("Channel open confirmation received")
 	} else {
 		// LMS: open/close connection for every request
 		err := e.localManagement.Connect()

@@ -52,7 +52,7 @@ func (lms *LMSConnection) Connect() error {
 	var err error
 
 	if lms.Connection == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
 		defer cancel()
 
 		if lms.useTls {
