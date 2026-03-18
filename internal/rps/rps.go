@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
@@ -45,9 +47,7 @@ func ExecuteCommand(req *Request) error {
 		return err
 	}
 
-	executor.MakeItSo(startMessage)
-
-	return nil
+	return executor.MakeItSo(startMessage)
 }
 
 func setCommandMethod(flags *Request) {
@@ -99,6 +99,7 @@ func (amt *AMTActivationServer) Connect(skipCertCheck bool) error {
 	var err error
 
 	websocketDialer := websocket.Dialer{
+		HandshakeTimeout: utils.WebSocketTimeout * time.Second,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: skipCertCheck, //nolint:gosec // self signed certs could be used
 		},
@@ -189,23 +190,24 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 	return dataChannel
 }
 
-// ProcessMessage inspects RPS messages, decodes the base64 payload from the server and relays it to LMS
-func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
+// ProcessMessage inspects RPS messages, decodes the base64 payload from the server and relays it to LMS.
+// It returns payload data, whether this is a terminal RPS message, and an error for malformed/error terminal messages.
+func (amt *AMTActivationServer) ProcessMessage(message []byte) ([]byte, bool, error) {
 	log.Debug("received messages from RPS")
 
 	activation := Message{}
 
 	err := json.Unmarshal(message, &activation)
 	if err != nil {
-		log.Println(err)
+		log.Error(err)
 
-		return nil
+		return nil, true, fmt.Errorf("failed to parse RPS message: %w", err)
 	}
 
 	if activation.Method == "heartbeat_request" {
 		heartbeat, _ := amt.GenerateHeartbeatResponse(activation)
 
-		return heartbeat
+		return heartbeat, false, nil
 	}
 
 	statusMessage := StatusMessage{}
@@ -223,26 +225,30 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 			log.Info("TLS: " + statusMessage.TLSConfiguration)
 		}
 
-		return nil
+		return nil, true, nil
 	case "error":
 		err := json.Unmarshal([]byte(activation.Message), &statusMessage)
+		errMessage := activation.Message
 		if err == nil {
 			log.Error(statusMessage.Status)
+			errMessage = statusMessage.Status
 		} else {
 			log.Error(activation.Message)
 		}
 
-		return nil
+		return nil, true, fmt.Errorf("rps returned error: %s", errMessage)
 	}
 
 	msgPayload, err := base64.StdEncoding.DecodeString(activation.Payload)
 	if err != nil {
 		log.Error("unable to decode base64 payload from RPS")
+
+		return nil, true, fmt.Errorf("unable to decode base64 payload from RPS: %w", err)
 	}
 
 	log.Trace("PAYLOAD:" + string(msgPayload))
 
-	return msgPayload
+	return msgPayload, false, nil
 }
 
 func (amt *AMTActivationServer) GenerateHeartbeatResponse(activation Message) ([]byte, error) {
