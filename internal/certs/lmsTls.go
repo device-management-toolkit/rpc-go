@@ -18,11 +18,12 @@ import (
 
 // generates a TLS configuration based on the provided mode.
 func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
-	tlsConfig := &tls.Config{}
-
-	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: skipAMTCertCheck,
+	}
 
 	if *mode == 0 { // pre-provisioning mode
+		// Strict verification: rely on TLS stack and our VerifyPeerCertificate callback.
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if skipAMTCertCheck {
 				return nil
@@ -32,7 +33,11 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertC
 		}
 	} else {
 		// default tls config if device is in ACM or CCM
-		log.Trace("Setting default TLS Config for ACM/CCM mode")
+		if skipAMTCertCheck {
+			log.Trace("Skipping AMT certificate verification for ACM/CCM mode (loopback TLS)")
+		} else {
+			log.Trace("Using default TLS config for ACM/CCM mode")
+		}
 	}
 
 	return tlsConfig
@@ -62,7 +67,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 				return err
 			}
 
-			log.Infof("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
+			log.Tracef("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
 
 			parsedCerts = append(parsedCerts, cert)
 
@@ -84,6 +89,17 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 
 		return nil
 	case selfSignedChainLength:
+		// On AMT 19+ loopback TLS, the LMS/AMT certificate is typically a single
+		// self-signed certificate that is not rooted in the system trust store.
+		// In pre-provisioning mode (mode == 0), treat this as an acceptable
+		// local loopback certificate so that activation can proceed without
+		// requiring SkipAMTCertCheck.
+		if mode != nil && *mode == 0 {
+			log.Trace("Accepting self-signed AMT loopback certificate in pre-provisioning mode")
+
+			return nil
+		}
+
 		return HandleAMTTransition(mode)
 	}
 

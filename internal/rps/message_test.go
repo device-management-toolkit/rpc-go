@@ -428,3 +428,40 @@ func TestCreateMessageRequestWithInvalidUUIDPattern(t *testing.T) {
 	assert.Error(t, createErr)
 	assert.Equal(t, utils.InvalidUUID, createErr)
 }
+
+func TestCreateMessageRequestLocalTLSEnforced(t *testing.T) {
+	tests := []struct {
+		name             string
+		localTLSEnforced bool
+		expectEnforced   bool
+	}{
+		{
+			name:             "true",
+			localTLSEnforced: true,
+			expectEnforced:   true,
+		},
+		{
+			name:             "false",
+			localTLSEnforced: false,
+			expectEnforced:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := Request{
+				LocalTLSEnforced: tc.localTLSEnforced,
+			}
+			result, createErr := p.CreateMessageRequest(flags)
+			assert.NoError(t, createErr)
+			assert.NotEmpty(t, result.Payload)
+			decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+			assert.NoError(t, decodeErr)
+
+			msgPayload := MessagePayload{}
+			jsonErr := json.Unmarshal(decodedBytes, &msgPayload)
+			assert.NoError(t, jsonErr)
+			assert.Equal(t, tc.expectEnforced, msgPayload.LocalTLSEnforced)
+		})
+	}
+}
