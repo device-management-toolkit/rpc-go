@@ -6,6 +6,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,6 +17,9 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+// ErrCIRAConfiguration is returned when CIRA configuration fails.
+var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 
 const (
 	ACMMODE = "acmactivate"
@@ -145,7 +149,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 	// Step 8: CIRA configuration
 	if err := po.executeCIRAConfiguration(); err != nil {
-		return fmt.Errorf("CIRA configuration failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrCIRAConfiguration, err)
 	}
 
 	// Step 9: HTTP Proxy configuration
@@ -600,6 +604,7 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 	log.Info("Executing CIRA configuration")
 
 	args := po.baseArgs()
+
 	args = append(args, "configure", "cira")
 
 	// MPS Address is required
