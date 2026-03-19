@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -51,20 +52,21 @@ func (lms *LMSConnection) Connect() error {
 	var err error
 
 	if lms.Connection == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
 		defer cancel()
 
 		if lms.useTls {
 			log.Debug("connecting to lms over tls...")
 
 			dialer := &tls.Dialer{
-				Config: certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
+				NetDialer: &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second},
+				Config:    certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
 			}
 			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
 		} else {
 			log.Debug("connecting to lms...")
 
-			dialer := &net.Dialer{}
+			dialer := &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second}
 			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
 		}
 

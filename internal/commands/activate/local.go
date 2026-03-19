@@ -114,6 +114,15 @@ const (
 	ModeACM
 )
 
+const (
+	// AMTControlModePreProvisioning indicates no provisioning has been completed.
+	AMTControlModePreProvisioning = 0
+	// AMTControlModeCCM indicates Client Control Mode.
+	AMTControlModeCCM = 1
+	// AMTControlModeACM indicates Admin Control Mode.
+	AMTControlModeACM = 2
+)
+
 func (m ActivationMode) String() string {
 	switch m {
 	case ModeCCM:
@@ -210,6 +219,11 @@ func (cmd *LocalActivateCmd) Run(ctx *commands.Context) error {
 	// Convert Kong CLI flags to activation config
 
 	config := cmd.toActivationConfig(ctx)
+
+	// Close any existing WSMAN client from AMTBaseCmd to release MEI device before local activation
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+	}
 
 	// Create and run the activation service
 
@@ -344,11 +358,11 @@ func (service *LocalActivationService) Activate() error {
 
 func (service *LocalActivationService) validateAMTState() error {
 	// Check if device is already activated using the stored control mode
-	if service.config.ControlMode != 0 {
+	if service.config.ControlMode != AMTControlModePreProvisioning {
 		// Always allow upgrade path CCM (1) -> ACM when ACM mode is requested.
 
 		// Provisioning certificate requirements are validated later in validateConfiguration.
-		if service.config.Mode == ModeACM && service.config.ControlMode == 1 {
+		if service.config.Mode == ModeACM && service.config.ControlMode == AMTControlModeCCM {
 			log.Info("Upgrading device from Client Control Mode to Admin Control Mode")
 
 			service.isUpgrade = true
@@ -439,6 +453,9 @@ func (service *LocalActivationService) activateCCM() error {
 		return utils.AMTConnectionFailed
 	}
 
+	// Close the AMT command to release the MEI device before creating WSMAN client
+	service.amtCommand.Close()
+
 	// Setup TLS configuration
 
 	tlsConfig := &tls.Config{}
@@ -452,6 +469,8 @@ func (service *LocalActivationService) activateCCM() error {
 	// Create WSMAN client
 
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
+	// Ensure we close the WSMAN client to release the MEI device
+	defer service.wsman.Close()
 
 	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
@@ -469,7 +488,9 @@ func (service *LocalActivationService) activateCCM() error {
 
 	_, err = service.wsman.HostBasedSetupService(generalSettings.Body.GetResponse.DigestRealm, service.config.AMTPassword)
 	if err != nil {
-		return utils.ActivationFailedSetupService
+		if fallbackErr := service.handleCCMSetupError(err); fallbackErr != nil {
+			return fallbackErr
+		}
 	}
 
 	// If TLS is enforced, commit changes with admin credentials
@@ -510,6 +531,31 @@ func (service *LocalActivationService) activateCCM() error {
 	return nil
 }
 
+// handleCCMSetupError checks whether AMT entered CCM even if the WSMAN response errored.
+// Some firmware versions commit the change before the client reads the reply; treat that as success.
+func (service *LocalActivationService) handleCCMSetupError(setupErr error) error {
+	return service.handleSetupErrorWithControlModeVerification(setupErr, AMTControlModeCCM, "HostBasedSetupService", "Client Control Mode")
+}
+
+// currentControlMode reinitializes AMT access and returns the live control mode.
+func (service *LocalActivationService) currentControlMode() (int, error) {
+	if service.amtCommand == nil {
+		return 0, fmt.Errorf("AMT command is not initialized")
+	}
+
+	if err := service.amtCommand.Initialize(); err != nil {
+		return 0, err
+	}
+	defer service.amtCommand.Close()
+
+	mode, err := service.amtCommand.GetControlMode()
+	if err != nil {
+		return 0, err
+	}
+
+	return mode, nil
+}
+
 // activateACM performs ACM activation
 
 func (service *LocalActivationService) activateACM() error {
@@ -524,6 +570,9 @@ func (service *LocalActivationService) activateACM() error {
 		return utils.AMTConnectionFailed
 	}
 
+	// Close the AMT command to release the MEI device before creating WSMAN client
+	service.amtCommand.Close()
+
 	// Setup TLS configuration for ACM, if applicable
 
 	tlsConfig, err := service.setupACMTLSConfig()
@@ -534,6 +583,8 @@ func (service *LocalActivationService) activateACM() error {
 	// Create WSMAN client
 
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
+	// Ensure we close the WSMAN client to release the MEI device
+	defer service.wsman.Close()
 
 	err = service.wsman.SetupWsmanClient(lsa.Username, lsa.Password, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
@@ -964,26 +1015,33 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 
 	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature, service.isUpgrade)
 	if err != nil {
-		// Check if activation was successful despite error
+		return service.handleACMSetupError(err)
+	}
 
-		// We can check the stored control mode, but it won't reflect the new state
+	return nil
+}
 
-		// So we still need to call GetControlMode() here to verify activation success
-		controlMode, controlErr := service.amtCommand.GetControlMode()
-		if controlErr != nil {
-			return utils.ActivationFailedGetControlMode
-		}
+// handleACMSetupError checks whether AMT entered ACM even if the WSMAN response errored.
+func (service *LocalActivationService) handleACMSetupError(setupErr error) error {
+	return service.handleSetupErrorWithControlModeVerification(setupErr, AMTControlModeACM, "HostBasedSetupServiceAdmin", "Admin Control Mode")
+}
 
-		if controlMode != 2 { // 2 = ACM mode
-			return utils.ActivationFailedControlMode
-		}
+// handleSetupErrorWithControlModeVerification verifies whether setup completed despite transport/WSMAN errors.
+func (service *LocalActivationService) handleSetupErrorWithControlModeVerification(setupErr error, expectedControlMode int, setupOperation string, expectedModeLabel string) error {
+	log.WithError(setupErr).Warnf("%s returned an error; verifying control mode for partial success", setupOperation)
 
-		// Activation was successful
+	controlMode, controlErr := service.currentControlMode()
+	if controlErr != nil {
+		return utils.ActivationFailedGetControlMode
+	}
+
+	if controlMode == expectedControlMode {
+		log.Infof("Device reports %s after setup; activation verified via control mode", expectedModeLabel)
 
 		return nil
 	}
 
-	return nil
+	return utils.ActivationFailedControlMode
 }
 
 // Certificate handling methods for ACM activation

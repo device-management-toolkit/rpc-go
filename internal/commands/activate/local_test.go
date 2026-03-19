@@ -456,6 +456,10 @@ func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
 }
 
+func (m *MockAMTCommand) Close() error {
+	return nil
+}
+
 func TestLocalActivationService_validateAMTState(t *testing.T) {
 	tests := []struct {
 		name string
@@ -468,20 +472,14 @@ func TestLocalActivationService_validateAMTState(t *testing.T) {
 	}{
 
 		{
-
-			name: "valid pre-provisioning state",
-
-			controlMode: 0,
-
+			name:        "valid pre-provisioning state",
+			controlMode: AMTControlModePreProvisioning,
 			shouldError: false,
 		},
 
 		{
-
-			name: "already activated device",
-
-			controlMode: 1,
-
+			name:        "already activated device",
+			controlMode: AMTControlModeCCM,
 			shouldError: true,
 		},
 	}
@@ -791,10 +789,8 @@ func TestLocalActivationService_Activate(t *testing.T) {
 
 				AMTPassword: "password123",
 			},
-
-			controlMode: 0,
-
-			wantErr: true,
+			controlMode: AMTControlModePreProvisioning,
+			wantErr:     true,
 		},
 
 		{
@@ -807,10 +803,8 @@ func TestLocalActivationService_Activate(t *testing.T) {
 
 				AMTPassword: "password123",
 			},
-
-			controlMode: 1, // Already activated
-
-			wantErr: true,
+			controlMode: AMTControlModeCCM, // Already activated
+			wantErr:     true,
 		},
 
 		{
@@ -824,10 +818,8 @@ func TestLocalActivationService_Activate(t *testing.T) {
 				AMTPassword: "", // Missing password
 
 			},
-
-			controlMode: 0,
-
-			wantErr: true,
+			controlMode: AMTControlModePreProvisioning,
+			wantErr:     true,
 		},
 	}
 
@@ -883,40 +875,26 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 	}{
 
 		{
-
-			name: "error during AMT state validation",
-
-			cmd: LocalActivateCmd{CCM: true},
-
-			controlMode: 0,
-
+			name:          "error during AMT state validation",
+			cmd:           LocalActivateCmd{CCM: true},
+			controlMode:   AMTControlModePreProvisioning,
 			shouldErrorOn: "GetControlMode",
 
 			wantErr: true,
 		},
 
 		{
-
-			name: "CCM activation will fail during WSMAN setup (expected)",
-
-			cmd: LocalActivateCmd{CCM: true},
-
-			controlMode: 0,
-
-			wantErr: true, // Expect error due to missing WSMAN infrastructure
-
+			name:        "CCM activation will fail during WSMAN setup (expected)",
+			cmd:         LocalActivateCmd{CCM: true},
+			controlMode: AMTControlModePreProvisioning,
+			wantErr:     true, // Expect error due to missing WSMAN infrastructure
 		},
 
 		{
-
-			name: "ACM activation will fail during certificate processing (expected)",
-
-			cmd: LocalActivateCmd{ACM: true, ProvisioningCert: "dGVzdC1jZXJ0", ProvisioningCertPwd: "cert-password"},
-
-			controlMode: 0,
-
-			wantErr: true, // Expect error due to invalid certificate
-
+			name:        "ACM activation will fail during certificate processing (expected)",
+			cmd:         LocalActivateCmd{ACM: true, ProvisioningCert: "dGVzdC1jZXJ0", ProvisioningCertPwd: "cert-password"},
+			controlMode: AMTControlModePreProvisioning,
+			wantErr:     true, // Expect error due to invalid certificate
 		},
 	}
 
@@ -1025,6 +1003,72 @@ func TestLocalActivationService_activateCCM(t *testing.T) {
 				t.Errorf("activateCCM() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_AllowsSuccessWhenControlModeUpdated(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeCCM},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != nil {
+		t.Fatalf("handleCCMSetupError() returned error for successful control mode transition: %v", err)
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_FailsWhenControlModeUnchanged(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedControlMode {
+		t.Fatalf("handleCCMSetupError() = %v, want %v", err, utils.ActivationFailedControlMode)
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_GetControlModeFailure(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning, shouldErrorOn: "Initialize"},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedGetControlMode {
+		t.Fatalf("handleCCMSetupError() = %v, want %v", err, utils.ActivationFailedGetControlMode)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_AllowsSuccessWhenControlModeUpdated(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeACM},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != nil {
+		t.Fatalf("handleACMSetupError() returned error for successful control mode transition: %v", err)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_FailsWhenControlModeUnchanged(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeCCM},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedControlMode {
+		t.Fatalf("handleACMSetupError() = %v, want %v", err, utils.ActivationFailedControlMode)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_GetControlModeFailure(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning, shouldErrorOn: "Initialize"},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedGetControlMode {
+		t.Fatalf("handleACMSetupError() = %v, want %v", err, utils.ActivationFailedGetControlMode)
 	}
 }
 
@@ -1539,9 +1583,7 @@ func TestLocalActivateCmd_Run_PasswordPrompting(t *testing.T) {
 	}
 
 	mockAMT := &MockAMTCommand{
-
-		controlMode: 0,
-
+		controlMode: AMTControlModePreProvisioning,
 		changeEnabled: MockChangeEnabled{
 
 			amtEnabled: true,

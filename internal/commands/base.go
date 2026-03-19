@@ -112,6 +112,10 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	log.Trace("Running AfterApply for AMTBaseCmd")
+
+	// Ensure we close the MEI device connection after getting control mode and TLS status
+	defer amtCommand.Close()
+
 	// always have the control mode handy
 	// Get the current control mode using the injected AMT command, with retries if AMT is busy
 	var (

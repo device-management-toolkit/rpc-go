@@ -2,9 +2,6 @@ module github.com/device-management-toolkit/rpc-go/v2
 
 go 1.25.0
 
-// uncomment if developing with go-wsman-messages locally
-// replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
-
 require (
 	github.com/alecthomas/kong v1.14.0
 	github.com/alecthomas/kong-yaml v0.2.0
