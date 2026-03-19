@@ -19,6 +19,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const lmeAPFChannelDataFlushOverride = 500 * time.Millisecond
+
 // LMConnection is struct for managing connection to LMS
 type LMEConnection struct {
 	Command    pthi.Command
@@ -179,7 +181,7 @@ func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
 			return err
 		}
 
-		bin_buf = apf.Process(result, lme.Session)
+		bin_buf = lme.processWithLocalTimerOverride(result)
 		if bin_buf.Len() == 0 {
 			log.Debug("done EXECUTING.........")
 
@@ -244,7 +246,7 @@ func (lme *LMEConnection) Listen() {
 
 			break
 		} else {
-			result := apf.Process(result2, lme.Session)
+			result := lme.processWithLocalTimerOverride(result2)
 			if result.Len() != 0 {
 				err2 = lme.execute(result)
 				if err2 != nil {
@@ -255,6 +257,23 @@ func (lme *LMEConnection) Listen() {
 			}
 		}
 	}
+}
+
+func (lme *LMEConnection) processWithLocalTimerOverride(message []byte) bytes.Buffer {
+	processed := apf.Process(message, lme.Session)
+
+	if len(message) > 0 && message[0] == apf.APF_CHANNEL_DATA && lme.Session.Timer != nil {
+		if !lme.Session.Timer.Stop() {
+			select {
+			case <-lme.Session.Timer.C:
+			default:
+			}
+		}
+
+		lme.Session.Timer.Reset(lmeAPFChannelDataFlushOverride)
+	}
+
+	return processed
 }
 
 // Close closes the LME connection

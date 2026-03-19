@@ -50,6 +50,8 @@ type GoWSMANMessages struct {
 	wsmanMessages  wsman.Messages
 	target         string
 	localTransport *LocalTransport
+	plainProbeDone bool
+	useLocalLMX    bool
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -78,10 +80,11 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		defer cancel()
 
 		dialer := &cryptotls.Dialer{
-			Config: tlsConfig,
+			Config:    tlsConfig,
+			NetDialer: &net.Dialer{Timeout: probeTimeout},
 		}
 
-		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(g.target, utils.LMSTLSPort))
 		if err != nil {
 			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
 			logrus.Error(err)
@@ -97,20 +100,31 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			defer conn.Close()
 		}
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		defer cancel()
+		if !g.plainProbeDone {
+			ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+			defer cancel()
 
-		dialer := &net.Dialer{}
+			dialer := &net.Dialer{Timeout: probeTimeout}
 
-		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
-		if err != nil {
-			logrus.Info("LMS not active, using local transport instead.")
+			con, err := dialer.DialContext(ctx, "tcp4", net.JoinHostPort(g.target, utils.LMSPort))
+			if err != nil {
+				logrus.Info("LMS not active, using local transport instead.")
 
-			g.localTransport = NewLocalTransport()
+				g.useLocalLMX = true
+			} else {
+				logrus.Info("Successfully connected to LMS.")
+				con.Close()
+			}
+
+			g.plainProbeDone = true
+		}
+
+		if g.useLocalLMX {
+			if g.localTransport == nil {
+				g.localTransport = NewLocalTransport()
+			}
+
 			clientParams.Transport = g.localTransport
-		} else {
-			logrus.Info("Successfully connected to LMS.")
-			con.Close()
 		}
 	}
 

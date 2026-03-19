@@ -5,11 +5,11 @@
 package rps
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -170,7 +170,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		// LME: Open fresh channel for each request (AMT closes after each response)
 		log.Debug("LME: Opening new APF channel for this request")
 
-		err := e.localManagement.Connect()
+		err := e.connectLMEWithRetry()
 		if err != nil {
 			e.lastError = fmt.Errorf("failed to open LME channel: %w", err)
 			log.Error(err)
@@ -189,7 +189,31 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 		// Wait for APF channel-open confirmation before sending request data.
 		// This avoids sending APF channel data on a channel AMT has not confirmed yet.
-		e.waitGroup.Wait()
+		channelOpenTimeout := time.Duration(utils.LMETimerTimeout) * time.Second
+		if channelOpenTimeout <= 0 || channelOpenTimeout > utils.AMTResponseTimeout*time.Second {
+			channelOpenTimeout = utils.AMTResponseTimeout * time.Second
+		}
+
+		channelOpenTimer := time.After(channelOpenTimeout)
+
+		channelOpenDone := make(chan struct{})
+
+		go func() {
+			defer close(channelOpenDone)
+
+			e.waitGroup.Wait()
+		}()
+
+		select {
+		case <-channelOpenDone:
+		case <-channelOpenTimer:
+			log.Error("Timeout waiting for LME channel open confirmation - AMT not responding")
+
+			e.lastError = fmt.Errorf("timeout waiting for AMT channel open confirmation after %s", channelOpenTimeout)
+
+			return true
+		}
+
 		log.Trace("Channel open confirmation received")
 	} else {
 		// LMS: open/close connection for every request
@@ -214,8 +238,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return true
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
-	defer cancel()
+	responseTimeout := utils.AMTResponseTimeout * time.Second
+	responseTimer := time.After(responseTimeout)
 
 	for {
 		select {
@@ -242,7 +266,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 				return true
 			}
-		case <-timeoutCtx.Done():
+		case <-responseTimer:
 			// Timeout waiting for response from AMT/LME
 			// This indicates AMT is not responding - treat as an error
 			log.Error("Timeout waiting for LME response - AMT not responding")
@@ -252,6 +276,42 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			return true
 		}
 	}
+}
+
+func (e *Executor) connectLMEWithRetry() error {
+	const maxRetries = 2
+
+	var err error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err = e.localManagement.Connect()
+		if err == nil {
+			return nil
+		}
+
+		if !isTransientMEIBusy(err) || attempt == maxRetries {
+			return err
+		}
+
+		wait := time.Duration(attempt+1) * time.Duration(utils.HeciConnectRetryBackoff) * time.Millisecond
+		log.Warnf("LME channel open busy, retry %d/%d", attempt+1, maxRetries)
+		time.Sleep(wait)
+	}
+
+	return err
+}
+
+func isTransientMEIBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	return strings.Contains(errMsg, "device or resource busy") ||
+		strings.Contains(errMsg, "resource busy") ||
+		strings.Contains(errMsg, "no such device") ||
+		strings.Contains(errMsg, "device unavailable")
 }
 
 func (e Executor) HandleDataFromLM(data []byte) {
