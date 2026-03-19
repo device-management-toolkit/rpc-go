@@ -1,3 +1,10 @@
+# [3.0.0-beta.9](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.8...v3.0.0-beta.9) (2026-03-19)
+
+
+### Features
+
+* add device registration during activate and cleanup during deactivate ([#1204](https://github.com/device-management-toolkit/rpc-go/issues/1204)) ([d6fa414](https://github.com/device-management-toolkit/rpc-go/commit/d6fa41459748b07da409df7002cc11a52895e021))
+
 # [3.0.0-beta.8](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.7...v3.0.0-beta.8) (2026-03-17)
 
 
