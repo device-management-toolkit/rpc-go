@@ -23,9 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -481,7 +479,7 @@ func (service *LocalActivationService) activateCCM() error {
 
 	// Get general settings for digest realm
 
-	generalSettings, err := service.getGeneralSettingsWithRetry()
+	generalSettings, err := service.wsman.GetGeneralSettings()
 	if err != nil {
 		return utils.ActivationFailedGeneralSettings
 	}
@@ -751,7 +749,7 @@ func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config)
 
 	// Get general settings to obtain digest realm for password hashing
 
-	generalSettings, err := service.getGeneralSettingsWithRetry()
+	generalSettings, err := service.wsman.GetGeneralSettings()
 	if err != nil {
 		return fmt.Errorf("failed to get AMT general settings: %w", err)
 	}
@@ -971,7 +969,7 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 
 	// Get general settings for digest realm
 
-	generalSettings, err := service.getGeneralSettingsWithRetry()
+	generalSettings, err := service.wsman.GetGeneralSettings()
 	if err != nil {
 		return utils.ActivationFailedGeneralSettings
 	}
@@ -1044,35 +1042,6 @@ func (service *LocalActivationService) handleSetupErrorWithControlModeVerificati
 	}
 
 	return utils.ActivationFailedControlMode
-}
-
-func (service *LocalActivationService) getGeneralSettingsWithRetry() (general.Response, error) {
-	const maxRetries = 3
-
-	var lastErr error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		response, err := service.wsman.GetGeneralSettings()
-		if err == nil {
-			return response, nil
-		}
-
-		lastErr = err
-		errText := strings.ToLower(err.Error())
-		transientBusy := strings.Contains(errText, "device or resource busy") ||
-			strings.Contains(errText, "resource busy") ||
-			strings.Contains(errText, "no such device") ||
-			strings.Contains(errText, "device unavailable")
-		if !transientBusy || attempt == maxRetries {
-			break
-		}
-
-		delay := time.Duration(attempt+1) * time.Duration(utils.HeciConnectRetryBackoff) * time.Millisecond
-		log.WithError(err).Warnf("GetGeneralSettings busy, retrying (%d/%d)", attempt+1, maxRetries)
-		time.Sleep(delay)
-	}
-
-	return general.Response{}, lastErr
 }
 
 // Certificate handling methods for ACM activation

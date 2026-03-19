@@ -1,0 +1,44 @@
+--- internal/lm/service.go
++++ internal/lm/service.go
+@@ -52,7 +52,7 @@ func (lms *LMSConnection) Connect() error {
+ 	var err error
+ 
+ 	if lms.Connection == nil {
+-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
++		ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
+ 		defer cancel()
+ 
+ 		if lms.useTls {
+@@ -115,8 +115,12 @@ func (lms *LMSConnection) Close() error {
+ func (lms *LMSConnection) Listen() {
+ 	log.Debug("listening for lms messages...")
+ 
+-	duration, _ := time.ParseDuration("1s")
+-	lms.Connection.SetDeadline(time.Now().Add(duration))
++	const (
++		initialReadDeadline = 300 * time.Millisecond
++		interChunkDeadline  = 100 * time.Millisecond
++	)
++
++	lms.Connection.SetDeadline(time.Now().Add(initialReadDeadline))
+ 
+ 	buf := make([]byte, 0, 8192) // big buffer
+ 	tmp := make([]byte, 4096)
+@@ -124,7 +128,7 @@ func (lms *LMSConnection) Listen() {
+ 	for {
+ 		n, err := lms.Connection.Read(tmp)
+ 		if err != nil {
+-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
++			if err != io.EOF && !strings.Contains(err.Error(), "i/o timeout") {
+ 				log.Println("read error:", err)
+ 
+ 				lms.errors <- err
+@@ -134,6 +138,8 @@ func (lms *LMSConnection) Listen() {
+ 		}
+ 
+ 		buf = append(buf, tmp[:n]...)
++		// After first bytes arrive, shorten the idle window to reduce trailing wait.
++		lms.Connection.SetDeadline(time.Now().Add(interChunkDeadline))
+ 	}
+ 
+ 	lms.data <- buf

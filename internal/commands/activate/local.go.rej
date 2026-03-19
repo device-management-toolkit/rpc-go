@@ -1,0 +1,29 @@
+--- internal/commands/activate/local.go
++++ internal/commands/activate/local.go
+@@ -387,7 +389,7 @@ func (service *LocalActivationService) activateCCM() error {
+ 	}
+ 
+ 	// Get general settings for digest realm
+-	generalSettings, err := service.wsman.GetGeneralSettings()
++	generalSettings, err := service.getGeneralSettingsWithRetry()
+ 	if err != nil {
+ 		return utils.ActivationFailedGeneralSettings
+ 	}
+@@ -617,7 +619,7 @@ func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config)
+ 	}
+ 
+ 	// Get general settings to obtain digest realm for password hashing
+-	generalSettings, err := service.wsman.GetGeneralSettings()
++	generalSettings, err := service.getGeneralSettingsWithRetry()
+ 	if err != nil {
+ 		return fmt.Errorf("failed to get AMT general settings: %w", err)
+ 	}
+@@ -844,7 +885,7 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config)
+ 	}
+ 
+ 	// Get general settings for digest realm
+-	generalSettings, err := service.wsman.GetGeneralSettings()
++	generalSettings, err := service.getGeneralSettingsWithRetry()
+ 	if err != nil {
+ 		return utils.ActivationFailedGeneralSettings
+ 	}

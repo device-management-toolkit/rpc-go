@@ -1,0 +1,25 @@
+--- pkg/utils/constants.go
++++ pkg/utils/constants.go
+@@ -28,15 +28,15 @@ const (
+ 	MPSServerMaxLength = 256
+ 
+ 	// LMSConnectionTimeout is the maximum wait for LMS TCP connection setup.
+-	LMSConnectionTimeout    = 30   // seconds
+-	LMSDialerTimeout        = 15   // seconds
+-	HeciReadTimeout         = 30   // seconds
+-	HeciRetryDelay          = 3000 // milliseconds
++	LMSConnectionTimeout    = 2    // seconds
++	LMSDialerTimeout        = 6    // seconds
++	HeciReadTimeout         = 20   // seconds
++	HeciRetryDelay          = 1500 // milliseconds
+ 	HeciReinitDelay         = 500  // milliseconds
+-	HeciConnectRetryBackoff = 500  // milliseconds
+-	LMETimerTimeout         = 10   // seconds
++	HeciConnectRetryBackoff = 300  // milliseconds
++	LMETimerTimeout         = 1    // seconds
+ 	WebSocketTimeout        = 60   // seconds
+-	AMTResponseTimeout      = 30   // seconds
++	AMTResponseTimeout      = 25   // seconds
+ 
+ 	HelpHeader = "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
+ 

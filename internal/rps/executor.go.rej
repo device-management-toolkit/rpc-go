@@ -1,0 +1,25 @@
+--- internal/rps/executor.go
++++ internal/rps/executor.go
+@@ -189,7 +190,12 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
+ 		}
+ 
+ 		// Wait for AMT to confirm channel is open, but do not block indefinitely.
+-		channelOpenCtx, channelOpenCancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
++		channelOpenTimeout := time.Duration(utils.LMETimerTimeout) * time.Second
++		if channelOpenTimeout <= 0 || channelOpenTimeout > utils.AMTResponseTimeout*time.Second {
++			channelOpenTimeout = utils.AMTResponseTimeout * time.Second
++		}
++
++		channelOpenCtx, channelOpenCancel := context.WithTimeout(context.Background(), channelOpenTimeout)
+ 		defer channelOpenCancel()
+ 
+ 		channelOpenDone := make(chan struct{})
+@@ -205,7 +211,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
+ 		case <-channelOpenCtx.Done():
+ 			log.Error("Timeout waiting for LME channel open confirmation - AMT not responding")
+ 
+-			e.lastError = fmt.Errorf("timeout waiting for AMT channel open confirmation after %d seconds", utils.AMTResponseTimeout)
++			e.lastError = fmt.Errorf("timeout waiting for AMT channel open confirmation after %s", channelOpenTimeout)
+ 
+ 			return true
+ 		}
