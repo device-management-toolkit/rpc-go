@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
@@ -23,6 +22,7 @@ type LMSConnection struct {
 	address       string
 	port          string
 	useTls        bool
+	tunnelMode    bool
 	data          chan []byte
 	errors        chan error
 	controlMode   int
@@ -43,6 +43,13 @@ func NewLMSConnection(address, port string, useTls bool, data chan []byte, error
 	return lms
 }
 
+// SetTunnelMode configures the connection for TLS tunnel passthrough.
+// In tunnel mode, Connect() uses plain TCP even when useTls is true,
+// because the TLS handshake is handled by RPS through the tunnel.
+func (lms *LMSConnection) SetTunnelMode(tunnel bool) {
+	lms.tunnelMode = tunnel
+}
+
 func (lms *LMSConnection) Initialize() error {
 	return errors.New("not implemented")
 }
@@ -55,7 +62,7 @@ func (lms *LMSConnection) Connect() error {
 		ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
 		defer cancel()
 
-		if lms.useTls {
+		if lms.useTls && !lms.tunnelMode {
 			log.Debug("connecting to lms over tls...")
 
 			dialer := &tls.Dialer{
@@ -63,6 +70,11 @@ func (lms *LMSConnection) Connect() error {
 				Config:    certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
 			}
 			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
+		} else if lms.tunnelMode {
+			log.Debug("connecting to lms (tunnel mode)...")
+
+			dialer := &net.Dialer{}
+			lms.Connection, err = dialer.DialContext(context.Background(), "tcp4", lms.address+":"+lms.port)
 		} else {
 			log.Debug("connecting to lms...")
 
@@ -115,18 +127,30 @@ func (lms *LMSConnection) Close() error {
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
-	duration, _ := time.ParseDuration("1s")
-	lms.Connection.SetDeadline(time.Now().Add(duration))
+	// For TLS tunnel mode, AMT may take 30+ seconds to reconfigure after TLS settings change.
+	// Use a longer timeout than RPS's delay_tls_timer (50s) so RPS times out first
+	// with a proper error rather than getting connection_reset.
+	readTimeout := 500 * time.Millisecond
+	subsequentReadTimeout := 100 * time.Millisecond
 
-	buf := make([]byte, 0, 8192) // big buffer
+	if lms.useTls {
+		readTimeout = 60 * time.Second
+		// For TLS mode, use longer subsequent timeout as AMT may be slow between response chunks
+		// especially for operations like AddTrustedRootCertificate that write to non-volatile storage
+		subsequentReadTimeout = 2 * time.Second
+	}
+
+	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
 
 	for {
+		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
+
 		n, err := lms.Connection.Read(tmp)
 		if err != nil {
-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
-				log.Println("read error:", err)
-
+			var netErr net.Error
+			if err != io.EOF && (!errors.As(err, &netErr) || !netErr.Timeout()) {
+				log.Println("LMS read error:", err)
 				lms.errors <- err
 			}
 
@@ -134,8 +158,10 @@ func (lms *LMSConnection) Listen() {
 		}
 
 		buf = append(buf, tmp[:n]...)
+		readTimeout = subsequentReadTimeout
 	}
 
+	lms.Connection.SetReadDeadline(time.Time{})
 	lms.data <- buf
 
 	log.Trace("done listening")

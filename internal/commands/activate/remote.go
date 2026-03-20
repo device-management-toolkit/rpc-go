@@ -42,6 +42,10 @@ type RemoteActivateCmd struct {
 
 	Proxy string `help:"Proxy server URL for RPS connection" env:"PROXY" name:"proxy"`
 
+	// TLS tunnel support
+	TLSTunnel        bool `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
+	LocalTLSEnforced bool `kong:"-"` // Detected from device, not a CLI flag
+
 	// Authentication to the remote server (optional for websockets today but reserved for future)
 
 	commands.ServerAuthFlags
@@ -63,6 +67,9 @@ type RemoteActivationConfig struct {
 	FriendlyName string
 
 	Proxy string
+
+	TLSTunnel        bool
+	LocalTLSEnforced bool
 }
 
 // RemoteActivationService handles the actual remote activation logic
@@ -129,6 +136,9 @@ func (cmd *RemoteActivateCmd) toActivationConfig() RemoteActivationConfig {
 		FriendlyName: cmd.FriendlyName,
 
 		Proxy: cmd.Proxy,
+
+		TLSTunnel:        cmd.TLSTunnel,
+		LocalTLSEnforced: cmd.LocalTLSEnforced,
 	}
 }
 
@@ -249,6 +259,10 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 		TenantID: service.context.TenantID,
 
 		Password: service.context.AMTPassword,
+
+		LocalTlsEnforced: service.config.LocalTLSEnforced,
+
+		TLSTunnel: service.config.TLSTunnel,
 	}
 
 	// Execute activation via RPS

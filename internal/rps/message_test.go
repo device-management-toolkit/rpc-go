@@ -229,7 +229,7 @@ func TestCreateActivationRequestWithDNSSuffix(t *testing.T) {
 }
 
 func TestCreateActivationResponse(t *testing.T) {
-	result := p.CreateMessageResponse([]byte("123"))
+	result := p.CreateMessageResponse([]byte("123"), "response")
 	assert.Equal(t, "response", result.Method)
 	assert.Equal(t, "key", result.APIKey)
 	assert.Equal(t, "ok", result.Status)
@@ -354,6 +354,24 @@ func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
 
 	_, isInMap := m["friendlyName"]
 	assert.False(t, isInMap)
+}
+
+func TestCreateMessageRequestTLSTunnelFields(t *testing.T) {
+	flags := Request{
+		LocalTlsEnforced: true,
+		TLSTunnel:        true,
+	}
+	result, createErr := p.CreateMessageRequest(flags)
+	assert.NoError(t, createErr)
+	assert.NotEmpty(t, result.Payload)
+	decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+	assert.NoError(t, decodeErr)
+
+	msgPayload := MessagePayload{}
+	jsonErr := json.Unmarshal(decodedBytes, &msgPayload)
+	assert.NoError(t, jsonErr)
+	assert.True(t, msgPayload.TLSEnforced)
+	assert.True(t, msgPayload.TLSTunnel)
 }
 
 func TestIsKnownInvalidUUID(t *testing.T) {

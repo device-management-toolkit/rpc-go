@@ -57,6 +57,7 @@ type ActivateCmd struct {
 	ProvisioningCert    string `help:"Provisioning certificate (base64 encoded)" env:"PROVISIONING_CERT" name:"provisioningCert"`
 	ProvisioningCertPwd string `help:"Provisioning certificate password" env:"PROVISIONING_CERT_PASSWORD" name:"provisioningCertPwd"`
 	MEBxPassword        string `help:"MEBx password for AMT19+ TLS activation" env:"MEBX_PASSWORD" name:"mebxpassword"`
+	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
 }
@@ -260,14 +261,16 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
 	// Create remote activation command with current flags
 	remoteCmd := RemoteActivateCmd{
-		URL:             cmd.URL,
-		Profile:         cmd.Profile,
-		DNS:             cmd.DNS,
-		Hostname:        cmd.Hostname,
-		UUID:            cmd.UUID,
-		FriendlyName:    cmd.FriendlyName,
-		Proxy:           cmd.Proxy,
-		ServerAuthFlags: ctx.ServerAuthFlags,
+		URL:              cmd.URL,
+		Profile:          cmd.Profile,
+		DNS:              cmd.DNS,
+		Hostname:         cmd.Hostname,
+		UUID:             cmd.UUID,
+		FriendlyName:     cmd.FriendlyName,
+		Proxy:            cmd.Proxy,
+		TLSTunnel:        cmd.TLSTunnel,
+		LocalTLSEnforced: cmd.LocalTLSEnforced,
+		ServerAuthFlags:  ctx.ServerAuthFlags,
 	}
 
 	// Validate and execute the remote command

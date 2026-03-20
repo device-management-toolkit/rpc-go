@@ -53,6 +53,9 @@ type Request struct {
 	UUID               string
 	FriendlyName       string
 
+	// TLS tunnel support
+	TLSTunnel bool
+
 	// Logging/output preferences (forwarded to commands when applicable)
 	LogLevel   string
 	JsonOutput bool

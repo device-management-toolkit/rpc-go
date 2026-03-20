@@ -58,6 +58,27 @@ type MessagePayload struct {
 	IPConfiguration   IPConfiguration `json:"ipConfiguration"`
 	HostnameInfo      HostnameInfo    `json:"hostnameInfo"`
 	FriendlyName      string          `json:"friendlyName,omitempty"`
+	TLSEnforced       bool            `json:"tlsEnforced,omitempty"`
+	TLSTunnel         bool            `json:"tlsTunnel,omitempty"`
+}
+
+// MethodTLSData is the method type for TLS tunnel data passthrough
+const MethodTLSData = "tls_data"
+
+// MethodConnectionReset notifies RPS that the LMS connection was closed and needs to be re-established
+const MethodConnectionReset = "connection_reset"
+
+// MethodPortSwitch is sent by RPS to tell rpc-go to switch LMS to a TLS port
+const MethodPortSwitch = "port_switch"
+
+// MethodPortSwitchAck is sent by rpc-go to confirm it has reconnected on the TLS port
+const MethodPortSwitchAck = "port_switch_ack"
+
+// PortSwitchPayload is the JSON payload from RPS's port_switch message
+type PortSwitchPayload struct {
+	Port     string `json:"port"`
+	RootCert string `json:"rootCert"`
+	Delay    int    `json:"delay"`
 }
 
 func NewPayload() Payload {
@@ -217,6 +238,9 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	}
 
 	payload.FriendlyName = req.FriendlyName
+	payload.TLSEnforced = req.LocalTlsEnforced
+	payload.TLSTunnel = req.TLSTunnel
+
 	// convert struct to json
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -229,9 +253,9 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 }
 
 // CreateMessageResponse is used for creating a response to the server
-func (p Payload) CreateMessageResponse(payload []byte) Message {
-	message := Message{
-		Method:          "response",
+func (p Payload) CreateMessageResponse(payload []byte, method string) Message {
+	return Message{
+		Method:          method,
 		APIKey:          "key",
 		AppVersion:      utils.ProjectVersion,
 		ProtocolVersion: utils.ProtocolVersion,
@@ -239,6 +263,4 @@ func (p Payload) CreateMessageResponse(payload []byte) Message {
 		Message:         "ok",
 		Payload:         base64.StdEncoding.EncodeToString(payload),
 	}
-
-	return message
 }
