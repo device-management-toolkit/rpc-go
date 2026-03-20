@@ -238,8 +238,16 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return true
 	}
 
-	responseTimeout := utils.AMTResponseTimeout * time.Second
-	responseTimer := time.After(responseTimeout)
+	responseTimer := time.NewTimer(utils.AMTResponseTimeout * time.Second)
+
+	defer func() {
+		if !responseTimer.Stop() {
+			select {
+			case <-responseTimer.C:
+			default:
+			}
+		}
+	}()
 
 	for {
 		select {
@@ -266,7 +274,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 				return true
 			}
-		case <-responseTimer:
+		case <-responseTimer.C:
 			// Timeout waiting for response from AMT/LME
 			// This indicates AMT is not responding - treat as an error
 			log.Error("Timeout waiting for LME response - AMT not responding")

@@ -259,6 +259,7 @@ func (lme *LMEConnection) Listen() {
 	}
 }
 
+// TODO: Optimize/test changes if wsman pkg can handle it
 func (lme *LMEConnection) processWithLocalTimerOverride(message []byte) bytes.Buffer {
 	processed := apf.Process(message, lme.Session)
 

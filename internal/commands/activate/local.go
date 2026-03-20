@@ -1046,6 +1046,7 @@ func (service *LocalActivationService) handleSetupErrorWithControlModeVerificati
 	return utils.ActivationFailedControlMode
 }
 
+// TODO: Move retry logic in wsman pkg
 func (service *LocalActivationService) getGeneralSettingsWithRetry() (general.Response, error) {
 	const maxRetries = 3
 
@@ -1059,6 +1060,7 @@ func (service *LocalActivationService) getGeneralSettingsWithRetry() (general.Re
 
 		lastErr = err
 		errText := strings.ToLower(err.Error())
+
 		transientBusy := strings.Contains(errText, "device or resource busy") ||
 			strings.Contains(errText, "resource busy") ||
 			strings.Contains(errText, "no such device") ||

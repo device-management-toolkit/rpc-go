@@ -95,7 +95,16 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		channelOpenTimeout = utils.AMTResponseTimeout * time.Second
 	}
 
-	channelOpenTimer := time.After(channelOpenTimeout)
+	channelOpenTimer := time.NewTimer(channelOpenTimeout)
+
+	defer func() {
+		if !channelOpenTimer.Stop() {
+			select {
+			case <-channelOpenTimer.C:
+			default:
+			}
+		}
+	}()
 
 	channelOpenDone := make(chan struct{})
 
@@ -107,7 +116,13 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	select {
 	case <-channelOpenDone:
-	case <-channelOpenTimer:
+	case <-channelOpenTimer.C:
+		// Close the LME connection so the goroutine waiting on WaitGroup can
+		// unblock and the next request can start with a clean state.
+		if closeErr := l.Close(); closeErr != nil {
+			logrus.Errorf("failed to close LME connection after channel open timeout: %v", closeErr)
+		}
+
 		return nil, fmt.Errorf("timeout waiting for LME channel open confirmation after %s", channelOpenTimeout)
 	}
 
@@ -134,7 +149,16 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	responseTimeout := utils.AMTResponseTimeout * time.Second
 
-	responseTimer := time.After(responseTimeout)
+	responseTimer := time.NewTimer(responseTimeout)
+
+	defer func() {
+		if !responseTimer.Stop() {
+			select {
+			case <-responseTimer.C:
+			default:
+			}
+		}
+	}()
 
 Loop:
 	for {
@@ -155,7 +179,7 @@ Loop:
 			}
 
 			break Loop
-		case <-responseTimer:
+		case <-responseTimer.C:
 			respErr = fmt.Errorf("timeout waiting for LME response after %s", responseTimeout)
 
 			break Loop
