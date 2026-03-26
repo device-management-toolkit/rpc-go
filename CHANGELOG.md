@@ -60,6 +60,55 @@
 * see migration-guide.md for the command and flag syntax overhaul, profile/config realignment,
 and the new restful profile activation flow.
 
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-23)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-20)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-18)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-16)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
 ## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-10)
 
 
