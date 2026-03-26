@@ -96,6 +96,13 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 		}
 	}
 
+	// Device already in pre-provisioning state — nothing to deactivate
+	if cmd.ControlMode == 0 {
+		log.Info("Device is already in pre-provisioning state.")
+
+		return nil
+	}
+
 	// Resolve AMT password (only when required)
 	if cmd.RequiresAMTPassword() {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
@@ -157,6 +164,13 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 	guid, err := cmd.resolveGUID(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to resolve device GUID: %w", err)
+	}
+
+	// Device already in pre-provisioning state — nothing to deactivate
+	if cmd.ControlMode == 0 {
+		log.Info("Device is already in pre-provisioning state.")
+
+		return nil
 	}
 
 	// Ensure AMT password for local deactivation

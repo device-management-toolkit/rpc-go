@@ -229,7 +229,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 }
 
 func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
-	t.Run("GetControlMode fails", func(t *testing.T) {
+	t.Run("pre-provisioning mode returns early without error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
@@ -237,12 +237,11 @@ func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
-		// Set invalid control mode to simulate failure
-		cmd.ControlMode = 0 // This should trigger UnableToDeactivate
+		// Device is already in pre-provisioning state — nothing to deactivate
+		cmd.ControlMode = 0
 
 		err := cmd.Run(ctx)
-		assert.Error(t, err)
-		assert.Equal(t, utils.UnableToDeactivate, err)
+		assert.NoError(t, err)
 	})
 }
 
@@ -255,8 +254,8 @@ func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
-		// Set unsupported control mode
-		cmd.ControlMode = 0 // Pre-provisioning mode
+		// Set unsupported control mode (not 0, 1, or 2)
+		cmd.ControlMode = 99
 
 		err := cmd.Run(ctx)
 		assert.Error(t, err)
@@ -493,10 +492,10 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		assert.Equal(t, utils.UnableToDeactivate, err)
 	})
 
-	t.Run("local deactivation with AMT connection failure", func(t *testing.T) {
+	t.Run("local deactivation with pre-provisioning mode returns early", func(t *testing.T) {
 		// Setup
 		cmd := &DeactivateCmd{Local: true}
-		// Set zero control mode (pre-provisioning)
+		// Device already in pre-provisioning state
 		cmd.ControlMode = 0
 
 		ctrl := gomock.NewController(t)
@@ -509,9 +508,19 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		// Execute
 		err := cmd.Run(ctx)
 
-		// Verify
-		assert.Error(t, err)
-		assert.Equal(t, utils.UnableToDeactivate, err)
+		// Verify — device is already deactivated, no error
+		assert.NoError(t, err)
+	})
+
+	t.Run("remote deactivation with pre-provisioning mode returns early", func(t *testing.T) {
+		cmd := &DeactivateCmd{URL: "wss://example.com"}
+		cmd.ControlMode = 0
+
+		ctx := &Context{AMTPassword: "test-pass"}
+
+		err := cmd.Run(ctx)
+
+		assert.NoError(t, err)
 	})
 }
 
