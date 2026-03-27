@@ -28,6 +28,7 @@ func (f *Flags) handleActivateCommand() error {
 		return nil
 	})
 	f.amtActivateCommand.BoolVar(&f.SkipIPRenew, "skipIPRenew", false, "skip DHCP renewal of the IP address if AMT becomes enabled")
+	f.amtActivateCommand.BoolVar(&f.TLSTunnel, "tls-tunnel", false, "provision TLS on AMT 11-18 devices and switch to encrypted channel")
 	// for local activation in ACM mode need a few more items
 	f.amtActivateCommand.StringVar(&f.configContent, "config", "", "specify a config file or smb: file share URL")
 	f.amtActivateCommand.StringVar(&f.configContentV2, "configv2", "", "specify a config file or smb: file share URL")

@@ -5,10 +5,13 @@
 package rps
 
 import (
+	"encoding/json"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
@@ -17,13 +20,15 @@ import (
 )
 
 type Executor struct {
-	server          AMTActivationServer
-	localManagement lm.LocalMananger
-	isLME           bool
-	payload         Payload
-	data            chan []byte
-	errors          chan error
-	waitGroup       *sync.WaitGroup
+	server           AMTActivationServer
+	localManagement  lm.LocalMananger
+	isLME            bool
+	payload          Payload
+	data             chan []byte
+	errors           chan error
+	waitGroup        *sync.WaitGroup
+	localTlsEnforced bool
+	lmConnected      bool // tracks if LMS connection is active (for TLS tunnel persistence)
 }
 
 func NewExecutor(flags flags.Flags) (Executor, error) {
@@ -37,27 +42,30 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	}
 
 	client := Executor{
-		server:          NewAMTActivationServer(&flags),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
-		data:            lmDataChannel,
-		errors:          lmErrorChannel,
-		waitGroup:       &sync.WaitGroup{},
+		server:           NewAMTActivationServer(&flags),
+		localManagement:  lm.NewLMSConnection(utils.LMSAddress, port, flags.LocalTlsEnforced, lmDataChannel, lmErrorChannel, flags.ControlMode, flags.SkipAmtCertCheck),
+		data:             lmDataChannel,
+		errors:           lmErrorChannel,
+		waitGroup:        &sync.WaitGroup{},
+		localTlsEnforced: flags.LocalTlsEnforced,
 	}
 
 	// TEST CONNECTION TO SEE IF LMS EXISTS
+	log.Debugf("Attempting LMS connection on port %s (TLS: %t)", port, flags.LocalTlsEnforced)
+
 	err := client.localManagement.Connect()
 	if err != nil {
 		if flags.LocalTlsEnforced {
 			return client, utils.LMSConnectionFailed
 		}
 		// client.localManagement.Close()
-		log.Trace("LMS not running.  Using LME Connection\n")
+		log.Debug("LMS not running, using LME Connection")
 
 		client.localManagement = lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
 		client.isLME = true
 		client.localManagement.Initialize()
 	} else {
-		log.Trace("Using existing LMS\n")
+		log.Debug("Using existing LMS connection")
 		client.localManagement.Close()
 	}
 
@@ -71,7 +79,7 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	return client, err
 }
 
-func (e Executor) MakeItSo(messageRequest Message) {
+func (e *Executor) MakeItSo(messageRequest Message) {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -106,7 +114,7 @@ func (e Executor) MakeItSo(messageRequest Message) {
 	}
 }
 
-func (e Executor) HandleInterrupt() {
+func (e *Executor) HandleInterrupt() {
 	log.Info("interrupt")
 
 	// Cleanly close the connection by sending a close message and then
@@ -127,7 +135,7 @@ func (e Executor) HandleInterrupt() {
 	}
 }
 
-func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
+func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	msgPayload := e.server.ProcessMessage(dataFromServer)
 	if msgPayload == nil {
 		return true
@@ -135,46 +143,95 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return false
 	}
 
-	// send channel open
-	err := e.localManagement.Connect()
-	go e.localManagement.Listen()
+	// Detect port_switch sentinel from ProcessMessage
+	if strings.HasPrefix(string(msgPayload), PortSwitchSentinel) {
+		jsonData := string(msgPayload)[len(PortSwitchSentinel):]
 
-	if err != nil {
-		log.Error(err)
+		err := e.handlePortSwitch(jsonData)
+		if err != nil {
+			log.Error("Port switch failed: ", err)
 
-		return true
+			return true
+		}
+
+		return false
 	}
 
-	if e.isLME {
-		// wait for channel open confirmation
-		e.waitGroup.Wait()
-		log.Trace("Channel open confirmation received")
-	} else {
-		// with LMS we open/close websocket on every request, so setup close for when we're done handling LMS data
-		defer e.localManagement.Close()
+	// Detect TLS ClientHello - need to close old connection for new handshake
+	isTLSClientHello := len(msgPayload) >= 6 && msgPayload[0] == 0x16 && msgPayload[5] == 0x01
+	if isTLSClientHello && e.lmConnected {
+		e.localManagement.Close()
+		e.lmConnected = false
 	}
 
-	// send our data to LMX
-	err = e.localManagement.Send(msgPayload)
+	if !e.localTlsEnforced || !e.lmConnected {
+		err := e.localManagement.Connect()
+		if err != nil {
+			log.Error(err)
+
+			return true
+		}
+
+		e.lmConnected = true
+
+		if e.isLME {
+			go e.localManagement.Listen()
+
+			e.waitGroup.Wait()
+		}
+	}
+
+	if !e.isLME {
+		go e.localManagement.Listen()
+	}
+
+	err := e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
-
 		return true
 	}
 
 	for {
 		select {
 		case dataFromLM := <-e.data:
+			if len(dataFromLM) == 0 {
+				e.localManagement.Close()
+				e.lmConnected = false
+
+				if e.localTlsEnforced {
+					log.Warn("Empty response from LMS - sending connection_reset")
+
+					resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
+					e.server.Send(resetMsg)
+				}
+
+				return false
+			}
+
 			e.HandleDataFromLM(dataFromLM)
 
 			if e.isLME {
 				e.waitGroup.Wait()
 			}
 
+			if !e.localTlsEnforced {
+				e.localManagement.Close()
+				e.lmConnected = false
+			}
+
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
-				log.Error("error from LMS")
+				log.Error("LMS error: ", errFromLMS)
+
+				if e.localTlsEnforced {
+					e.localManagement.Close()
+					e.lmConnected = false
+					resetMsg := e.payload.CreateMessageResponse([]byte("lms_error"), MethodConnectionReset)
+					e.server.Send(resetMsg)
+
+					return false
+				}
 
 				return true
 			}
@@ -182,12 +239,86 @@ func (e Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	}
 }
 
-func (e Executor) HandleDataFromLM(data []byte) {
-	if len(data) > 0 {
-		log.Debug("received data from LMX")
-		log.Trace(string(data))
+func (e *Executor) handlePortSwitch(jsonData string) error {
+	var psPayload PortSwitchPayload
+	if err := json.Unmarshal([]byte(jsonData), &psPayload); err != nil {
+		return err
+	}
 
-		err := e.server.Send(e.payload.CreateMessageResponse(data))
+	log.Infof("Port switch: closing LMS connection, waiting %ds for AMT TLS restart", psPayload.Delay)
+
+	// Close existing LMS connection
+	e.localManagement.Close()
+	e.lmConnected = false
+
+	// Wait for AMT to restart its TLS subsystem
+	time.Sleep(time.Duration(psPayload.Delay) * time.Second)
+
+	// Create new LMS connection channels
+	lmDataChannel := make(chan []byte)
+	lmErrorChannel := make(chan error)
+
+	// Create new plain TCP LMS connection on the TLS port.
+	// rpc-go only passes raw bytes — the actual TLS handshake is handled
+	// by RPS's TLSTunnelManager through the WebSocket tunnel.
+	newLM := lm.NewLMSConnection(
+		utils.LMSAddress,
+		psPayload.Port,
+		true, // useTls flag (for read timeouts and tls_data method)
+		lmDataChannel,
+		lmErrorChannel,
+		0,     // controlMode not needed for port switch
+		false, // skipCertCheck not relevant — no TLS at this layer
+	)
+
+	maxRetries := 5
+
+	var connectErr error
+
+	for i := 0; i < maxRetries; i++ {
+		connectErr = newLM.Connect()
+		if connectErr == nil {
+			break
+		}
+
+		log.Warnf("Port switch: LMS connect attempt %d/%d failed: %v", i+1, maxRetries, connectErr)
+		time.Sleep(5 * time.Second)
+	}
+
+	if connectErr != nil {
+		return connectErr
+	}
+
+	// Replace the LMS connection
+	e.localManagement = newLM
+	e.data = lmDataChannel
+	e.errors = lmErrorChannel
+	e.lmConnected = true
+	e.localTlsEnforced = true
+	e.localManagement.Close() // Close test connection, will reconnect on next message
+	e.lmConnected = false
+
+	log.Info("Port switch: successfully switched to port ", psPayload.Port)
+
+	// Send port_switch_ack back to RPS
+	ackMsg := e.payload.CreateMessageResponse([]byte("ok"), MethodPortSwitchAck)
+	if err := e.server.Send(ackMsg); err != nil {
+		return err
+	}
+
+	log.Info("Port switch: sent port_switch_ack to RPS")
+
+	return nil
+}
+
+func (e *Executor) HandleDataFromLM(data []byte) {
+	if len(data) > 0 {
+		method := "response"
+		if e.localTlsEnforced {
+			method = MethodTLSData
+		}
+
+		err := e.server.Send(e.payload.CreateMessageResponse(data, method))
 		if err != nil {
 			log.Error(err)
 		}
