@@ -122,6 +122,7 @@ type Flags struct {
 	SOL                                 bool
 	IDER                                bool
 	LocalTlsEnforced                    bool
+	TLSTunnel                           bool
 	ControlMode                         int
 }
 

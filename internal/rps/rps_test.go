@@ -5,6 +5,8 @@
 package rps
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -257,4 +259,32 @@ func TestProcessMessageForLMS(t *testing.T) {
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), decodedMessage)
+}
+
+func TestProcessMessageTLSData(t *testing.T) {
+	rawPayload := []byte("client_hello")
+	encodedPayload := base64.StdEncoding.EncodeToString(rawPayload)
+	activation := `{
+        "method": "tls_data",
+        "payload": "` + encodedPayload + `"
+    }`
+
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	assert.Equal(t, rawPayload, decodedMessage)
+}
+
+func TestProcessMessagePortSwitch(t *testing.T) {
+	portSwitchJSON := `{"port":"16993","delay":50}`
+	activation, err := json.Marshal(Message{
+		Method:  MethodPortSwitch,
+		Payload: portSwitchJSON,
+	})
+	assert.NoError(t, err)
+
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+	decodedMessage := server.ProcessMessage(activation)
+	assert.Equal(t, []byte(PortSwitchSentinel+portSwitchJSON), decodedMessage)
 }
