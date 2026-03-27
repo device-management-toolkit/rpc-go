@@ -73,6 +73,8 @@ func (cmd *ActivateCmd) Validate() error {
 	log.Trace("Entering Validate method of ActivateCmd")
 
 	// Determine if caller intends local activation (explicit --local or local-only flags)
+	cmd.URL = normalizeActivateURL(cmd.URL)
+
 	localIntent := cmd.Local || cmd.hasLocalActivationFlags()
 
 	// Resolve local-vs-remote precedence when both are present.
@@ -81,7 +83,6 @@ func (cmd *ActivateCmd) Validate() error {
 	if localIntent && cmd.URL != "" {
 		lowerURL := strings.ToLower(cmd.URL)
 		if strings.HasPrefix(lowerURL, "http://") || strings.HasPrefix(lowerURL, "https://") {
-			log.Warn("Both --url and local activation flags detected; proceeding with local activation via http://")
 			// Clear URL so we don't trigger HTTP profile fullflow during local runs (prevents recursion)
 			cmd.URL = ""
 		}
@@ -201,6 +202,25 @@ func (cmd *ActivateCmd) hasLocalActivationFlags() bool {
 		cmd.ProvisioningCert != "" || cmd.ProvisioningCertPwd != "" || cmd.SkipIPRenew
 }
 
+func normalizeActivateURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+
+	u, err := url.Parse(value)
+	if err != nil {
+		return value
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if (scheme == "http" || scheme == "https" || scheme == "ws" || scheme == "wss") && u.Host == "" {
+		return ""
+	}
+
+	return value
+}
+
 // Run executes the activate command based on detected mode
 func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	log.Tracef("Entering Run method of ActivateCmd. Context: %s", ctx.AuthEndpoint)
@@ -210,10 +230,9 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 			return err
 		}
-
-		if err := cmd.EnsureWSMAN(ctx); err != nil {
-			return err
-		}
+		// Do not pre-create WSMAN for local activation here.
+		// LocalActivateCmd sets up its own local WSMAN transport, and doing both
+		// can trigger an extra LME/APF initialize cycle.
 	}
 	// Determine activation mode based on flags
 	if cmd.URL != "" {

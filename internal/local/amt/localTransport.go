@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -27,6 +29,8 @@ type LocalTransport struct {
 	status    chan bool
 	waitGroup *sync.WaitGroup
 }
+
+const maxChannelOpenBusyRetries = 2
 
 func NewLocalTransport() *LocalTransport {
 	lmDataChannel := make(chan []byte)
@@ -66,18 +70,62 @@ func (l *LocalTransport) Close() error {
 
 // Custom dialer function
 func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	// send channel open
-	err := l.local.Connect()
-	go l.local.Listen()
+	var err error
+	for attempt := 0; attempt <= maxChannelOpenBusyRetries; attempt++ {
+		err = l.local.Connect()
+		if err == nil {
+			break
+		}
 
-	if err != nil {
-		logrus.Error(err)
+		if !isMEIDeviceBusyError(err) || attempt == maxChannelOpenBusyRetries {
+			logrus.Error(err)
 
-		return nil, err
+			return nil, err
+		}
+
+		wait := time.Duration(attempt+1) * time.Duration(utils.HeciConnectRetryBackoff) * time.Millisecond
+		logrus.Warnf("mei busy during channel open, retry %d/%d", attempt+1, maxChannelOpenBusyRetries)
+		time.Sleep(wait)
 	}
 
-	// wait for channel open confirmation
-	l.waitGroup.Wait()
+	go l.local.Listen()
+
+	channelOpenTimeout := time.Duration(utils.LMETimerTimeout) * time.Second
+	if channelOpenTimeout <= 0 || channelOpenTimeout > utils.AMTResponseTimeout*time.Second {
+		channelOpenTimeout = utils.AMTResponseTimeout * time.Second
+	}
+
+	channelOpenTimer := time.NewTimer(channelOpenTimeout)
+
+	defer func() {
+		if !channelOpenTimer.Stop() {
+			select {
+			case <-channelOpenTimer.C:
+			default:
+			}
+		}
+	}()
+
+	channelOpenDone := make(chan struct{})
+
+	go func() {
+		defer close(channelOpenDone)
+
+		l.waitGroup.Wait()
+	}()
+
+	select {
+	case <-channelOpenDone:
+	case <-channelOpenTimer.C:
+		// Close the LME connection so the goroutine waiting on WaitGroup can
+		// unblock and the next request can start with a clean state.
+		if closeErr := l.Close(); closeErr != nil {
+			logrus.Errorf("failed to close LME connection after channel open timeout: %v", closeErr)
+		}
+
+		return nil, fmt.Errorf("timeout waiting for LME channel open confirmation after %s", channelOpenTimeout)
+	}
+
 	logrus.Trace("Channel open confirmation received")
 	// Serialize the HTTP request to raw form
 	rawRequest, err := serializeHTTPRequest(r)
@@ -99,6 +147,19 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
+	responseTimeout := utils.AMTResponseTimeout * time.Second
+
+	responseTimer := time.NewTimer(responseTimeout)
+
+	defer func() {
+		if !responseTimer.Stop() {
+			select {
+			case <-responseTimer.C:
+			default:
+			}
+		}
+	}()
+
 Loop:
 	for {
 		select {
@@ -116,6 +177,10 @@ Loop:
 
 				respErr = errFromLMS
 			}
+
+			break Loop
+		case <-responseTimer.C:
+			respErr = fmt.Errorf("timeout waiting for LME response after %s", responseTimeout)
 
 			break Loop
 		}
@@ -170,4 +235,14 @@ func serializeHTTPRequest(r *http.Request) ([]byte, error) {
 	}
 
 	return reqBuffer.Bytes(), nil
+}
+
+func isMEIDeviceBusyError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	return strings.Contains(errMsg, "device or resource busy") || strings.Contains(errMsg, "resource busy")
 }

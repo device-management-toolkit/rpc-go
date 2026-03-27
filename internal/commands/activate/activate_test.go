@@ -417,6 +417,18 @@ func TestActivateCmd_Validate_PrecendenceMatrix(t *testing.T) {
 			wantClearedURL: true,
 		},
 		{
+			name:           "Local CCM with placeholder HTTP URL clears URL",
+			cmd:            ActivateCmd{Local: true, CCM: true, URL: "http://"},
+			wantErr:        false,
+			wantClearedURL: true,
+		},
+		{
+			name:           "Local CCM with spaced placeholder HTTPS URL clears URL",
+			cmd:            ActivateCmd{Local: true, CCM: true, URL: "  https://  "},
+			wantErr:        false,
+			wantClearedURL: true,
+		},
+		{
 			name:           "HTTP URL remote only (no local flags) retains URL",
 			cmd:            ActivateCmd{URL: "https://server/p3"},
 			wantErr:        false,
