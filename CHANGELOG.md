@@ -1,3 +1,10 @@
+# [2.50.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.2...v2.50.0) (2026-03-28)
+
+
+### Features
+
+* enable tls tunnel for e2e tls connection for RPS <-> AMT ([a9cf653](https://github.com/device-management-toolkit/rpc-go/commit/a9cf653529c211ee60cd4b195f5c0b88c09a9ff0))
+
 ## [2.49.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.1...v2.49.2) (2026-03-20)
 
 ## [2.49.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.0...v2.49.1) (2026-02-23)
