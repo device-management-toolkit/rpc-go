@@ -336,9 +336,9 @@ func (service *LocalActivationService) Activate() error {
 
 	// Step 3: Enable AMT if needed
 
-	if err := service.enableAMT(); err != nil {
-		return err
-	}
+	// if err := service.enableAMT(); err != nil {
+	// 	return err
+	// }
 
 	// Step 4: Perform activation based on mode
 

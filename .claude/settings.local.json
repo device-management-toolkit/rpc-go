@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(find \"C:\\\\DMT\\\\Madhavi\\\\rpc-go\" -name \"*.go\" -type f -exec grep -l \"Configuration\" {})",
+      "Bash(xargs grep:*)",
+      "Bash(git config:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(grep:*)",
+      "Bash(/tmp/summary.txt:*)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
