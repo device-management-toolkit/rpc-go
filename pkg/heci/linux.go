@@ -199,6 +199,7 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	}
 
 	t := MEIConnectClientData{}
+
 	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
 	if err != nil {
 		return err
