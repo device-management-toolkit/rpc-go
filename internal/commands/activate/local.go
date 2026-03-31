@@ -409,7 +409,9 @@ func (service *LocalActivationService) enableAMT() error {
 	// Check if AMT needs to be enabled
 	changeEnabled, err := service.amtCommand.GetChangeEnabled()
 	if err != nil {
-		return fmt.Errorf("failed to get change enabled status: %w", err)
+		log.Warnf("failed to get change enabled status: %v, continuing activation", err)
+
+		return nil
 	}
 
 	if !changeEnabled.IsNewInterfaceVersion() {
