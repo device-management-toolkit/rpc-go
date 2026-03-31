@@ -6,6 +6,7 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
@@ -25,7 +26,7 @@ func LoadProfile(path string) (config.Configuration, error) {
 	// Parse YAML
 	err = yaml.Unmarshal(data, &profile)
 	if err != nil {
-		return profile, err
+		return profile, fmt.Errorf("unable to parse profile %q: the file may be encrypted, did you forget to provide the --key flag?", path)
 	}
 
 	return profile, nil
