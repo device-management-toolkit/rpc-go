@@ -6,6 +6,7 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 const (
 	amtInitializeMaxAttempts = 4
 	amtInitializeBackoff     = 2 * time.Second
+	configFilePath           = "config.yaml"
 )
 
 var sleepForAMTRetry = time.Sleep
@@ -99,7 +101,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 		kong.UsageOnError(),
 		kong.DefaultEnvars("RPC"),
 		kong.ConfigureHelp(helpOpts),
-		kong.Configuration(kongyaml.Loader, "config.yaml"),
+		kong.Configuration(kongyaml.Loader, configFilePath),
 		kong.BindToProvider(func() amt.Interface { return amtCommand }),
 	}
 
@@ -117,6 +119,12 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	}
 
 	ctx, perr := parser.Parse(parseArgs)
+
+	// Log config file presence after parsing (logging is configured by AfterApply at this point)
+	if _, statErr := os.Stat(configFilePath); statErr == nil {
+		log.Infof("Using configuration file: %s (flag values may originate from this file)", configFilePath)
+	}
+
 	if perr == nil {
 		return ctx, &cli, nil
 	}
