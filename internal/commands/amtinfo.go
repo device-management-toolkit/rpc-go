@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/list"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
@@ -33,7 +36,76 @@ import (
 const (
 	notFoundIP = "Not Found"
 	zeroIP     = "0.0.0.0"
+	zeroMAC    = "00:00:00:00:00:00"
 )
+
+// Indent constant for consistent text output spacing.
+const infoIndent = "  "
+
+// Styling for amtinfo text output.
+var (
+	infoHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("39"))
+
+	infoSepStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("236"))
+
+	infoLabelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("250")).
+			Width(30)
+
+	infoGreenStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("78"))
+
+	infoYellowStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("220"))
+
+	infoRedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("168"))
+
+	infoDimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243"))
+
+	infoCertNameStyle = lipgloss.NewStyle().
+				Bold(true)
+)
+
+func renderInfoHeader(title string) string {
+	return "\n" + infoIndent + infoHeaderStyle.Render(title) + "\n" + infoIndent +
+		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n\n"
+}
+
+func renderInfoRow(label, value string) string {
+	return infoIndent + infoLabelStyle.Render(label) + " " + styledInfoValue(value) + "\n"
+}
+
+func styledInfoValue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "enabled", "connected", "up", "active",
+		"post-provisioning", "admin control mode":
+		return infoGreenStyle.Render(value)
+	case "disabled", "not connected", "down",
+		"not activated":
+		return infoRedStyle.Render(value)
+	case "in provisioning",
+		"client control mode":
+		return infoYellowStyle.Render(value)
+	default:
+		return value
+	}
+}
+
+func indentBlock(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = prefix + line
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
 
 // AmtInfoCmd represents the amtinfo command with Kong CLI binding
 type AmtInfoCmd struct {
@@ -142,6 +214,10 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	if ctx.JsonOutput {
 		return service.OutputJSON(result)
+	}
+
+	if ctx.TableOutput {
+		return service.OutputTable(result, cmd)
 	}
 
 	return service.OutputText(result, cmd)
@@ -550,143 +626,452 @@ func (s *InfoService) OutputJSON(result *InfoResult) error {
 	return nil
 }
 
-// OutputText outputs the result in human-readable text format
-func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
+// Table styling
+var (
+	tableHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("39")).
+				Align(lipgloss.Center)
+
+	tableCellStyle = lipgloss.NewStyle().
+			PaddingLeft(1).
+			PaddingRight(1)
+
+	tableBorderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("238"))
+)
+
+// OutputTable outputs the result as a single styled table with Category, Flag, Property, and Value columns
+func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
+	type row struct {
+		category, flag, property, value string
+	}
+
+	var rows []row
+
+	add := func(cat, flag, prop, val string) {
+		rows = append(rows, row{cat, flag, prop, val})
+	}
+
+	// --- Device ---
 	if (showAll || cmd.Ver) && result.AMT != "" {
-		fmt.Printf("Version\t\t\t: %s\n", result.AMT)
+		add("Device", "-r", "Version", result.AMT)
 	}
 
 	if (showAll || cmd.Bld) && result.BuildNumber != "" {
-		fmt.Printf("Build Number\t\t: %s\n", result.BuildNumber)
+		add("Device", "-b", "Build Number", result.BuildNumber)
 	}
 
 	if (showAll || cmd.Sku) && result.SKU != "" {
-		fmt.Printf("SKU\t\t\t: %s\n", result.SKU)
+		add("Device", "-s", "SKU", result.SKU)
 	}
 
 	if (showAll || (cmd.Ver && cmd.Sku)) && result.Features != "" {
-		fmt.Printf("Features\t\t: %s\n", result.Features)
+		add("Device", "-r -s", "Features", result.Features)
 	}
 
 	if (showAll || cmd.UUID) && result.UUID != "" {
-		fmt.Printf("UUID\t\t\t: %s\n", result.UUID)
+		add("Device", "-u", "UUID", result.UUID)
 	}
 
 	if (showAll || cmd.Mode) && result.ControlMode != "" {
-		fmt.Printf("Control Mode\t\t: %s\n", result.ControlMode)
+		add("Device", "-m", "Control Mode", result.ControlMode)
 	}
 
 	if (showAll || cmd.ProvState) && result.ProvisioningState != "" {
-		fmt.Printf("Provisioning State\t: %s\n", result.ProvisioningState)
+		add("Device", "-p", "Provisioning State", result.ProvisioningState)
 	}
 
 	if (showAll || cmd.OpState) && result.OperationalState != "" {
-		fmt.Printf("Operational State\t: %s\n", result.OperationalState)
+		add("Device", "--operationalState", "AMT Operational State (BIOS)", result.OperationalState)
 	}
 
 	if showAll || cmd.DNS {
-		fmt.Printf("DNS Suffix\t\t: %s\n", result.DNSSuffix)
-		fmt.Printf("DNS Suffix (OS)\t\t: %s\n", result.DNSSuffixOS)
+		add("Device", "-d", "DNS Suffix", result.DNSSuffix)
+		add("Device", "-d", "DNS Suffix (OS)", result.DNSSuffixOS)
 	}
 
 	if (showAll || cmd.Hostname) && result.HostnameOS != "" {
-		fmt.Printf("Hostname (OS)\t\t: %s\n", result.HostnameOS)
+		add("Device", "--hostname", "Hostname (OS)", result.HostnameOS)
 	}
 
-	// Output RAS information
+	// --- Remote Access ---
 	if (showAll || cmd.Ras) && result.RAS != nil {
-		fmt.Printf("RAS Network\t\t: %s\n", result.RAS.NetworkStatus)
-		fmt.Printf("RAS Remote Status\t: %s\n", result.RAS.RemoteStatus)
-		fmt.Printf("RAS Trigger\t\t: %s\n", result.RAS.RemoteTrigger)
-		fmt.Printf("RAS MPS Hostname\t: %s\n", result.RAS.MPSHostname)
+		add("Remote Access", "-a", "Network", result.RAS.NetworkStatus)
+		add("Remote Access", "-a", "Remote Status", result.RAS.RemoteStatus)
+		add("Remote Access", "-a", "Trigger", result.RAS.RemoteTrigger)
+		add("Remote Access", "-a", "MPS Hostname", result.RAS.MPSHostname)
 
 		if result.RAS.MPSPort > 0 {
-			fmt.Printf("RAS MPS Port\t\t: %d\n", result.RAS.MPSPort)
+			add("Remote Access", "-a", "MPS Port", strconv.Itoa(result.RAS.MPSPort))
 		}
 	}
 
-	// Output wired adapter information
-	if (showAll || cmd.Lan) && result.WiredAdapter != nil && result.WiredAdapter.MACAddress != "00:00:00:00:00:00" {
-		fmt.Println("---Wired Adapter---")
-		fmt.Printf("DHCP Enabled\t\t: %s\n", strconv.FormatBool(result.WiredAdapter.DHCPEnabled))
-		fmt.Printf("DHCP Mode\t\t: %s\n", result.WiredAdapter.DHCPMode)
-		fmt.Printf("Link Status\t\t: %s\n", result.WiredAdapter.LinkStatus)
-		fmt.Printf("AMT IP Address\t\t: %s\n", result.WiredAdapter.IPAddress)
-		fmt.Printf("OS IP Address\t\t: %s\n", result.WiredAdapter.OsIPAddress)
-		fmt.Printf("MAC Address\t\t: %s\n", result.WiredAdapter.MACAddress)
+	// --- Wired Adapter ---
+	if (showAll || cmd.Lan) && result.WiredAdapter != nil && result.WiredAdapter.MACAddress != zeroMAC {
+		add("Wired Adapter", "-l", "DHCP Enabled", strconv.FormatBool(result.WiredAdapter.DHCPEnabled))
+		add("Wired Adapter", "-l", "DHCP Mode", result.WiredAdapter.DHCPMode)
+		add("Wired Adapter", "-l", "Link Status", result.WiredAdapter.LinkStatus)
+		add("Wired Adapter", "-l", "AMT IP Address", result.WiredAdapter.IPAddress)
+		add("Wired Adapter", "-l", "OS IP Address", result.WiredAdapter.OsIPAddress)
+		add("Wired Adapter", "-l", "MAC Address", result.WiredAdapter.MACAddress)
 	}
 
-	// Output wireless adapter information
+	// --- Wireless Adapter ---
 	if (showAll || cmd.Lan) && result.WirelessAdapter != nil {
-		fmt.Println("---Wireless Adapter---")
-		fmt.Printf("DHCP Enabled\t\t: %s\n", strconv.FormatBool(result.WirelessAdapter.DHCPEnabled))
-		fmt.Printf("DHCP Mode\t\t: %s\n", result.WirelessAdapter.DHCPMode)
-		fmt.Printf("Link Status\t\t: %s\n", result.WirelessAdapter.LinkStatus)
-		fmt.Printf("AMT IP Address\t\t: %s\n", result.WirelessAdapter.IPAddress)
-		fmt.Printf("OS IP Address\t\t: %s\n", result.WirelessAdapter.OsIPAddress)
-		fmt.Printf("MAC Address\t\t: %s\n", result.WirelessAdapter.MACAddress)
+		add("Wireless Adapter", "-l", "DHCP Enabled", strconv.FormatBool(result.WirelessAdapter.DHCPEnabled))
+		add("Wireless Adapter", "-l", "DHCP Mode", result.WirelessAdapter.DHCPMode)
+		add("Wireless Adapter", "-l", "Link Status", result.WirelessAdapter.LinkStatus)
+		add("Wireless Adapter", "-l", "AMT IP Address", result.WirelessAdapter.IPAddress)
+		add("Wireless Adapter", "-l", "OS IP Address", result.WirelessAdapter.OsIPAddress)
+		add("Wireless Adapter", "-l", "MAC Address", result.WirelessAdapter.MACAddress)
 	}
 
-	// Output UPID information
+	// --- Intel UPID ---
 	if (showAll || cmd.UPID) && result.UPID != nil {
-		fmt.Println(result.UPID.String())
+		upidStr := result.UPID.String()
+		for _, line := range strings.Split(upidStr, "\n") {
+			if strings.HasPrefix(line, "---") {
+				continue
+			}
+
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				label := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+
+				if label == "OEM_PLATFORM_ID_TYPE" {
+					label = "Platform ID Type"
+				}
+
+				add("Intel UPID", "--upid", label, value)
+			}
+		}
 	}
 
-	// Output certificate hashes (system certs)
+	// --- Certificate Hashes ---
+	if showAll || cmd.Cert {
+		for name, cert := range result.CertificateHashes {
+			flags := ""
+			if cert.IsDefault {
+				flags += "Default "
+			}
+
+			if cert.IsActive {
+				flags += "Active"
+			}
+
+			info := strings.TrimSpace(flags)
+			if info != "" {
+				info += " | "
+			}
+
+			info += cert.Algorithm + ": " + cert.Hash
+
+			add("Certificates", "-c", name, info)
+		}
+	}
+
+	// --- User Certificates ---
+	if cmd.All || cmd.UserCert {
+		for name, cert := range result.UserCerts {
+			flags := ""
+			if cert.TrustedRootCertificate {
+				flags += "TrustedRoot "
+			}
+
+			if cert.ReadOnlyCertificate {
+				flags += "ReadOnly"
+			}
+
+			add("User Certs", "--userCert", name, strings.TrimSpace(flags))
+		}
+	}
+
+	if len(rows) == 0 {
+		fmt.Println()
+		fmt.Println(infoDimStyle.Render(infoIndent + "No matching information found."))
+		fmt.Println()
+
+		return nil
+	}
+
+	// Collapse duplicate category and flag labels within each group,
+	// and insert empty separator rows between categories.
+	var tableRows [][]string
+
+	separatorRows := map[int]bool{}
+	prevCat := ""
+	prevFlag := ""
+
+	for _, r := range rows {
+		cat := r.category
+		flag := r.flag
+
+		if cat == prevCat {
+			if flag == prevFlag {
+				flag = ""
+			} else {
+				prevFlag = flag
+			}
+
+			cat = ""
+		} else {
+			// Insert a blank separator row before each new category (except the first)
+			if prevCat != "" {
+				separatorRows[len(tableRows)] = true
+				tableRows = append(tableRows, []string{"", "", "", ""})
+			}
+
+			prevCat = cat
+			prevFlag = flag
+		}
+
+		tableRows = append(tableRows, []string{cat, flag, r.property, r.value})
+	}
+
+	flagStyle := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		Foreground(lipgloss.Color("243"))
+
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Height(0)
+
+	t := table.New().
+		Headers("Category", "Flag", "Property", "Value").
+		Rows(tableRows...).
+		BorderStyle(tableBorderStyle).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return tableHeaderStyle
+			}
+
+			if separatorRows[row] {
+				return separatorStyle
+			}
+
+			switch col {
+			case 0:
+				return tableCellStyle.Foreground(lipgloss.Color("39")).Bold(true)
+			case 1:
+				return flagStyle
+			default:
+				return tableCellStyle
+			}
+		})
+
+	fmt.Println()
+	fmt.Println(t.Render())
+	fmt.Println()
+
+	return nil
+}
+
+// OutputText outputs the result in styled human-readable text format
+func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
+	showAll := cmd.All || cmd.HasNoFlagsSet()
+
+	var b strings.Builder
+
+	// --- Device Information ---
+	var main strings.Builder
+
+	if (showAll || cmd.Ver) && result.AMT != "" {
+		main.WriteString(renderInfoRow("Version", result.AMT))
+	}
+
+	if (showAll || cmd.Bld) && result.BuildNumber != "" {
+		main.WriteString(renderInfoRow("Build Number", result.BuildNumber))
+	}
+
+	if (showAll || cmd.Sku) && result.SKU != "" {
+		main.WriteString(renderInfoRow("SKU", result.SKU))
+	}
+
+	if (showAll || (cmd.Ver && cmd.Sku)) && result.Features != "" {
+		main.WriteString(renderInfoRow("Features", result.Features))
+	}
+
+	if (showAll || cmd.UUID) && result.UUID != "" {
+		main.WriteString(renderInfoRow("UUID", result.UUID))
+	}
+
+	if (showAll || cmd.Mode) && result.ControlMode != "" {
+		main.WriteString(renderInfoRow("Control Mode", result.ControlMode))
+	}
+
+	if (showAll || cmd.ProvState) && result.ProvisioningState != "" {
+		main.WriteString(renderInfoRow("Provisioning State", result.ProvisioningState))
+	}
+
+	if (showAll || cmd.OpState) && result.OperationalState != "" {
+		main.WriteString(renderInfoRow("AMT Operational State (BIOS)", result.OperationalState))
+	}
+
+	if showAll || cmd.DNS {
+		main.WriteString(renderInfoRow("DNS Suffix", result.DNSSuffix))
+		main.WriteString(renderInfoRow("DNS Suffix (OS)", result.DNSSuffixOS))
+	}
+
+	if (showAll || cmd.Hostname) && result.HostnameOS != "" {
+		main.WriteString(renderInfoRow("Hostname (OS)", result.HostnameOS))
+	}
+
+	if main.Len() > 0 {
+		b.WriteString(renderInfoHeader("AMT Device Information"))
+		b.WriteString(main.String())
+	}
+
+	// --- Remote Access ---
+	if (showAll || cmd.Ras) && result.RAS != nil {
+		b.WriteString(renderInfoHeader("Remote Access"))
+		b.WriteString(renderInfoRow("Network", result.RAS.NetworkStatus))
+		b.WriteString(renderInfoRow("Remote Status", result.RAS.RemoteStatus))
+		b.WriteString(renderInfoRow("Trigger", result.RAS.RemoteTrigger))
+		b.WriteString(renderInfoRow("MPS Hostname", result.RAS.MPSHostname))
+
+		if result.RAS.MPSPort > 0 {
+			b.WriteString(renderInfoRow("MPS Port", strconv.Itoa(result.RAS.MPSPort)))
+		}
+	}
+
+	// --- Wired Adapter ---
+	if (showAll || cmd.Lan) && result.WiredAdapter != nil && result.WiredAdapter.MACAddress != zeroMAC {
+		b.WriteString(renderInfoHeader("Wired Adapter"))
+		b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WiredAdapter.DHCPEnabled)))
+		b.WriteString(renderInfoRow("DHCP Mode", result.WiredAdapter.DHCPMode))
+		b.WriteString(renderInfoRow("Link Status", result.WiredAdapter.LinkStatus))
+		b.WriteString(renderInfoRow("AMT IP Address", result.WiredAdapter.IPAddress))
+		b.WriteString(renderInfoRow("OS IP Address", result.WiredAdapter.OsIPAddress))
+		b.WriteString(renderInfoRow("MAC Address", result.WiredAdapter.MACAddress))
+	}
+
+	// --- Wireless Adapter ---
+	if (showAll || cmd.Lan) && result.WirelessAdapter != nil {
+		b.WriteString(renderInfoHeader("Wireless Adapter"))
+		b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WirelessAdapter.DHCPEnabled)))
+		b.WriteString(renderInfoRow("DHCP Mode", result.WirelessAdapter.DHCPMode))
+		b.WriteString(renderInfoRow("Link Status", result.WirelessAdapter.LinkStatus))
+		b.WriteString(renderInfoRow("AMT IP Address", result.WirelessAdapter.IPAddress))
+		b.WriteString(renderInfoRow("OS IP Address", result.WirelessAdapter.OsIPAddress))
+		b.WriteString(renderInfoRow("MAC Address", result.WirelessAdapter.MACAddress))
+	}
+
+	// --- Intel UPID ---
+	if (showAll || cmd.UPID) && result.UPID != nil {
+		b.WriteString(renderInfoHeader("Intel UPID"))
+
+		upidStr := result.UPID.String()
+		for _, line := range strings.Split(upidStr, "\n") {
+			if strings.HasPrefix(line, "---") {
+				continue
+			}
+
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				label := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+
+				if label == "OEM_PLATFORM_ID_TYPE" {
+					label = "Platform ID Type"
+				}
+
+				b.WriteString(renderInfoRow(label, value))
+			}
+		}
+	}
+
+	// --- Certificate Hashes ---
 	if showAll || cmd.Cert {
 		if len(result.CertificateHashes) > 0 {
-			fmt.Println("---Certificate Hashes---")
+			b.WriteString(renderInfoHeader("Certificate Hashes"))
+
+			l := list.New().
+				EnumeratorStyle(infoDimStyle).
+				ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
+					return lipgloss.NewStyle()
+				})
 
 			for name, cert := range result.CertificateHashes {
-				fmt.Printf("%s", name)
-
-				if cert.IsDefault && cert.IsActive {
-					fmt.Printf("  (Default, Active)")
-				} else if cert.IsDefault {
-					fmt.Printf("  (Default)")
-				} else if cert.IsActive {
-					fmt.Printf("  (Active)")
+				var flags []string
+				if cert.IsDefault {
+					flags = append(flags, "Default")
 				}
 
-				fmt.Println()
-				fmt.Printf("   %s: %s\n", cert.Algorithm, cert.Hash)
+				if cert.IsActive {
+					flags = append(flags, "Active")
+				}
+
+				title := infoCertNameStyle.Render(name)
+				if len(flags) > 0 {
+					title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
+				}
+
+				sub := list.New(infoDimStyle.Render(cert.Algorithm + ": " + cert.Hash)).
+					Enumerator(func(_ list.Items, _ int) string { return "" })
+
+				l.Item(title).Item(sub)
 			}
+
+			b.WriteString(indentBlock(l.String(), infoIndent) + "\n")
 		} else if cmd.Cert {
-			fmt.Println("---No Certificate Hashes Found---")
+			b.WriteString(renderInfoHeader("Certificate Hashes"))
+			b.WriteString(infoIndent + infoDimStyle.Render("No certificate hashes found") + "\n")
 		}
 	}
 
-	// Output user certificates (separate from system certs)
+	// --- User Certificates ---
 	if cmd.All || cmd.UserCert {
 		if len(result.UserCerts) > 0 {
-			fmt.Println("---Public Key Certs---")
+			b.WriteString(renderInfoHeader("Public Key Certificates"))
+
+			l := list.New().
+				EnumeratorStyle(infoDimStyle).
+				ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
+					return lipgloss.NewStyle()
+				})
 
 			for name, cert := range result.UserCerts {
-				fmt.Printf("%s", name)
-
-				if cert.TrustedRootCertificate && cert.ReadOnlyCertificate {
-					fmt.Printf("  (TrustedRoot, ReadOnly)")
-				} else if cert.TrustedRootCertificate {
-					fmt.Printf("  (TrustedRoot)")
-				} else if cert.ReadOnlyCertificate {
-					fmt.Printf("  (ReadOnly)")
+				var flags []string
+				if cert.TrustedRootCertificate {
+					flags = append(flags, "TrustedRoot")
 				}
 
-				fmt.Println()
+				if cert.ReadOnlyCertificate {
+					flags = append(flags, "ReadOnly")
+				}
+
+				title := infoCertNameStyle.Render(name)
+				if len(flags) > 0 {
+					title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
+				}
+
+				l.Item(title)
 			}
+
+			b.WriteString(indentBlock(l.String(), infoIndent) + "\n")
 		} else if cmd.UserCert {
-			fmt.Println("---No Public Key Certs Found---")
+			b.WriteString(renderInfoHeader("Public Key Certificates"))
+			b.WriteString(infoIndent + infoDimStyle.Render("No public key certificates found") + "\n")
 		}
 	}
+
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
+
+	fmt.Print(b.String())
 
 	return nil
 }
 
 // getOSIPAddress gets the OS IP address for a given MAC address
 func (s *InfoService) getOSIPAddress(macAddr string) string {
-	if macAddr == "00:00:00:00:00:00" {
+	if macAddr == zeroMAC {
 		return "0.0.0.0"
 	}
 

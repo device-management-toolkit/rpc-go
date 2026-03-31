@@ -6,18 +6,22 @@
 package cli
 
 import (
+	"os"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/diagnostics"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/muesli/termenv"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
 
 const (
@@ -33,6 +37,8 @@ type Globals struct {
 
 	LogLevel         string `help:"Set log level" default:"info" enum:"trace,debug,info,warn,error,fatal,panic"`
 	JsonOutput       bool   `help:"Output in JSON format" name:"json" short:"j"`
+	TableOutput      bool   `help:"Output in table format" name:"table" short:"t"`
+	NoColor          bool   `help:"Disable colored output" name:"no-color" env:"NO_COLOR"`
 	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
 	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections (insecure)" name:"skip-cert-check" short:"n"`
 	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS (insecure)" name:"skip-amt-cert-check"`
@@ -81,6 +87,16 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 			DisableColors: true,
 			FullTimestamp: true,
 		})
+	}
+
+	// Set color profile explicitly in both branches so behavior is deterministic
+	// per invocation (e.g., tests calling Parse multiple times in-process).
+	if g.NoColor || !term.IsTerminal(int(os.Stdout.Fd())) {
+		g.NoColor = true
+
+		lipgloss.SetColorProfile(termenv.Ascii)
+	} else {
+		lipgloss.SetColorProfile(termenv.ColorProfile())
 	}
 
 	return nil
@@ -202,6 +218,8 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		ControlMode:      controlMode,
 		LogLevel:         cli.LogLevel,
 		JsonOutput:       cli.JsonOutput,
+		TableOutput:      cli.TableOutput,
+		NoColor:          cli.NoColor,
 		Verbose:          cli.Verbose,
 		SkipCertCheck:    cli.SkipCertCheck,
 		SkipAMTCertCheck: cli.SkipAMTCertCheck,
