@@ -1,3 +1,10 @@
+# [3.0.0-beta.11](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.10...v3.0.0-beta.11) (2026-03-31)
+
+
+### Bug Fixes
+
+* get change enabled no longer prevents activation ([1b66b58](https://github.com/device-management-toolkit/rpc-go/commit/1b66b588db81a48c5b9d449fea553707b87815bc))
+
 # [3.0.0-beta.10](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.9...v3.0.0-beta.10) (2026-03-26)
 
 # [3.0.0-beta.9](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.8...v3.0.0-beta.9) (2026-03-19)

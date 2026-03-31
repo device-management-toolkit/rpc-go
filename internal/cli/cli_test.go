@@ -74,6 +74,7 @@ func TestParse(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, ctx)
 			assert.NotNil(t, cli)
+
 			if tt.expected != "" {
 				// Check that the correct command was selected
 				assert.Equal(t, tt.expected, ctx.Selected().Name)
