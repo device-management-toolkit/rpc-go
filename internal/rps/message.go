@@ -60,6 +60,7 @@ type MessagePayload struct {
 	HostnameInfo      flags.HostnameInfo    `json:"hostnameInfo"`
 	FriendlyName      string                `json:"friendlyName,omitempty"`
 	TLSEnforced       bool                  `json:"tlsEnforced,omitempty"`
+	TLSTunnel         bool                  `json:"tlsTunnel,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -67,6 +68,22 @@ const MethodTLSData = "tls_data"
 
 // MethodConnectionReset notifies RPS that the LMS connection was closed and needs to be re-established
 const MethodConnectionReset = "connection_reset"
+
+// MethodPortSwitch is sent by RPS to tell rpc-go to switch LMS to a TLS port
+const MethodPortSwitch = "port_switch"
+
+// MethodPortSwitchAck is sent by rpc-go to confirm it has reconnected on the TLS port
+const MethodPortSwitchAck = "port_switch_ack"
+
+// PortSwitchSentinel is the prefix used to detect port_switch payloads in HandleDataFromRPS
+const PortSwitchSentinel = "port_switch:"
+
+// PortSwitchPayload is the JSON payload from RPS's port_switch message
+type PortSwitchPayload struct {
+	Port     string `json:"port"`
+	RootCert string `json:"rootCert"`
+	Delay    int    `json:"delay"`
+}
 
 func NewPayload() Payload {
 	return Payload{
@@ -233,6 +250,7 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 
 	payload.FriendlyName = flags.FriendlyName
 	payload.TLSEnforced = flags.LocalTlsEnforced
+	payload.TLSTunnel = flags.TLSTunnel
 
 	log.Debug("Creating initial message request")
 	log.Debugf("  AMT Version: %s, Build: %s, SKU: %s", payload.Version, payload.Build, payload.SKU)

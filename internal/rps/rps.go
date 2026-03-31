@@ -219,6 +219,13 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 		return msgPayload
 	}
 
+	// Handle port_switch - RPS is telling us to switch LMS connection to TLS
+	if activation.Method == MethodPortSwitch {
+		log.Info("Received port_switch from RPS")
+
+		return []byte(PortSwitchSentinel + activation.Payload)
+	}
+
 	statusMessage := StatusMessage{}
 
 	switch activation.Method {

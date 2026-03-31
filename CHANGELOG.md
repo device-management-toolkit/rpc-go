@@ -1,9 +1,18 @@
+# [2.50.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.2...v2.50.0) (2026-03-28)
+
+
+### Features
+
+* enable tls tunnel for e2e tls connection for RPS <-> AMT ([a9cf653](https://github.com/device-management-toolkit/rpc-go/commit/a9cf653529c211ee60cd4b195f5c0b88c09a9ff0))
+
+## [2.49.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.1...v2.49.2) (2026-03-20)
+
 ## [2.49.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.0...v2.49.1) (2026-02-23)
 
 
 ### Bug Fixes
 
-* prevent crash when MEI driver on fresh Windows 11 install is not updated ([4cbec7f](https://github.com/device-management-toolkit/rpc-go/commit/4cbec7f5a0035d6e6a9cb4077d546f10ed9c1f68))
+* prevent crash when MEI driver on fresh Windows 11 install is not updated ([4cbec7f](https://github.com/device-management-toolkit/rpc-go/commit/4cbec7f5a0035d6e6a9cb4077d546f10ed9c1f68)).
 
 # [2.49.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.16...v2.49.0) (2026-02-17)
 
