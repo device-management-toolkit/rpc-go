@@ -86,7 +86,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
 			logrus.Error(err)
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
@@ -109,7 +109,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			g.localTransport = NewLocalTransport()
 			clientParams.Transport = g.localTransport
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 			con.Close()
 		}
 	}

@@ -34,6 +34,7 @@ type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
+	HECIAvailable    bool               `kong:"-"` // Whether HECI/MEI driver is accessible
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
@@ -128,25 +129,57 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		backoff     = 4 * time.Second
 	)
 
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	// HECI requires admin — fail fast when not elevated instead of retrying.
+	if !utils.IsElevated() {
+		if cmd.SkipWSMANSetup {
+			// amtinfo: degrade gracefully, show OS-level data only
+			cmd.ControlMode = -1
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		return utils.IncorrectPermissions
+	}
+
+	effectiveMaxAttempts := maxAttempts
+	if cmd.SkipWSMANSetup {
+		effectiveMaxAttempts = 1
+	}
+
+	for attempt := 1; attempt <= effectiveMaxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
 		if err == nil {
 			break
 		}
 
-		if attempt < maxAttempts {
-			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
+		if attempt < effectiveMaxAttempts {
+			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, effectiveMaxAttempts, err, backoff)
 			time.Sleep(backoff)
 
 			continue
 		}
 
-		log.Error("Failed to get control mode: ", err)
+		// For commands that tolerate missing HECI (e.g. amtinfo), degrade gracefully
+		if cmd.SkipWSMANSetup {
+			log.Warn("HECI not available, AMT data will be limited")
 
-		return fmt.Errorf("failed to get control mode: %w", err)
+			cmd.ControlMode = -1
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		log.Error("Failed to execute due to access issues. " +
+			"Please ensure that Intel ME is present, " +
+			"the MEI driver is installed, " +
+			"and the runtime has administrator or root privileges.")
+
+		return utils.HECIDriverNotDetected
 	}
 
 	cmd.ControlMode = controlMode
+	cmd.HECIAvailable = true
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
 	resp, _ := amtCommand.GetChangeEnabled()
@@ -156,7 +189,6 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		log.Info("TLS is enforced on local ports")
 	}
 
-	// We no longer build WSMAN here. Control mode + TLS enforcement only.
 	cmd.afterApplied = true
 
 	return nil

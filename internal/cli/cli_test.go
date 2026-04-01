@@ -6,9 +6,7 @@
 package cli
 
 import (
-	"errors"
 	"testing"
-	"time"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
@@ -168,46 +166,22 @@ func TestGlobalsBeforeApply(t *testing.T) {
 	}
 }
 
-func TestInitializeAMTWithRetry_SucceedsAfterRetry(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockAMT := mock.NewMockInterface(ctrl)
-
-	firstErr := errors.New("temporary initialize failure")
-	mockAMT.EXPECT().Initialize().Return(firstErr)
-	mockAMT.EXPECT().Initialize().Return(nil)
-
-	originalSleep := sleepForAMTRetry
-	sleepForAMTRetry = func(time.Duration) {}
-
-	defer func() {
-		sleepForAMTRetry = originalSleep
-	}()
-
-	err := initializeAMTWithRetry(mockAMT)
-	assert.NoError(t, err)
+func TestHasCommand(t *testing.T) {
+	assert.False(t, hasCommand([]string{"rpc"}))
+	assert.False(t, hasCommand([]string{"rpc", "--json"}))
+	assert.False(t, hasCommand([]string{"rpc", "--lmsaddress", "127.0.0.1"}))
+	assert.False(t, hasCommand([]string{"rpc", "--password", "secret", "--json"}))
+	assert.False(t, hasCommand([]string{"rpc", "--lmsaddress=127.0.0.1"}))
+	assert.False(t, hasCommand([]string{"rpc", "--json", "unknowncmd"}))
+	assert.True(t, hasCommand([]string{"rpc", "amtinfo"}))
+	assert.True(t, hasCommand([]string{"rpc", "--json", "version"}))
+	assert.True(t, hasCommand([]string{"rpc", "--lmsaddress", "127.0.0.1", "activate"}))
+	assert.True(t, hasCommand([]string{"rpc", "diag"}))
 }
 
-func TestInitializeAMTWithRetry_FailsAfterMaxAttempts(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockAMT := mock.NewMockInterface(ctrl)
-
-	initErr := errors.New("persistent initialize failure")
-	for i := 0; i < amtInitializeMaxAttempts; i++ {
-		mockAMT.EXPECT().Initialize().Return(initErr)
-	}
-
-	originalSleep := sleepForAMTRetry
-	sleepForAMTRetry = func(time.Duration) {}
-
-	defer func() {
-		sleepForAMTRetry = originalSleep
-	}()
-
-	err := initializeAMTWithRetry(mockAMT)
-	assert.Error(t, err)
-	assert.EqualError(t, err, initErr.Error())
+func TestHasFlag(t *testing.T) {
+	assert.True(t, hasFlag([]string{"rpc", "--help"}, "--help", "-h"))
+	assert.True(t, hasFlag([]string{"rpc", "-h"}, "--help", "-h"))
+	assert.False(t, hasFlag([]string{"rpc", "amtinfo"}, "--help", "-h"))
+	assert.True(t, hasFlag([]string{"rpc", "amtinfo", "--help"}, "--help", "-h"))
 }
