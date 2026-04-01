@@ -6,9 +6,10 @@
 package cli
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
@@ -23,13 +24,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 )
-
-const (
-	amtInitializeMaxAttempts = 4
-	amtInitializeBackoff     = 2 * time.Second
-)
-
-var sleepForAMTRetry = time.Sleep
 
 // Global flags that apply to all commands
 type Globals struct {
@@ -160,62 +154,92 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 	return nil
 }
 
-// Execute runs the parsed command with proper context
-func Execute(args []string) error {
-	// Check AMT access first
-	amtCommand := amt.NewAMTCommand()
-	if err := initializeAMTWithRetry(amtCommand); err != nil {
-		log.Error("Failed to execute due to access issues. " +
-			"Please ensure that Intel ME is present, " +
-			"the MEI driver is installed, " +
-			"and the runtime has administrator or root privileges.")
-
-		return err
-	}
-
-	return ExecuteWithAMT(args, amtCommand)
+// knownCommands lists the valid top-level command names for hasCommand detection.
+var knownCommands = map[string]bool{
+	"amtinfo": true, "version": true, "activate": true,
+	"deactivate": true, "configure": true, "diagnostics": true, "diag": true,
 }
 
-func initializeAMTWithRetry(amtCommand amt.Interface) error {
-	var err error
-
-	for attempt := 1; attempt <= amtInitializeMaxAttempts; attempt++ {
-		err = amtCommand.Initialize()
-		if err == nil {
-			return nil
+// hasCommand checks if args contain a recognized command name.
+func hasCommand(args []string) bool {
+	for _, arg := range args[1:] {
+		if knownCommands[arg] {
+			return true
 		}
+	}
 
-		if attempt < amtInitializeMaxAttempts {
-			log.Warnf("AMT initialize failed (attempt %d/%d): %v. Retrying in %s...", attempt, amtInitializeMaxAttempts, err, amtInitializeBackoff)
-			sleepForAMTRetry(amtInitializeBackoff)
+	return false
+}
+
+// hasFlag checks if any of the given flags appear in args.
+func hasFlag(args []string, flags ...string) bool {
+	for _, arg := range args[1:] {
+		for _, flag := range flags {
+			if arg == flag {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// Execute runs the parsed command with proper context.
+// HECI initialization is handled by AMTBaseCmd.AfterApply within Kong's
+// lifecycle — commands that don't embed AMTBaseCmd (e.g. version) never
+// touch HECI, and amtinfo degrades gracefully when HECI is unavailable.
+func Execute(args []string) error {
+	// Default to amtinfo when no command is specified,
+	// but let --help/-h pass through so Kong shows the full command list.
+	if !hasCommand(args) && !hasFlag(args, "--help", "-h") {
+		newArgs := make([]string, 0, len(args)+1)
+		newArgs = append(newArgs, args[0], "amtinfo")
+		newArgs = append(newArgs, args[1:]...)
+		args = newArgs
+	}
+
+	err := ExecuteWithAMT(args, amt.NewAMTCommand())
+
+	// If a command failed due to insufficient privileges, offer auto-elevation.
+	// Use errors.As to unwrap any Kong error wrapping.
+	var customErr utils.CustomError
+	if errors.As(err, &customErr) && customErr.Code == utils.IncorrectPermissions.Code &&
+		!utils.IsElevated() && term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Print("\nThis command requires administrator privileges. Re-run as administrator? [y/N]: ")
+
+		var response string
+
+		fmt.Scanln(&response)
+
+		if strings.EqualFold(strings.TrimSpace(response), "y") {
+			if elevErr := utils.SelfElevate(); elevErr != nil {
+				return fmt.Errorf("failed to elevate: %w", elevErr)
+			}
+
+			return nil
 		}
 	}
 
 	return err
 }
 
-// ExecuteWithAMT runs the parsed command with a provided AMT command (useful for testing)
+// ExecuteWithAMT runs the parsed command with a provided AMT command.
+// Used by the C library entry point (lib.go) which manages its own
+// pre-initialization before calling this function.
 func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
-	// Parse command line with AMT command bound for validation
 	kctx, cli, err := Parse(args, amtCommand)
 	if err != nil {
 		return err
 	}
 
-	controlMode, err := amtCommand.GetControlMode()
-	if err != nil {
-		log.Error(err)
-
-		return utils.AMTConnectionFailed
+	if kctx == nil {
+		return nil
 	}
 
-	// Create shared context
-	// Propagate AMT TLS skip preference globally for AMTBaseCmd.AfterApply
 	commands.DefaultSkipAMTCertCheck = cli.SkipAMTCertCheck
 
 	appCtx := &commands.Context{
 		AMTCommand:       amtCommand,
-		ControlMode:      controlMode,
 		LogLevel:         cli.LogLevel,
 		JsonOutput:       cli.JsonOutput,
 		TableOutput:      cli.TableOutput,
@@ -226,11 +250,6 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		TenantID:         cli.TenantID,
 		AMTPassword:      cli.AMTPassword,
 		ServerAuthFlags:  cli.ServerAuthFlags,
-	}
-
-	// Execute the selected command
-	if kctx == nil {
-		return nil
 	}
 
 	return kctx.Run(appCtx)

@@ -92,6 +92,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			mockAMT := mock.NewMockInterface(ctrl)
 			tt.setupMock(mockAMT)
 			tt.ctx.AMTCommand = mockAMT
+			tt.cmd.HECIAvailable = true
 
 			// Capture output
 			oldStdout := os.Stdout
@@ -163,7 +164,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	defer server.Close()
 
 	// Run command with --sync to test PATCH. Provide full endpoint URL.
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 
 	err := cmd.Run(ctx)
@@ -208,7 +209,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthToken = "mytoken"
 
@@ -262,7 +263,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	defer server.Close()
 
 	// Provide full devices endpoint; auth defaults will derive from this host
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "alice"
 	ctx.AuthPassword = "s3cr3t"
@@ -316,7 +317,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	defer server.Close()
 
 	// Provide full devices endpoint; custom auth endpoint remains respected
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "bob"
 	ctx.AuthPassword = "hunter2"

@@ -149,11 +149,16 @@ func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
 	return false
 }
 
-// Validate implements Kong's extensible validation interface for business logic validation
-func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
-	// amtinfo handles its own WSMAN setup internally via ensureWSMANClient (using LSA).
+// BeforeApply is called by Kong before AfterApply. Setting SkipWSMANSetup here
+// ensures AMTBaseCmd.AfterApply can tolerate HECI failures for amtinfo.
+func (cmd *AmtInfoCmd) BeforeApply() error {
 	cmd.SkipWSMANSetup = true
 
+	return nil
+}
+
+// Validate implements Kong's extensible validation interface for business logic validation
+func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	log.Trace("Validating amtinfo command")
 
 	// Basic validation for sync mode
@@ -191,6 +196,11 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// Use AMT-specific skip flag for WSMAN/TLS to firmware
 	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
 	service.wsman = cmd.GetWSManClient()
+	service.heciAvailable = cmd.HECIAvailable
+
+	if cmd.Sync && !cmd.HECIAvailable {
+		return fmt.Errorf("--sync requires administrator privileges and MEI driver to gather device data")
+	}
 
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
@@ -217,10 +227,21 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	if ctx.TableOutput {
-		return service.OutputTable(result, cmd)
+		if err := service.OutputTable(result, cmd); err != nil {
+			return err
+		}
+	} else {
+		if err := service.OutputText(result, cmd); err != nil {
+			return err
+		}
 	}
 
-	return service.OutputText(result, cmd)
+	// Signal to Execute() that elevation would unlock more data
+	if !cmd.HECIAvailable && !utils.IsElevated() {
+		return utils.IncorrectPermissions
+	}
+
+	return nil
 }
 
 // InfoResult holds the complete AMT information result
@@ -242,6 +263,7 @@ type InfoResult struct {
 	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	CertificateHashes map[string]amt.CertHashEntry `json:"certificateHashes,omitempty"`
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
+	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
 }
 
 // UserCert represents a user certificate
@@ -261,9 +283,11 @@ type InfoService struct {
 	// skipAMTCertCheck controls TLS verification when connecting to AMT/LMS
 	skipAMTCertCheck bool
 	wsman            interfaces.WSMANer
+	heciAvailable    bool
 }
 
-// NewInfoService creates a new InfoService with the given AMT command
+// NewInfoService creates a new InfoService with the given AMT command.
+// heciAvailable defaults to true for backward compatibility with existing callers.
 func NewInfoService(amtCommand amt.Interface) *InfoService {
 	return &InfoService{
 		amtCommand:       amtCommand,
@@ -272,6 +296,7 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		localTLSEnforced: false,
 		skipAMTCertCheck: false,
 		wsman:            nil,
+		heciAvailable:    true,
 	}
 }
 
@@ -408,33 +433,43 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 	var controlModeErr error
 
-	// Get AMT version information
+	// Surface HECI availability in JSON output
+	heciFlag := s.heciAvailable
+	result.HECIAvailable = &heciFlag
+
+	// Get AMT version information (requires HECI)
 	if showAll || cmd.Ver {
-		version, err := s.amtCommand.GetVersionDataFromME("AMT", 2*time.Minute)
-		if err != nil {
-			log.Error("Failed to get AMT version: ", err)
-		} else {
-			result.AMT = version
+		if s.heciAvailable {
+			version, err := s.amtCommand.GetVersionDataFromME("AMT", 2*time.Minute)
+			if err != nil {
+				log.Error("Failed to get AMT version: ", err)
+			} else {
+				result.AMT = version
+			}
 		}
 	}
 
-	// Get build number
+	// Get build number (requires HECI)
 	if showAll || cmd.Bld {
-		build, err := s.amtCommand.GetVersionDataFromME("Build Number", 2*time.Minute)
-		if err != nil {
-			log.Error("Failed to get build number: ", err)
-		} else {
-			result.BuildNumber = build
+		if s.heciAvailable {
+			build, err := s.amtCommand.GetVersionDataFromME("Build Number", 2*time.Minute)
+			if err != nil {
+				log.Error("Failed to get build number: ", err)
+			} else {
+				result.BuildNumber = build
+			}
 		}
 	}
 
-	// Get SKU
+	// Get SKU (requires HECI)
 	if showAll || cmd.Sku {
-		sku, err := s.amtCommand.GetVersionDataFromME("Sku", 2*time.Minute)
-		if err != nil {
-			log.Error("Failed to get SKU: ", err)
-		} else {
-			result.SKU = sku
+		if s.heciAvailable {
+			sku, err := s.amtCommand.GetVersionDataFromME("Sku", 2*time.Minute)
+			if err != nil {
+				log.Error("Failed to get SKU: ", err)
+			} else {
+				result.SKU = sku
+			}
 		}
 	}
 
@@ -443,17 +478,19 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		result.Features = strings.TrimSpace(utils.DecodeAMTFeatures(result.AMT, result.SKU))
 	}
 
-	// Get UUID
+	// Get UUID (requires HECI)
 	if showAll || cmd.UUID {
-		uuid, err := s.amtCommand.GetUUID()
-		if err != nil {
-			log.Error("Failed to get UUID: ", err)
-		} else {
-			result.UUID = uuid
+		if s.heciAvailable {
+			uuid, err := s.amtCommand.GetUUID()
+			if err != nil {
+				log.Error("Failed to get UUID: ", err)
+			} else {
+				result.UUID = uuid
+			}
 		}
 	}
 
-	// Get UPID (Intel Unique Platform ID)
+	// Get UPID (Intel Unique Platform ID) — uses its own HECI client, handles errors internally
 	if showAll || cmd.UPID {
 		upidData, err := upid.NewClient().GetUPID()
 		if err != nil {
@@ -463,71 +500,81 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
-	// Get control mode
+	// Get control mode (requires HECI)
 	if showAll || cmd.Mode {
-		// Use cached control mode if already retrieved, otherwise get it
-		if controlMode == -1 {
-			controlMode, controlModeErr = s.amtCommand.GetControlMode()
-		}
+		if s.heciAvailable {
+			// Use cached control mode if already retrieved, otherwise get it
+			if controlMode == -1 {
+				controlMode, controlModeErr = s.amtCommand.GetControlMode()
+			}
 
-		if controlModeErr != nil {
-			log.Error("Failed to get control mode: ", controlModeErr)
-		} else {
-			result.ControlMode = utils.InterpretControlMode(controlMode)
-		}
-	}
-
-	// Get provisioning state
-	if showAll || cmd.ProvState {
-		provState, err := s.amtCommand.GetProvisioningState()
-		if err != nil {
-			log.Error("Failed to get provisioning state: ", err)
-		} else {
-			result.ProvisioningState = utils.InterpretProvisioningState(provState)
-		}
-	}
-
-	// Get operational state (for AMT versions > 11)
-	if showAll || cmd.OpState {
-		// We need AMT version to check if we can get operational state
-		if result.AMT == "" {
-			version, err := s.amtCommand.GetVersionDataFromME("AMT", 2*time.Minute)
-			if err == nil {
-				result.AMT = version
+			if controlModeErr != nil {
+				log.Error("Failed to get control mode: ", controlModeErr)
+			} else {
+				result.ControlMode = utils.InterpretControlMode(controlMode)
 			}
 		}
+	}
 
-		if result.AMT != "" {
-			majorVersion, err := s.getMajorVersion(result.AMT)
-			if err == nil && majorVersion > 11 {
-				opState, err := s.amtCommand.GetChangeEnabled()
-				if err == nil && opState.IsNewInterfaceVersion() {
-					if opState.IsAMTEnabled() {
-						result.OperationalState = "enabled"
-					} else {
-						result.OperationalState = "disabled"
-					}
+	// Get provisioning state (requires HECI)
+	if showAll || cmd.ProvState {
+		if s.heciAvailable {
+			provState, err := s.amtCommand.GetProvisioningState()
+			if err != nil {
+				log.Error("Failed to get provisioning state: ", err)
+			} else {
+				result.ProvisioningState = utils.InterpretProvisioningState(provState)
+			}
+		}
+	}
+
+	// Get operational state (requires HECI, for AMT versions > 11)
+	if showAll || cmd.OpState {
+		if s.heciAvailable {
+			// We need AMT version to check if we can get operational state
+			if result.AMT == "" {
+				version, err := s.amtCommand.GetVersionDataFromME("AMT", 2*time.Minute)
+				if err == nil {
+					result.AMT = version
 				}
-			} else if err == nil {
-				log.Debug("OpState will not work on AMT versions 11 and below.")
+			}
+
+			if result.AMT != "" {
+				majorVersion, err := s.getMajorVersion(result.AMT)
+				if err == nil && majorVersion > 11 {
+					opState, err := s.amtCommand.GetChangeEnabled()
+					if err == nil && opState.IsNewInterfaceVersion() {
+						if opState.IsAMTEnabled() {
+							result.OperationalState = "enabled"
+						} else {
+							result.OperationalState = "disabled"
+						}
+					}
+				} else if err == nil {
+					log.Debug("OpState will not work on AMT versions 11 and below.")
+				}
 			}
 		}
 	}
 
 	// Get DNS information
 	if showAll || cmd.DNS {
-		dnsSuffix, err := s.amtCommand.GetDNSSuffix()
-		if err == nil {
-			result.DNSSuffix = dnsSuffix
+		// AMT DNS suffix (requires HECI)
+		if s.heciAvailable {
+			dnsSuffix, err := s.amtCommand.GetDNSSuffix()
+			if err == nil {
+				result.DNSSuffix = dnsSuffix
+			}
 		}
 
+		// OS DNS suffix (no admin required)
 		osDnsSuffix, err := s.amtCommand.GetOSDNSSuffix()
 		if err == nil {
 			result.DNSSuffixOS = osDnsSuffix
 		}
 	}
 
-	// Get hostname from OS
+	// Get hostname from OS (no admin required)
 	if showAll || cmd.Hostname {
 		hostname, err := os.Hostname()
 		if err == nil {
@@ -536,7 +583,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	}
 
 	// Ensure WSMAN client is set up once for any operations that need it (RAS, UserCert)
-	if showAll || cmd.Ras || cmd.UserCert {
+	if s.heciAvailable && (showAll || cmd.Ras || cmd.UserCert) {
 		if controlMode == -1 {
 			controlMode, controlModeErr = s.amtCommand.GetControlMode()
 		}
@@ -548,66 +595,74 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
-	// Get RAS (Remote Access Status)
+	// Get RAS (Remote Access Status) (requires HECI)
 	if showAll || cmd.Ras {
-		// Try WSMAN first for MPS hostname + port
-		var (
-			wsmanHostname string
-			wsmanPort     int
-			wsmanErr      error
-		)
+		if s.heciAvailable {
+			// Try WSMAN first for MPS hostname + port
+			var (
+				wsmanHostname string
+				wsmanPort     int
+				wsmanErr      error
+			)
 
-		wsmanHostname, wsmanPort, wsmanErr = s.getMPSInfoFromWSMAN()
-		if wsmanErr != nil {
-			log.Debug("Failed to get MPS info from WSMAN, will use HECI: ", wsmanErr)
-		}
-
-		// Always call HECI for NetworkStatus, RemoteStatus, RemoteTrigger
-		ras, err := s.amtCommand.GetRemoteAccessConnectionStatus()
-		if err == nil {
-			if wsmanErr == nil {
-				// WSMAN succeeded: use WSMAN hostname + port
-				ras.MPSHostname = wsmanHostname
-				ras.MPSPort = wsmanPort
+			wsmanHostname, wsmanPort, wsmanErr = s.getMPSInfoFromWSMAN()
+			if wsmanErr != nil {
+				log.Debug("Failed to get MPS info from WSMAN, will use HECI: ", wsmanErr)
 			}
-			// If WSMAN failed, HECI hostname is already in ras.MPSHostname; port stays 0
-			result.RAS = &ras
+
+			// Always call HECI for NetworkStatus, RemoteStatus, RemoteTrigger
+			ras, err := s.amtCommand.GetRemoteAccessConnectionStatus()
+			if err == nil {
+				if wsmanErr == nil {
+					// WSMAN succeeded: use WSMAN hostname + port
+					ras.MPSHostname = wsmanHostname
+					ras.MPSPort = wsmanPort
+				}
+				// If WSMAN failed, HECI hostname is already in ras.MPSHostname; port stays 0
+				result.RAS = &ras
+			}
 		}
 	}
 
-	// Get LAN interface settings
+	// Get LAN interface settings (requires HECI)
 	if showAll || cmd.Lan {
-		wired, err := s.amtCommand.GetLANInterfaceSettings(false)
-		if err == nil {
-			wired.OsIPAddress = s.getOSIPAddress(wired.MACAddress)
-			result.WiredAdapter = &wired
-		}
+		if s.heciAvailable {
+			wired, err := s.amtCommand.GetLANInterfaceSettings(false)
+			if err == nil {
+				wired.OsIPAddress = s.getOSIPAddress(wired.MACAddress)
+				result.WiredAdapter = &wired
+			}
 
-		wireless, err := s.amtCommand.GetLANInterfaceSettings(true)
-		if err == nil {
-			wireless.OsIPAddress = s.getOSIPAddress(wireless.MACAddress)
-			result.WirelessAdapter = &wireless
-		}
-	}
-
-	// Get certificate hashes
-	if cmd.Cert || cmd.All {
-		certResult, err := s.amtCommand.GetCertificateHashes()
-		if err == nil {
-			result.CertificateHashes = make(map[string]amt.CertHashEntry)
-			for _, cert := range certResult {
-				result.CertificateHashes[cert.Name] = cert
+			wireless, err := s.amtCommand.GetLANInterfaceSettings(true)
+			if err == nil {
+				wireless.OsIPAddress = s.getOSIPAddress(wireless.MACAddress)
+				result.WirelessAdapter = &wireless
 			}
 		}
 	}
 
-	// Get user certificates (WSMAN client already set up above)
+	// Get certificate hashes (requires HECI)
+	if cmd.Cert || cmd.All {
+		if s.heciAvailable {
+			certResult, err := s.amtCommand.GetCertificateHashes()
+			if err == nil {
+				result.CertificateHashes = make(map[string]amt.CertHashEntry)
+				for _, cert := range certResult {
+					result.CertificateHashes[cert.Name] = cert
+				}
+			}
+		}
+	}
+
+	// Get user certificates (requires WSMAN/HECI)
 	if cmd.All || cmd.UserCert {
-		userCerts, err := s.getUserCertificates()
-		if err != nil {
-			log.Error("Failed to get user certificates: ", err)
-		} else {
-			result.UserCerts = userCerts
+		if s.heciAvailable {
+			userCerts, err := s.getUserCertificates()
+			if err != nil {
+				log.Error("Failed to get user certificates: ", err)
+			} else {
+				result.UserCerts = userCerts
+			}
 		}
 	}
 
@@ -644,6 +699,20 @@ var (
 // OutputTable outputs the result as a single styled table with Category, Flag, Property, and Value columns
 func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
+
+	if !s.heciAvailable {
+		fmt.Println()
+
+		if !utils.IsElevated() {
+			fmt.Println(infoIndent + infoYellowStyle.Render(
+				"Not running as administrator \u2014 AMT data unavailable"))
+			fmt.Println(infoIndent + infoDimStyle.Render(
+				"Showing OS-level information only"))
+		} else {
+			fmt.Println(infoIndent + infoYellowStyle.Render(
+				"MEI/HECI driver not detected \u2014 AMT may not be available on this device"))
+		}
+	}
 
 	type row struct {
 		category, flag, property, value string
@@ -876,6 +945,18 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	var b strings.Builder
+
+	if !s.heciAvailable {
+		if !utils.IsElevated() {
+			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
+				"Not running as administrator \u2014 AMT data unavailable") + "\n")
+			b.WriteString(infoIndent + infoDimStyle.Render(
+				"Showing OS-level information only") + "\n")
+		} else {
+			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
+				"MEI/HECI driver not detected \u2014 AMT may not be available on this device") + "\n")
+		}
+	}
 
 	// --- Device Information ---
 	var main strings.Builder
