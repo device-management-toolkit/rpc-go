@@ -1,3 +1,10 @@
+# [3.0.0-beta.12](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.11...v3.0.0-beta.12) (2026-04-01)
+
+
+### Features
+
+* adds lipgloss to cli output ([71ccd8c](https://github.com/device-management-toolkit/rpc-go/commit/71ccd8cb54ee23e724219792858287535ad9e81b))
+
 # [3.0.0-beta.11](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.10...v3.0.0-beta.11) (2026-03-31)
 
 
