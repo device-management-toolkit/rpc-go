@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2026

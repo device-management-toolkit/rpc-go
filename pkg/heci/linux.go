@@ -1,5 +1,4 @@
-//go:build linux
-// +build linux
+//go:build !windows
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2021
