@@ -307,7 +307,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	cfg, err := fetcher.FetchProfile()
 	if err != nil {
-		return fmt.Errorf("failed to fetch profile: %w", err)
+		return err
 	}
 
 	// Resolve AMT/MEBx/MPS passwords — generate random ones when the profile requests it.
