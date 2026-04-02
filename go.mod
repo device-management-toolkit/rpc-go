@@ -6,7 +6,7 @@ go 1.25.0
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/alecthomas/kong v1.14.0
+	github.com/alecthomas/kong v1.15.0
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/device-management-toolkit/go-wsman-messages/v2 v2.38.0
 	github.com/google/uuid v1.6.0
