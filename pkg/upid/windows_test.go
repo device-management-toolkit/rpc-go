@@ -1,5 +1,4 @@
 //go:build windows
-// +build windows
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2026
