@@ -6,7 +6,11 @@ package utils
 
 type ReturnCode int
 
-var ProjectVersion string = "Development Build"
+var (
+	ProjectVersion string = "Development Build"
+	BuildDate      string = "unknown"
+	BuildCommit    string = "unknown"
+)
 
 const (
 	// ProjectName is the name of the executable
