@@ -142,16 +142,14 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		return utils.IncorrectPermissions
 	}
 
-	effectiveMaxAttempts := maxAttempts
-
-	for attempt := 1; attempt <= effectiveMaxAttempts; attempt++ {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
 		if err == nil {
 			break
 		}
 
-		if attempt < effectiveMaxAttempts {
-			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, effectiveMaxAttempts, err, backoff)
+		if attempt < maxAttempts {
+			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
 			time.Sleep(backoff)
 
 			continue

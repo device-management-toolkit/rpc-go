@@ -1,5 +1,9 @@
+#!/bin/bash
+
 # Get version from the first argument
 version=$1
+build_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+build_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 # Download the certificate to the initial location
 wget -O ./internal/certs/OnDie_CA_RootCA_Certificate.cer \
@@ -18,15 +22,15 @@ else
 fi
 
 # Build for Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x64 ./cmd/rpc/main.go
-CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_linux_x86 ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildDate=$build_date' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildCommit=$build_commit'" -trimpath -o rpc_linux_x64 ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildDate=$build_date' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildCommit=$build_commit'" -trimpath -o rpc_linux_x86 ./cmd/rpc/main.go
 
 # Build for Windows
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x64.exe ./cmd/rpc/main.go 
-CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version'" -trimpath -o rpc_windows_x86.exe ./cmd/rpc/main.go
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildDate=$build_date' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildCommit=$build_commit'" -trimpath -o rpc_windows_x64.exe ./cmd/rpc/main.go 
+CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildDate=$build_date' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildCommit=$build_commit'" -trimpath -o rpc_windows_x86.exe ./cmd/rpc/main.go
 
 # Build library for Linux
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -trimpath -buildmode=c-shared -o rpc.so.$version ./cmd/rpc
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.ProjectVersion=$version' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildDate=$build_date' -X 'github.com/device-management-toolkit/rpc-go/v2/pkg/utils.BuildCommit=$build_commit'" -trimpath -buildmode=c-shared -o rpc.so.$version ./cmd/rpc
 
 # Mark the Unix system outputs as executable
 chmod +x rpc_linux_x64
