@@ -143,9 +143,6 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	effectiveMaxAttempts := maxAttempts
-	if cmd.SkipWSMANSetup {
-		effectiveMaxAttempts = 1
-	}
 
 	for attempt := 1; attempt <= effectiveMaxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
