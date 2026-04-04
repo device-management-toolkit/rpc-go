@@ -45,6 +45,9 @@ type DeactivateCmd struct {
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
 	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
 	UUID               string `help:"UUID override" name:"uuid"`
+
+	// consoleURL is preserved from URL when --local clears it, for console device deletion.
+	consoleURL string
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -56,11 +59,26 @@ func (cmd *DeactivateCmd) RequiresAMTPassword() bool {
 
 // Validate implements Kong's extensible validation interface for business logic validation
 func (cmd *DeactivateCmd) Validate() error {
-	// deactivate locally then delete device from db — allow with --local
+	// When --local and HTTP(S) --url are both present, preserve the URL for
+	// console device deletion and clear cmd.URL so Run takes the local path.
+	if cmd.Local && cmd.URL != "" {
+		lower := strings.ToLower(cmd.URL)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			if cmd.PartialUnprovision {
+				return fmt.Errorf("partial unprovisioning is not supported with HTTP(S) --url")
+			}
+
+			log.Warn("Both --url and --local detected; proceeding with local deactivation and console device deletion")
+
+			cmd.consoleURL = cmd.URL
+			cmd.URL = ""
+		}
+	}
+
+	// HTTP(S) URL without --local: full HTTP console flow
 	if cmd.URL != "" {
 		lower := strings.ToLower(cmd.URL)
 		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
-			// HTTP console flow — partial unprovision not supported
 			if cmd.PartialUnprovision {
 				return fmt.Errorf("partial unprovisioning is not supported with HTTP(S) --url")
 			}
@@ -110,8 +128,15 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 	}
 
 	if cmd.Local {
+		// Pre-resolve device GUID before deactivation — AMT cannot respond after unprovision.
+		preGUID, _ := cmd.resolveGUID(ctx)
+
 		// For local deactivation
-		return cmd.executeLocalDeactivate(ctx)
+		if err := cmd.executeLocalDeactivate(ctx); err != nil {
+			return err
+		}
+		// If auth credentials are provided, also delete device from console DB
+		return cmd.deleteDeviceFromConsoleIfAuth(ctx, preGUID)
 	}
 
 	// For remote deactivation via RPS
@@ -212,6 +237,66 @@ func (cmd *DeactivateCmd) resolveGUID(ctx *Context) (string, error) {
 	}
 
 	return "", fmt.Errorf("unable to determine device GUID; provide --uuid")
+}
+
+// deleteDeviceFromConsoleIfAuth deletes the device from the console DB after local deactivation
+// when auth credentials (--auth-username/--auth-password or --auth-token with --auth-endpoint) are provided.
+// preResolvedGUID must be obtained before deactivation since AMT cannot respond after unprovision.
+// If no auth credentials are present, this is a no-op.
+func (cmd *DeactivateCmd) deleteDeviceFromConsoleIfAuth(ctx *Context, preResolvedGUID string) error {
+	// Partial unprovision leaves the device partially active — do not delete from console.
+	if cmd.PartialUnprovision {
+		return nil
+	}
+
+	effectiveConsoleURL := cmd.consoleURL
+	if effectiveConsoleURL == "" && isAbsoluteURL(ctx.AuthEndpoint) {
+		effectiveConsoleURL = ctx.AuthEndpoint
+	}
+
+	hasAuth := ctx.AuthToken != "" || ctx.AuthUsername != "" || ctx.AuthPassword != ""
+	if !hasAuth {
+		return nil // no auth credentials, skip console deletion
+	}
+
+	if effectiveConsoleURL == "" {
+		if ctx.AuthEndpoint != "" && !isAbsoluteURL(ctx.AuthEndpoint) {
+			return fmt.Errorf("device deactivated but --auth-endpoint %q is not an absolute URL; provide a full URL (e.g., http://host/api/v1/authorize)", ctx.AuthEndpoint)
+		}
+
+		return fmt.Errorf("device deactivated but no console URL available; provide an absolute --auth-endpoint (e.g., http://host/api/v1/authorize)")
+	}
+
+	parsed, err := url.Parse(effectiveConsoleURL)
+	if err != nil {
+		return fmt.Errorf("device deactivated but invalid console URL: %w", err)
+	}
+
+	consoleBaseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	token, err := cmd.authenticateWithConsole(ctx, consoleBaseURL)
+	if err != nil {
+		return fmt.Errorf("device deactivated but console authentication failed: %w", err)
+	}
+
+	if preResolvedGUID == "" {
+		return fmt.Errorf("device deactivated but unable to determine device GUID; provide --uuid")
+	}
+
+	if err := device.DeleteDevice(consoleBaseURL, token, preResolvedGUID, ctx.SkipCertCheck); err != nil {
+		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
+	}
+
+	log.Info("Device deleted from console")
+
+	return nil
+}
+
+// isAbsoluteURL reports whether s starts with http:// or https://.
+func isAbsoluteURL(s string) bool {
+	lower := strings.ToLower(s)
+
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }
 
 // executeLocalDeactivate handles local deactivation

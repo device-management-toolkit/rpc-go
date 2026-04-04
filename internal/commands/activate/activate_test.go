@@ -21,7 +21,6 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -607,6 +606,16 @@ func TestResolveTLSFlags_ProfileTLSEnabled(t *testing.T) {
 	assert.True(t, allowSelfSigned)
 }
 
+func TestResolveTLSFlags_LocalTLSEnforced(t *testing.T) {
+	cmd := &ActivateCmd{}
+	cmd.LocalTLSEnforced = true
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.True(t, useTLS)
+	assert.True(t, allowSelfSigned)
+}
+
 func TestResolveTLSFlags_NoWSMAN(t *testing.T) {
 	cmd := &ActivateCmd{} // WSMan is nil
 	cfg := &config.Configuration{}
@@ -693,9 +702,8 @@ func TestResolveTLSFlags_WSMANEnumerateError(t *testing.T) {
 func TestResolveConsoleInfo_WithUUID(t *testing.T) {
 	cmd := &ActivateCmd{UUID: "override-guid"}
 	ctx := &commands.Context{}
-	fetcher := &profile.ProfileFetcher{URL: "https://console.example.com/api/v1/profiles/p1"}
 
-	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, "https://console.example.com/api/v1/profiles/p1")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://console.example.com", baseURL)
 	assert.Equal(t, "override-guid", guid)
@@ -710,9 +718,8 @@ func TestResolveConsoleInfo_FromAMT(t *testing.T) {
 
 	cmd := &ActivateCmd{}
 	ctx := &commands.Context{AMTCommand: mockAMT}
-	fetcher := &profile.ProfileFetcher{URL: "https://console.example.com/profile"}
 
-	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, "https://console.example.com/profile")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://console.example.com", baseURL)
 	assert.Equal(t, "amt-guid-789", guid)
@@ -722,4 +729,129 @@ func TestGetLocalIP(t *testing.T) {
 	ip := getLocalIP()
 	assert.NotEmpty(t, ip)
 	assert.NotEqual(t, "unknown", ip, "should resolve to an IP or hostname")
+}
+
+func TestOrchestrateWithConsole_ErrorWhenAuthCredsButNoConsoleURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		cmd         ActivateCmd
+		ctx         *commands.Context
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "auth-username with relative auth-endpoint errors",
+			cmd:  ActivateCmd{},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthUsername: "admin",
+					AuthPassword: "P@ssw0rd",
+					AuthEndpoint: "/api/v1/authorize",
+				},
+			},
+			wantErr:     true,
+			errContains: "--auth-endpoint \"/api/v1/authorize\" is not an absolute URL",
+		},
+		{
+			name: "auth-token with no console URL and relative auth-endpoint errors",
+			cmd:  ActivateCmd{},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthToken:    "my-token",
+					AuthEndpoint: "/api/v1/authorize",
+				},
+			},
+			wantErr:     true,
+			errContains: "--auth-endpoint \"/api/v1/authorize\" is not an absolute URL",
+		},
+		{
+			name: "auth-username with empty auth-endpoint errors",
+			cmd:  ActivateCmd{},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthUsername: "admin",
+					AuthPassword: "P@ssw0rd",
+					AuthEndpoint: "",
+				},
+			},
+			wantErr:     true,
+			errContains: "auth credentials provided but no console URL available",
+		},
+		{
+			name: "auth creds with consoleURL preserved from --url succeeds",
+			cmd:  ActivateCmd{consoleURL: "https://console.example.com/profile"},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthUsername: "admin",
+					AuthPassword: "P@ssw0rd",
+					AuthEndpoint: "/api/v1/authorize",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "auth creds with absolute auth-endpoint succeeds",
+			cmd:  ActivateCmd{},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthUsername: "admin",
+					AuthPassword: "P@ssw0rd",
+					AuthEndpoint: "https://console.example.com/api/v1/authorize",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "no auth creds with no console URL succeeds (skips registration)",
+			cmd:  ActivateCmd{},
+			ctx: &commands.Context{
+				ServerAuthFlags: commands.ServerAuthFlags{
+					AuthEndpoint: "/api/v1/authorize",
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Configuration{}
+
+			err := tt.cmd.orchestrateWithConsole(tt.ctx, cfg)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+			} else {
+				// For success cases with auth, the function may fail later
+				// (e.g., authentication network call) — that's fine, we only
+				// verify the console-URL validation itself passed.
+				if err != nil {
+					assert.NotContains(t, err.Error(), "not an absolute URL")
+					assert.NotContains(t, err.Error(), "no console URL available")
+				}
+			}
+		})
+	}
+}
+
+func TestIsAbsoluteURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"https://example.com/api", true},
+		{"http://example.com/api", true},
+		{"HTTP://EXAMPLE.COM", true},
+		{"HTTPS://EXAMPLE.COM", true},
+		{"/api/v1/authorize", false},
+		{"api/v1/authorize", false},
+		{"", false},
+		{"ftp://example.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, isAbsoluteURL(tt.input))
+		})
+	}
 }

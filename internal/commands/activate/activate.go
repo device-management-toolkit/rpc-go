@@ -59,6 +59,9 @@ type ActivateCmd struct {
 	MEBxPassword        string `help:"MEBx password for AMT19+ TLS activation" env:"MEBX_PASSWORD" name:"mebxpassword"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+
+	// consoleURL is preserved from URL when --local clears it, for console device registration.
+	consoleURL string
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -82,7 +85,8 @@ func (cmd *ActivateCmd) Validate() error {
 		lowerURL := strings.ToLower(cmd.URL)
 		if strings.HasPrefix(lowerURL, "http://") || strings.HasPrefix(lowerURL, "https://") {
 			log.Warn("Both --url and local activation flags detected; proceeding with local activation via http://")
-			// Clear URL so we don't trigger HTTP profile fullflow during local runs (prevents recursion)
+			// Preserve URL for console device registration, then clear to prevent HTTP profile fullflow
+			cmd.consoleURL = cmd.URL
 			cmd.URL = ""
 		}
 	}
@@ -317,7 +321,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	// Resolve console base URL and device GUID for device registration and potential cleanup.
-	consoleBaseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	consoleBaseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher.URL)
 	if err != nil {
 		return fmt.Errorf("failed to resolve console info: %w", err)
 	}
@@ -347,9 +351,9 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	return nil
 }
 
-// extracts the console base URL from the fetcher and determines the device GUID.
-func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, fetcher *profile.ProfileFetcher) (string, string, error) {
-	parsed, err := url.Parse(fetcher.URL)
+// extracts the console base URL from the given URL and determines the device GUID.
+func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, rawURL string) (string, string, error) {
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid URL: %w", err)
 	}
@@ -445,11 +449,16 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 // resolveTLSFlags determines UseTLS and AllowSelfSigned for the device payload.
 // 1. If the profile has TLS enabled → both true.
-// 2. Otherwise query the device's current Remote TLS settings via WSMAN:
+// 2. If the device enforces TLS on local ports (AMT 19+) → both true.
+// 3. Otherwise query the device's current Remote TLS settings via WSMAN:
 //   - Remote TLS enabled with AcceptNonSecureConnections=false → both true.
 //   - All other cases → both false.
 func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allowSelfSigned bool) {
 	if cfg.Configuration.TLS.Enabled {
+		return true, true
+	}
+
+	if cmd.LocalTLSEnforced {
 		return true, true
 	}
 
@@ -508,25 +517,25 @@ func getLocalIP() string {
 
 // runLocalProfileFullflow loads a local profile file (optionally decrypt) and runs the orchestrator
 func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
-	// Prefer existing loader for plaintext YAML
+	var cfg config.Configuration
+
+	var err error
+
 	if cmd.Key == "" {
-		c, err := profile.LoadProfile(cmd.Profile)
+		cfg, err = profile.LoadProfile(cmd.Profile)
 		if err != nil {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
+	} else {
+		crypto := security.Crypto{EncryptionKey: cmd.Key}
 
-		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-		if err := orch.ExecuteProfile(); err != nil {
-			return err
+		cfg, err = crypto.ReadAndDecryptFile(cmd.Profile)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt profile: %w", err)
 		}
-
-		log.Info("Profile fullflow completed successfully")
-
-		return nil
 	}
 
-	// Encrypted file path handling using go-wsman security helper
-	return cmd.runLocalEncryptedProfile(ctx)
+	return cmd.orchestrateWithConsole(ctx, cfg)
 }
 
 // looksLikeFilePath determines if the provided string looks like a file path (absolute, relative, UNC, or has an extension)
@@ -549,27 +558,94 @@ func looksLikeFilePath(p string) bool {
 	return false
 }
 
-// runLocalEncryptedProfile decrypts a local profile file using the provided key and runs orchestrator
-func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
-	if cmd.Key == "" {
-		return fmt.Errorf("missing --key for encrypted profile file")
+// orchestrateWithConsole resolves passwords, optionally registers the device with
+// the console, and runs the profile orchestrator. Used by local profile flows.
+func (cmd *ActivateCmd) orchestrateWithConsole(ctx *commands.Context, cfg config.Configuration) error {
+	// Resolve AMT/MEBx/MPS passwords — generate random ones when the profile requests it.
+	amtPassword, mebxPassword, mpsPassword, err := profile.ResolvePasswords(&cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve passwords: %w", err)
 	}
 
-	crypto := security.Crypto{EncryptionKey: cmd.Key}
+	var consoleBaseURL, guid, token string
 
-	cfg, err := crypto.ReadAndDecryptFile(cmd.Profile)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt profile: %w", err)
+	// Determine console URL: from preserved --url, or from an absolute --auth-endpoint.
+	effectiveConsoleURL := cmd.consoleURL
+	if effectiveConsoleURL == "" && isAbsoluteURL(ctx.AuthEndpoint) {
+		effectiveConsoleURL = ctx.AuthEndpoint
+	}
+
+	// Error if auth credentials are provided but no console URL could be resolved.
+	hasAuth := ctx.AuthToken != "" || ctx.AuthUsername != "" || ctx.AuthPassword != ""
+	if hasAuth && effectiveConsoleURL == "" {
+		if ctx.AuthEndpoint != "" && !isAbsoluteURL(ctx.AuthEndpoint) {
+			return fmt.Errorf("--auth-endpoint %q is not an absolute URL; provide a full URL (e.g., https://host/api/v1/authorize) or use --url to specify the console address", ctx.AuthEndpoint)
+		}
+
+		return fmt.Errorf("auth credentials provided but no console URL available; use --url or provide an absolute --auth-endpoint (e.g., https://host/api/v1/authorize)")
+	}
+
+	// Register device with console if a console URL is available and auth is provided.
+	if effectiveConsoleURL != "" {
+		token, err = cmd.authenticateForConsole(ctx, effectiveConsoleURL)
+		if err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+
+		if token != "" {
+			consoleBaseURL, guid, err = cmd.resolveConsoleInfo(ctx, effectiveConsoleURL)
+			if err != nil {
+				return fmt.Errorf("failed to resolve console info: %w", err)
+			}
+
+			hasCIRA := cfg.Configuration.AMTSpecific.CIRA.MPSAddress != ""
+
+			if addErr := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg); addErr != nil {
+				return fmt.Errorf("failed to add device to console: %w", addErr)
+			}
+		}
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
+		if consoleBaseURL != "" && token != "" && errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
+			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+		}
+
 		return err
 	}
 
 	log.Info("Profile fullflow completed successfully")
 
 	return nil
+}
+
+// isAbsoluteURL reports whether s starts with http:// or https://.
+func isAbsoluteURL(s string) bool {
+	lower := strings.ToLower(s)
+
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+// authenticateForConsole obtains a bearer token for console API calls.
+// Returns ("", nil) when no credentials are available (skips registration silently).
+func (cmd *ActivateCmd) authenticateForConsole(ctx *commands.Context, consoleURL string) (string, error) {
+	if ctx.AuthToken != "" {
+		return ctx.AuthToken, nil
+	}
+
+	if ctx.AuthUsername == "" || ctx.AuthPassword == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(consoleURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid console URL: %w", err)
+	}
+
+	baseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	return profile.Authenticate(baseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
 }
 
 // runLocalActivation executes local activation using the local service
