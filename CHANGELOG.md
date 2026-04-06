@@ -1,3 +1,10 @@
+# [3.0.0-beta.14](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.13...v3.0.0-beta.14) (2026-04-06)
+
+
+### Features
+
+* enhance version command with more info for debug ([04df712](https://github.com/device-management-toolkit/rpc-go/commit/04df712686e8413f397908a5f55589dd686b8330))
+
 # [3.0.0-beta.13](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.12...v3.0.0-beta.13) (2026-04-01)
 
 
