@@ -82,7 +82,7 @@ func TestVersionCmd_Run_PlainText(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Check required fields
-				assert.Equal(t, strings.ToUpper(utils.ProjectName), info["app"])
+				assert.Equal(t, utils.ProjectName, info["app"])
 				assert.Equal(t, utils.ProjectVersion, info["version"])
 				assert.Equal(t, utils.ProtocolVersion, info["protocol"])
 				assert.Equal(t, runtime.Version(), info["go"])
@@ -141,7 +141,7 @@ func TestVersionCmd_Run_JSONStructure(t *testing.T) {
 	}
 
 	// Verify specific values
-	assert.Equal(t, strings.ToUpper(utils.ProjectName), result["app"])
+	assert.Equal(t, utils.ProjectName, result["app"])
 	assert.Equal(t, utils.ProjectVersion, result["version"])
 	assert.Equal(t, utils.ProtocolVersion, result["protocol"])
 	assert.Equal(t, runtime.Version(), result["go"])

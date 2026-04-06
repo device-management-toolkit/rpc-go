@@ -8,10 +8,9 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strings"
 
-	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/version"
 )
 
 // VersionCmd represents the version command
@@ -19,20 +18,9 @@ type VersionCmd struct{}
 
 // Run executes the version command
 func (cmd *VersionCmd) Run(ctx *Context) error {
-	goVersion := runtime.Version()
-	platform := runtime.GOOS + "/" + runtime.GOARCH
+	info := version.Get()
 
 	if ctx.JsonOutput {
-		info := map[string]string{
-			"app":      strings.ToUpper(utils.ProjectName),
-			"version":  utils.ProjectVersion,
-			"protocol": utils.ProtocolVersion,
-			"commit":   utils.BuildCommit,
-			"date":     utils.BuildDate,
-			"go":       goVersion,
-			"platform": platform,
-		}
-
 		outBytes, err := json.MarshalIndent(info, "", "  ")
 		if err != nil {
 			return err
@@ -40,13 +28,13 @@ func (cmd *VersionCmd) Run(ctx *Context) error {
 
 		fmt.Println(string(outBytes))
 	} else {
-		fmt.Print(renderInfoHeader(strings.ToUpper(utils.ProjectName)))
-		fmt.Print(renderInfoRow("Version", utils.ProjectVersion))
-		fmt.Print(renderInfoRow("Protocol", utils.ProtocolVersion))
-		fmt.Print(renderInfoRow("Commit", utils.BuildCommit))
-		fmt.Print(renderInfoRow("Built", utils.BuildDate))
-		fmt.Print(renderInfoRow("Go", goVersion))
-		fmt.Print(renderInfoRow("Platform", platform))
+		fmt.Print(renderInfoHeader(strings.ToUpper(info.App)))
+		fmt.Print(renderInfoRow("Version", info.Version))
+		fmt.Print(renderInfoRow("Protocol", info.Protocol))
+		fmt.Print(renderInfoRow("Commit", info.Commit))
+		fmt.Print(renderInfoRow("Built", info.Date))
+		fmt.Print(renderInfoRow("Go", info.Go))
+		fmt.Print(renderInfoRow("Platform", info.Platform))
 		fmt.Println()
 	}
 
