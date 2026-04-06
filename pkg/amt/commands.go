@@ -13,6 +13,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -185,6 +186,7 @@ type Interface interface {
 	GetLocalSystemAccount() (LocalSystemAccount, error)
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
+	GetUPID() (*upid.UPID, error)
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
@@ -203,12 +205,14 @@ func ANSI2String(ansi pthi.AMTANSIString) string {
 type AMTCommand struct {
 	PTHI   pthi.Interface
 	HOTHAM hotham.Interface
+	UPID   upid.Interface
 }
 
 func NewAMTCommand() AMTCommand {
 	return AMTCommand{
 		PTHI:   pthi.NewCommand(),
 		HOTHAM: hotham.NewCommand(),
+		UPID:   upid.NewCommand(),
 	}
 }
 
@@ -613,6 +617,11 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 	}
 
 	return response, nil
+}
+
+// GetUPID retrieves the Intel Unique Platform Identifier
+func (amt AMTCommand) GetUPID() (*upid.UPID, error) {
+	return amt.UPID.GetUPID()
 }
 
 // GetFlog retrieves the CSME Flash Log (FLOG)
