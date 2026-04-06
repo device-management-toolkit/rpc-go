@@ -18,7 +18,7 @@ amt-password: ""             # Global AMT admin password (applies to all command
 auth-token: ""              # Bearer token (preferred)
 auth-username: ""           # Basic auth username (if no token)
 auth-password: ""           # Basic auth password (if no token)
-auth-endpoint: "http://localhost:8181/api/v1/authorize"  # Token exchange endpoint (HTTP profile fetch)
+auth-endpoint: ""           # Token exchange endpoint (HTTP profile fetch) ex. http://localhost:8181/api/v1/authorize
 
 # ------------------------- amtinfo Command ------------------------------------
 amtinfo:
@@ -40,7 +40,7 @@ amtinfo:
 # ------------------------- activate Command -----------------------------------
 activate:
   local: false              # Force local activation
-  url: "http://localhost:8181/api/v1/admin/profiles/export/<profilename>?domainName=<domainprofilename>"                  # Remote RPS or HTTP profile URL
+  url: ""                  # Remote RPS or HTTP profile URL ex. "http://localhost:8181/api/v1/admin/profiles/export/<profilename>?domainName=<domainprofilename>"
   profile: ""              # Legacy profile name (ws/wss) or local/HTTP profile file path
   proxy: ""                # Proxy URL (legacy ws/wss flows)
   key: ""                   # 32-byte decryption key for encrypted profile
