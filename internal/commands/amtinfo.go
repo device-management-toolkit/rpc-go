@@ -86,7 +86,7 @@ func styledInfoValue(value string) string {
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
 	case "disabled", "not connected", "down",
-		"not activated":
+		"not activated", "unknown":
 		return infoRedStyle.Render(value)
 	case "in provisioning",
 		"client control mode":
