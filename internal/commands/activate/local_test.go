@@ -13,6 +13,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
@@ -334,6 +335,10 @@ func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error)
 
 func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
 	return amt.SecureHBasedResponse{}, nil
+}
+
+func (m *MockAMTCommand) GetUPID() (*upid.UPID, error) {
+	return nil, nil
 }
 
 func (m *MockAMTCommand) GetFlog() ([]byte, error) {

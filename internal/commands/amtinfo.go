@@ -86,7 +86,7 @@ func styledInfoValue(value string) string {
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
 	case "disabled", "not connected", "down",
-		"not activated":
+		"not activated", "unknown":
 		return infoRedStyle.Render(value)
 	case "in provisioning",
 		"client control mode":
@@ -492,7 +492,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 	// Get UPID (Intel Unique Platform ID) — uses its own HECI client, handles errors internally
 	if showAll || cmd.UPID {
-		upidData, err := upid.NewClient().GetUPID()
+		upidData, err := s.amtCommand.GetUPID()
 		if err != nil {
 			log.Trace("Failed to get UPID: ", err)
 		} else if upidData != nil {

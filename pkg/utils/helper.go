@@ -86,11 +86,11 @@ func InterpretHashAlgorithm(hashAlgorithm int) (hashSize int, algorithm string) 
 func InterpretAMTNetworkConnectionStatus(status int) string {
 	switch status {
 	case 0:
-		return "direct"
+		return "direct (LAN)"
 	case 1:
 		return "vpn"
 	case 2:
-		return "outside enterprise"
+		return "outside enterprise (CIRA)"
 	default:
 		return unknown
 	}

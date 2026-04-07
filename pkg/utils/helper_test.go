@@ -105,9 +105,9 @@ func TestInterpretAMTNetworkConnectionStatus(t *testing.T) {
 		input    int
 		expected string
 	}{
-		{"Status0", 0, "direct"},
+		{"Status0", 0, "direct (LAN)"},
 		{"Status1", 1, "vpn"},
-		{"Status2", 2, "outside enterprise"},
+		{"Status2", 2, "outside enterprise (CIRA)"},
 		{"Status3", 3, "unknown"},
 	}
 	for _, tt := range tests {

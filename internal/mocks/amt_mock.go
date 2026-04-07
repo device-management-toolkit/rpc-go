@@ -15,6 +15,7 @@ import (
 
 	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	pthi "github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	upid "github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -292,6 +293,21 @@ func (m *MockInterface) Unprovision() (int, error) {
 func (mr *MockInterfaceMockRecorder) Unprovision() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unprovision", reflect.TypeOf((*MockInterface)(nil).Unprovision))
+}
+
+// GetUPID mocks base method.
+func (m *MockInterface) GetUPID() (*upid.UPID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUPID")
+	ret0, _ := ret[0].(*upid.UPID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUPID indicates an expected call of GetUPID.
+func (mr *MockInterfaceMockRecorder) GetUPID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPID", reflect.TypeOf((*MockInterface)(nil).GetUPID))
 }
 
 // GetFlog mocks base method.
