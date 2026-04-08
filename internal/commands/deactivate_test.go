@@ -7,11 +7,14 @@ package commands
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -108,6 +111,15 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 			cmd:     DeactivateCmd{Local: true, PartialUnprovision: true},
 			wantErr: "",
 		},
+		{
+			name: "partial unprovision with local and HTTP URL",
+			cmd: DeactivateCmd{
+				Local:              true,
+				PartialUnprovision: true,
+				URL:                "https://example.com",
+			},
+			wantErr: "partial unprovisioning is not supported with HTTP(S) --url",
+		},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +134,14 @@ func TestDeactivateCmd_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeactivateCmd_Validate_LocalWithHTTPURL_PreservesConsoleURL(t *testing.T) {
+	cmd := DeactivateCmd{URL: "https://console.example.com", Local: true}
+	err := cmd.Validate()
+	assert.NoError(t, err)
+	assert.Equal(t, "", cmd.URL, "URL should be cleared")
+	assert.Equal(t, "https://console.example.com", cmd.consoleURL, "consoleURL should be preserved")
 }
 
 // Removed TestDeactivateCmd_EnsurePasswordProvided: password handling now centralized via context + EnsureAMTPassword.
@@ -150,6 +170,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
@@ -166,6 +187,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
@@ -182,6 +204,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 		mockAMT.EXPECT().Unprovision().Return(0, errors.New("unprovision failed"))
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
@@ -199,6 +222,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 		mockAMT.EXPECT().Unprovision().Return(1, nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
@@ -216,6 +240,7 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true, PartialUnprovision: true}
@@ -234,6 +259,7 @@ func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
@@ -252,6 +278,7 @@ func TestDeactivateCmd_Run_Local_UnsupportedControlMode(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 		cmd := DeactivateCmd{Local: true}
@@ -316,6 +343,7 @@ func TestDeactivateCmd_Run_Routing(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 		mockAMT.EXPECT().Unprovision().Return(0, nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
@@ -461,6 +489,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
@@ -482,6 +511,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
@@ -503,6 +533,7 @@ func TestRunMethodEdgeCases(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
 
 		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
 
@@ -569,6 +600,272 @@ func TestDeactivateCmd_ResolveGUID(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unable to determine device GUID")
 	})
+}
+
+func TestDeactivateCmd_DeleteDeviceFromConsoleIfAuth(t *testing.T) {
+	t.Run("no auth credentials skips console deletion", func(t *testing.T) {
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "")
+		assert.NoError(t, err)
+	})
+
+	t.Run("partial unprovision skips console deletion", func(t *testing.T) {
+		cmd := &DeactivateCmd{Local: true, PartialUnprovision: true}
+		ctx := &Context{}
+		ctx.AuthUsername = "admin"
+		ctx.AuthPassword = "P@ssw0rd"
+		ctx.AuthEndpoint = "http://console.example.com/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "some-guid")
+		assert.NoError(t, err)
+	})
+
+	t.Run("auth creds with relative auth-endpoint errors", func(t *testing.T) {
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthUsername = "admin"
+		ctx.AuthPassword = "P@ssw0rd"
+		ctx.AuthEndpoint = "/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "some-guid")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "is not an absolute URL")
+	})
+
+	t.Run("auth creds with empty auth-endpoint errors", func(t *testing.T) {
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthUsername = "admin"
+		ctx.AuthPassword = "P@ssw0rd"
+		ctx.AuthEndpoint = ""
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "some-guid")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no console URL available")
+	})
+
+	t.Run("auth token with absolute auth-endpoint deletes device", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Contains(t, r.URL.Path, "/api/v1/devices/test-guid")
+			assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthToken = "my-token"
+		ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "test-guid")
+		assert.NoError(t, err)
+	})
+
+	t.Run("username/password with absolute auth-endpoint authenticates and deletes", func(t *testing.T) {
+		callCount := 0
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+
+			if r.URL.Path == "/api/v1/authorize" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"token":"server-token"}`))
+
+				return
+			}
+
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Contains(t, r.URL.Path, "/api/v1/devices/test-guid")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthUsername = "admin"
+		ctx.AuthPassword = "P@ssw0rd"
+		ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "test-guid")
+		assert.NoError(t, err)
+		assert.GreaterOrEqual(t, callCount, 2)
+	})
+
+	t.Run("delete device fails returns error with context", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthToken = "my-token"
+		ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "test-guid")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "device deactivated but failed to delete from console")
+	})
+
+	t.Run("consoleURL from --url takes precedence over auth-endpoint", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Contains(t, r.URL.Path, "/api/v1/devices/test-guid")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cmd := &DeactivateCmd{Local: true}
+		cmd.consoleURL = server.URL // simulates --url preserved by Validate
+
+		ctx := &Context{}
+		ctx.AuthToken = "my-token"
+		ctx.AuthEndpoint = "http://other-host/api/v1/authorize" // should not be used
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "test-guid")
+		assert.NoError(t, err)
+	})
+
+	t.Run("empty pre-resolved GUID returns error", func(t *testing.T) {
+		cmd := &DeactivateCmd{Local: true}
+		ctx := &Context{}
+		ctx.AuthToken = "my-token"
+		ctx.AuthEndpoint = "http://console.example.com/api/v1/authorize"
+
+		err := cmd.deleteDeviceFromConsoleIfAuth(ctx, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unable to determine device GUID")
+	})
+}
+
+func TestDeactivateCmd_Run_LocalWithAuthDeletesFromConsole(t *testing.T) {
+	t.Run("local CCM deactivation with auth credentials deletes from console", func(t *testing.T) {
+		deleteCalled := false
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodDelete {
+				deleteCalled = true
+
+				assert.Contains(t, r.URL.Path, "/api/v1/devices/")
+				w.WriteHeader(http.StatusOK)
+
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
+
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+		ctx.AuthToken = "my-token"
+		ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+
+		cmd := DeactivateCmd{Local: true}
+		cmd.ControlMode = ControlModeCCM
+
+		err := cmd.Run(ctx)
+		assert.NoError(t, err)
+		assert.True(t, deleteCalled, "should have called DELETE on console")
+	})
+
+	t.Run("local CCM deactivation with --url deletes from console", func(t *testing.T) {
+		deleteCalled := false
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/authorize" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"token":"server-token"}`))
+
+				return
+			}
+
+			if r.Method == http.MethodDelete {
+				deleteCalled = true
+
+				assert.Contains(t, r.URL.Path, "/api/v1/devices/device-guid")
+				w.WriteHeader(http.StatusOK)
+
+				return
+			}
+
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
+
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+		ctx.AuthUsername = "admin"
+		ctx.AuthPassword = "P@ssw0rd"
+		ctx.AuthEndpoint = "/api/v1/authorize"
+
+		// --local + --url: Validate moves URL to consoleURL
+		cmd := DeactivateCmd{Local: true, URL: server.URL}
+		cmd.ControlMode = ControlModeCCM
+
+		err := cmd.Validate()
+		require.NoError(t, err)
+
+		err = cmd.Run(ctx)
+		assert.NoError(t, err)
+		assert.True(t, deleteCalled, "should have called DELETE on console")
+	})
+
+	t.Run("local deactivation without auth does not call console", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("device-guid", nil)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
+
+		ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+
+		cmd := DeactivateCmd{Local: true}
+		cmd.ControlMode = ControlModeCCM
+
+		err := cmd.Run(ctx)
+		assert.NoError(t, err)
+	})
+}
+
+func TestIsAbsoluteURL(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"https://example.com/api", true},
+		{"http://example.com/api", true},
+		{"HTTP://EXAMPLE.COM", true},
+		{"HTTPS://EXAMPLE.COM", true},
+		{"/api/v1/authorize", false},
+		{"api/v1/authorize", false},
+		{"", false},
+		{"ftp://example.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, isAbsoluteURL(tt.input))
+		})
+	}
 }
 
 // Test setupTLSConfig function
