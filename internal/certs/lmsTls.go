@@ -5,6 +5,7 @@
 package certs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -18,11 +19,14 @@ import (
 
 // generates a TLS configuration based on the provided mode.
 func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
-	tlsConfig := &tls.Config{}
-
-	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: skipAMTCertCheck,
+	}
 
 	if *mode == 0 { // pre-provisioning mode
+		// Pre-provisioning uses AMT loopback/self-signed TLS; allow handshake and
+		// enforce certificate validation in VerifyPeerCertificate.
+		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if skipAMTCertCheck {
 				return nil
@@ -32,7 +36,11 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertC
 		}
 	} else {
 		// default tls config if device is in ACM or CCM
-		log.Trace("Setting default TLS Config for ACM/CCM mode")
+		if skipAMTCertCheck {
+			log.Trace("Skipping AMT certificate verification for ACM/CCM mode (loopback TLS)")
+		} else {
+			log.Trace("Using default TLS config for ACM/CCM mode")
+		}
 	}
 
 	return tlsConfig
@@ -62,7 +70,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 				return err
 			}
 
-			log.Infof("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
+			log.Tracef("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
 
 			parsedCerts = append(parsedCerts, cert)
 
@@ -84,6 +92,31 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 
 		return nil
 	case selfSignedChainLength:
+		// On AMT 19+ loopback TLS, the LMS/AMT certificate is typically a single
+		// self-signed certificate that is not rooted in the system trust store.
+		// In pre-provisioning mode (mode == 0), accept this only when the leaf
+		// certificate matches AMT loopback expectations.
+		if mode != nil && *mode == 0 {
+			cert, err := x509.ParseCertificate(rawCerts[0])
+			if err != nil {
+				log.Error("Failed to parse self-signed AMT loopback certificate:", err)
+
+				return err
+			}
+
+			if !bytes.Equal(cert.RawSubject, cert.RawIssuer) {
+				return errors.New("single AMT loopback certificate is not self-signed")
+			}
+
+			if err := VerifyLeafCertificate(cert, amtCertInfo); err != nil {
+				return err
+			}
+
+			log.Trace("Accepting self-signed AMT loopback certificate in pre-provisioning mode")
+
+			return nil
+		}
+
 		return HandleAMTTransition(mode)
 	}
 

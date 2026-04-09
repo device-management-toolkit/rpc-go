@@ -12,14 +12,15 @@ import (
 
 // Context holds shared dependencies injected into commands
 type Context struct {
-	AMTCommand    amt.Interface
-	ControlMode   int
-	LogLevel      string
-	JsonOutput    bool
-	TableOutput   bool
-	NoColor       bool
-	Verbose       bool
-	SkipCertCheck bool
+	AMTCommand       amt.Interface
+	ControlMode      int
+	LocalTLSEnforced bool
+	LogLevel         string
+	JsonOutput       bool
+	TableOutput      bool
+	NoColor          bool
+	Verbose          bool
+	SkipCertCheck    bool
 	// SkipAMTCertCheck controls whether to skip TLS verification when connecting to AMT/LMS over TLS
 	// This is distinct from SkipCertCheck which applies to remote RPS HTTPS/WSS connections.
 	SkipAMTCertCheck bool
