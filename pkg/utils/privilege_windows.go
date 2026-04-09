@@ -18,6 +18,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// CanAMTBeSupported reports whether the current OS can have MEI/HECI hardware.
+// Returns true on Windows where vPro systems exist, but does not guarantee
+// the hardware is actually present — HECI calls determine that at runtime.
+func CanAMTBeSupported() bool {
+	return true
+}
+
 // IsElevated returns true if the current process has administrator privileges.
 func IsElevated() bool {
 	return windows.GetCurrentProcessToken().IsElevated()

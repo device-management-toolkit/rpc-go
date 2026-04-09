@@ -1,4 +1,4 @@
-//go:build linux
+//go:build !windows
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2024
@@ -11,8 +11,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"syscall"
 )
+
+// CanAMTBeSupported reports whether the current OS can have MEI/HECI hardware.
+// Returns true on platforms where AMT could exist (e.g. Linux with vPro),
+// false on platforms where it never will (e.g. macOS).
+func CanAMTBeSupported() bool {
+	return runtime.GOOS == "linux"
+}
 
 // IsElevated returns true if the current process is running as root.
 func IsElevated() bool {

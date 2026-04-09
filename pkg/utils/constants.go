@@ -81,6 +81,7 @@ var (
 	IncorrectPermissions  = CustomError{Code: 1, Message: "IncorrectPermissions"}
 	HECIDriverNotDetected = CustomError{Code: 2, Message: "HECIDriverNotDetected"}
 	AmtNotDetected        = CustomError{Code: 3, Message: "AmtNotDetected"}
+	AMTNotSupported       = CustomError{Code: 6, Message: "AMTNotSupported", Details: "AMT is not supported on this platform"}
 	AmtNotReady           = CustomError{Code: 4, Message: "AmtNotReady"}
 	HelpRequested         = CustomError{Code: 5, Message: "flag: help requested"}
 	GenericFailure        = CustomError{Code: 10, Message: "GenericFailure"}

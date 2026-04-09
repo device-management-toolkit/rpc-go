@@ -236,8 +236,9 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 		}
 	}
 
-	// Signal to Execute() that elevation would unlock more data
-	if !cmd.HECIAvailable && !utils.IsElevated() {
+	// Signal to Execute() that elevation would unlock more data — but only
+	// on platforms where HECI actually exists; elsewhere elevation won't help.
+	if !cmd.HECIAvailable && !utils.IsElevated() && utils.CanAMTBeSupported() {
 		return utils.IncorrectPermissions
 	}
 
@@ -492,11 +493,13 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 	// Get UPID (Intel Unique Platform ID) — uses its own HECI client, handles errors internally
 	if showAll || cmd.UPID {
-		upidData, err := s.amtCommand.GetUPID()
-		if err != nil {
-			log.Trace("Failed to get UPID: ", err)
-		} else if upidData != nil {
-			result.UPID = upidData
+		if s.heciAvailable {
+			upidData, err := s.amtCommand.GetUPID()
+			if err != nil {
+				log.Trace("Failed to get UPID: ", err)
+			} else if upidData != nil {
+				result.UPID = upidData
+			}
 		}
 	}
 
@@ -703,7 +706,10 @@ func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 	if !s.heciAvailable {
 		fmt.Println()
 
-		if !utils.IsElevated() {
+		if !utils.CanAMTBeSupported() {
+			fmt.Println(infoIndent + infoDimStyle.Render(
+				"AMT is not supported on this platform \u2014 showing OS-level information only"))
+		} else if !utils.IsElevated() {
 			fmt.Println(infoIndent + infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable"))
 			fmt.Println(infoIndent + infoDimStyle.Render(
@@ -947,7 +953,10 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 	var b strings.Builder
 
 	if !s.heciAvailable {
-		if !utils.IsElevated() {
+		if !utils.CanAMTBeSupported() {
+			b.WriteString("\n" + infoIndent + infoDimStyle.Render(
+				"AMT is not supported on this platform \u2014 showing OS-level information only") + "\n")
+		} else if !utils.IsElevated() {
 			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable") + "\n")
 			b.WriteString(infoIndent + infoDimStyle.Render(

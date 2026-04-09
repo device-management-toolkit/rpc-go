@@ -129,6 +129,18 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		backoff     = 4 * time.Second
 	)
 
+	// No MEI/HECI driver on this platform — degrade without prompting for elevation.
+	if !utils.CanAMTBeSupported() {
+		if cmd.SkipWSMANSetup {
+			cmd.ControlMode = -1
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		return utils.AMTNotSupported
+	}
+
 	// HECI requires admin — fail fast when not elevated instead of retrying.
 	if !utils.IsElevated() {
 		if cmd.SkipWSMANSetup {

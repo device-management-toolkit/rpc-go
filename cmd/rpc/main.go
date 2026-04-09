@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/cli"
@@ -37,8 +38,9 @@ func main() {
 }
 
 func handleErrorAndExit(err error) {
-	if customErr, ok := err.(utils.CustomError); ok {
-		if err != utils.HelpRequested {
+	var customErr utils.CustomError
+	if errors.As(err, &customErr) {
+		if customErr.Code != utils.HelpRequested.Code {
 			log.Error(customErr.Error())
 		}
 

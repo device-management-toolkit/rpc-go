@@ -131,8 +131,12 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	ctx, perr := parser.Parse(parseArgs)
 
 	// Log config file presence after parsing (logging is configured by AfterApply at this point)
-	if _, statErr := os.Stat(configFilePath); statErr == nil {
-		log.Infof("Using configuration file: %s (flag values may originate from this file)", configFilePath)
+	// Skip for commands that don't use config (e.g., version, amtinfo)
+	if _, statErr := os.Stat(configFilePath); statErr == nil && ctx != nil {
+		cmd := ctx.Selected().Name
+		if cmd != "version" && cmd != "amtinfo" {
+			log.Infof("Using configuration file: %s (flag values may originate from this file)", configFilePath)
+		}
 	}
 
 	if perr == nil {
