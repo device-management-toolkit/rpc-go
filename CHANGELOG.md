@@ -1,3 +1,5 @@
+## [2.50.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.0...v2.50.1) (2026-04-10)
+
 # [2.50.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.2...v2.50.0) (2026-03-28)
 
 
