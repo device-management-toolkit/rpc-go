@@ -118,12 +118,12 @@ func (cmd *ProxyCmd) Run(ctx *commands.Context) error {
 				// Convert InfoFormat to readable string
 				formatStr := "Unknown"
 
-				switch ap.InfoFormat {
-				case 3:
+				switch ipshttp.InfoFormat(ap.InfoFormat) {
+				case ipshttp.InfoFormatIPv4:
 					formatStr = "IPv4"
-				case 4:
+				case ipshttp.InfoFormatIPv6:
 					formatStr = "IPv6"
-				case 201:
+				case ipshttp.InfoFormatFQDN:
 					formatStr = "FQDN"
 				}
 
