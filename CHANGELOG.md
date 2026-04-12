@@ -1,3 +1,10 @@
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-04-12)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
 ## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-04-09)
 
 
