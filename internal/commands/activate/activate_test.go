@@ -723,3 +723,54 @@ func TestGetLocalIP(t *testing.T) {
 	assert.NotEmpty(t, ip)
 	assert.NotEqual(t, "unknown", ip, "should resolve to an IP or hostname")
 }
+
+func TestResolveConsoleAuth_NoOp(t *testing.T) {
+	t.Run("no-op when AuthEndpoint is empty", func(t *testing.T) {
+		cmd := &ActivateCmd{}
+		ctx := &commands.Context{}
+
+		baseURL, _, _, err := cmd.resolveConsoleAuth(ctx)
+		assert.NoError(t, err)
+		assert.Empty(t, baseURL)
+	})
+
+	t.Run("no-op when AuthEndpoint is relative", func(t *testing.T) {
+		cmd := &ActivateCmd{}
+		ctx := &commands.Context{}
+		ctx.AuthEndpoint = "/api/v1/authorize"
+
+		baseURL, _, _, err := cmd.resolveConsoleAuth(ctx)
+		assert.NoError(t, err)
+		assert.Empty(t, baseURL)
+	})
+}
+
+func TestResolveConsoleAuth_WithToken(t *testing.T) {
+	cmd := &ActivateCmd{UUID: "test-guid"}
+	ctx := &commands.Context{}
+	ctx.AuthToken = "my-token"
+	ctx.AuthEndpoint = "https://console.example.com/api/v1/authorize"
+
+	baseURL, token, guid, err := cmd.resolveConsoleAuth(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://console.example.com", baseURL)
+	assert.Equal(t, "my-token", token)
+	assert.Equal(t, "test-guid", guid)
+}
+
+func TestResolveConsoleAuth_UUIDFromAMT(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("amt-uuid-123", nil)
+
+	cmd := &ActivateCmd{}
+	ctx := &commands.Context{AMTCommand: mockAMT}
+	ctx.AuthToken = "token"
+	ctx.AuthEndpoint = "https://console.example.com/api/v1/authorize"
+
+	_, _, guid, err := cmd.resolveConsoleAuth(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "amt-uuid-123", guid)
+}
