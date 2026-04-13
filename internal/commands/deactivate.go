@@ -110,8 +110,17 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 	}
 
 	if cmd.Local {
-		// For local deactivation
-		return cmd.executeLocalDeactivate(ctx)
+		// Resolve GUID before deactivation — AMT won't respond after unprovision.
+		guid, guidErr := cmd.resolveGUID(ctx)
+		if guidErr != nil && isHTTPURL(ctx.AuthEndpoint) {
+			log.Warnf("Could not resolve device GUID for console cleanup: %v", guidErr)
+		}
+
+		if err := cmd.executeLocalDeactivate(ctx); err != nil {
+			return err
+		}
+
+		return cmd.deleteDeviceFromConsole(ctx, guid)
 	}
 
 	// For remote deactivation via RPS
@@ -140,23 +149,19 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 
 // authenticate, then deactivate locally and delete device from db.
 func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
-	parsed, err := url.Parse(cmd.URL)
+	consoleBaseURL, err := parseBaseURL(cmd.URL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	consoleBaseURL := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
-
-	// Authenticate with the console
 	token, err := cmd.authenticateWithConsole(ctx, consoleBaseURL)
 	if err != nil {
 		return fmt.Errorf("console authentication failed: %w", err)
 	}
 
-	// Resolve device GUID
-	guid, err := cmd.resolveGUID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to resolve device GUID: %w", err)
+	guid, guidErr := cmd.resolveGUID(ctx)
+	if guidErr != nil {
+		log.Warnf("Could not resolve device GUID for console cleanup: %v", guidErr)
 	}
 
 	// Ensure AMT password for local deactivation
@@ -173,7 +178,13 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 		return err
 	}
 
-	// Best-effort console cleanup — device is already deactivated at this point.
+	// Console cleanup — skip if GUID is not available.
+	if guid == "" {
+		log.Warn("Skipping console device deletion: device GUID is not available")
+
+		return nil
+	}
+
 	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck); err != nil {
 		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
 	}
@@ -212,6 +223,36 @@ func (cmd *DeactivateCmd) resolveGUID(ctx *Context) (string, error) {
 	}
 
 	return "", fmt.Errorf("unable to determine device GUID; provide --uuid")
+}
+
+// deleteDeviceFromConsole deletes the device from the console using AuthEndpoint.
+// guid must be resolved before deactivation since AMT is unavailable afterwards.
+func (cmd *DeactivateCmd) deleteDeviceFromConsole(ctx *Context, guid string) error {
+	if !isHTTPURL(ctx.AuthEndpoint) {
+		return nil
+	}
+
+	if guid == "" {
+		log.Warn("Skipping console device deletion: device GUID is not available")
+
+		return nil
+	}
+
+	consoleBaseURL, err := parseBaseURL(ctx.AuthEndpoint)
+	if err != nil {
+		return fmt.Errorf("invalid auth endpoint URL: %w", err)
+	}
+
+	token, err := cmd.authenticateWithConsole(ctx, consoleBaseURL)
+	if err != nil {
+		return fmt.Errorf("console authentication failed: %w", err)
+	}
+
+	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck); err != nil {
+		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
+	}
+
+	return nil
 }
 
 // executeLocalDeactivate handles local deactivation
@@ -290,4 +331,23 @@ func (cmd *DeactivateCmd) deactivateCCM(ctx *Context) error {
 	log.Info("Status: Device deactivated")
 
 	return nil
+}
+
+func isHTTPURL(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+
+	lower := strings.ToLower(rawURL)
+
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func parseBaseURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host), nil
 }

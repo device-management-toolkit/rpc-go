@@ -449,7 +449,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 //   - Remote TLS enabled with AcceptNonSecureConnections=false → both true.
 //   - All other cases → both false.
 func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allowSelfSigned bool) {
-	if cfg.Configuration.TLS.Enabled {
+	if cfg.Configuration.TLS.Enabled || cmd.LocalTLSEnforced {
 		return true, true
 	}
 
@@ -508,25 +508,74 @@ func getLocalIP() string {
 
 // runLocalProfileFullflow loads a local profile file (optionally decrypt) and runs the orchestrator
 func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
-	// Prefer existing loader for plaintext YAML
+	// Load the profile first so its TLS settings are available for device registration.
+	var cfg config.Configuration
+
 	if cmd.Key == "" {
 		c, err := profile.LoadProfile(cmd.Profile)
 		if err != nil {
 			return fmt.Errorf("failed to load profile: %w", err)
 		}
 
-		orch := orchestrator.NewProfileOrchestrator(c, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-		if err := orch.ExecuteProfile(); err != nil {
+		cfg = c
+	} else {
+		c, err := cmd.loadEncryptedProfile()
+		if err != nil {
 			return err
 		}
 
-		log.Info("Profile fullflow completed successfully")
-
-		return nil
+		cfg = c
 	}
 
-	// Encrypted file path handling using go-wsman security helper
-	return cmd.runLocalEncryptedProfile(ctx)
+	// Resolve AMT/MEBx/MPS passwords — generate random ones when the profile requests it.
+	amtPassword, mebxPassword, mpsPassword, err := profile.ResolvePasswords(&cfg)
+	if err != nil {
+		return fmt.Errorf("failed to resolve passwords: %w", err)
+	}
+
+	hasCIRA := cfg.Configuration.AMTSpecific.CIRA.MPSAddress != ""
+
+	// Register device with console before activation (no-op if no auth endpoint)
+	consoleBaseURL, token, guid, err := cmd.resolveConsoleAuth(ctx)
+	if err != nil {
+		return err
+	}
+
+	if consoleBaseURL != "" {
+		if err := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg); err != nil {
+			return fmt.Errorf("failed to add device to console: %w", err)
+		}
+	}
+
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	if err := orch.ExecuteProfile(); err != nil {
+		// When CIRA configuration fails, clear the MPS password from the console
+		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
+			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+		}
+
+		return err
+	}
+
+	log.Info("Profile fullflow completed successfully")
+
+	return nil
+}
+
+// loadEncryptedProfile decrypts a local profile file using the provided key
+func (cmd *ActivateCmd) loadEncryptedProfile() (config.Configuration, error) {
+	if cmd.Key == "" {
+		return config.Configuration{}, fmt.Errorf("missing --key for encrypted profile file")
+	}
+
+	crypto := security.Crypto{EncryptionKey: cmd.Key}
+
+	cfg, err := crypto.ReadAndDecryptFile(cmd.Profile)
+	if err != nil {
+		return config.Configuration{}, fmt.Errorf("failed to decrypt profile: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // looksLikeFilePath determines if the provided string looks like a file path (absolute, relative, UNC, or has an extension)
@@ -549,27 +598,41 @@ func looksLikeFilePath(p string) bool {
 	return false
 }
 
-// runLocalEncryptedProfile decrypts a local profile file using the provided key and runs orchestrator
-func (cmd *ActivateCmd) runLocalEncryptedProfile(ctx *commands.Context) error {
-	if cmd.Key == "" {
-		return fmt.Errorf("missing --key for encrypted profile file")
+// resolveConsoleAuth authenticates with the console and resolves the device GUID using AuthEndpoint.
+func (cmd *ActivateCmd) resolveConsoleAuth(ctx *commands.Context) (consoleBaseURL, token, guid string, err error) {
+	if ctx.AuthEndpoint == "" {
+		return "", "", "", nil
 	}
 
-	crypto := security.Crypto{EncryptionKey: cmd.Key}
+	lower := strings.ToLower(ctx.AuthEndpoint)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return "", "", "", nil
+	}
 
-	cfg, err := crypto.ReadAndDecryptFile(cmd.Profile)
+	parsed, err := url.Parse(ctx.AuthEndpoint)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt profile: %w", err)
+		return "", "", "", fmt.Errorf("invalid auth endpoint URL: %w", err)
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-	if err := orch.ExecuteProfile(); err != nil {
-		return err
+	consoleBaseURL = fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	token = ctx.AuthToken
+	if token == "" {
+		token, err = profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+		if err != nil {
+			return "", "", "", fmt.Errorf("console authentication failed: %w", err)
+		}
 	}
 
-	log.Info("Profile fullflow completed successfully")
+	guid = cmd.UUID
+	if guid == "" && ctx.AMTCommand != nil {
+		guid, err = ctx.AMTCommand.GetUUID()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get device UUID: %w", err)
+		}
+	}
 
-	return nil
+	return consoleBaseURL, token, guid, nil
 }
 
 // runLocalActivation executes local activation using the local service
@@ -593,6 +656,19 @@ func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 	// Validate and execute the local command
 	if err := localCmd.Validate(); err != nil {
 		return err
+	}
+
+	// Register device with console before activation (no-op if no auth endpoint).
+	consoleBaseURL, token, guid, err := cmd.resolveConsoleAuth(ctx)
+	if err != nil {
+		return err
+	}
+
+	if consoleBaseURL != "" {
+		cfg := &config.Configuration{}
+		if err := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, ctx.AMTPassword, "", "", false, cfg); err != nil {
+			return fmt.Errorf("failed to add device to console: %w", err)
+		}
 	}
 
 	return localCmd.Run(ctx)
