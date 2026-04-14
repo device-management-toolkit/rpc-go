@@ -41,6 +41,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetUPID().Return(nil, nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
 				m.EXPECT().GetProvisioningState().Return(2, nil)
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
@@ -92,6 +93,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			mockAMT := mock.NewMockInterface(ctrl)
 			tt.setupMock(mockAMT)
 			tt.ctx.AMTCommand = mockAMT
+			tt.cmd.HECIAvailable = true
 
 			// Capture output
 			oldStdout := os.Stdout
@@ -131,6 +133,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
@@ -163,7 +166,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	defer server.Close()
 
 	// Run command with --sync to test PATCH. Provide full endpoint URL.
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 
 	err := cmd.Run(ctx)
@@ -187,6 +190,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
@@ -208,7 +212,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthToken = "mytoken"
 
@@ -227,6 +231,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
@@ -262,7 +267,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	defer server.Close()
 
 	// Provide full devices endpoint; auth defaults will derive from this host
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "alice"
 	ctx.AuthPassword = "s3cr3t"
@@ -282,6 +287,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
@@ -316,7 +322,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	defer server.Close()
 
 	// Provide full devices endpoint; custom auth endpoint remains respected
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "bob"
 	ctx.AuthPassword = "hunter2"
@@ -356,6 +362,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetUPID().Return(nil, nil)
 				m.EXPECT().GetControlMode().Return(1, nil) // Called once (cached for UserCert check and Mode)
 				m.EXPECT().GetProvisioningState().Return(2, nil)
 
@@ -538,6 +545,97 @@ func TestInfoService_OutputJSON_Error(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestInfoService_OutputTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   *InfoResult
+		cmd      *AmtInfoCmd
+		validate func(*testing.T, string)
+	}{
+		{
+			name: "all information in table format",
+			result: &InfoResult{
+				AMT:              "16.1.25",
+				BuildNumber:      "3425",
+				SKU:              "16392",
+				Features:         "AMT Pro",
+				UUID:             "12345678-1234-1234-1234-123456789ABC",
+				ControlMode:      "Admin",
+				OperationalState: "enabled",
+				DNSSuffix:        "example.com",
+				DNSSuffixOS:      "os.example.com",
+				HostnameOS:       "test-host",
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "connected",
+					RemoteTrigger: "user",
+					MPSHostname:   "mps.example.com",
+				},
+				WiredAdapter: &amt.InterfaceSettings{
+					MACAddress:  "00:11:22:33:44:55",
+					IPAddress:   "192.168.1.100",
+					OsIPAddress: "192.168.1.100",
+					DHCPEnabled: true,
+					DHCPMode:    "active",
+					LinkStatus:  "up",
+				},
+			},
+			cmd: &AmtInfoCmd{All: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "Category")
+				assert.Contains(t, output, "Flag")
+				assert.Contains(t, output, "Property")
+				assert.Contains(t, output, "Value")
+				assert.Contains(t, output, "Device")
+				assert.Contains(t, output, "-r")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "3425")
+				assert.Contains(t, output, "Admin")
+				assert.Contains(t, output, "Remote Access")
+				assert.Contains(t, output, "-a")
+				assert.Contains(t, output, "Wired Adapter")
+				assert.Contains(t, output, "-l")
+				assert.Contains(t, output, "00:11:22:33:44:55")
+			},
+		},
+		{
+			name: "specific flags table",
+			result: &InfoResult{
+				AMT: "16.1.25",
+			},
+			cmd: &AmtInfoCmd{Ver: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.NotContains(t, output, "SKU")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewInfoService(nil)
+
+			oldStdout := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err := service.OutputTable(tt.result, tt.cmd)
+
+			w.Close()
+
+			out, _ := io.ReadAll(r)
+			os.Stdout = oldStdout
+
+			assert.NoError(t, err)
+
+			if tt.validate != nil {
+				tt.validate(t, string(out))
+			}
+		})
+	}
+}
+
 func TestInfoService_OutputText(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -592,21 +690,34 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{All: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "Build Number\t\t: 3425")
-				assert.Contains(t, output, "SKU\t\t\t: 16392")
-				assert.Contains(t, output, "Features\t\t: AMT Pro")
-				assert.Contains(t, output, "UUID\t\t\t: 12345678-1234-1234-1234-123456789ABC")
-				assert.Contains(t, output, "Control Mode\t\t: Admin")
-				assert.Contains(t, output, "Operational State\t: enabled")
-				assert.Contains(t, output, "DNS Suffix\t\t: example.com")
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: os.example.com")
-				assert.Contains(t, output, "Hostname (OS)\t\t: test-host")
-				assert.Contains(t, output, "RAS Network\t\t: connected")
-				assert.Contains(t, output, "---Wired Adapter---")
-				assert.Contains(t, output, "---Wireless Adapter---")
-				assert.Contains(t, output, "---Certificate Hashes---")
-				assert.Contains(t, output, "Intel AMT Certificate  (Default, Active)")
+				assert.Contains(t, output, "AMT Device Information")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "Build Number")
+				assert.Contains(t, output, "3425")
+				assert.Contains(t, output, "SKU")
+				assert.Contains(t, output, "16392")
+				assert.Contains(t, output, "Features")
+				assert.Contains(t, output, "AMT Pro")
+				assert.Contains(t, output, "UUID")
+				assert.Contains(t, output, "12345678-1234-1234-1234-123456789ABC")
+				assert.Contains(t, output, "Control Mode")
+				assert.Contains(t, output, "Admin")
+				assert.Contains(t, output, "Operational State")
+				assert.Contains(t, output, "enabled")
+				assert.Contains(t, output, "DNS Suffix")
+				assert.Contains(t, output, "example.com")
+				assert.Contains(t, output, "os.example.com")
+				assert.Contains(t, output, "Hostname (OS)")
+				assert.Contains(t, output, "test-host")
+				assert.Contains(t, output, "Remote Access")
+				assert.Contains(t, output, "connected")
+				assert.Contains(t, output, "Wired Adapter")
+				assert.Contains(t, output, "Wireless Adapter")
+				assert.Contains(t, output, "Certificate Hashes")
+				assert.Contains(t, output, "Intel AMT Certificate")
+				assert.Contains(t, output, "Default")
+				assert.Contains(t, output, "Active")
 			},
 		},
 		{
@@ -617,8 +728,10 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ver: true, Bld: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "Build Number\t\t: 3425")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "Build Number")
+				assert.Contains(t, output, "3425")
 				assert.NotContains(t, output, "SKU")
 			},
 		},
@@ -629,7 +742,8 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
 			},
 		},
 		{
@@ -641,7 +755,7 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Lan: true},
 			validate: func(t *testing.T, output string) {
-				assert.NotContains(t, output, "---Wired Adapter---")
+				assert.NotContains(t, output, "Wired Adapter")
 			},
 		},
 		{
@@ -651,7 +765,7 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Cert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---No Certificate Hashes Found---")
+				assert.Contains(t, output, "No certificate hashes found")
 			},
 		},
 		{
@@ -683,9 +797,11 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Cert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Cert1  (Default)")
-				assert.Contains(t, output, "Cert2  (Active)")
-				assert.Contains(t, output, "Cert3\n")
+				assert.Contains(t, output, "Cert1")
+				assert.Contains(t, output, "Default")
+				assert.Contains(t, output, "Cert2")
+				assert.Contains(t, output, "Active")
+				assert.Contains(t, output, "Cert3")
 			},
 		},
 	}
@@ -1217,9 +1333,12 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ver: true, Sku: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "SKU\t\t\t: 16392")
-				assert.Contains(t, output, "Features\t\t: AMT Pro")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "SKU")
+				assert.Contains(t, output, "16392")
+				assert.Contains(t, output, "Features")
+				assert.Contains(t, output, "AMT Pro")
 			},
 		},
 		{
@@ -1229,8 +1348,9 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{DNS: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: os.example.com")
-				assert.Contains(t, output, "DNS Suffix\t\t: ")
+				assert.Contains(t, output, "DNS Suffix (OS)")
+				assert.Contains(t, output, "os.example.com")
+				assert.Contains(t, output, "DNS Suffix")
 			},
 		},
 		{
@@ -1240,8 +1360,9 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{DNS: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "DNS Suffix\t\t: example.com")
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: ")
+				assert.Contains(t, output, "DNS Suffix")
+				assert.Contains(t, output, "example.com")
+				assert.Contains(t, output, "DNS Suffix (OS)")
 			},
 		},
 		{
@@ -1257,8 +1378,10 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ras: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "RAS MPS Hostname\t: mps.example.com")
-				assert.Contains(t, output, "RAS MPS Port\t\t: 4433")
+				assert.Contains(t, output, "MPS Hostname")
+				assert.Contains(t, output, "mps.example.com")
+				assert.Contains(t, output, "MPS Port")
+				assert.Contains(t, output, "4433")
 			},
 		},
 		{
@@ -1274,8 +1397,9 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ras: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "RAS MPS Hostname\t: mps.example.com")
-				assert.NotContains(t, output, "RAS MPS Port")
+				assert.Contains(t, output, "MPS Hostname")
+				assert.Contains(t, output, "mps.example.com")
+				assert.NotContains(t, output, "MPS Port")
 			},
 		},
 		{
@@ -1292,11 +1416,14 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Lan: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---Wireless Adapter---")
-				assert.Contains(t, output, "DHCP Enabled\t\t: false")
-				assert.Contains(t, output, "DHCP Mode\t\t: disabled")
-				assert.Contains(t, output, "Link Status\t\t: down")
-				assert.NotContains(t, output, "---Wired Adapter---")
+				assert.Contains(t, output, "Wireless Adapter")
+				assert.Contains(t, output, "DHCP Enabled")
+				assert.Contains(t, output, "false")
+				assert.Contains(t, output, "DHCP Mode")
+				assert.Contains(t, output, "disabled")
+				assert.Contains(t, output, "Link Status")
+				assert.Contains(t, output, "down")
+				assert.NotContains(t, output, "Wired Adapter")
 			},
 		},
 		{
@@ -1313,9 +1440,9 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{UserCert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---Public Key Certs---")
-				assert.Contains(t, output, "User Cert\n")
-				assert.NotContains(t, output, "---Certificate Hashes---")
+				assert.Contains(t, output, "Public Key Certificates")
+				assert.Contains(t, output, "User Cert")
+				assert.NotContains(t, output, "Certificate Hashes")
 			},
 		},
 	}

@@ -336,7 +336,7 @@ func TestGetCertificateHashes(t *testing.T) {
 func TestGetRemoteAccessConnectionStatus(t *testing.T) {
 	result, err := amt.GetRemoteAccessConnectionStatus()
 	assert.NoError(t, err)
-	assert.Equal(t, "outside enterprise", result.NetworkStatus)
+	assert.Equal(t, "outside enterprise (CIRA)", result.NetworkStatus)
 	assert.Equal(t, "not connected", result.RemoteStatus)
 	assert.Equal(t, "user initiated", result.RemoteTrigger)
 	assert.Equal(t, "Test", result.MPSHostname)

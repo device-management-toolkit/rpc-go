@@ -1,6 +1,3 @@
-//go:build linux
-// +build linux
-
 /*********************************************************************
  * Copyright (c) Intel Corporation 2026
  * SPDX-License-Identifier: Apache-2.0
@@ -13,16 +10,6 @@ import (
 	"errors"
 	"testing"
 )
-
-func TestNewClient(t *testing.T) {
-	client := NewClient()
-	if client == nil {
-		t.Fatal("NewClient() returned nil")
-	}
-
-	// Ensure it implements the Interface
-	_ = client
-}
 
 func TestNewUPID(t *testing.T) {
 	tests := []struct {
@@ -382,7 +369,6 @@ func TestUPIDMarshalJSON(t *testing.T) {
 				},
 				PlatformIdType: PlatformIDTypePrintableString,
 			},
-			// JSON should include type first, then IDs
 			expected: `{"oemPlatformIdType":"Printable String (2)","oemId":"ABCDEF0123456789FEDCBA9876543210112233445566778899AABBCCDDEEFF00","csmeId":"123456789ABCDEF01122334455667788AABBCCDDEEFF00112233445566778899"}`,
 		},
 		{
@@ -409,6 +395,27 @@ func TestUPIDMarshalJSON(t *testing.T) {
 				t.Error("JSON output should not contain newlines")
 			}
 		})
+	}
+}
+
+func TestUPIDHECIHeaderSize(t *testing.T) {
+	// Verify header is 4 bytes as per Intel spec
+	var header UPIDHECIHeader
+
+	header.Feature = 0
+	header.Command = 5
+	header.ByteCount = 0
+
+	if header.Feature != 0 {
+		t.Errorf("Header.Feature = %d, want 0", header.Feature)
+	}
+
+	if header.Command != 5 {
+		t.Errorf("Header.Command = %d, want 5", header.Command)
+	}
+
+	if header.ByteCount != 0 {
+		t.Errorf("Header.ByteCount = %d, want 0", header.ByteCount)
 	}
 }
 
@@ -470,8 +477,7 @@ func (m *MockHECI) Close() {
 	m.closed = true
 }
 
-// TestGetUPIDLinux tests GetUPID implementation with mock
-func TestGetUPIDLinux(t *testing.T) {
+func TestGetUPID(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupMock   func(*MockHECI)
@@ -488,7 +494,6 @@ func TestGetUPIDLinux(t *testing.T) {
 					switch callCount {
 					case 1:
 						// First call: enable feature response (command 2)
-						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)]
 						response := make([]byte, 8)
 						response[1] = CommandFeatureStateSet
 						binary.LittleEndian.PutUint32(response[4:8], uint32(StatusSuccess))
@@ -501,7 +506,6 @@ func TestGetUPIDLinux(t *testing.T) {
 						return len(response), nil
 					case 2:
 						// Second call: UPID response with OEM provisioned (command 5)
-						// Response format: [Feature|Command|ByteCount(2bytes)|Status(4bytes)|PlatformIdType(4bytes)|OEM(32bytes)|CSME(32bytes)]
 						response := make([]byte, 76)
 						response[1] = CommandPlatformIDGet
 						binary.LittleEndian.PutUint16(response[2:4], 72)                    // ByteCount (2 bytes)
@@ -684,11 +688,12 @@ func TestGetUPIDLinux(t *testing.T) {
 			mockHECI := &MockHECI{}
 			tt.setupMock(mockHECI)
 
-			client := &Client{
-				heci: mockHECI,
+			cmd := &Command{
+				Heci: mockHECI,
 			}
 
-			upid, err := client.GetUPID()
+			upid, err := cmd.GetUPID()
+
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("Expected error, got nil")

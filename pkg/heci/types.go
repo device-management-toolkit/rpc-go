@@ -5,6 +5,15 @@
 
 package heci
 
+import "errors"
+
+var (
+	// ErrDeviceNotInitialized indicates the HECI device handle is unavailable.
+	ErrDeviceNotInitialized = errors.New("heci device not initialized")
+	// ErrReadTimeout indicates a HECI read operation exceeded its timeout.
+	ErrReadTimeout = errors.New("heci read timeout")
+)
+
 type Interface interface {
 	Init(useLME, useWD bool) error
 	InitWithGUID(guid interface{}) error

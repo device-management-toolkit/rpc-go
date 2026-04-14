@@ -210,7 +210,9 @@ func TestProcessMessageHeartbeat(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage := server.ProcessMessage([]byte(activation))
+	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.False(t, terminal)
 	assert.NotNil(t, decodedMessage)
 }
 
@@ -221,7 +223,9 @@ func TestProcessMessageSuccess(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage := server.ProcessMessage([]byte(activation))
+	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.True(t, terminal)
 	assert.Nil(t, decodedMessage)
 }
 
@@ -232,7 +236,9 @@ func TestProcessMessageUnformattedSuccess(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage := server.ProcessMessage([]byte(activation))
+	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.True(t, terminal)
 	assert.Nil(t, decodedMessage)
 }
 
@@ -243,7 +249,9 @@ func TestProcessMessageError(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage := server.ProcessMessage([]byte(activation))
+	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	assert.Error(t, err)
+	assert.True(t, terminal)
 	assert.Nil(t, decodedMessage)
 }
 
@@ -255,6 +263,8 @@ func TestProcessMessageForLMS(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage := server.ProcessMessage([]byte(activation))
+	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.False(t, terminal)
 	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), decodedMessage)
 }

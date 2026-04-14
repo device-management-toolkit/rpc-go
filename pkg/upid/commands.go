@@ -1,6 +1,3 @@
-//go:build linux
-// +build linux
-
 /*********************************************************************
  * Copyright (c) Intel Corporation 2026
  * SPDX-License-Identifier: Apache-2.0
@@ -17,37 +14,27 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Client represents a Linux UPID client
-type Client struct {
-	heci heci.Interface
-}
-
-// NewClient creates a new UPID client for Linux
-func NewClient() Interface {
-	return &Client{
-		heci: heci.NewDriver(),
-	}
+// Command wraps a HECI interface for UPID operations.
+// Follows the same pattern as pthi.Command and hotham.Command.
+type Command struct {
+	Heci heci.Interface
 }
 
 // GetUPID retrieves the Intel UPID from the platform via MEI/HECI.
-// Automatically checks support and manages resource cleanup.
-// Following Intel UPID SDK workflow: Enable feature -> Get UPID -> Disable feature
-func (c *Client) GetUPID() (*UPID, error) {
-	// Initialize HECI driver with UPID GUID
-	err := c.heci.InitWithGUID(heci.MEI_UPID)
-	if err != nil {
-		log.Tracef("Failed to initialize UPID MEI client: %v", err)
-
-		return nil, ErrUPIDNotSupported
+// Following Intel UPID SDK workflow: Enable feature -> Get UPID -> Disable feature.
+// It initializes and cleans up the HECI connection automatically.
+func (c *Command) GetUPID() (*UPID, error) {
+	if err := c.initGUID(); err != nil {
+		return nil, err
 	}
-	defer c.close()
+	defer c.Close()
 
 	// Step 1: Enable UPID feature (required before reading)
-	err = c.setFeatureState(true)
+	err := c.setFeatureState(true)
 	if err != nil {
 		log.Tracef("Failed to enable UPID feature: %v", err)
+		// Continue anyway - some platforms may have it already enabled or not require this
 	}
-	// Continue anyway - some platforms may have it already enabled or not require this
 
 	// Step 2: Get the UPID
 	upid, getErr := c.getPlatformID()
@@ -56,14 +43,21 @@ func (c *Client) GetUPID() (*UPID, error) {
 	disableErr := c.setFeatureState(false)
 	if disableErr != nil {
 		log.Tracef("Failed to disable UPID feature: %v", disableErr)
+		// Non-fatal - log but don't fail the operation
 	}
-	// Non-fatal - log but don't fail the operation
 
 	return upid, getErr
 }
 
+// Close releases resources held by the UPID command.
+func (c *Command) Close() {
+	if c.Heci != nil {
+		c.Heci.Close()
+	}
+}
+
 // setFeatureState enables or disables the UPID feature
-func (c *Client) setFeatureState(enable bool) error {
+func (c *Command) setFeatureState(enable bool) error {
 	var featureEnabled uint8
 	if enable {
 		featureEnabled = FeatureStateEnabled
@@ -92,16 +86,16 @@ func (c *Client) setFeatureState(enable bool) error {
 	requestBytes := requestBuffer.Bytes()
 	requestSize := uint32(len(requestBytes))
 
-	_, err = c.heci.SendMessage(requestBytes, &requestSize)
+	_, err = c.Heci.SendMessage(requestBytes, &requestSize)
 	if err != nil {
 		return fmt.Errorf("failed to send feature state command: %w", err)
 	}
 
 	// Read response
-	bufferSize := c.heci.GetBufferSize()
+	bufferSize := c.Heci.GetBufferSize()
 	responseBuffer := make([]byte, bufferSize)
 
-	bytesRead, err := c.heci.ReceiveMessage(responseBuffer, &bufferSize)
+	bytesRead, err := c.Heci.ReceiveMessage(responseBuffer, &bufferSize)
 	if err != nil {
 		return fmt.Errorf("failed to receive feature state response: %w", err)
 	}
@@ -127,7 +121,7 @@ func (c *Client) setFeatureState(enable bool) error {
 }
 
 // getPlatformID sends the UPID_PLATFORM_ID_GET command and parses the response
-func (c *Client) getPlatformID() (*UPID, error) {
+func (c *Command) getPlatformID() (*UPID, error) {
 	// Prepare the UPID_PLATFORM_ID_GET request according to Intel UPID SDK
 	request := PlatformIDGetRequest{
 		Header: UPIDHECIHeader{
@@ -154,7 +148,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 
 	log.Tracef("Sending %d bytes: %x", requestSize, requestBytes)
 
-	bytesWritten, err := c.heci.SendMessage(requestBytes, &requestSize)
+	bytesWritten, err := c.Heci.SendMessage(requestBytes, &requestSize)
 	if err != nil {
 		log.Tracef("Failed to send UPID command: %v", err)
 
@@ -166,10 +160,10 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	}
 
 	// Receive the response
-	bufferSize := c.heci.GetBufferSize()
+	bufferSize := c.Heci.GetBufferSize()
 	responseBuffer := make([]byte, bufferSize)
 
-	bytesRead, err := c.heci.ReceiveMessage(responseBuffer, &bufferSize)
+	bytesRead, err := c.Heci.ReceiveMessage(responseBuffer, &bufferSize)
 	if err != nil {
 		log.Tracef("Failed to receive UPID response: %v", err)
 
@@ -183,6 +177,11 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	log.Tracef("UPID response: %d bytes received", bytesRead)
 	log.Tracef("UPID response data: %x", responseBuffer[:bytesRead])
 
+	return parseGetPlatformIDResponse(responseBuffer, bytesRead)
+}
+
+// parseGetPlatformIDResponse decodes the raw HECI response for a PlatformIDGet command.
+func parseGetPlatformIDResponse(responseBuffer []byte, bytesRead int) (*UPID, error) {
 	// Check minimum response size (header is 4 bytes + status is 4 bytes = 8 bytes minimum)
 	const minResponseSize = 8
 	if bytesRead < minResponseSize {
@@ -192,7 +191,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	// Parse header and status (8 bytes minimum)
 	var heciHeader UPIDHECIHeader
 
-	err = binary.Read(bytes.NewBuffer(responseBuffer[:4]), binary.LittleEndian, &heciHeader)
+	err := binary.Read(bytes.NewBuffer(responseBuffer[:4]), binary.LittleEndian, &heciHeader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse UPID response header: %w", err)
 	}
@@ -214,29 +213,7 @@ func (c *Client) getPlatformID() (*UPID, error) {
 
 	// Check response status using official Intel UPID status codes
 	if status != uint32(StatusSuccess) {
-		log.Tracef("UPID command returned error status: %d", status)
-
-		switch uint8(status) {
-		case StatusFeatureNotSupported:
-			return nil, ErrFeatureNotSupported
-		case StatusInvalidInputParameter:
-			return nil, ErrInvalidInputParameter
-		case StatusInternalError:
-			return nil, ErrInternalError
-		case StatusNotAllowedAfterEOP:
-			return nil, ErrNotAllowedAfterEOP
-		case StatusNotAllowedAfterManufLock:
-			return nil, ErrNotAllowedAfterManufLock
-		case StatusMaxCountersExceeded:
-			return nil, ErrMaxCountersExceeded
-		case StatusInvalidState:
-			// For GetPlatformID: called after EOP and EOM with UPID disabled
-			return nil, ErrInvalidState
-		case StatusNotAllowedAfterCBD:
-			return nil, ErrNotAllowedAfterCBD
-		default:
-			return nil, fmt.Errorf("UPID command failed with status: 0x%08x", status)
-		}
+		return nil, mapStatusError(status)
 	}
 
 	// Status is SUCCESS - check if we have the full UPID data
@@ -264,18 +241,31 @@ func (c *Client) getPlatformID() (*UPID, error) {
 	copy(fullUPID[0:32], response.OEMPlatformId[:])
 	copy(fullUPID[32:64], response.CSMEPlatformId[:])
 
-	// Create UPID from response with platform ID type
-	upid, err := NewUPID(fullUPID, response.PlatformIdType)
-	if err != nil {
-		return nil, err
-	}
-
-	return upid, nil
+	return NewUPID(fullUPID, response.PlatformIdType)
 }
 
-// close releases resources held by the UPID client (internal method).
-func (c *Client) close() {
-	if c.heci != nil {
-		c.heci.Close()
+// mapStatusError converts an Intel UPID status code to a Go error.
+func mapStatusError(status uint32) error {
+	log.Tracef("UPID command returned error status: %d", status)
+
+	switch uint8(status) {
+	case StatusFeatureNotSupported:
+		return ErrFeatureNotSupported
+	case StatusInvalidInputParameter:
+		return ErrInvalidInputParameter
+	case StatusInternalError:
+		return ErrInternalError
+	case StatusNotAllowedAfterEOP:
+		return ErrNotAllowedAfterEOP
+	case StatusNotAllowedAfterManufLock:
+		return ErrNotAllowedAfterManufLock
+	case StatusMaxCountersExceeded:
+		return ErrMaxCountersExceeded
+	case StatusInvalidState:
+		return ErrInvalidState
+	case StatusNotAllowedAfterCBD:
+		return ErrNotAllowedAfterCBD
+	default:
+		return fmt.Errorf("UPID command failed with status: 0x%08x", status)
 	}
 }
