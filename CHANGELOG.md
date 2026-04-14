@@ -1,3 +1,12 @@
+# [3.0.0-beta.16](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.15...v3.0.0-beta.16) (2026-04-13)
+
+
+### Features
+
+* add console device registration for local profile activation ([#1231](https://github.com/device-management-toolkit/rpc-go/issues/1231)) ([1ea6567](https://github.com/device-management-toolkit/rpc-go/commit/1ea656748a6e2bcb4232b6365d80e5426232409e))
+
+# [3.0.0-beta.15](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.14...v3.0.0-beta.15) (2026-04-08)
+
 # [3.0.0-beta.14](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.13...v3.0.0-beta.14) (2026-04-06)
 
 
