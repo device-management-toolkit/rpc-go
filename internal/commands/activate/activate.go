@@ -206,9 +206,15 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	log.Tracef("Entering Run method of ActivateCmd. Context: %s", ctx.AuthEndpoint)
 
 	// Local activation paths require AMT password unless stopConfig.
+	// When a profile file is provided, skip the password prompt — the profile
+	// contains the AdminPassword and runLocalProfileFullflow will resolve it.
+	isProfileFile := cmd.Profile != "" && looksLikeFilePath(cmd.Profile)
+
 	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
-		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
-			return err
+		if !isProfileFile {
+			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+				return err
+			}
 		}
 
 		if err := cmd.EnsureWSMAN(ctx); err != nil {
