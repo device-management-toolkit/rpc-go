@@ -336,7 +336,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	if err := orch.ExecuteProfile(); err != nil {
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
-			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
 		}
 
 		return err
@@ -368,14 +368,14 @@ func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, fetcher *profi
 }
 
 // removes the MPS password from the device record in the console.
-func (cmd *ActivateCmd) clearMPSPasswordFromConsole(consoleBaseURL, token, guid string, skipCertCheck bool) {
+func (cmd *ActivateCmd) clearMPSPasswordFromConsole(ctx *commands.Context, consoleBaseURL, token, guid string) {
 	if guid == "" {
 		log.Warn("Cannot clear MPS password: device GUID is unknown")
 
 		return
 	}
 
-	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, guid, skipCertCheck); err != nil {
+	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		log.Warnf("failed to clear MPS password: %v", err)
 	} else {
 		log.Info("MPS password cleared after CIRA failure")
@@ -423,7 +423,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		payload.MPSPassword = ""
 	}
 
-	err := device.AddDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck)
+	err := device.AddDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
 	if err == nil {
 		return nil
 	}
@@ -433,7 +433,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
 		log.Debugf("Device already exists in console, updating device credentials")
 
-		if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck); updateErr != nil {
+		if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint); updateErr != nil {
 			return fmt.Errorf("update also failed: %v", updateErr)
 		}
 
@@ -551,7 +551,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	if err := orch.ExecuteProfile(); err != nil {
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
-			cmd.clearMPSPasswordFromConsole(consoleBaseURL, token, guid, ctx.SkipCertCheck)
+			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
 		}
 
 		return err
