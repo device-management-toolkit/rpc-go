@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/setupandconfiguration"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -638,6 +639,66 @@ func TestDeleteDeviceFromConsole_UUIDFromAMT(t *testing.T) {
 
 	err := cmd.deleteDeviceFromConsole(ctx, "amt-guid-456")
 	assert.NoError(t, err)
+}
+
+func TestDeleteDeviceFromConsole_CustomDevicesEndpoint(t *testing.T) {
+	called := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+
+		assert.Equal(t, "/custom/v2/devices/test-guid", r.URL.Path)
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &DeactivateCmd{UUID: "test-guid"}
+	ctx := &Context{}
+	ctx.AuthToken = "my-token"
+	ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+
+	err := cmd.deleteDeviceFromConsole(ctx, "test-guid")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, called, "expected exactly one DELETE request")
+}
+
+func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, nil)
+
+	called := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+
+		assert.Equal(t, "/custom/v2/devices/test-guid", r.URL.Path)
+		assert.Equal(t, http.MethodDelete, r.Method)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &DeactivateCmd{URL: server.URL}
+	cmd.ControlMode = ControlModeACM
+	cmd.WSMan = mockWSMAN
+
+	ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+	ctx.AuthToken = "my-token"
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+
+	err := cmd.executeHttpConsoleDeactivate(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, called, "expected exactly one DELETE request")
 }
 
 func TestSetupTLSConfig(t *testing.T) {
