@@ -49,6 +49,23 @@ func (mpr *MockPasswordReaderFail) ReadPasswordWithConfirmation(prompt, confirmP
 	return "", errors.New("Read password failed")
 }
 
+// MockPasswordReaderSpy tracks whether password prompting methods were called
+type MockPasswordReaderSpy struct {
+	Called bool
+}
+
+func (mpr *MockPasswordReaderSpy) ReadPassword() (string, error) {
+	mpr.Called = true
+
+	return utils.TestPassword, nil
+}
+
+func (mpr *MockPasswordReaderSpy) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	mpr.Called = true
+
+	return utils.TestPassword, nil
+}
+
 func TestActivateCmd_Structure(t *testing.T) {
 	// Test that ActivateCmd has the correct structure
 	cmd := &ActivateCmd{}
@@ -773,4 +790,30 @@ func TestResolveConsoleAuth_UUIDFromAMT(t *testing.T) {
 	_, _, guid, err := cmd.resolveConsoleAuth(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "amt-uuid-123", guid)
+}
+
+func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
+	// When --profile points to a file and local activation flags are present,
+	// the password prompt should be skipped because the profile contains the AMT password.
+	spy := &MockPasswordReaderSpy{}
+	origPR := utils.PR
+	utils.PR = spy
+
+	defer func() { utils.PR = origPR }()
+
+	cmd := &ActivateCmd{
+		Profile:          "config.yaml", // file path triggers profile fullflow
+		Key:              "some-encryption-key",
+		ProvisioningCert: "base64cert", // triggers hasLocalActivationFlags()
+	}
+	// Simulate deactivated device (control mode 0)
+	cmd.ControlMode = 0
+
+	ctx := &commands.Context{}
+
+	// Run will fail when trying to decrypt the non-existent profile file,
+	// but the important assertion is that the password prompt was NOT invoked.
+	_ = cmd.Run(ctx)
+
+	assert.False(t, spy.Called, "password prompt should not be triggered when profile file is provided")
 }
