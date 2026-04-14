@@ -1,3 +1,10 @@
+# [3.0.0-beta.17](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.16...v3.0.0-beta.17) (2026-04-14)
+
+
+### Features
+
+* add public pkg/version API for version info ([d8d9667](https://github.com/device-management-toolkit/rpc-go/commit/d8d96679ea36737070b25f8af8fee8ce65e227b9))
+
 # [3.0.0-beta.16](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.15...v3.0.0-beta.16) (2026-04-13)
 
 
