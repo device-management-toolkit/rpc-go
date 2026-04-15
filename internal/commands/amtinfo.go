@@ -73,7 +73,7 @@ var (
 
 func renderInfoHeader(title string) string {
 	return "\n" + infoIndent + infoHeaderStyle.Render(title) + "\n" + infoIndent +
-		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n\n"
+		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n"
 }
 
 func renderInfoRow(label, value string) string {
