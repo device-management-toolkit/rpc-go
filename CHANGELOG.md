@@ -1,3 +1,10 @@
+# [3.0.0-beta.18](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.17...v3.0.0-beta.18) (2026-04-15)
+
+
+### Bug Fixes
+
+* ensure no password prompt for profile activation ([e7eb579](https://github.com/device-management-toolkit/rpc-go/commit/e7eb579d2d79fb7427cfdf3937e720e45da3be07))
+
 # [3.0.0-beta.17](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.16...v3.0.0-beta.17) (2026-04-14)
 
 
