@@ -19,16 +19,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
+	log "github.com/sirupsen/logrus"
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
+
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-	log "github.com/sirupsen/logrus"
-	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
 
 // LocalActivateCmd handles local AMT activation
@@ -551,8 +553,8 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		if err != nil {
 			return nil, err
 		}
-		// Get secure host-based configuration response
-		startHBasedResponse, err := service.startSecureHostBasedConfiguration(certsAndKeys)
+
+		startHBasedResponse, err := service.runStartHBCWithRetry(certsAndKeys)
 		if err != nil {
 			return nil, err
 		}
@@ -856,6 +858,49 @@ func (service *LocalActivationService) convertPfxToObject(pfxb64, passphrase str
 	}
 
 	return pfxOut, nil
+}
+
+// HBC retry tuning. Variables (not const) so tests can lower the backoff.
+var (
+	hbcMaxAttempts = 3
+	hbcBackoff     = 2 * time.Second
+)
+
+// runStartHBCWithRetry invokes startSecureHostBasedConfiguration with retries on
+// transient AMT FW / HECI instability. A non-SUCCESS Status means AMT isn't armed
+// for TLS client-cert auth — proceeding would surface as a misleading WSMAN 401.
+func (service *LocalActivationService) runStartHBCWithRetry(certsAndKeys CertsAndKeys) (amt.SecureHBasedResponse, error) {
+	var (
+		response amt.SecureHBasedResponse
+		err      error
+	)
+
+	for attempt := 1; attempt <= hbcMaxAttempts; attempt++ {
+		response, err = service.startSecureHostBasedConfiguration(certsAndKeys)
+		if err == nil && response.Status == "AMT_STATUS_SUCCESS" {
+			return response, nil
+		}
+
+		if attempt < hbcMaxAttempts {
+			if err != nil {
+				log.Warnf("Host-Based Configuration failed (%d/%d): %v. Retrying...", attempt, hbcMaxAttempts, err)
+			} else {
+				log.Warnf("Host-Based Configuration status %q (%d/%d). Retrying...", response.Status, attempt, hbcMaxAttempts)
+			}
+
+			time.Sleep(hbcBackoff)
+
+			continue
+		}
+
+		if err != nil {
+			return response, err
+		}
+
+		return response, fmt.Errorf("Host-Based Configuration rejected after %d attempts: status=%q", hbcMaxAttempts, response.Status)
+	}
+
+	return response, nil
 }
 
 // startSecureHostBasedConfiguration starts secure host-based configuration
