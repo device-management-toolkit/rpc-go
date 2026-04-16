@@ -9,11 +9,33 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+// wifiCapablePorts mimics the EthernetPortSettings enumeration on a device
+// that has WiFi hardware: index 0 is wired, index 1 is wireless with a real
+// MAC address bound to the NIC.
+var wifiCapablePorts = []ethernetport.SettingsResponse{
+	{MACAddress: "aa-bb-cc-dd-ee-01"},
+	{MACAddress: "aa-bb-cc-dd-ee-02"},
+}
+
+// wifiAbsentPorts mimics a device with only a wired port and no WiFi hardware.
+var wifiAbsentPorts = []ethernetport.SettingsResponse{
+	{MACAddress: "aa-bb-cc-dd-ee-01"},
+}
+
+// wifiSlotEmptyPorts mimics a device where the wireless slot exists in the
+// enumeration but no hardware is bound (empty MACAddress). Treated as "no
+// WiFi hardware" — matches the isWifiSupportedOnDevice guard pattern.
+var wifiSlotEmptyPorts = []ethernetport.SettingsResponse{
+	{MACAddress: "aa-bb-cc-dd-ee-01"},
+	{MACAddress: ""},
+}
 
 func TestEnableWifiPortCmd_Structure(t *testing.T) {
 	cmd := &WifiSyncCmd{}
@@ -44,6 +66,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi with sync and sharing enabled
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil)
 
 		err := cmd.Run(ctx)
@@ -71,6 +94,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to return an error
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("wifi enable failed"))
 
 		err := cmd.Run(ctx)
@@ -100,6 +124,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to return a connection error
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("connection timeout"))
 
 		err := cmd.Run(ctx)
@@ -129,6 +154,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to return an authentication error
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("authentication failed"))
 
 		err := cmd.Run(ctx)
@@ -173,6 +199,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil)
 
 		// Provide a minimal non-nil context (password not needed since WSMan already set)
@@ -201,6 +228,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to be called multiple times
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil).Times(3)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(nil).Times(3)
 
 		// Call the command multiple times
@@ -232,6 +260,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 
 		ctx := &commands.Context{AMTPassword: "test-pass"}
 
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(false, false).Return(nil)
 
 		err := cmd.Run(ctx)
@@ -259,6 +288,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to return a WiFi not available error
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("WiFi hardware not available"))
 
 		err := cmd.Run(ctx)
@@ -288,6 +318,7 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		}
 
 		// Mock EnableWiFi to return an AMT not provisioned error
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiCapablePorts, nil)
 		mockWSMAN.EXPECT().EnableWiFi(true, true).Return(errors.New("AMT not provisioned"))
 
 		err := cmd.Run(ctx)
@@ -302,5 +333,77 @@ func TestEnableWifiPortCmd_Run(t *testing.T) {
 		// Test that the struct has the expected fields
 		assert.NotNil(t, cmd)
 		assert.IsType(t, ConfigureBaseCmd{}, cmd.ConfigureBaseCmd)
+	})
+
+	t.Run("wifi_slot_with_empty_mac_treated_as_absent", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &WifiSyncCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{
+				AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN},
+			},
+			OSWiFiSync:   true,
+			UEFIWiFiSync: true,
+		}
+
+		ctx := &commands.Context{AMTPassword: "test-pass"}
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiSlotEmptyPorts, nil)
+
+		err := cmd.Run(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("no_wifi_hardware_skips_silently", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &WifiSyncCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{
+				AMTBaseCmd: commands.AMTBaseCmd{
+					WSMan: mockWSMAN,
+				},
+			},
+			OSWiFiSync:   true,
+			UEFIWiFiSync: true,
+		}
+
+		ctx := &commands.Context{AMTPassword: "test-pass"}
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiAbsentPorts, nil)
+
+		err := cmd.Run(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("ethernet_probe_failure_bubbles_up", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &WifiSyncCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{
+				AMTBaseCmd: commands.AMTBaseCmd{
+					WSMan: mockWSMAN,
+				},
+			},
+			OSWiFiSync:   true,
+			UEFIWiFiSync: true,
+		}
+
+		ctx := &commands.Context{AMTPassword: "test-pass"}
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(nil, errors.New("LMS not reachable"))
+
+		err := cmd.Run(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to detect WiFi hardware")
+		assert.Contains(t, err.Error(), "LMS not reachable")
 	})
 }

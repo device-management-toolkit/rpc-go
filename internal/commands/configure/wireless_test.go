@@ -21,6 +21,47 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestWirelessCmd_Run_NoWiFiHardware(t *testing.T) {
+	t.Run("no_wifi_hardware_skips_silently", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &WirelessCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{
+				AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN},
+			},
+			Purge: true,
+		}
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(wifiAbsentPorts, nil)
+
+		err := cmd.Run(&commands.Context{AMTPassword: "test-pass"})
+		assert.NoError(t, err)
+	})
+
+	t.Run("ethernet_probe_failure_bubbles_up", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		cmd := &WirelessCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{
+				AMTBaseCmd: commands.AMTBaseCmd{WSMan: mockWSMAN},
+			},
+			Purge: true,
+		}
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(nil, errors.New("LMS not reachable"))
+
+		err := cmd.Run(&commands.Context{AMTPassword: "test-pass"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to detect WiFi hardware")
+	})
+}
+
 func TestWirelessCmd_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
