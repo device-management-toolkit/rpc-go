@@ -23,6 +23,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/list"
 	"github.com/charmbracelet/lipgloss/table"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
@@ -135,6 +136,9 @@ type AmtInfoCmd struct {
 	Cert     bool `help:"Show System Certificate Hashes" short:"c"`
 	UserCert bool `help:"Show User Certificates only" name:"userCert"`
 
+	// Proxy flags
+	Proxy bool `help:"Show HTTP Proxy Configuration (requires WSMAN)" name:"proxy"`
+
 	// Special flags
 	All bool `help:"Show All AMT Information" short:"A"`
 
@@ -182,7 +186,7 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
-		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState
+		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState && !cmd.Proxy
 }
 
 // Run executes the amtinfo command
@@ -263,6 +267,7 @@ type InfoResult struct {
 	UPID              *upid.UPID                   `json:"upid,omitempty"`
 	CertificateHashes map[string]amt.CertHashEntry `json:"certificateHashes,omitempty"`
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
+	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
 }
 
@@ -272,6 +277,14 @@ type UserCert struct {
 	Issuer                 string `json:"issuer,omitempty"`
 	TrustedRootCertificate bool   `json:"trustedRootCertificate,omitempty"`
 	ReadOnlyCertificate    bool   `json:"readOnlyCertificate,omitempty"`
+}
+
+// ProxyAccessPoint represents an HTTP proxy access point configured in AMT.
+type ProxyAccessPoint struct {
+	Address          string `json:"address"`
+	Port             int    `json:"port"`
+	NetworkDnsSuffix string `json:"networkDnsSuffix"`
+	InfoFormat       string `json:"infoFormat"`
 }
 
 // InfoService provides methods for retrieving and displaying AMT information
@@ -582,8 +595,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
-	// Ensure WSMAN client is set up once for any operations that need it (RAS, UserCert)
-	if s.heciAvailable && (showAll || cmd.Ras || cmd.UserCert) {
+	// Ensure WSMAN client is set up once for any operations that need it (RAS, UserCert, Proxy)
+	if s.heciAvailable && (showAll || cmd.Ras || cmd.UserCert || cmd.Proxy) {
 		if controlMode == -1 {
 			controlMode, controlModeErr = s.amtCommand.GetControlMode()
 		}
@@ -662,6 +675,18 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 				log.Error("Failed to get user certificates: ", err)
 			} else {
 				result.UserCerts = userCerts
+			}
+		}
+	}
+
+	// Get HTTP proxy access points (requires WSMAN/HECI)
+	if showAll || cmd.Proxy {
+		if s.heciAvailable {
+			proxies, err := s.getProxyAccessPoints()
+			if err != nil {
+				log.Debug("Failed to get HTTP proxy access points: ", err)
+			} else {
+				result.ProxyAccessPoints = &proxies
 			}
 		}
 	}
@@ -856,6 +881,19 @@ func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 			}
 
 			add("User Certs", "--userCert", name, strings.TrimSpace(flags))
+		}
+	}
+
+	// --- HTTP Proxy ---
+	if showAll || cmd.Proxy {
+		if result.ProxyAccessPoints != nil && len(*result.ProxyAccessPoints) > 0 {
+			for _, ap := range *result.ProxyAccessPoints {
+				add("HTTP Proxy", "--proxy", net.JoinHostPort(ap.Address, strconv.Itoa(ap.Port)), ap.InfoFormat+" | "+ap.NetworkDnsSuffix)
+			}
+		} else if (cmd.Proxy || cmd.All) && result.ProxyAccessPoints != nil {
+			add("HTTP Proxy", "--proxy", "None configured", "")
+		} else if cmd.Proxy || cmd.All {
+			add("HTTP Proxy", "--proxy", "Unavailable", "Proxy configuration could not be retrieved")
 		}
 	}
 
@@ -1141,6 +1179,27 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		}
 	}
 
+	// --- HTTP Proxy ---
+	if showAll || cmd.Proxy {
+		if result.ProxyAccessPoints != nil && len(*result.ProxyAccessPoints) > 0 {
+			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
+
+			for _, ap := range *result.ProxyAccessPoints {
+				b.WriteString(renderInfoRow("Address", ap.Address))
+				b.WriteString(renderInfoRow("Port", strconv.Itoa(ap.Port)))
+				b.WriteString(renderInfoRow("Type", ap.InfoFormat))
+				b.WriteString(renderInfoRow("Network DNS Suffix", ap.NetworkDnsSuffix))
+				b.WriteString("\n")
+			}
+		} else if (cmd.Proxy || cmd.All) && result.ProxyAccessPoints != nil {
+			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
+			b.WriteString(infoIndent + infoDimStyle.Render("No HTTP proxy access points configured") + "\n")
+		} else if cmd.Proxy || cmd.All {
+			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
+			b.WriteString(infoIndent + infoRedStyle.Render("Proxy configuration could not be retrieved") + "\n")
+		}
+	}
+
 	if b.Len() > 0 {
 		b.WriteString("\n")
 	}
@@ -1338,4 +1397,80 @@ func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err erro
 	}
 
 	return items[0].AccessInfo, items[0].Port, nil
+}
+
+// getWSMANClientWithFallback returns the existing WSMAN client if available,
+// otherwise attempts to create a temporary one using LME local transport.
+// This allows WSMAN-dependent features to work even when LMS is not running (AMT < 19 only).
+func (s *InfoService) getWSMANClientWithFallback() (interfaces.WSMANer, error) {
+	if s.wsman != nil {
+		return s.wsman, nil
+	}
+
+	log.Debug("WSMAN client not available, attempting local transport fallback")
+
+	lsa, err := s.amtCommand.GetLocalSystemAccount()
+	if err != nil {
+		return nil, fmt.Errorf("WSMAN client not available and failed to get local system account: %w", err)
+	}
+
+	tmpClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+
+	var tlsConfig *tls.Config
+
+	if s.localTLSEnforced {
+		controlMode, err := s.amtCommand.GetControlMode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get control mode for TLS config: %w", err)
+		}
+
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+	} else {
+		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck} //nolint:gosec // user-controlled flag
+	}
+
+	if err := tmpClient.SetupWsmanClient(lsa.Username, lsa.Password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		return nil, fmt.Errorf("failed to setup local transport WSMAN client: %w", err)
+	}
+
+	return tmpClient, nil
+}
+
+// getProxyAccessPoints retrieves HTTP proxy access points via WSMAN.
+// If the primary WSMAN client (via LMS) is unavailable, falls back to local transport (LME).
+func (s *InfoService) getProxyAccessPoints() ([]ProxyAccessPoint, error) {
+	wsmanClient, err := s.getWSMANClientWithFallback()
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := wsmanClient.GetHTTPProxyAccessPoints()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HTTP proxy access points: %w", err)
+	}
+
+	proxies := make([]ProxyAccessPoint, 0, len(items))
+	for _, ap := range items {
+		proxies = append(proxies, ProxyAccessPoint{
+			Address:          ap.AccessInfo,
+			Port:             ap.Port,
+			NetworkDnsSuffix: ap.NetworkDnsSuffix,
+			InfoFormat:       proxyInfoFormatString(ap.InfoFormat),
+		})
+	}
+
+	return proxies, nil
+}
+
+func proxyInfoFormatString(format int) string {
+	switch ipshttp.InfoFormat(format) {
+	case ipshttp.InfoFormatIPv4:
+		return "IPv4"
+	case ipshttp.InfoFormatIPv6:
+		return "IPv6"
+	case ipshttp.InfoFormatFQDN:
+		return "FQDN"
+	default:
+		return "Unknown"
+	}
 }
