@@ -138,6 +138,17 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 		return err
 	}
 
+	hasWiFi, err := hasWiFiHardware(cmd.WSMan)
+	if err != nil {
+		return fmt.Errorf("failed to detect WiFi hardware: %w", err)
+	}
+
+	if !hasWiFi {
+		log.Warn("Device does not have WiFi hardware; skipping wireless profile configuration")
+
+		return nil
+	}
+
 	if cmd.Purge {
 		log.Info("purging all AMT wireless profiles")
 
@@ -186,7 +197,7 @@ func (cmd *WirelessCmd) Run(ctx *commands.Context) error {
 	utils.Pause(1)
 
 	// Add WiFi settings via WSMAN
-	_, err := cmd.WSMan.AddWiFiSettings(wifiEndpointSettings, ieee8021xSettings, "WiFi Endpoint 0", handles.ClientCertHandle, handles.RootCertHandle)
+	_, err = cmd.WSMan.AddWiFiSettings(wifiEndpointSettings, ieee8021xSettings, "WiFi Endpoint 0", handles.ClientCertHandle, handles.RootCertHandle)
 	if err != nil {
 		log.Errorf("failed configuring: %s", cmd.ProfileName)
 
