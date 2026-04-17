@@ -218,6 +218,9 @@ type MockAMTCommand struct {
 	changeEnabled   MockChangeEnabled
 	shouldErrorOn   string
 	unProvisionMode int
+	hbcResponses    []amt.SecureHBasedResponse
+	hbcErrors       []error
+	hbcCalls        int
 }
 type MockChangeEnabled struct {
 	amtEnabled bool
@@ -334,7 +337,23 @@ func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error)
 }
 
 func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
-	return amt.SecureHBasedResponse{}, nil
+	m.hbcCalls++
+
+	if len(m.hbcResponses) == 0 {
+		return amt.SecureHBasedResponse{}, nil
+	}
+
+	idx := m.hbcCalls - 1
+	if idx >= len(m.hbcResponses) {
+		idx = len(m.hbcResponses) - 1
+	}
+
+	var err error
+	if idx < len(m.hbcErrors) {
+		err = m.hbcErrors[idx]
+	}
+
+	return m.hbcResponses[idx], err
 }
 
 func (m *MockAMTCommand) GetUPID() (*upid.UPID, error) {
@@ -1262,6 +1281,118 @@ func TestLocalActivationService_startSecureHostBasedConfiguration(t *testing.T) 
 				if err != nil {
 					t.Errorf("startSecureHostBasedConfiguration() unexpected error = %v", err)
 				}
+			}
+		})
+	}
+}
+
+// Test retry behavior of runStartHBCWithRetry.
+func TestLocalActivationService_runStartHBCWithRetry(t *testing.T) {
+	// Speed up tests: drop backoff to near-zero for the duration of this test.
+	origBackoff := hbcBackoff
+	hbcBackoff = time.Millisecond
+
+	defer func() { hbcBackoff = origBackoff }()
+
+	tests := []struct {
+		name          string
+		responses     []amt.SecureHBasedResponse
+		errs          []error
+		wantErr       bool
+		wantErrSubstr string
+		wantStatus    string
+		wantCalls     int
+	}{
+		{
+			name:       "success on first attempt",
+			responses:  []amt.SecureHBasedResponse{{Status: "AMT_STATUS_SUCCESS"}},
+			errs:       []error{nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  1,
+		},
+		{
+			name: "non-success status then success (transient FW hiccup)",
+			responses: []amt.SecureHBasedResponse{
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_SUCCESS"},
+			},
+			errs:       []error{nil, nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  2,
+		},
+		{
+			name: "Go error then success (transient HECI glitch)",
+			responses: []amt.SecureHBasedResponse{
+				{},
+				{Status: "AMT_STATUS_SUCCESS"},
+			},
+			errs:       []error{errors.New("HECI busy"), nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  2,
+		},
+		{
+			name: "exhausts attempts with non-success status",
+			responses: []amt.SecureHBasedResponse{
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+			},
+			errs:          []error{nil, nil, nil},
+			wantErr:       true,
+			wantErrSubstr: "rejected after 3 attempts",
+			wantCalls:     3,
+		},
+		{
+			name: "exhausts attempts with Go error",
+			responses: []amt.SecureHBasedResponse{
+				{}, {}, {},
+			},
+			errs:          []error{errors.New("HECI busy"), errors.New("HECI busy"), errors.New("HECI busy")},
+			wantErr:       true,
+			wantErrSubstr: "HECI busy",
+			wantCalls:     3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockAMT := &MockAMTCommand{
+				hbcResponses: tt.responses,
+				hbcErrors:    tt.errs,
+			}
+			service := &LocalActivationService{
+				amtCommand: mockAMT,
+			}
+			cert := &x509.Certificate{
+				SignatureAlgorithm: x509.SHA256WithRSA,
+				Raw:                []byte("test-cert-data"),
+			}
+			certsAndKeys := CertsAndKeys{
+				certs: []*x509.Certificate{cert},
+				keys:  []interface{}{"test-key"},
+			}
+
+			resp, err := service.runStartHBCWithRetry(certsAndKeys)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("runStartHBCWithRetry() expected error, got nil")
+				}
+
+				if tt.wantErrSubstr != "" && !contains(err.Error(), tt.wantErrSubstr) {
+					t.Errorf("runStartHBCWithRetry() error = %v, want substring %q", err, tt.wantErrSubstr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("runStartHBCWithRetry() unexpected error = %v", err)
+				}
+
+				if resp.Status != tt.wantStatus {
+					t.Errorf("runStartHBCWithRetry() status = %q, want %q", resp.Status, tt.wantStatus)
+				}
+			}
+
+			if mockAMT.hbcCalls != tt.wantCalls {
+				t.Errorf("runStartHBCWithRetry() made %d calls, want %d", mockAMT.hbcCalls, tt.wantCalls)
 			}
 		})
 	}
