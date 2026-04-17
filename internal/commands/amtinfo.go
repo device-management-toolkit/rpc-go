@@ -1259,21 +1259,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 		password = lsa.Password
 	}
 
-	// Check LMS connectivity before attempting WSMAN setup to avoid local transport fallback which hangs.
-	port := utils.LMSPort
-	if s.localTLSEnforced {
-		port = utils.LMSTLSPort
-	}
-
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-
-	conn, err := dialer.DialContext(context.Background(), "tcp4", utils.LMSAddress+":"+port)
-	if err != nil {
-		return fmt.Errorf("LMS not available: %w", err)
-	}
-
-	conn.Close()
-
+	// SetupWsmanClient falls back to HECI/LME when LMS is absent; no need to gate on LMS here.
 	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
 
 	var tlsConfig *tls.Config
