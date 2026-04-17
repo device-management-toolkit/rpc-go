@@ -1,3 +1,10 @@
+# [3.0.0-beta.20](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.19...v3.0.0-beta.20) (2026-04-17)
+
+
+### Bug Fixes
+
+* correct handshake and channel lifecycle in local transport ([8412639](https://github.com/device-management-toolkit/rpc-go/commit/84126399f9221e423f3a317b521df3c00faf387f))
+
 # [3.0.0-beta.19](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.18...v3.0.0-beta.19) (2026-04-16)
 
 
