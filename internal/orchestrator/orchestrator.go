@@ -68,6 +68,13 @@ func (po *ProfileOrchestrator) baseArgs() []string {
 		args = append(args, "--password", po.globalPassword)
 	}
 
+	// Only propagate verbose logging to subprocesses when the parent is already
+	// at debug/trace; forcing -v unconditionally would clobber the operator's
+	// chosen log level and can leak extra detail into the output.
+	if log.IsLevelEnabled(log.DebugLevel) {
+		args = append(args, "-v")
+	}
+
 	return args
 }
 
@@ -82,8 +89,13 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 	currentControlMode, err := amtCommand.GetControlMode()
 	if err != nil {
+		amtCommand.Close()
+
 		return fmt.Errorf("failed to get current control mode: %w", err)
 	}
+
+	// Release the MEI handle; holding it in the parent blocks child subprocesses on Windows.
+	amtCommand.Close()
 
 	po.currentControlMode = currentControlMode
 
@@ -181,14 +193,9 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 		return err
 	}
 
-	// Heuristically detect auth errors
-	lower := strings.ToLower(err.Error())
-	// Broaden detection to common AMT web UI messages and generic auth indicators
-	if !strings.Contains(lower, "401") &&
-		!strings.Contains(lower, "unauthorized") &&
-		!strings.Contains(lower, "incorrect user name") &&
-		!strings.Contains(lower, "log on failed") &&
-		!strings.Contains(lower, "auth") {
+	// Gate rotation on the exit code; verbose Digest logs make substring-matching unreliable.
+	var execErr *ExecError
+	if !errors.As(err, &execErr) || execErr.ExitCode != utils.AMTAuthenticationFailed.Code {
 		return err
 	}
 
@@ -242,8 +249,8 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 		}
 
 		if cerr := po.executor.Execute(change); cerr != nil {
-			lower := strings.ToLower(cerr.Error())
-			if attempt < maxTries && (strings.Contains(lower, "401") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "incorrect user name") || strings.Contains(lower, "log on failed") || strings.Contains(lower, "auth")) {
+			var cexecErr *ExecError
+			if attempt < maxTries && errors.As(cerr, &cexecErr) && cexecErr.ExitCode == utils.AMTAuthenticationFailed.Code {
 				log.Warn("Incorrect AMT password. Please try again.")
 
 				continue
