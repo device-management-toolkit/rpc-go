@@ -34,7 +34,7 @@ type Executor struct {
 type ExecutorConfig struct {
 	URL              string
 	Proxy            string
-	LocalTlsEnforced bool
+	LocalTLSEnforced bool
 	SkipAmtCertCheck bool
 	ControlMode      int
 	SkipCertCheck    bool
@@ -46,13 +46,13 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	lmErrorChannel := make(chan error)
 
 	port := utils.LMSPort
-	if config.LocalTlsEnforced {
+	if config.LocalTLSEnforced {
 		port = utils.LMSTLSPort
 	}
 
 	client := Executor{
 		server:          NewAMTActivationServer(config.URL, config.Proxy),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
+		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTLSEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
 		data:            lmDataChannel,
 		errors:          lmErrorChannel,
 		waitGroup:       &sync.WaitGroup{},
@@ -61,7 +61,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// TEST CONNECTION TO SEE IF LMS EXISTS
 	err := client.localManagement.Connect()
 	if err != nil {
-		if config.LocalTlsEnforced {
+		if config.LocalTLSEnforced {
 			return client, utils.LMSConnectionFailed
 		}
 		// client.localManagement.Close()

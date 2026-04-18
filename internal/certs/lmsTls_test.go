@@ -71,6 +71,11 @@ func TestGetTLSConfig(t *testing.T) {
 	assert.True(t, tlsConfig.InsecureSkipVerify)
 	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
 
+	tlsConfig = GetTLSConfig(&mode, nil, false)
+	assert.NotNil(t, tlsConfig)
+	assert.True(t, tlsConfig.InsecureSkipVerify)
+	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+
 	mode = 1
 	tlsConfig = GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
@@ -298,4 +303,24 @@ func TestVerifyFullChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVerifyCertificates_SingleCertPreProvisioning(t *testing.T) {
+	t.Run("accepts allowed self-signed leaf CN", func(t *testing.T) {
+		mode := 0
+		leafTemplate := createCertTemplate("AMT RCFG", false, []string{"Leaf OU"})
+		leafCert, _ := createTestCert(t, leafTemplate, nil, nil)
+
+		err := VerifyCertificates([][]byte{leafCert.Raw}, &mode, nil)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects invalid self-signed leaf CN", func(t *testing.T) {
+		mode := 0
+		leafTemplate := createCertTemplate("Invalid CN", false, []string{"Leaf OU"})
+		leafCert, _ := createTestCert(t, leafTemplate, nil, nil)
+
+		err := VerifyCertificates([][]byte{leafCert.Raw}, &mode, nil)
+		assert.Error(t, err)
+	})
 }
