@@ -1421,60 +1421,6 @@ func TestInfoService_GetAMTInfo_Proxy_WSMANError(t *testing.T) {
 	assert.Nil(t, result.ProxyAccessPoints)
 }
 
-func TestInfoService_getWSMANClientWithFallback_ReturnsExistingClient(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockAMT := mock.NewMockInterface(ctrl)
-	mockWSMAN := mock.NewMockWSMANer(ctrl)
-
-	service := NewInfoService(mockAMT)
-	service.wsman = mockWSMAN
-
-	client, err := service.getWSMANClientWithFallback()
-	assert.NoError(t, err)
-	assert.Equal(t, mockWSMAN, client)
-}
-
-func TestInfoService_getWSMANClientWithFallback_LSAError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockAMT := mock.NewMockInterface(ctrl)
-
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("HECI error"))
-
-	service := NewInfoService(mockAMT)
-	// wsman is nil — triggers LME fallback path
-
-	client, err := service.getWSMANClientWithFallback()
-	assert.Nil(t, client)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get local system account")
-}
-
-func TestInfoService_getWSMANClientWithFallback_TLSControlModeError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockAMT := mock.NewMockInterface(ctrl)
-
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{
-		Username: "user",
-		Password: "pass",
-	}, nil)
-	mockAMT.EXPECT().GetControlMode().Return(0, errors.New("control mode error"))
-
-	service := NewInfoService(mockAMT)
-	service.localTLSEnforced = true
-	// wsman is nil — triggers LME fallback, TLS enforced triggers GetControlMode
-
-	client, err := service.getWSMANClientWithFallback()
-	assert.Nil(t, client)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get control mode")
-}
-
 func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 	tests := []struct {
 		name     string

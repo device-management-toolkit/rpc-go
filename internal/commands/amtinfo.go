@@ -1385,52 +1385,13 @@ func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err erro
 	return items[0].AccessInfo, items[0].Port, nil
 }
 
-// getWSMANClientWithFallback returns the existing WSMAN client if available,
-// otherwise attempts to create a temporary one using LME local transport.
-// This allows WSMAN-dependent features to work even when LMS is not running (AMT < 19 only).
-func (s *InfoService) getWSMANClientWithFallback() (interfaces.WSMANer, error) {
-	if s.wsman != nil {
-		return s.wsman, nil
-	}
-
-	log.Debug("WSMAN client not available, attempting local transport fallback")
-
-	lsa, err := s.amtCommand.GetLocalSystemAccount()
-	if err != nil {
-		return nil, fmt.Errorf("WSMAN client not available and failed to get local system account: %w", err)
-	}
-
-	tmpClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
-
-	var tlsConfig *tls.Config
-
-	if s.localTLSEnforced {
-		controlMode, err := s.amtCommand.GetControlMode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get control mode for TLS config: %w", err)
-		}
-
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
-	} else {
-		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck} //nolint:gosec // user-controlled flag
-	}
-
-	if err := tmpClient.SetupWsmanClient(lsa.Username, lsa.Password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
-		return nil, fmt.Errorf("failed to setup local transport WSMAN client: %w", err)
-	}
-
-	return tmpClient, nil
-}
-
 // getProxyAccessPoints retrieves HTTP proxy access points via WSMAN.
-// If the primary WSMAN client (via LMS) is unavailable, falls back to local transport (LME).
 func (s *InfoService) getProxyAccessPoints() ([]ProxyAccessPoint, error) {
-	wsmanClient, err := s.getWSMANClientWithFallback()
-	if err != nil {
-		return nil, err
+	if s.wsman == nil {
+		return nil, fmt.Errorf("WSMAN client not available")
 	}
 
-	items, err := wsmanClient.GetHTTPProxyAccessPoints()
+	items, err := s.wsman.GetHTTPProxyAccessPoints()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HTTP proxy access points: %w", err)
 	}
