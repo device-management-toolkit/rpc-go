@@ -792,6 +792,74 @@ func TestResolveConsoleAuth_UUIDFromAMT(t *testing.T) {
 	assert.Equal(t, "amt-uuid-123", guid)
 }
 
+func TestAddDeviceToConsole_CustomDevicesEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "test-host", FriendlyName: "my-device"}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "test-guid", "amt-pass", "mebx-pass", "", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_CustomDevicesEndpoint_FallbackToPatch(t *testing.T) {
+	callCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+
+			return
+		}
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "host"}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, callCount, "should have called POST then PATCH")
+}
+
+func TestClearMPSPasswordFromConsole_CustomDevicesEndpoint(t *testing.T) {
+	called := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+
+	cmd.clearMPSPasswordFromConsole(ctx, server.URL, "token", "guid-123")
+	assert.Equal(t, 1, called, "expected exactly one PATCH request")
+}
+
 func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
 	// When --profile points to a file and local activation flags are present,
 	// the password prompt should be skipped because the profile contains the AMT password.

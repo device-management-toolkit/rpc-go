@@ -1,3 +1,10 @@
+# [3.0.0-beta.21](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.20...v3.0.0-beta.21) (2026-04-20)
+
+
+### Bug Fixes
+
+* retry Host-Based Configuration on transient AMT firmware errors ([#1278](https://github.com/device-management-toolkit/rpc-go/issues/1278)) ([e2ff23d](https://github.com/device-management-toolkit/rpc-go/commit/e2ff23d5caba1a3688b66132f827ae3e7793456b))
+
 # [3.0.0-beta.20](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.19...v3.0.0-beta.20) (2026-04-17)
 
 

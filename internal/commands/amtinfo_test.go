@@ -6,6 +6,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -505,23 +506,14 @@ func TestInfoService_OutputJSON(t *testing.T) {
 		SKU:         "16392",
 	}
 
-	// Capture output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	var buf bytes.Buffer
 
-	err := service.OutputJSON(result)
-
-	w.Close()
-
-	out, _ := io.ReadAll(r)
-	os.Stdout = oldStdout
-
+	err := service.OutputJSON(&buf, result)
 	assert.NoError(t, err)
 
 	var parsed InfoResult
 
-	assert.NoError(t, json.Unmarshal(out, &parsed))
+	assert.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
 	assert.Equal(t, result.AMT, parsed.AMT)
 	assert.Equal(t, result.BuildNumber, parsed.BuildNumber)
 	assert.Equal(t, result.SKU, parsed.SKU)
@@ -542,7 +534,7 @@ func TestInfoService_OutputJSON_Error(t *testing.T) {
 	// Actually, let's just test that normal marshaling works
 	// and create a separate test for error conditions
 
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
 }
 
@@ -656,21 +648,13 @@ func TestInfoService_OutputTable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service := NewInfoService(nil)
 
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			var buf bytes.Buffer
 
-			err := service.OutputTable(tt.result, tt.cmd)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
-
+			err := service.OutputTable(&buf, tt.result, tt.cmd)
 			assert.NoError(t, err)
 
 			if tt.validate != nil {
-				tt.validate(t, string(out))
+				tt.validate(t, buf.String())
 			}
 		})
 	}
@@ -850,22 +834,13 @@ func TestInfoService_OutputText(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service := NewInfoService(nil)
 
-			// Capture output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			var buf bytes.Buffer
 
-			err := service.OutputText(tt.result, tt.cmd)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
-
+			err := service.OutputText(&buf, tt.result, tt.cmd)
 			assert.NoError(t, err)
 
 			if tt.validate != nil {
-				tt.validate(t, string(out))
+				tt.validate(t, buf.String())
 			}
 		})
 	}
@@ -1608,22 +1583,13 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service := NewInfoService(nil)
 
-			// Capture output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			var buf bytes.Buffer
 
-			err := service.OutputText(tt.result, tt.cmd)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
-
+			err := service.OutputText(&buf, tt.result, tt.cmd)
 			assert.NoError(t, err)
 
 			if tt.validate != nil {
-				tt.validate(t, string(out))
+				tt.validate(t, buf.String())
 			}
 		})
 	}
@@ -1694,7 +1660,7 @@ func TestInfoService_OutputJSON_MarshalError(t *testing.T) {
 	// so we can't really test the marshal error easily without reflection
 	// Let's just test that valid marshaling works
 	result := &InfoResult{AMT: "test"}
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
 }
 
@@ -1744,7 +1710,7 @@ func TestInfoService_OutputJSON_ActualMarshalError(t *testing.T) {
 
 	// Actually test with a normal valid result to ensure normal operation works
 	result := &InfoResult{AMT: "test"}
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
 }
 

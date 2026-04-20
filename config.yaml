@@ -19,6 +19,7 @@ auth-token: ""              # Bearer token (preferred)
 auth-username: ""           # Basic auth username (if no token)
 auth-password: ""           # Basic auth password (if no token)
 auth-endpoint: ""           # Token exchange endpoint (HTTP profile fetch) ex. http://localhost:8181/api/v1/authorize
+devices-endpoint: ""        # Devices API endpoint (absolute URL) ex. http://localhost:8181/api/v1/devices
 
 # ------------------------- amtinfo Command ------------------------------------
 amtinfo:

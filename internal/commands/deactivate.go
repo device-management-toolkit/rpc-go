@@ -185,7 +185,7 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 		return nil
 	}
 
-	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck); err != nil {
+	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
 	}
 
@@ -248,7 +248,7 @@ func (cmd *DeactivateCmd) deleteDeviceFromConsole(ctx *Context, guid string) err
 		return fmt.Errorf("console authentication failed: %w", err)
 	}
 
-	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck); err != nil {
+	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
 	}
 

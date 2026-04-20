@@ -84,7 +84,7 @@ func TestAddDevice_Success(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := AddDevice(server.URL, "test-token", payload, false)
+	err := AddDevice(server.URL, "test-token", payload, false, "")
 	assert.NoError(t, err)
 }
 
@@ -101,7 +101,7 @@ func TestAddDevice_Failure(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := AddDevice(server.URL, "test-token", payload, false)
+	err := AddDevice(server.URL, "test-token", payload, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "409")
 }
@@ -131,7 +131,7 @@ func TestUpdateDevice_Success(t *testing.T) {
 		MPSPassword: "MPS-Pass1!",
 	}
 
-	err := UpdateDevice(server.URL, "test-token", payload, false)
+	err := UpdateDevice(server.URL, "test-token", payload, false, "")
 	assert.NoError(t, err)
 }
 
@@ -148,7 +148,7 @@ func TestUpdateDevice_NotFound(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := UpdateDevice(server.URL, "test-token", payload, false)
+	err := UpdateDevice(server.URL, "test-token", payload, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }
@@ -171,7 +171,7 @@ func TestClearDeviceMPSPassword_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false)
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
 	assert.NoError(t, err)
 }
 
@@ -181,7 +181,7 @@ func TestClearDeviceMPSPassword_Failure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false)
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }
@@ -196,7 +196,7 @@ func TestDeleteDevice_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := DeleteDevice(server.URL, "test-token", "guid-123", false)
+	err := DeleteDevice(server.URL, "test-token", "guid-123", false, "")
 	assert.NoError(t, err)
 }
 
@@ -206,7 +206,91 @@ func TestDeleteDevice_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := DeleteDevice(server.URL, "test-token", "guid-123", false)
+	err := DeleteDevice(server.URL, "test-token", "guid-123", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
+}
+
+func TestResolveDevicesEndpoint_Default(t *testing.T) {
+	result := resolveDevicesEndpoint("http://localhost:8181", "")
+	assert.Equal(t, "http://localhost:8181/api/v1/devices", result)
+}
+
+func TestResolveDevicesEndpoint_Custom(t *testing.T) {
+	result := resolveDevicesEndpoint("http://localhost:8181", "http://other-host:9090/custom/v2/devices")
+	assert.Equal(t, "http://other-host:9090/custom/v2/devices", result)
+}
+
+func TestResolveDevicesEndpoint_TrailingSlash(t *testing.T) {
+	result := resolveDevicesEndpoint("http://localhost:8181/", "")
+	assert.Equal(t, "http://localhost:8181/api/v1/devices", result)
+
+	result = resolveDevicesEndpoint("", "http://other-host:9090/custom/v2/devices/")
+	assert.Equal(t, "http://other-host:9090/custom/v2/devices", result)
+}
+
+func TestAddDevice_CustomEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	payload := DevicePayload{
+		GUID:        "guid-123",
+		Hostname:    "host",
+		Tags:        []string{},
+		MPSUsername: "admin",
+	}
+
+	err := AddDevice(server.URL, "test-token", payload, false, server.URL+"/custom/v2/devices")
+	assert.NoError(t, err)
+}
+
+func TestUpdateDevice_CustomEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	payload := DevicePayload{
+		GUID:        "guid-123",
+		Hostname:    "host",
+		Tags:        []string{},
+		MPSUsername: "admin",
+	}
+
+	err := UpdateDevice(server.URL, "test-token", payload, false, server.URL+"/custom/v2/devices")
+	assert.NoError(t, err)
+}
+
+func TestClearDeviceMPSPassword_CustomEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, server.URL+"/custom/v2/devices")
+	assert.NoError(t, err)
+}
+
+func TestDeleteDevice_CustomEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/custom/v2/devices/guid-123", r.URL.Path)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	err := DeleteDevice(server.URL, "test-token", "guid-123", false, server.URL+"/custom/v2/devices")
+	assert.NoError(t, err)
 }
