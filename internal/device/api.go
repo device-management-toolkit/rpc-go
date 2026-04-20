@@ -32,9 +32,19 @@ func readErrorBody(body io.Reader) string {
 }
 
 const (
-	devicesAPIPath = "/api/v1/devices"
-	requestTimeout = 10 * time.Second
+	DefaultDevicesPath = "/api/v1/devices"
+	requestTimeout     = 10 * time.Second
 )
+
+// resolveDevicesEndpoint returns the full devices API base URL.
+// If devicesEndpoint is non-empty, it is used directly; otherwise consoleBaseURL + DefaultDevicesPath.
+func resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint string) string {
+	if devicesEndpoint != "" {
+		return strings.TrimRight(devicesEndpoint, "/")
+	}
+
+	return strings.TrimRight(consoleBaseURL, "/") + DefaultDevicesPath
+}
 
 // StatusError represents a non-2xx HTTP response.
 type StatusError struct {
@@ -112,9 +122,9 @@ type DevicePayload struct {
 	AllowSelfSigned bool     `json:"allowSelfSigned"`
 }
 
-// AddDevice registers a device via POST /api/v1/devices.
-func AddDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool) error {
-	endpoint := strings.TrimRight(consoleBaseURL, "/") + devicesAPIPath
+// AddDevice registers a device via POST to the devices API endpoint.
+func AddDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
 
 	body, err := json.Marshal(d)
 	if err != nil {
@@ -132,9 +142,9 @@ func AddDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool
 	return nil
 }
 
-// UpdateDevice updates an existing device in the console via PATCH /api/v1/devices.
-func UpdateDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool) error {
-	endpoint := strings.TrimRight(consoleBaseURL, "/") + devicesAPIPath
+// UpdateDevice updates an existing device in the console via PATCH to the devices API endpoint.
+func UpdateDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
 
 	body, err := json.Marshal(d)
 	if err != nil {
@@ -152,9 +162,9 @@ func UpdateDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck b
 	return nil
 }
 
-// ClearDeviceMPSPassword removes the MPS password from a device via PATCH /api/v1/devices.
-func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bool) error {
-	endpoint := strings.TrimRight(consoleBaseURL, "/") + devicesAPIPath
+// ClearDeviceMPSPassword removes the MPS password from a device via PATCH to the devices API endpoint.
+func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
 
 	log.Debugf("Clearing MPS password from device: PATCH %s", endpoint)
 
@@ -173,9 +183,9 @@ func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bo
 	return nil
 }
 
-// DeleteDevice removes a device from the console via DELETE /api/v1/devices/{guid}.
-func DeleteDevice(consoleBaseURL, token, guid string, skipCertCheck bool) error {
-	endpoint := strings.TrimRight(consoleBaseURL, "/") + devicesAPIPath + "/" + guid
+// DeleteDevice removes a device from the console via DELETE to the devices API endpoint.
+func DeleteDevice(consoleBaseURL, token, guid string, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint) + "/" + guid
 
 	log.Debugf("Deleting device from console: DELETE %s", endpoint)
 

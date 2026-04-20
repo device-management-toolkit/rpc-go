@@ -85,6 +85,41 @@ func TestServerAuthFlags_Validate(t *testing.T) {
 				AuthPassword: "pass",
 			},
 		},
+		{
+			name: "devices endpoint with auth token — ok",
+			flags: ServerAuthFlags{
+				AuthEndpoint:    "/api/v1/authorize",
+				AuthToken:       "tok",
+				DevicesEndpoint: "http://localhost:8181/api/v1/devices",
+			},
+		},
+		{
+			name: "devices endpoint alone without auth endpoint — ok",
+			flags: ServerAuthFlags{
+				DevicesEndpoint: "http://localhost:8181/api/v1/devices",
+			},
+		},
+		{
+			name:    "devices endpoint with relative path — error",
+			flags:   ServerAuthFlags{DevicesEndpoint: "/api/v1/devices"},
+			wantErr: "--devices-endpoint must be an absolute HTTP(S) URL",
+		},
+		{
+			name:    "devices endpoint with non-HTTP scheme — error",
+			flags:   ServerAuthFlags{DevicesEndpoint: "ftp://localhost/devices"},
+			wantErr: "--devices-endpoint must be an absolute HTTP(S) URL",
+		},
+		{
+			name:    "devices endpoint with empty host — error",
+			flags:   ServerAuthFlags{DevicesEndpoint: "http:///api/v1/devices"},
+			wantErr: "--devices-endpoint must be an absolute HTTP(S) URL",
+		},
+		{
+			name: "devices endpoint HTTPS — ok",
+			flags: ServerAuthFlags{
+				DevicesEndpoint: "https://console.example.com/api/v1/devices",
+			},
+		},
 	}
 
 	for _, tt := range tests {
