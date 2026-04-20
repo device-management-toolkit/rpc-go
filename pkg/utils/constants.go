@@ -38,7 +38,6 @@ const (
 	HeciRetryDelay          = 3000 // milliseconds
 	HeciReinitDelay         = 500  // milliseconds
 	HeciConnectRetryBackoff = 500  // milliseconds
-	LMETimerTimeout         = 10   // seconds
 	WebSocketTimeout        = 60   // seconds
 	AMTResponseTimeout      = 30   // seconds
 

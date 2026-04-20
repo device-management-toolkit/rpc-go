@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	setupapi "github.com/device-management-toolkit/rpc-go/v2/pkg/windows"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
@@ -337,9 +338,26 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 
 	windows.ReadFile(heci.meiDevice, buffer, done, &overlapped)
 
-	event, err := windows.WaitForSingleObject(overlapped.HEvent, windows.INFINITE)
-	if event == (uint32)(windows.WAIT_TIMEOUT) {
-		return 0, errors.New("wait timeout while sending data")
+	// Bounded wait so callers see ErrReadTimeout instead of blocking forever (parity with Linux).
+	timeoutMs := uint32(utils.HeciReadTimeout * 1000)
+
+	event, err := windows.WaitForSingleObject(overlapped.HEvent, timeoutMs)
+	switch {
+	case event == uint32(windows.WAIT_TIMEOUT):
+		// Cancel the dangling ReadFile so it doesn't write into a reused buffer after return.
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		return 0, ErrReadTimeout
+	case event == uint32(windows.WAIT_FAILED) || err != nil:
+		// WaitForSingleObject itself failed; cancel the pending IO before returning so it
+		// can't scribble into a buffer the caller is about to reuse.
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		if err == nil {
+			err = errors.New("wait failed while receiving data")
+		}
+
+		return 0, err
 	}
 
 	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, done, true)
@@ -351,12 +369,13 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 }
 
 func (heci *Driver) Close() {
-	// NOTE: We intentionally do NOT call CloseHandle here. On some versions of
-	// the Intel MEI driver (e.g. rolled-back/older drivers), calling CloseHandle
-	// on the MEI device file handle after ConnectHeciClient triggers a null-pointer
-	// execute-AV in the driver's kernel close dispatch routine, crashing the process.
-	// Since rpc is a short-lived CLI process, the OS will clean up all open handles
-	// when the process exits, so not closing explicitly is safe and correct.
+	// Release the MEI handle; leaking across Open/Close cycles starves the driver. (Requires current MEI driver.)
+	if heci.meiDevice != 0 && heci.meiDevice != windows.InvalidHandle {
+		if err := windows.CloseHandle(heci.meiDevice); err != nil {
+			log.Debugf("MEI CloseHandle returned: %v", err)
+		}
+	}
+
 	heci.meiDevice = 0
 	heci.bufferSize = 0
 }

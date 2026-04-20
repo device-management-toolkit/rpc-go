@@ -1,3 +1,24 @@
+# [3.0.0-beta.20](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.19...v3.0.0-beta.20) (2026-04-17)
+
+
+### Bug Fixes
+
+* correct handshake and channel lifecycle in local transport ([8412639](https://github.com/device-management-toolkit/rpc-go/commit/84126399f9221e423f3a317b521df3c00faf387f))
+
+# [3.0.0-beta.19](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.18...v3.0.0-beta.19) (2026-04-16)
+
+
+### Bug Fixes
+
+* skip WiFi configuration on devices without WiFi hardware ([#1277](https://github.com/device-management-toolkit/rpc-go/issues/1277)) ([c5e7caa](https://github.com/device-management-toolkit/rpc-go/commit/c5e7caa0608e6c826d9174db1e9e8e5c2165076a))
+
+# [3.0.0-beta.18](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.17...v3.0.0-beta.18) (2026-04-15)
+
+
+### Bug Fixes
+
+* ensure no password prompt for profile activation ([e7eb579](https://github.com/device-management-toolkit/rpc-go/commit/e7eb579d2d79fb7427cfdf3937e720e45da3be07))
+
 # [3.0.0-beta.17](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.16...v3.0.0-beta.17) (2026-04-14)
 
 

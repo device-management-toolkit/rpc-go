@@ -59,6 +59,15 @@ func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
 }
 
 func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+	// Release any prior local transport's MEI handle; re-setup leaks handles otherwise.
+	if g.localTransport != nil {
+		if err := g.localTransport.Close(); err != nil {
+			logrus.Debugf("closing previous local transport: %v", err)
+		}
+
+		g.localTransport = nil
+	}
+
 	clientParams := client.Parameters{
 		Target:         g.target,
 		Username:       username,
