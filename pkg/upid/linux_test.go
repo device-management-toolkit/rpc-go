@@ -16,5 +16,5 @@ func TestNewCommand(t *testing.T) {
 	}
 
 	// Ensure it implements the Interface
-	var _ = cmd
+	_ = cmd
 }
