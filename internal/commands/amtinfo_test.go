@@ -52,7 +52,6 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
 				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
 				m.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
-				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
 			},
 			wantErr: false,
 		},
@@ -142,7 +141,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
 
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -199,7 +198,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
 
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -240,7 +239,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
 
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -296,7 +295,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
 
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -375,7 +374,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
-				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 					NetworkStatus: "connected",
 					RemoteStatus:  "connected",
@@ -661,15 +660,11 @@ func TestInfoService_OutputTable(t *testing.T) {
 			r, w, _ := os.Pipe()
 			os.Stdout = w
 
-			outCh := make(chan []byte)
-
-			go func() { b, _ := io.ReadAll(r); outCh <- b }()
-
 			err := service.OutputTable(tt.result, tt.cmd)
 
 			w.Close()
 
-			out := <-outCh
+			out, _ := io.ReadAll(r)
 			os.Stdout = oldStdout
 
 			assert.NoError(t, err)
@@ -860,15 +855,11 @@ func TestInfoService_OutputText(t *testing.T) {
 			r, w, _ := os.Pipe()
 			os.Stdout = w
 
-			outCh := make(chan []byte)
-
-			go func() { b, _ := io.ReadAll(r); outCh <- b }()
-
 			err := service.OutputText(tt.result, tt.cmd)
 
 			w.Close()
 
-			out := <-outCh
+			out, _ := io.ReadAll(r)
 			os.Stdout = oldStdout
 
 			assert.NoError(t, err)
@@ -1622,15 +1613,11 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			r, w, _ := os.Pipe()
 			os.Stdout = w
 
-			outCh := make(chan []byte)
-
-			go func() { b, _ := io.ReadAll(r); outCh <- b }()
-
 			err := service.OutputText(tt.result, tt.cmd)
 
 			w.Close()
 
-			out := <-outCh
+			out, _ := io.ReadAll(r)
 			os.Stdout = oldStdout
 
 			assert.NoError(t, err)
