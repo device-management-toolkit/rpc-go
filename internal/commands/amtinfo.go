@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -223,15 +224,15 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	if ctx.JsonOutput {
-		return service.OutputJSON(result)
+		return service.OutputJSON(os.Stdout, result)
 	}
 
 	if ctx.TableOutput {
-		if err := service.OutputTable(result, cmd); err != nil {
+		if err := service.OutputTable(os.Stdout, result, cmd); err != nil {
 			return err
 		}
 	} else {
-		if err := service.OutputText(result, cmd); err != nil {
+		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
 			return err
 		}
 	}
@@ -670,13 +671,13 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 }
 
 // OutputJSON outputs the result in JSON format
-func (s *InfoService) OutputJSON(result *InfoResult) error {
+func (s *InfoService) OutputJSON(w io.Writer, result *InfoResult) error {
 	jsonBytes, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	fmt.Println(string(jsonBytes))
+	fmt.Fprintln(w, string(jsonBytes))
 
 	return nil
 }
@@ -697,19 +698,19 @@ var (
 )
 
 // OutputTable outputs the result as a single styled table with Category, Flag, Property, and Value columns
-func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
+func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	if !s.heciAvailable {
-		fmt.Println()
+		fmt.Fprintln(w)
 
 		if !utils.IsElevated() {
-			fmt.Println(infoIndent + infoYellowStyle.Render(
+			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable"))
-			fmt.Println(infoIndent + infoDimStyle.Render(
+			fmt.Fprintln(w, infoIndent+infoDimStyle.Render(
 				"Showing OS-level information only"))
 		} else {
-			fmt.Println(infoIndent + infoYellowStyle.Render(
+			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
 				"MEI/HECI driver not detected \u2014 AMT may not be available on this device"))
 		}
 	}
@@ -860,9 +861,9 @@ func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 	}
 
 	if len(rows) == 0 {
-		fmt.Println()
-		fmt.Println(infoDimStyle.Render(infoIndent + "No matching information found."))
-		fmt.Println()
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, infoDimStyle.Render(infoIndent+"No matching information found."))
+		fmt.Fprintln(w)
 
 		return nil
 	}
@@ -933,15 +934,15 @@ func (s *InfoService) OutputTable(result *InfoResult, cmd *AmtInfoCmd) error {
 			}
 		})
 
-	fmt.Println()
-	fmt.Println(t.Render())
-	fmt.Println()
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, t.Render())
+	fmt.Fprintln(w)
 
 	return nil
 }
 
 // OutputText outputs the result in styled human-readable text format
-func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
+func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	var b strings.Builder
@@ -1145,7 +1146,7 @@ func (s *InfoService) OutputText(result *InfoResult, cmd *AmtInfoCmd) error {
 		b.WriteString("\n")
 	}
 
-	fmt.Print(b.String())
+	fmt.Fprint(w, b.String())
 
 	return nil
 }
@@ -1259,21 +1260,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 		password = lsa.Password
 	}
 
-	// Check LMS connectivity before attempting WSMAN setup to avoid local transport fallback which hangs.
-	port := utils.LMSPort
-	if s.localTLSEnforced {
-		port = utils.LMSTLSPort
-	}
-
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-
-	conn, err := dialer.DialContext(context.Background(), "tcp4", utils.LMSAddress+":"+port)
-	if err != nil {
-		return fmt.Errorf("LMS not available: %w", err)
-	}
-
-	conn.Close()
-
+	// SetupWsmanClient falls back to HECI/LME when LMS is absent; no need to gate on LMS here.
 	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
 
 	var tlsConfig *tls.Config
