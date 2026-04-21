@@ -1,3 +1,10 @@
+# [3.0.0-beta.22](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.21...v3.0.0-beta.22) (2026-04-21)
+
+
+### Features
+
+* show proxy configuration in amtinfo ([#1261](https://github.com/device-management-toolkit/rpc-go/issues/1261)) ([4889234](https://github.com/device-management-toolkit/rpc-go/commit/488923439343f1e551021b5db3105f145d73c631)), closes [#1245](https://github.com/device-management-toolkit/rpc-go/issues/1245)
+
 # [3.0.0-beta.21](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.20...v3.0.0-beta.21) (2026-04-20)
 
 
