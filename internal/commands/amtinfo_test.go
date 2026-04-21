@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
@@ -600,6 +601,45 @@ func TestInfoService_OutputTable(t *testing.T) {
 				assert.Contains(t, output, "Version")
 				assert.Contains(t, output, "16.1.25")
 				assert.NotContains(t, output, "SKU")
+			},
+		},
+		{
+			name: "proxy flag with access points in table",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{
+					{
+						Address:          "proxy.example.com",
+						Port:             8080,
+						NetworkDnsSuffix: "example.com",
+						InfoFormat:       "FQDN",
+					},
+				},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "proxy.example.com:8080")
+				assert.Contains(t, output, "FQDN")
+			},
+		},
+		{
+			name: "proxy flag with empty slice in table",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "None configured")
+			},
+		},
+		{
+			name:   "proxy flag with nil (unavailable) in table",
+			result: &InfoResult{},
+			cmd:    &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "Unavailable")
 			},
 		},
 	}
@@ -1292,6 +1332,61 @@ func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
 	assert.Equal(t, 0, result.RAS.MPSPort)
 }
 
+func TestInfoService_GetAMTInfo_Proxy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return([]ipshttp.HTTPProxyAccessPointItem{
+		{
+			AccessInfo:       "proxy.example.com",
+			Port:             8080,
+			NetworkDnsSuffix: "example.com",
+			InfoFormat:       201,
+		},
+		{
+			AccessInfo:       "10.0.0.1",
+			Port:             3128,
+			NetworkDnsSuffix: "corp.local",
+			InfoFormat:       3,
+		},
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Proxy: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.ProxyAccessPoints)
+	assert.Len(t, *result.ProxyAccessPoints, 2)
+	assert.Equal(t, "proxy.example.com", (*result.ProxyAccessPoints)[0].Address)
+	assert.Equal(t, 8080, (*result.ProxyAccessPoints)[0].Port)
+	assert.Equal(t, "FQDN", (*result.ProxyAccessPoints)[0].InfoFormat)
+	assert.Equal(t, "10.0.0.1", (*result.ProxyAccessPoints)[1].Address)
+	assert.Equal(t, "IPv4", (*result.ProxyAccessPoints)[1].InfoFormat)
+}
+
+func TestInfoService_GetAMTInfo_Proxy_WSMANError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return(nil, errors.New("WSMAN error"))
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Proxy: true})
+	assert.NoError(t, err)
+	assert.Nil(t, result.ProxyAccessPoints)
+}
+
 func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1420,6 +1515,68 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 				assert.NotContains(t, output, "Certificate Hashes")
 			},
 		},
+		{
+			name: "Proxy flag with access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{
+					{
+						Address:          "proxy.example.com",
+						Port:             8080,
+						NetworkDnsSuffix: "example.com",
+						InfoFormat:       "FQDN",
+					},
+				},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "proxy.example.com")
+				assert.Contains(t, output, "8080")
+				assert.Contains(t, output, "FQDN")
+				assert.Contains(t, output, "example.com")
+			},
+		},
+		{
+			name: "Proxy flag with no access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "No HTTP proxy access points configured")
+			},
+		},
+		{
+			name: "All flag with no proxy access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{All: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "No HTTP proxy access points configured")
+			},
+		},
+		{
+			name:   "Proxy flag with unavailable proxy",
+			result: &InfoResult{},
+			cmd:    &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "Proxy configuration could not be retrieved")
+			},
+		},
+		{
+			name: "Default view hides empty proxy section",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{},
+			validate: func(t *testing.T, output string) {
+				assert.NotContains(t, output, "HTTP Proxy Configuration")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1526,6 +1683,7 @@ func TestInfoService_hasNoFlagsSet_AllCombinations(t *testing.T) {
 		{"Lan", &AmtInfoCmd{Lan: true}},
 		{"Hostname", &AmtInfoCmd{Hostname: true}},
 		{"OpState", &AmtInfoCmd{OpState: true}},
+		{"Proxy", &AmtInfoCmd{Proxy: true}},
 	}
 
 	for _, flag := range flags {
@@ -1554,6 +1712,22 @@ func TestInfoService_OutputJSON_ActualMarshalError(t *testing.T) {
 	result := &InfoResult{AMT: "test"}
 	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
+}
+
+func TestInfoService_OutputJSON_ProxyAccessPoints(t *testing.T) {
+	t.Run("nil pointer omits field", func(t *testing.T) {
+		result := &InfoResult{ProxyAccessPoints: nil}
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		assert.NoError(t, err)
+		assert.NotContains(t, string(jsonBytes), "proxyAccessPoints")
+	})
+
+	t.Run("empty slice renders as empty array", func(t *testing.T) {
+		result := &InfoResult{ProxyAccessPoints: &[]ProxyAccessPoint{}}
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		assert.NoError(t, err)
+		assert.Contains(t, string(jsonBytes), `"proxyAccessPoints": []`)
+	})
 }
 
 // Test for more complete getOSIPAddress coverage
