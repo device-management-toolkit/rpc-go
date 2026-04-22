@@ -235,7 +235,12 @@ func (lme *LMEConnection) Listen() {
 		}
 
 		// One transaction per Listen; Process already handed off body/error.
-		if msgType == apf.APF_CHANNEL_CLOSE || msgType == apf.APF_CHANNEL_OPEN_FAILURE {
+		if msgType == apf.APF_CHANNEL_OPEN_FAILURE {
+			return
+		}
+
+		// HandshakeConfirmed guards against stale CLOSE frames from a previous channel (reset by Connect)
+		if msgType == apf.APF_CHANNEL_CLOSE && lme.Session.HandshakeConfirmed {
 			return
 		}
 	}

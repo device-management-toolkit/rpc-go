@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"reflect"
 	"syscall"
 	"unsafe"
@@ -19,6 +20,13 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 )
+
+// isOverlappedPending reports whether err is the expected "I/O started, wait for the event" signal.
+// WriteFile/ReadFile/DeviceIoControl on an overlapped handle return this when the operation was
+// accepted and will complete asynchronously; treat anything else as a real failure.
+func isOverlappedPending(err error) bool {
+	return err == nil || errors.Is(err, windows.ERROR_IO_PENDING)
+}
 
 const (
 	FILE_DEVICE_HECI = 0x8000
@@ -274,18 +282,41 @@ func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, out
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		return fmt.Errorf("CreateEvent failed: %w", err)
+	}
+
 	defer windows.CloseHandle(overlapped.HEvent)
 
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
-	if err != nil {
-		return errors.New("couldn't create some sort of event")
+	// DeviceIoControl may complete synchronously (err == nil) or signal ERROR_IO_PENDING.
+	// Any other error means the kernel rejected the request and the event will never fire,
+	// so bail out before we wait on it.
+	if ioctlErr := windows.DeviceIoControl(heci.meiDevice, controlCode, inBuf, intsize, outBuf, outsize, &bytesRead, &overlapped); !isOverlappedPending(ioctlErr) {
+		return fmt.Errorf("DeviceIoControl failed: %w", ioctlErr)
 	}
 
-	windows.DeviceIoControl(heci.meiDevice, controlCode, inBuf, intsize, outBuf, outsize, &bytesRead, &overlapped)
+	// Bounded wait mirrors SendMessage/ReceiveMessage so a stuck IOCTL surfaces as an error
+	// rather than hanging the init path forever.
+	timeoutMs := uint32(utils.HeciReadTimeout * 1000)
 
-	windows.WaitForSingleObject(overlapped.HEvent, windows.INFINITE)
+	event, waitErr := windows.WaitForSingleObject(overlapped.HEvent, timeoutMs)
+	switch {
+	case event == uint32(windows.WAIT_TIMEOUT):
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		return errors.New("wait timeout during IOCTL")
+	case event == uint32(windows.WAIT_FAILED) || waitErr != nil:
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		if waitErr == nil {
+			waitErr = errors.New("wait failed during IOCTL")
+		}
+
+		return waitErr
+	}
 
 	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, &bytesRead, true)
 	if err != nil {
@@ -299,23 +330,40 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		return 0, fmt.Errorf("CreateEvent failed: %w", err)
+	}
+
 	defer windows.CloseHandle(overlapped.HEvent)
 
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
-	if err != nil {
-		return 0, errors.New("couldn't create some sort of event")
+	// WriteFile on an overlapped handle returns nil (sync completion) or ERROR_IO_PENDING.
+	// Other errors mean the driver rejected the write and no event will ever fire.
+	if writeErr := windows.WriteFile(heci.meiDevice, buffer, done, &overlapped); !isOverlappedPending(writeErr) {
+		return 0, fmt.Errorf("WriteFile failed: %w", writeErr)
 	}
 
-	windows.WriteFile(heci.meiDevice, buffer, done, &overlapped)
+	event, werr := windows.WaitForSingleObject(overlapped.HEvent, 2000)
+	switch {
+	case event == uint32(windows.WAIT_TIMEOUT):
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
 
-	event, err := windows.WaitForSingleObject(overlapped.HEvent, 2000)
-	if event == (uint32)(windows.WAIT_TIMEOUT) {
 		return 0, errors.New("wait timeout while sending data")
+	case event == uint32(windows.WAIT_FAILED) || werr != nil:
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		if werr == nil {
+			werr = errors.New("wait failed while sending data")
+		}
+
+		return 0, werr
 	}
 
-	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, done, false)
+	// bWait=true so GOR doesn't race the auto-reset event and return ERROR_IO_INCOMPLETE
+	// ("Overlapped I/O event is not in a signaled state") on completed operations.
+	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, done, true)
 	if err != nil {
 		return 0, err
 	}
@@ -327,16 +375,20 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 	var overlapped windows.Overlapped
 
 	overlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		return 0, fmt.Errorf("CreateEvent failed: %w", err)
+	}
+
 	defer windows.CloseHandle(overlapped.HEvent)
 
 	overlapped.Offset = 0
 	overlapped.OffsetHigh = 0
 
-	if err != nil {
-		return 0, errors.New("couldn't create some sort of event")
+	// ReadFile on an overlapped handle returns nil (sync completion) or ERROR_IO_PENDING.
+	// Other errors mean the driver rejected the read and no event will ever fire.
+	if readErr := windows.ReadFile(heci.meiDevice, buffer, done, &overlapped); !isOverlappedPending(readErr) {
+		return 0, fmt.Errorf("ReadFile failed: %w", readErr)
 	}
-
-	windows.ReadFile(heci.meiDevice, buffer, done, &overlapped)
 
 	// Bounded wait so callers see ErrReadTimeout instead of blocking forever (parity with Linux).
 	timeoutMs := uint32(utils.HeciReadTimeout * 1000)
