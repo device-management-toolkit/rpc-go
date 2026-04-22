@@ -1,3 +1,10 @@
+# [3.0.0-beta.23](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.22...v3.0.0-beta.23) (2026-04-22)
+
+
+### Bug Fixes
+
+* ensure rps flow works with LME ([846e8d2](https://github.com/device-management-toolkit/rpc-go/commit/846e8d29fff0dc25c5acb6bcab0f5ee1e401dfa1))
+
 # [3.0.0-beta.22](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.21...v3.0.0-beta.22) (2026-04-21)
 
 
