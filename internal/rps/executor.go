@@ -20,11 +20,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// handshakeTimeout bounds the wait for APF_CHANNEL_OPEN_CONFIRMATION so a Listen
+// goroutine that exits before signaling Done() can't deadlock the activation loop.
+var handshakeTimeout = (utils.HeciReadTimeout + 15) * time.Second
+
 type Executor struct {
 	server          AMTActivationServer
 	localManagement lm.LocalMananger
 	isLME           bool
-	lmeConnected    bool
 	payload         Payload
 	data            chan []byte
 	errors          chan error
@@ -85,7 +88,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	return client, err
 }
 
-// MakeItSo uses a pointer receiver because it updates executor state (lmeConnected, lastError)
+// MakeItSo uses a pointer receiver because it updates executor state (lastError)
 // across the activation loop.
 func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
@@ -164,11 +167,22 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 	log.Debug("RPS sent activation data, processing...")
 
-	// AMT closes APF channels after each response, so we must open a new channel
-	// for each request. However, the Listen goroutine stays running (reads from /dev/mei0).
+	// AMT closes the APF channel after each response, so we open a new channel and
+	// start a fresh Listen goroutine per request. Listen exits on CHANNEL_CLOSE.
 	if e.isLME {
-		// LME: Open fresh channel for each request (AMT closes after each response)
 		log.Debug("LME: Opening new APF channel for this request")
+
+		// Fresh handshake WaitGroup per request: if a prior Listen exited without
+		// signaling Done(), the old WG is abandoned rather than deadlocking this one.
+		handshake := e.resetHandshake()
+
+		// Drain the WG on the way out so anything still waiting on it never leaks,
+		// even when Listen exits before the APF handshake completes.
+		defer func() {
+			defer func() { _ = recover() }()
+
+			handshake.Done()
+		}()
 
 		err := e.localManagement.Connect()
 		if err != nil {
@@ -177,20 +191,34 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 			return true
 		}
-		// After the first successful Connect/channel-open, start the persistent Listen goroutine.
-		// This avoids running Listen concurrently with the initial session/channel initialization.
-		if !e.lmeConnected {
-			log.Debug("LME: First message - starting persistent Listen goroutine")
 
-			go e.localManagement.Listen()
+		go e.localManagement.Listen()
 
-			e.lmeConnected = true
+		// Bounded wait so a Listen goroutine that exits early on a HECI error
+		// can't block this loop forever. OPEN_FAILURE also signals Done().
+		handshakeDone := make(chan struct{})
+
+		go func() {
+			handshake.Wait()
+			close(handshakeDone)
+		}()
+
+		select {
+		case <-handshakeDone:
+			log.Trace("Channel open confirmation received")
+		case errFromLMS := <-e.errors:
+			if errFromLMS != nil {
+				e.lastError = fmt.Errorf("LME error during channel open: %w", errFromLMS)
+				log.Error(e.lastError)
+
+				return true
+			}
+		case <-time.After(handshakeTimeout):
+			e.lastError = fmt.Errorf("timed out waiting for APF channel open after %s", handshakeTimeout)
+			log.Error(e.lastError)
+
+			return true
 		}
-
-		// Wait for APF channel-open confirmation before sending request data.
-		// This avoids sending APF channel data on a channel AMT has not confirmed yet.
-		e.waitGroup.Wait()
-		log.Trace("Channel open confirmation received")
 	} else {
 		// LMS: open/close connection for every request
 		err := e.localManagement.Connect()
@@ -252,6 +280,21 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			return true
 		}
 	}
+}
+
+// resetHandshake installs a fresh WaitGroup on the LME session so each request
+// starts from a known-zero counter; a stale Done() from an abandoned Listen
+// can no longer race the current attempt's handshake wait.
+func (e *Executor) resetHandshake() *sync.WaitGroup {
+	wg := &sync.WaitGroup{}
+
+	if lmec, ok := e.localManagement.(*lm.LMEConnection); ok && lmec.Session != nil {
+		lmec.Session.WaitGroup = wg
+	}
+
+	e.waitGroup = wg
+
+	return wg
 }
 
 func (e Executor) HandleDataFromLM(data []byte) {

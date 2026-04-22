@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
@@ -46,6 +47,37 @@ func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRea
 
 	return len(message), nil
 }
+
+// queuedHECIMock is an instance-scoped heci.Interface fake used by channel-lifecycle
+// tests. Unlike MockHECICommands, it doesn't share state across goroutines or tests:
+// ReceiveMessage pulls one frame per call from queue, and SendMessage reports the
+// payload length back so pthi.Command.Send doesn't see a byteswritten mismatch.
+type queuedHECIMock struct {
+	queue chan []byte
+}
+
+func newQueuedHECIMock(buffer int) *queuedHECIMock {
+	return &queuedHECIMock{queue: make(chan []byte, buffer)}
+}
+
+func (m *queuedHECIMock) Init(useLME, useWD bool) error       { return nil }
+func (m *queuedHECIMock) InitHOTHAM() error                   { return nil }
+func (m *queuedHECIMock) InitWithGUID(guid interface{}) error { return nil }
+func (m *queuedHECIMock) GetBufferSize() uint32               { return 5120 }
+func (m *queuedHECIMock) SendMessage(buffer []byte, done *uint32) (int, error) {
+	return len(buffer), nil
+}
+
+func (m *queuedHECIMock) ReceiveMessage(buffer []byte, done *uint32) (int, error) {
+	frame, ok := <-m.queue
+	if !ok {
+		return 0, nil
+	}
+
+	return copy(buffer, frame), nil
+}
+
+func (m *queuedHECIMock) Close()                                {}
 func (c *MockHECICommands) InitWithGUID(guid interface{}) error { return initError }
 func (c *MockHECICommands) Close()                              {}
 
@@ -220,4 +252,91 @@ func Test_CloseWithChannel(t *testing.T) {
 	}
 	err := lme.Close()
 	assert.NoError(t, err)
+}
+
+// newLMEWithQueuedHECI builds an LMEConnection wired to an instance-scoped HECI
+// mock so channel-lifecycle tests don't contend with other tests' goroutines on
+// shared package state.
+func newLMEWithQueuedHECI(handshakeConfirmed bool) (*LMEConnection, *queuedHECIMock) {
+	mock := newQueuedHECIMock(4)
+
+	return &LMEConnection{
+		Command: pthi.Command{Heci: mock},
+		Session: &apf.Session{
+			DataBuffer:         make(chan []byte, 1),
+			ErrorBuffer:        make(chan error, 1),
+			Status:             make(chan bool, 1),
+			WaitGroup:          &sync.WaitGroup{},
+			HandshakeConfirmed: handshakeConfirmed,
+		},
+		ourChannel: 1,
+	}, mock
+}
+
+// Test_Listen_CloseExitsWhenHandshakeConfirmed verifies a CHANNEL_CLOSE received
+// after the APF handshake terminates Listen. This is the normal teardown path.
+func Test_Listen_CloseExitsWhenHandshakeConfirmed(t *testing.T) {
+	lme, mock := newLMEWithQueuedHECI(true)
+
+	done := make(chan struct{})
+
+	go func() {
+		lme.Listen()
+		close(done)
+	}()
+
+	mock.queue <- apf.BuildChannelCloseBytes(1)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Listen did not exit after CHANNEL_CLOSE with HandshakeConfirmed=true")
+	}
+
+	close(mock.queue)
+}
+
+// Test_Listen_StaleCloseIgnoredUntilOpenFailure verifies that a CHANNEL_CLOSE
+// arriving before OPEN_CONFIRMATION (i.e., a stale close from a previous channel)
+// does NOT terminate Listen. This is the bug the HandshakeConfirmed gate fixed:
+// exiting on a stale CLOSE would orphan the current transaction's reader.
+// OPEN_FAILURE is then used as an unambiguous exit signal to confirm Listen is
+// still running after the ignored CLOSE.
+func Test_Listen_StaleCloseIgnoredUntilOpenFailure(t *testing.T) {
+	lme, mock := newLMEWithQueuedHECI(false)
+
+	// ProcessChannelOpenFailure calls Done() on the WaitGroup, so pre-add to
+	// balance the counter (mirrors what Connect() does in production).
+	lme.Session.WaitGroup.Add(1)
+
+	done := make(chan struct{})
+
+	go func() {
+		lme.Listen()
+		close(done)
+	}()
+
+	// Feed a stale CLOSE first. Listen must NOT exit.
+	mock.queue <- apf.BuildChannelCloseBytes(1)
+
+	select {
+	case <-done:
+		t.Fatal("Listen exited on CHANNEL_CLOSE while HandshakeConfirmed=false (stale CLOSE should be ignored)")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// OPEN_FAILURE: 17 bytes big-endian — type(1) + recipient(4) + reason(4) + reserved(4) + reserved2(4).
+	openFailure := make([]byte, 17)
+	openFailure[0] = apf.APF_CHANNEL_OPEN_FAILURE
+	openFailure[4] = 0x01 // recipient channel = 1
+
+	mock.queue <- openFailure
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Listen did not exit after CHANNEL_OPEN_FAILURE")
+	}
+
+	close(mock.queue)
 }
