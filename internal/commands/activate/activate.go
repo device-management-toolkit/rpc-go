@@ -6,6 +6,7 @@
 package activate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
@@ -22,6 +24,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -409,6 +412,27 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
 
+	isLMSAvailable := false
+	if cmd.WSMan != nil {
+		isLMSAvailable = cmd.WSMan.IsLMSAvailable()
+	} else {
+		// Fallback: direct TCP probe when WSMAN client is not yet initialized
+		// (e.g. HTTP profile flow where password is not available early enough).
+		port := utils.LMSPort
+		if cmd.LocalTLSEnforced {
+			port = utils.LMSTLSPort
+		}
+
+		dialer := &net.Dialer{Timeout: time.Duration(utils.LMSDialerTimeout) * time.Second}
+
+		conn, err := dialer.DialContext(context.Background(), "tcp4", net.JoinHostPort(utils.LMSAddress, port))
+		if err == nil {
+			conn.Close()
+
+			isLMSAvailable = true
+		}
+	}
+
 	payload := device.DevicePayload{
 		GUID:            guid,
 		Hostname:        hostname,
@@ -419,6 +443,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		MEBXPassword:    mebxPassword,
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
+		IsLMSAvailable:  isLMSAvailable,
 	}
 
 	if hasCIRA {
