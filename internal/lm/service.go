@@ -25,6 +25,10 @@ type LMSConnection struct {
 	skipCertCheck bool
 }
 
+// ErrLMSReadTimeoutNoData indicates the socket hit a read timeout before
+// receiving any bytes for the current round-trip.
+var ErrLMSReadTimeoutNoData = errors.New("lms read timeout with no data")
+
 func NewLMSConnection(address, port string, useTls bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) *LMSConnection {
 	lms := &LMSConnection{
 		address:       address,
@@ -94,23 +98,30 @@ func (lms *LMSConnection) Close() error {
 	return nil
 }
 
-// Listen reads data from the LMS socket connection
+// Listen reads data from the LMS socket connection.
+//
+// In TLS-tunnel mode the LMS connection is persistent across multiple tls_data
+// round-trips. TLS 1.3 has handshake rounds that legitimately produce zero
+// AMT-side bytes (e.g. immediately after our client Finished). To keep those
+// quiet rounds from stalling the tunnel and from being misread as a dead
+// connection, when useTls is set we:
+//   - use a short first-byte timeout, well below RPS's per-operation budget;
+//   - signal "silence before first byte" via a typed ErrLMSReadTimeoutNoData on
+//     the errors channel, which the executor treats as a non-fatal continuation
+//     in TLS-tunnel mode; and
+//   - skip the trailing safeSendData(buf) for that case so callers can rely on
+//     the typed error path instead of conflating it with EOF / close.
+//
+// In non-TLS mode the existing behavior is preserved: a read timeout simply
+// ends the current message and the accumulated buffer (possibly empty) is
+// delivered on the data channel.
 func (lms *LMSConnection) Listen() {
-	// For TLS mode, AMT may take 30+ seconds to reconfigure after TLS settings change.
-	// Use a longer timeout than RPS's delay_tls_timer (50s) so RPS times out first
-	// with a proper error rather than getting connection_reset.
-	readTimeout := 500 * time.Millisecond
-	subsequentReadTimeout := 100 * time.Millisecond
-
-	if lms.useTls {
-		readTimeout = 60 * time.Second
-		// For TLS mode, use longer subsequent timeout as AMT may be slow between response chunks
-		// especially for operations like AddTrustedRootCertificate that write to non-volatile storage
-		subsequentReadTimeout = 2 * time.Second
-	}
+	readTimeout := 1500 * time.Millisecond
+	subsequentReadTimeout := 1000 * time.Millisecond
 
 	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
+	timedOutNoData := false
 
 	for {
 		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
@@ -118,10 +129,21 @@ func (lms *LMSConnection) Listen() {
 		n, err := lms.Connection.Read(tmp)
 		if err != nil {
 			var netErr net.Error
-			if err != io.EOF && (!errors.As(err, &netErr) || !netErr.Timeout()) {
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				if lms.useTls && len(buf) == 0 {
+					timedOutNoData = true
+
+					lms.safeSendError(ErrLMSReadTimeoutNoData)
+				}
+
+				break
+			}
+
+			if err != io.EOF {
 				log.Println("LMS read error:", err)
 				lms.safeSendError(err)
 			}
+
 			break
 		}
 
@@ -130,7 +152,10 @@ func (lms *LMSConnection) Listen() {
 	}
 
 	lms.Connection.SetReadDeadline(time.Time{})
-	lms.safeSendData(buf)
+
+	if !timedOutNoData {
+		lms.safeSendData(buf)
+	}
 }
 
 // safeSendData sends data to the data channel, recovering from panic if channel is closed

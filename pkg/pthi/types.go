@@ -6,21 +6,21 @@ package pthi
 
 const (
 	GET_REQUEST_SIZE                       uint32 = 12
-	MAX_SUFFIX_LENGTH                             = 64
-	MAX_DNS_SUFFIXES                              = 5
-	CERT_HASH_MAX_LENGTH                          = 64
-	CERT_HASH_MAX_NUMBER                          = 33
-	NET_TLS_CERT_PKI_MAX_SERIAL_NUMS              = 3
-	NET_TLS_CERT_PKI_MAX_SERIAL_NUM_LENGTH        = 16
-	MPS_HOSTNAME_LENGTH                           = 256
-	IDER_LOG_ENTRIES                              = 6
-	MAJOR_VERSION                                 = 1
-	MINOR_VERSION                                 = 1
-	AMT_MAJOR_VERSION                             = 1
-	AMT_MINOR_VERSION                             = 1
-	BIOS_VERSION_LEN                              = 65
-	VERSIONS_NUMBER                               = 50
-	UNICODE_STRING_LEN                            = 20
+	MAX_SUFFIX_LENGTH                      uint32 = 64
+	MAX_DNS_SUFFIXES                       uint32 = 5
+	CERT_HASH_MAX_LENGTH                   uint32 = 64
+	CERT_HASH_MAX_NUMBER                   uint32 = 33
+	NET_TLS_CERT_PKI_MAX_SERIAL_NUMS       uint32 = 3
+	NET_TLS_CERT_PKI_MAX_SERIAL_NUM_LENGTH uint32 = 16
+	MPS_HOSTNAME_LENGTH                    uint32 = 256
+	IDER_LOG_ENTRIES                       uint32 = 6
+	MAJOR_VERSION                          uint32 = 1
+	MINOR_VERSION                          uint32 = 1
+	AMT_MAJOR_VERSION                      uint32 = 1
+	AMT_MINOR_VERSION                      uint32 = 1
+	BIOS_VERSION_LEN                       uint32 = 65
+	VERSIONS_NUMBER                        uint32 = 50
+	UNICODE_STRING_LEN                     uint32 = 20
 )
 
 const (

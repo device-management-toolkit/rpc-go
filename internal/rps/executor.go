@@ -6,6 +6,7 @@ package rps
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/signal"
 	"strings"
@@ -98,7 +99,19 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 
 	for {
 		select {
-		case dataFromServer := <-rpsDataChannel:
+		case dataFromServer, ok := <-rpsDataChannel:
+			if !ok {
+				log.Error("RPS connection closed while waiting for server messages")
+				close(e.data)
+				close(e.errors)
+
+				if err := e.server.Close(); err != nil {
+					log.Error("RPS connection close failed", err)
+				}
+
+				return
+			}
+
 			shallIReturn := e.HandleDataFromRPS(dataFromServer)
 			if shallIReturn { // quits the loop -- we're either done or reached a point where we need to stop
 				close(e.data)
@@ -188,6 +201,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	err := e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
+
 		return true
 	}
 
@@ -222,6 +236,16 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
+				if e.localTlsEnforced && errors.Is(errFromLMS, lm.ErrLMSReadTimeoutNoData) {
+					// TLS 1.3 has normal rounds where LMS emits no immediate bytes
+					// (e.g. encrypted handshake transition records). Treat as
+					// non-fatal so the LMS socket and AMT-side TLS state stay alive
+					// and the next queued tls_data message rides the same connection.
+					log.Trace("No LMS data before read timeout for this TLS round-trip; continuing without connection_reset")
+
+					return false
+				}
+
 				log.Error("LMS error: ", errFromLMS)
 
 				if e.localTlsEnforced {
