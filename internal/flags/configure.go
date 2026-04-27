@@ -140,8 +140,8 @@ func (f *Flags) printConfigurationUsage() {
 	}
 
 	for _, cmd := range commands {
-		sb.WriteString(fmt.Sprintf("  %-17s %s\n", cmd.command, cmd.desc))
-		sb.WriteString(fmt.Sprintf("                    Example: %s\n", cmd.example))
+		fmt.Fprintf(&sb, "  %-17s %s\n", cmd.command, cmd.desc)
+		fmt.Fprintf(&sb, "                    Example: %s\n", cmd.example)
 	}
 
 	sb.WriteString("\nRun '" + baseCommand + " COMMAND -h' for more information on a command.\n")
