@@ -1,5 +1,4 @@
 //go:build windows && amt
-// +build windows,amt
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2021

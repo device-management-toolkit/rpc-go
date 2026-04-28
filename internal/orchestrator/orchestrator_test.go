@@ -11,13 +11,17 @@ import (
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
 // mockExecutor records executed commands for verification
 type mockExecutor struct {
 	executedArgs [][]string
 	errOnCall    int // return error on this call index (-1 = never)
-	callCount    int
+	// errs, if non-empty, overrides errOnCall and returns errs[i] for the i-th call
+	// (falling back to nil once exhausted).
+	errs      []error
+	callCount int
 }
 
 func newMockExecutor() *mockExecutor {
@@ -32,6 +36,10 @@ func (m *mockExecutor) Execute(args []string) error {
 
 	idx := m.callCount
 	m.callCount++
+
+	if idx < len(m.errs) {
+		return m.errs[idx]
+	}
 
 	if m.errOnCall == idx {
 		return fmt.Errorf("mock execution error on call %d", idx)
@@ -194,6 +202,118 @@ func TestExecuteMEBxConfiguration_SkipWhenPreProvisioning(t *testing.T) {
 	// Should have skipped execution entirely
 	if len(mock.executedArgs) != 0 {
 		t.Errorf("expected 0 executions (skipped), got %d", len(mock.executedArgs))
+	}
+}
+
+// authExecError returns an *ExecError that mimics the CLI returning the
+// AMTAuthenticationFailed exit code.
+func authExecError() error {
+	return &ExecError{
+		ExitCode: utils.AMTAuthenticationFailed.Code,
+		Output:   "401 Unauthorized",
+		Err:      fmt.Errorf("exit status %d", utils.AMTAuthenticationFailed.Code),
+	}
+}
+
+// nonAuthExecError returns an *ExecError with a different (non-auth) exit code.
+func nonAuthExecError() error {
+	return &ExecError{
+		ExitCode: 42,
+		Output:   "something else blew up",
+		Err:      fmt.Errorf("exit status 42"),
+	}
+}
+
+func TestExecuteWithPasswordFallback_SkippedWhenPreProvisioning(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	mock.errs = []error{authExecError()}
+	po.executor = mock
+	po.currentControlMode = 0 // pre-provisioning: rotation must not happen
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"})
+	if err == nil {
+		t.Fatalf("expected auth error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("expected 1 call (no rotation in pre-provisioning), got %d", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_NonExecErrorDoesNotRotate(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	mock.errs = []error{fmt.Errorf("generic non-ExecError failure")}
+	po.executor = mock
+	po.currentControlMode = 2
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"})
+	if err == nil {
+		t.Fatalf("expected error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("non-ExecError must not trigger rotation, got %d calls", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_NonAuthExitCodeDoesNotRotate(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	mock.errs = []error{nonAuthExecError()}
+	po.executor = mock
+	po.currentControlMode = 2
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"})
+	if err == nil {
+		t.Fatalf("expected error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("non-auth exit code must not trigger rotation, got %d calls", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_AuthExitCodeTriggersRotationAndRetry(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	// Call 0: original command fails with auth error.
+	// Call 1: non-interactive password rotation using currentPassword succeeds.
+	// Call 2: original command retried successfully.
+	mock.errs = []error{authExecError(), nil, nil}
+	po.executor = mock
+	po.currentControlMode = 2
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"})
+	if err != nil {
+		t.Fatalf("executeWithPasswordFallback() error = %v", err)
+	}
+
+	if mock.callCount != 3 {
+		t.Fatalf("expected 3 calls (fail, rotate, retry), got %d", mock.callCount)
+	}
+
+	rotateArgs := strings.Join(mock.executedArgs[1], " ")
+	if !strings.Contains(rotateArgs, "configure amtpassword --password old-pass --newamtpassword new-pass") {
+		t.Errorf("expected non-interactive rotation command on call 2, got: %s", rotateArgs)
+	}
+
+	retryArgs := strings.Join(mock.executedArgs[2], " ")
+	if !strings.Contains(retryArgs, "amtinfo") {
+		t.Errorf("expected retry of original command on call 3, got: %s", retryArgs)
 	}
 }
 

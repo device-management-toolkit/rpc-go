@@ -198,7 +198,11 @@ func (f *ProfileFetcher) fetchData(u, token string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("unauthorized: authentication required or token invalid")
+		if token == "" {
+			return nil, fmt.Errorf("unauthorized: no credentials provided — use --auth-token or --auth-username/--auth-password")
+		}
+
+		return nil, fmt.Errorf("unauthorized: server rejected the bearer token")
 	}
 
 	if resp.StatusCode != http.StatusOK {

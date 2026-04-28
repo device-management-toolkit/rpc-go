@@ -21,11 +21,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// handshakeTimeout bounds the wait for APF_CHANNEL_OPEN_CONFIRMATION so a Listen
+// goroutine that exits before signaling Done() can't deadlock the activation loop.
+var handshakeTimeout = (utils.HeciReadTimeout + 15) * time.Second
+
 type Executor struct {
 	server          AMTActivationServer
 	localManagement lm.LocalMananger
 	isLME           bool
-	lmeConnected    bool
 	payload         Payload
 	data            chan []byte
 	errors          chan error
@@ -90,7 +93,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	return client, err
 }
 
-// MakeItSo uses a pointer receiver because it updates executor state (lmeConnected, lastError)
+// MakeItSo uses a pointer receiver because it updates executor state (lastError)
 // across the activation loop.
 func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
@@ -297,26 +300,59 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	}
 }
 
-// prepareLME sets up the LME connection and listener for a single request.
+// prepareLME opens a fresh APF channel and waits (with bounded timeout) for
+// AMT's CHANNEL_OPEN_CONFIRMATION before sending request data. AMT closes the
+// channel after each response, so each request needs its own channel/Listen.
 func (e *Executor) prepareLME() error {
 	log.Debug("LME: Opening new APF channel for this request")
+
+	// Fresh handshake WaitGroup per request: if a prior Listen exited without
+	// signaling Done(), the old WG is abandoned rather than deadlocking this one.
+	handshake := e.resetHandshake()
 
 	err := e.localManagement.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to open LME channel: %w", err)
 	}
 
-	if !e.lmeConnected {
-		log.Debug("LME: First message - starting persistent Listen goroutine")
+	go e.localManagement.Listen()
 
-		go e.localManagement.Listen()
+	// Bounded wait so a Listen goroutine that exits early on a HECI error
+	// can't block this loop forever. OPEN_FAILURE also signals Done().
+	handshakeDone := make(chan struct{})
 
-		e.lmeConnected = true
+	go func() {
+		handshake.Wait()
+		close(handshakeDone)
+	}()
+
+	select {
+	case <-handshakeDone:
+		log.Trace("Channel open confirmation received")
+	case errFromLMS := <-e.errors:
+		if errFromLMS != nil {
+			return fmt.Errorf("LME error during channel open: %w", errFromLMS)
+		}
+	case <-time.After(handshakeTimeout):
+		return fmt.Errorf("timed out waiting for APF channel open after %s", handshakeTimeout)
 	}
 
-	e.waitGroup.Wait()
-
 	return nil
+}
+
+// resetHandshake installs a fresh WaitGroup on the LME session so each request
+// starts from a known-zero counter; a stale Done() from an abandoned Listen
+// can no longer race the current attempt's handshake wait.
+func (e *Executor) resetHandshake() *sync.WaitGroup {
+	wg := &sync.WaitGroup{}
+
+	if lmec, ok := e.localManagement.(*lm.LMEConnection); ok && lmec.Session != nil {
+		lmec.Session.WaitGroup = wg
+	}
+
+	e.waitGroup = wg
+
+	return wg
 }
 
 // prepareLMSTunnel ensures the persistent tunnel connection is ready and starts a listener.

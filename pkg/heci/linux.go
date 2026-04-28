@@ -1,5 +1,4 @@
-//go:build linux
-// +build linux
+//go:build !windows
 
 /*********************************************************************
  * Copyright (c) Intel Corporation 2021
@@ -199,6 +198,7 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	}
 
 	t := MEIConnectClientData{}
+
 	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
 	if err != nil {
 		return err
@@ -283,8 +283,6 @@ func (heci *Driver) GetBufferSize() uint32 {
 
 // SendMessage writes a payload to the active HECI interface.
 func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, err error) {
-	//log.Tracef("heci send len=%d", len(buffer))
-
 	// Hold read lock for fd lookup + write to avoid close/re-init races.
 	heci.mu.RLock()
 
@@ -411,7 +409,6 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 		}
 
 		if pfd[0].Revents&unix.POLLIN != 0 {
-			//log.Tracef("heci poll revents=0x%x", pfd[0].Revents)
 			read, readErr := unix.Read(fd, buffer)
 
 			if readErr == unix.EINTR {

@@ -6,7 +6,11 @@ package utils
 
 type ReturnCode int
 
-var ProjectVersion string = "Development Build"
+var (
+	ProjectVersion string = "Development Build"
+	BuildDate      string = "unknown"
+	BuildCommit    string = "unknown"
+)
 
 const (
 	// ProjectName is the name of the executable
@@ -34,7 +38,6 @@ const (
 	HeciRetryDelay          = 3000 // milliseconds
 	HeciReinitDelay         = 500  // milliseconds
 	HeciConnectRetryBackoff = 500  // milliseconds
-	LMETimerTimeout         = 10   // seconds
 	WebSocketTimeout        = 60   // seconds
 	AMTResponseTimeout      = 30   // seconds
 

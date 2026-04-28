@@ -13,6 +13,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -95,6 +96,10 @@ func (c MockAMT) Unprovision() (int, error) {
 
 func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
 	return amt.SecureHBasedResponse{}, nil
+}
+
+func (c MockAMT) GetUPID() (*upid.UPID, error) {
+	return nil, nil
 }
 
 func (c MockAMT) GetFlog() ([]byte, error) {

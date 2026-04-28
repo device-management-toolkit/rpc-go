@@ -59,6 +59,15 @@ func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
 }
 
 func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+	// Release any prior local transport's MEI handle; re-setup leaks handles otherwise.
+	if g.localTransport != nil {
+		if err := g.localTransport.Close(); err != nil {
+			logrus.Debugf("closing previous local transport: %v", err)
+		}
+
+		g.localTransport = nil
+	}
+
 	clientParams := client.Parameters{
 		Target:         g.target,
 		Username:       username,
@@ -86,7 +95,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
 			logrus.Error(err)
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
@@ -109,7 +118,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			g.localTransport = NewLocalTransport()
 			clientParams.Transport = g.localTransport
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 			con.Close()
 		}
 	}

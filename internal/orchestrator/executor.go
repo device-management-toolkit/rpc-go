@@ -8,11 +8,33 @@ package orchestrator
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 )
+
+// ExecError carries subprocess exit code + output; match on ExitCode, not Output substrings.
+type ExecError struct {
+	ExitCode int
+	Output   string
+	Err      error
+}
+
+func (e *ExecError) Error() string {
+	if e == nil {
+		return ""
+	}
+
+	if e.Output == "" {
+		return e.Err.Error()
+	}
+
+	return fmt.Sprintf("%v: %s", e.Err, e.Output)
+}
+
+func (e *ExecError) Unwrap() error { return e.Err }
 
 // CommandExecutor interface for executing commands
 type CommandExecutor interface {
@@ -50,9 +72,16 @@ func (e *CLIExecutor) Execute(args []string) error {
 	cmd.Stdin = os.Stdin
 
 	// Run the command
-	if err := cmd.Run(); err != nil {
-		// Include captured output to allow callers to inspect for auth errors, etc.
-		return fmt.Errorf("%w: %s", err, buf.String())
+	err = cmd.Run()
+	if err != nil {
+		ee := &ExecError{Err: err, Output: buf.String()}
+
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			ee.ExitCode = exitErr.ExitCode()
+		}
+
+		return ee
 	}
 
 	return nil

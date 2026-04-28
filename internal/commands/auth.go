@@ -9,18 +9,55 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/sirupsen/logrus"
 )
 
-// ServerAuthFlags provides common auth options for server communications
-// Either AuthToken (Bearer) OR both AuthUsername and AuthPassword (Basic) should be supplied.
+// ServerAuthFlags provides common auth options for server communications.
+// When AuthEndpoint is set, either AuthToken (Bearer) OR both AuthUsername
+// and AuthPassword (Basic) must be supplied.
 type ServerAuthFlags struct {
-	AuthToken    string `help:"Bearer token for server authentication" name:"auth-token" env:"AUTH_TOKEN"`
-	AuthUsername string `help:"Username for basic auth (used when no token)" name:"auth-username" env:"AUTH_USERNAME"`
-	AuthPassword string `help:"Password for basic auth (used when no token)" name:"auth-password" env:"AUTH_PASSWORD"`
-	// Optional endpoint for exchanging credentials for a token (primarily used when fetching HTTP profiles)
-	AuthEndpoint string `help:"The endpoint to call to fetch a token. Assumes the same host as the profile URL unless an absolute URL is provided; defaults to the Console path /api/v1/authorize." name:"auth-endpoint" default:"/api/v1/authorize"`
+	AuthToken       string `help:"Bearer token for server authentication" name:"auth-token" env:"AUTH_TOKEN"`
+	AuthUsername    string `help:"Username for basic auth (used when no token)" name:"auth-username" env:"AUTH_USERNAME"`
+	AuthPassword    string `help:"Password for basic auth (used when no token)" name:"auth-password" env:"AUTH_PASSWORD"`
+	AuthEndpoint    string `help:"Token exchange endpoint. Requires --auth-token or --auth-username/--auth-password. Resolved relative to the profile URL host unless absolute." name:"auth-endpoint" env:"AUTH_ENDPOINT"`
+	DevicesEndpoint string `help:"Devices API endpoint (absolute URL). Defaults to {console-url}/api/v1/devices when not set." name:"devices-endpoint" env:"DEVICES_ENDPOINT"`
+}
+
+// Validate implements kong.Validatable.
+// - auth-username and auth-password must always be provided together.
+// - When auth-endpoint is set, either auth-token or (auth-username + auth-password) is required.
+// - When devices-endpoint is set, it must be an absolute HTTP(S) URL.
+func (a *ServerAuthFlags) Validate() error {
+	if a.DevicesEndpoint != "" {
+		parsed, err := url.Parse(a.DevicesEndpoint)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("--devices-endpoint must be an absolute HTTP(S) URL")
+		}
+	}
+
+	if (a.AuthUsername != "") != (a.AuthPassword != "") {
+		if a.AuthUsername != "" {
+			return fmt.Errorf("--auth-username requires --auth-password")
+		}
+
+		return fmt.Errorf("--auth-password requires --auth-username")
+	}
+
+	if a.AuthEndpoint == "" {
+		return nil
+	}
+
+	if a.AuthToken != "" {
+		return nil
+	}
+
+	if a.AuthUsername != "" && a.AuthPassword != "" {
+		return nil
+	}
+
+	return fmt.Errorf("--auth-endpoint requires --auth-token or both --auth-username and --auth-password")
 }
 
 // ValidateRequired enforces that some form of auth is present when required.

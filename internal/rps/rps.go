@@ -258,6 +258,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) (ProcessedMessage
 	case "error":
 		err := json.Unmarshal([]byte(activation.Message), &statusMessage)
 		errMessage := activation.Message
+
 		if err == nil {
 			log.Error(statusMessage.Status)
 			errMessage = statusMessage.Status

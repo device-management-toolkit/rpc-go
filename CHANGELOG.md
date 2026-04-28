@@ -1,3 +1,91 @@
+# [3.0.0-beta.23](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.22...v3.0.0-beta.23) (2026-04-22)
+
+
+### Bug Fixes
+
+* ensure rps flow works with LME ([846e8d2](https://github.com/device-management-toolkit/rpc-go/commit/846e8d29fff0dc25c5acb6bcab0f5ee1e401dfa1))
+
+# [3.0.0-beta.22](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.21...v3.0.0-beta.22) (2026-04-21)
+
+
+### Features
+
+* show proxy configuration in amtinfo ([#1261](https://github.com/device-management-toolkit/rpc-go/issues/1261)) ([4889234](https://github.com/device-management-toolkit/rpc-go/commit/488923439343f1e551021b5db3105f145d73c631)), closes [#1245](https://github.com/device-management-toolkit/rpc-go/issues/1245)
+
+# [3.0.0-beta.21](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.20...v3.0.0-beta.21) (2026-04-20)
+
+
+### Bug Fixes
+
+* retry Host-Based Configuration on transient AMT firmware errors ([#1278](https://github.com/device-management-toolkit/rpc-go/issues/1278)) ([e2ff23d](https://github.com/device-management-toolkit/rpc-go/commit/e2ff23d5caba1a3688b66132f827ae3e7793456b))
+
+# [3.0.0-beta.20](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.19...v3.0.0-beta.20) (2026-04-17)
+
+
+### Bug Fixes
+
+* correct handshake and channel lifecycle in local transport ([8412639](https://github.com/device-management-toolkit/rpc-go/commit/84126399f9221e423f3a317b521df3c00faf387f))
+
+# [3.0.0-beta.19](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.18...v3.0.0-beta.19) (2026-04-16)
+
+
+### Bug Fixes
+
+* skip WiFi configuration on devices without WiFi hardware ([#1277](https://github.com/device-management-toolkit/rpc-go/issues/1277)) ([c5e7caa](https://github.com/device-management-toolkit/rpc-go/commit/c5e7caa0608e6c826d9174db1e9e8e5c2165076a))
+
+# [3.0.0-beta.18](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.17...v3.0.0-beta.18) (2026-04-15)
+
+
+### Bug Fixes
+
+* ensure no password prompt for profile activation ([e7eb579](https://github.com/device-management-toolkit/rpc-go/commit/e7eb579d2d79fb7427cfdf3937e720e45da3be07))
+
+# [3.0.0-beta.17](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.16...v3.0.0-beta.17) (2026-04-14)
+
+
+### Features
+
+* add public pkg/version API for version info ([d8d9667](https://github.com/device-management-toolkit/rpc-go/commit/d8d96679ea36737070b25f8af8fee8ce65e227b9))
+
+# [3.0.0-beta.16](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.15...v3.0.0-beta.16) (2026-04-13)
+
+
+### Features
+
+* add console device registration for local profile activation ([#1231](https://github.com/device-management-toolkit/rpc-go/issues/1231)) ([1ea6567](https://github.com/device-management-toolkit/rpc-go/commit/1ea656748a6e2bcb4232b6365d80e5426232409e))
+
+# [3.0.0-beta.15](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.14...v3.0.0-beta.15) (2026-04-08)
+
+# [3.0.0-beta.14](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.13...v3.0.0-beta.14) (2026-04-06)
+
+
+### Features
+
+* enhance version command with more info for debug ([04df712](https://github.com/device-management-toolkit/rpc-go/commit/04df712686e8413f397908a5f55589dd686b8330))
+
+# [3.0.0-beta.13](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.12...v3.0.0-beta.13) (2026-04-01)
+
+
+### Features
+
+* allow elevation prompt non-admin terminal ([398efb4](https://github.com/device-management-toolkit/rpc-go/commit/398efb4ee2daf85b3dbc7a49bae613828515f023))
+
+# [3.0.0-beta.12](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.11...v3.0.0-beta.12) (2026-04-01)
+
+
+### Features
+
+* adds lipgloss to cli output ([71ccd8c](https://github.com/device-management-toolkit/rpc-go/commit/71ccd8cb54ee23e724219792858287535ad9e81b))
+
+# [3.0.0-beta.11](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.10...v3.0.0-beta.11) (2026-03-31)
+
+
+### Bug Fixes
+
+* get change enabled no longer prevents activation ([1b66b58](https://github.com/device-management-toolkit/rpc-go/commit/1b66b588db81a48c5b9d449fea553707b87815bc))
+
+# [3.0.0-beta.10](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.9...v3.0.0-beta.10) (2026-03-26)
+
 # [3.0.0-beta.9](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.8...v3.0.0-beta.9) (2026-03-19)
 
 
@@ -59,6 +147,55 @@
 
 * see migration-guide.md for the command and flag syntax overhaul, profile/config realignment,
 and the new restful profile activation flow.
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-23)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-20)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-18)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-17)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-16)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
+
+## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* dynamic activation server dns, profile, dnssuffix ([6703303](https://github.com/device-management-toolkit/rpc-go/commit/6703303b82e8298bc838274a5ea89bfeb23903a3))
 
 ## [2.48.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.48.2...v2.48.3) (2026-03-10)
 

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
@@ -25,6 +24,20 @@ type LMEConnection struct {
 	Session    *apf.Session
 	ourChannel int
 	retries    int
+}
+
+// apfInitHandler signals ready once ME advertises tcpip-forward for port 16992.
+type apfInitHandler struct {
+	apf.DefaultHandler
+	portForwardReady bool
+}
+
+func (h *apfInitHandler) OnGlobalRequest(req apf.GlobalRequest) bool {
+	if req.RequestType == "tcpip-forward" && req.Port == 16992 {
+		h.portForwardReady = true
+	}
+
+	return false
 }
 
 func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *LMEConnection {
@@ -42,55 +55,72 @@ func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *
 	return lme
 }
 
+// Initialize runs the APF handshake until ME signals tcpip-forward on 16992 (or HECI times out).
 func (lme *LMEConnection) Initialize() error {
-	// Ensure any previous device handle is closed before opening a new one
 	lme.Command.Close()
 
-	err := lme.Command.Open(true)
-	if err != nil {
+	if err := lme.Command.Open(true); err != nil {
 		logLMEError(err)
 
 		return err
 	}
 
-	var bin_buf bytes.Buffer
+	handler := &apfInitHandler{}
+	processor := apf.NewProcessor(handler)
 
-	protocolVersion := apf.ProtocolVersion(1, 0, 9)
-	binary.Write(&bin_buf, binary.BigEndian, protocolVersion)
+	var pv bytes.Buffer
+	if err := binary.Write(&pv, binary.BigEndian, apf.ProtocolVersion(1, 0, 9)); err != nil {
+		return err
+	}
 
-	err = lme.execute(bin_buf)
-	if err != nil {
+	if err := lme.Command.Send(pv.Bytes()); err != nil {
 		logLMEError(err)
 
 		return err
 	}
 
-	return nil
+	for {
+		result, bytesRead, err := lme.Command.Receive()
+		if err != nil {
+			if errors.Is(err, heci.ErrReadTimeout) || strings.Contains(err.Error(), "heci read timeout") {
+				// ME went idle; handshake phase is complete.
+				return nil
+			}
+
+			logLMEError(err)
+
+			return err
+		}
+
+		if bytesRead == 0 {
+			// No more init messages queued.
+			return nil
+		}
+
+		reply := processor.Process(result[:bytesRead], lme.Session)
+		if reply.Len() > 0 {
+			if err := lme.Command.Send(reply.Bytes()); err != nil {
+				logLMEError(err)
+
+				return err
+			}
+		}
+
+		if handler.portForwardReady {
+			return nil
+		}
+	}
 }
 
 // Connect initializes connection to LME via MEI Driver
 func (lme *LMEConnection) Connect() error {
 	log.Debug("Sending APF_CHANNEL_OPEN")
 
-	// Reset session state before new connection.
-	if lme.Session.Timer != nil {
-		if !lme.Session.Timer.Stop() {
-			select {
-			case <-lme.Session.Timer.C:
-			default:
-			}
-		}
-		// Reset the existing timer instead of creating a new one
-		// (timer goroutine is waiting on this timer's channel)
-		lme.Session.Timer.Reset(utils.LMETimerTimeout * time.Second)
-	} else {
-		// First time only - create the timer
-		lme.Session.Timer = time.NewTimer(utils.LMETimerTimeout * time.Second)
-	}
-
+	// Reset per-request session state before a new channel open.
 	lme.Session.Tempdata = []byte{}
 	lme.Session.SenderChannel = 0
 	lme.Session.TXWindow = 0
+	lme.Session.HandshakeConfirmed = false
 
 	var lastErr error
 
@@ -156,7 +186,12 @@ func (lme *LMEConnection) Send(data []byte) error {
 	// Use the proper APF serialization function instead of manual binary.Write
 	channelDataBytes := apf.BuildChannelDataBytes(lme.Session.SenderChannel, data)
 
-	lme.Session.TXWindow -= lme.Session.TXWindow // hmmm
+	// Debit TX window by payload length, not framed length.
+	if sent := uint32(len(data)); sent >= lme.Session.TXWindow {
+		lme.Session.TXWindow = 0
+	} else {
+		lme.Session.TXWindow -= sent
+	}
 
 	err := lme.Command.Send(channelDataBytes)
 	if err != nil {
@@ -168,104 +203,53 @@ func (lme *LMEConnection) Send(data []byte) error {
 	return nil
 }
 
-func (lme *LMEConnection) execute(bin_buf bytes.Buffer) error {
-	for {
-		result, err := lme.Command.Call(bin_buf.Bytes(), bin_buf.Len())
-		if err != nil && (err.Error() == "empty response from AMT" || err.Error() == "no such device") {
-			log.Warn("AMT Unavailable, retrying...")
-
-			break
-		} else if err != nil {
-			return err
-		}
-
-		bin_buf = apf.Process(result, lme.Session)
-		if bin_buf.Len() == 0 {
-			log.Debug("done EXECUTING.........")
-
-			break
-		}
-	}
-
-	return nil
-}
-
-// Listen reads data from the LMS socket connection
+// Listen dispatches APF messages for one transaction, then exits on CHANNEL_CLOSE or OPEN_FAILURE.
 func (lme *LMEConnection) Listen() {
-	timerDone := make(chan struct{})
-	defer close(timerDone)
-
-	// Ensure timer exists before selecting on Timer.C
-	if lme.Session.Timer == nil {
-		lme.Session.Timer = time.NewTimer(utils.LMETimerTimeout * time.Second)
-	}
-
-	// Timer goroutine - handles timer expirations for ALL channels
-	go func() {
-		for {
-			select {
-			case <-lme.Session.Timer.C:
-				// Timer fired - send accumulated data
-				select {
-				case lme.Session.DataBuffer <- lme.Session.Tempdata:
-				case <-timerDone:
-					return
-				}
-
-				lme.Session.Tempdata = []byte{}
-
-				// Use the proper APF serialization function instead of manual binary.Write
-				channelCloseBytes := apf.BuildChannelCloseBytes(lme.Session.SenderChannel)
-
-				lme.Command.Send(channelCloseBytes)
-			case <-timerDone:
-				if lme.Session.Timer != nil {
-					lme.Session.Timer.Stop()
-				}
-
-				return
-			}
-		}
-	}()
-
 	for {
-		result2, bytesRead, err2 := lme.Command.Receive()
-		if bytesRead == 0 || err2 != nil {
+		result, bytesRead, err := lme.Command.Receive()
+		if bytesRead == 0 || err != nil {
 			log.Trace("NO MORE DATA TO READ")
-			// Send error to channel before exiting to prevent deadlock.
-			// But don't panic if channel is closed
-			if err2 != nil {
+
+			// Non-blocking send so a closed error channel doesn't leak the goroutine.
+			if err != nil {
 				select {
-				case lme.Session.ErrorBuffer <- err2:
+				case lme.Session.ErrorBuffer <- err:
 				default:
 					log.Debug("Error channel closed, exiting Listen")
 				}
 			}
 
-			break
-		} else {
-			result := apf.Process(result2, lme.Session)
-			if result.Len() != 0 {
-				err2 = lme.execute(result)
-				if err2 != nil {
-					log.Trace(err2)
-				}
+			return
+		}
 
-				log.Trace(result)
+		msg := result[:bytesRead]
+		msgType := msg[0]
+
+		reply := apf.Process(msg, lme.Session)
+		if reply.Len() > 0 {
+			if err := lme.Command.Send(reply.Bytes()); err != nil {
+				log.Trace(err)
+
+				return
 			}
+		}
+
+		// One transaction per Listen; Process already handed off body/error.
+		if msgType == apf.APF_CHANNEL_OPEN_FAILURE {
+			return
+		}
+
+		// HandshakeConfirmed guards against stale CLOSE frames from a previous channel (reset by Connect)
+		if msgType == apf.APF_CHANNEL_CLOSE && lme.Session.HandshakeConfirmed {
+			return
 		}
 	}
 }
 
 // Close closes the LME connection
-
 func (lme *LMEConnection) Close() error {
 	log.Debug("closing connection to lme")
 	lme.Command.Close()
-
-	if lme.Session.Timer != nil {
-		lme.Session.Timer.Stop()
-	}
 
 	return nil
 }

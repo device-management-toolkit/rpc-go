@@ -9,8 +9,20 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	log "github.com/sirupsen/logrus"
 )
+
+// hasWiFiHardware reports whether the device has a wireless adapter.
+// AMT convention: index 0 = wired, index 1 = wireless when present.
+func hasWiFiHardware(w interfaces.WSMANer) (bool, error) {
+	ports, err := w.GetEthernetSettings()
+	if err != nil {
+		return false, err
+	}
+
+	return len(ports) >= 2 && ports[1].MACAddress != "", nil
+}
 
 // WifiSyncCmd represents WiFi port enablement
 type WifiSyncCmd struct {
@@ -29,6 +41,22 @@ type WifiSyncCmd struct {
 
 // Run executes the enable wifi port command
 func (cmd *WifiSyncCmd) Run(ctx *commands.Context) error {
+	// Ensure runtime initialization (password + WSMAN client)
+	if err := cmd.EnsureRuntime(ctx); err != nil {
+		return err
+	}
+
+	hasWiFi, err := hasWiFiHardware(cmd.WSMan)
+	if err != nil {
+		return fmt.Errorf("failed to detect WiFi hardware: %w", err)
+	}
+
+	if !hasWiFi {
+		log.Warn("Device does not have WiFi hardware; skipping WiFi sync configuration")
+
+		return nil
+	}
+
 	// Informational log reflecting desired state
 	if cmd.OSWiFiSync {
 		log.Info("Setting WiFi sync with OS: ENABLED")
@@ -41,13 +69,9 @@ func (cmd *WifiSyncCmd) Run(ctx *commands.Context) error {
 	} else {
 		log.Info("Setting UEFI WiFi profile share: DISABLED")
 	}
-	// Ensure runtime initialization (password + WSMAN client)
-	if err := cmd.EnsureRuntime(ctx); err != nil {
-		return err
-	}
 
 	// Apply requested WiFi synchronization settings; firmware will always turn WiFi on via state change
-	err := cmd.WSMan.EnableWiFi(cmd.OSWiFiSync, cmd.UEFIWiFiSync)
+	err = cmd.WSMan.EnableWiFi(cmd.OSWiFiSync, cmd.UEFIWiFiSync)
 	if err != nil {
 		log.Error("Failed to set WiFi sync/profile sharing state.")
 
