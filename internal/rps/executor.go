@@ -272,6 +272,19 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 					continue
 				}
 
+				// TLS 1.3 has normal handshake rounds where LMS emits no immediate
+				// bytes (e.g. immediately after our client Finished). The LMS
+				// Listen goroutine surfaces those via ErrLMSReadTimeoutNoData; in
+				// TLS-tunnel mode treat them as a benign continuation so the
+				// connection and AMT-side TLS state stay alive and the next
+				// queued tls_data RPS message rides the same socket. Outside
+				// TLS-tunnel mode the historical fatal handling still applies.
+				if e.tlsTunnelActive && errors.Is(errFromLMS, lm.ErrLMSReadTimeoutNoData) {
+					log.Trace("No LMS data before read timeout for this TLS round-trip; continuing without connection_reset")
+
+					return false
+				}
+
 				log.Error("LMS error: ", errFromLMS)
 
 				if e.tlsTunnelActive {
