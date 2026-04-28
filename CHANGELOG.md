@@ -1,3 +1,10 @@
+## [2.50.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.1...v2.50.2) (2026-04-28)
+
+
+### Bug Fixes
+
+* handle tls v1.3 data from AMT ([56bc354](https://github.com/device-management-toolkit/rpc-go/commit/56bc3545d3f21ed7a53c5ce27f894be6661d0949))
+
 ## [2.50.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.0...v2.50.1) (2026-04-10)
 
 # [2.50.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.49.2...v2.50.0) (2026-03-28)
