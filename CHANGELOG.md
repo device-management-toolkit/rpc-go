@@ -1,3 +1,10 @@
+## [2.50.4](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.3...v2.50.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* ensure latest go version is used ([#1298](https://github.com/device-management-toolkit/rpc-go/issues/1298)) ([494cd77](https://github.com/device-management-toolkit/rpc-go/commit/494cd77ffbe8ce50a72148ae52e938f6a6c9f54a))
+
 ## [2.50.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.2...v2.50.3) (2026-04-29)
 
 
