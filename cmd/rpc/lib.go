@@ -7,6 +7,9 @@ package main
 // NOTE: this file is designed to be built into a C library and the import
 // of 'C' introduces a dependency on the gcc toolchain
 
+/*
+#include <stdlib.h>
+*/
 import "C"
 
 import (
@@ -16,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -153,6 +157,11 @@ func rpcExec(Input *C.char, Output **C.char) int {
 	}
 
 	return int(utils.Success)
+}
+
+//export FreeString
+func FreeString(s *C.char) {
+	C.free(unsafe.Pointer(s))
 }
 
 func handleError(err error) int {
