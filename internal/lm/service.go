@@ -5,11 +5,13 @@
 package lm
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,16 +117,33 @@ func (lms *LMSConnection) Close() error {
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
-	duration, _ := time.ParseDuration("1s")
-	lms.Connection.SetDeadline(time.Now().Add(duration))
+	readIdleTimeout := utils.LMSReadIdleTimeout * time.Second
 
 	buf := make([]byte, 0, 8192) // big buffer
 	tmp := make([]byte, 4096)
 
 	for {
+		_ = lms.Connection.SetReadDeadline(time.Now().Add(readIdleTimeout))
+
 		n, err := lms.Connection.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+
+			if isCompleteHTTPResponse(buf) {
+				break
+			}
+		}
+
 		if err != nil {
-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if len(buf) > 0 {
+					break
+				}
+
+				continue
+			}
+
+			if err != io.EOF {
 				log.Println("read error:", err)
 
 				lms.errors <- err
@@ -132,11 +151,43 @@ func (lms *LMSConnection) Listen() {
 
 			break
 		}
+	}
 
-		buf = append(buf, tmp[:n]...)
+	if len(buf) == 0 {
+		log.Trace("Sending empty LMS response to data channel (AMT closed connection with no data)")
 	}
 
 	lms.data <- buf
 
 	log.Trace("done listening")
+}
+
+func isCompleteHTTPResponse(buf []byte) bool {
+	headerEnd := bytes.Index(buf, []byte("\r\n\r\n"))
+	if headerEnd < 0 {
+		return false
+	}
+
+	headers := string(buf[:headerEnd])
+	body := buf[headerEnd+4:]
+	lowerHeaders := strings.ToLower(headers)
+
+	if strings.Contains(lowerHeaders, "transfer-encoding: chunked") {
+		return bytes.Contains(body, []byte("\r\n0\r\n\r\n"))
+	}
+
+	for _, line := range strings.Split(headers, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+			value := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(line), "content-length:"))
+
+			contentLen, err := strconv.Atoi(value)
+			if err != nil {
+				return false
+			}
+
+			return len(body) >= contentLen
+		}
+	}
+
+	return true
 }

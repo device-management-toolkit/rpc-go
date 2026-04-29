@@ -437,3 +437,43 @@ func TestCreateMessageRequestWithInvalidUUIDPattern(t *testing.T) {
 	assert.Error(t, createErr)
 	assert.Equal(t, utils.InvalidUUID, createErr)
 }
+
+func TestCreateMessageRequestLocalTLSEnforced(t *testing.T) {
+	tests := []struct {
+		name             string
+		localTlsEnforced bool
+	}{
+		{
+			name:             "localTlsEnforced true",
+			localTlsEnforced: true,
+		},
+		{
+			name:             "localTlsEnforced false",
+			localTlsEnforced: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, createErr := p.CreateMessageRequest(Request{LocalTlsEnforced: tt.localTlsEnforced})
+			assert.NoError(t, createErr)
+			assert.NotEmpty(t, result.Payload)
+
+			decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+			assert.NoError(t, decodeErr)
+
+			msgPayload := MessagePayload{}
+			jsonErr := json.Unmarshal(decodedBytes, &msgPayload)
+			assert.NoError(t, jsonErr)
+			assert.Equal(t, tt.localTlsEnforced, msgPayload.LocalTLSEnforced)
+
+			var raw map[string]interface{}
+
+			mapErr := json.Unmarshal(decodedBytes, &raw)
+			assert.NoError(t, mapErr)
+
+			_, ok := raw["localTlsEnforced"]
+			assert.True(t, ok, "localTlsEnforced field must always be present in JSON")
+		})
+	}
+}

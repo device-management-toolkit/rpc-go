@@ -169,6 +169,7 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 		Verbose:          service.context.Verbose,
 		SkipCertCheck:    service.context.SkipCertCheck,
 		SkipAmtCertCheck: service.context.SkipAMTCertCheck,
+		LocalTlsEnforced: service.context.LocalTLSEnforced,
 		ControlMode:      service.context.ControlMode,
 		TenantID:         service.context.TenantID,
 		Password:         service.context.AMTPassword,

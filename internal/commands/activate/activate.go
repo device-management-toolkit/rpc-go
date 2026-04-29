@@ -264,6 +264,9 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 
 // runRemoteActivation executes remote activation using the remote service
 func (cmd *ActivateCmd) runRemoteActivation(ctx *commands.Context) error {
+	ctx.ControlMode = cmd.ControlMode
+	ctx.LocalTLSEnforced = cmd.LocalTLSEnforced
+
 	// Create remote activation command with current flags
 	remoteCmd := RemoteActivateCmd{
 		URL:             cmd.URL,
