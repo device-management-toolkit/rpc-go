@@ -1,3 +1,10 @@
+## [2.50.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.2...v2.50.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* ensure semantic release uses latest version of go ([2251071](https://github.com/device-management-toolkit/rpc-go/commit/225107155c8f2121d2cd486acc198e91eaa4f358))
+
 ## [2.50.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.1...v2.50.2) (2026-04-28)
 
 
