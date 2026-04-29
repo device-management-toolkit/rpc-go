@@ -121,6 +121,7 @@ func (lms *LMSConnection) Listen() {
 
 	buf := make([]byte, 0, 8192) // big buffer
 	tmp := make([]byte, 4096)
+	errOccurred := false
 
 	for {
 		_ = lms.Connection.SetReadDeadline(time.Now().Add(readIdleTimeout))
@@ -137,7 +138,12 @@ func (lms *LMSConnection) Listen() {
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				if len(buf) > 0 {
-					break
+					// For HTTP responses, require completeness before breaking to avoid
+					// forwarding truncated bodies (e.g. slow Content-Length delivery).
+					// For non-HTTP data (raw protocol), break on any data as before.
+					if !strings.HasPrefix(string(buf), "HTTP/") || isCompleteHTTPResponse(buf) {
+						break
+					}
 				}
 
 				continue
@@ -147,10 +153,16 @@ func (lms *LMSConnection) Listen() {
 				log.Println("read error:", err)
 
 				lms.errors <- err
+
+				errOccurred = true
 			}
 
 			break
 		}
+	}
+
+	if errOccurred {
+		return
 	}
 
 	if len(buf) == 0 {
@@ -189,5 +201,20 @@ func isCompleteHTTPResponse(buf []byte) bool {
 		}
 	}
 
-	return true
+	// No Content-Length and not chunked: only treat as complete for status codes
+	// that are defined to have no body (1xx, 204, 304). For all others, the body
+	// is delimited by connection close, so return false and let EOF signal completion.
+	statusLine := strings.SplitN(headers, "\r\n", 2)[0]
+	parts := strings.SplitN(statusLine, " ", 3)
+
+	if len(parts) >= 2 {
+		statusCode, err := strconv.Atoi(parts[1])
+		if err == nil {
+			if (statusCode >= 100 && statusCode < 200) || statusCode == 204 || statusCode == 304 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
