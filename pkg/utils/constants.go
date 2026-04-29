@@ -34,6 +34,7 @@ const (
 	// LMSConnectionTimeout is the maximum wait for LMS TCP connection setup.
 	LMSConnectionTimeout    = 10   // seconds
 	LMSDialerTimeout        = 5    // seconds
+	LMSReadIdleTimeout      = 3    // seconds; per-read deadline inside Listen() before treating connection as idle
 	HeciReadTimeout         = 30   // seconds
 	HeciRetryDelay          = 3000 // milliseconds
 	HeciReinitDelay         = 500  // milliseconds

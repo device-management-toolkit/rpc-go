@@ -5,11 +5,13 @@
 package lm
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,28 +117,104 @@ func (lms *LMSConnection) Close() error {
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
-	duration, _ := time.ParseDuration("1s")
-	lms.Connection.SetDeadline(time.Now().Add(duration))
+	readIdleTimeout := utils.LMSReadIdleTimeout * time.Second
 
 	buf := make([]byte, 0, 8192) // big buffer
 	tmp := make([]byte, 4096)
+	errOccurred := false
 
 	for {
+		_ = lms.Connection.SetReadDeadline(time.Now().Add(readIdleTimeout))
+
 		n, err := lms.Connection.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+
+			if isCompleteHTTPResponse(buf) {
+				break
+			}
+		}
+
 		if err != nil {
-			if err != io.EOF && !strings.ContainsAny(err.Error(), "i/o timeout") {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if len(buf) > 0 {
+					// For HTTP responses, require completeness before breaking to avoid
+					// forwarding truncated bodies (e.g. slow Content-Length delivery).
+					// For non-HTTP data (raw protocol), break on any data as before.
+					if !strings.HasPrefix(string(buf), "HTTP/") || isCompleteHTTPResponse(buf) {
+						break
+					}
+				}
+
+				continue
+			}
+
+			if err != io.EOF {
 				log.Println("read error:", err)
 
 				lms.errors <- err
+
+				errOccurred = true
 			}
 
 			break
 		}
+	}
 
-		buf = append(buf, tmp[:n]...)
+	if errOccurred {
+		return
+	}
+
+	if len(buf) == 0 {
+		log.Trace("Sending empty LMS response to data channel (AMT closed connection with no data)")
 	}
 
 	lms.data <- buf
 
 	log.Trace("done listening")
+}
+
+func isCompleteHTTPResponse(buf []byte) bool {
+	headerEnd := bytes.Index(buf, []byte("\r\n\r\n"))
+	if headerEnd < 0 {
+		return false
+	}
+
+	headers := string(buf[:headerEnd])
+	body := buf[headerEnd+4:]
+	lowerHeaders := strings.ToLower(headers)
+
+	if strings.Contains(lowerHeaders, "transfer-encoding: chunked") {
+		return bytes.Contains(body, []byte("\r\n0\r\n\r\n"))
+	}
+
+	for _, line := range strings.Split(headers, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+			value := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(line), "content-length:"))
+
+			contentLen, err := strconv.Atoi(value)
+			if err != nil {
+				return false
+			}
+
+			return len(body) >= contentLen
+		}
+	}
+
+	// No Content-Length and not chunked: only treat as complete for status codes
+	// that are defined to have no body (1xx, 204, 304). For all others, the body
+	// is delimited by connection close, so return false and let EOF signal completion.
+	statusLine := strings.SplitN(headers, "\r\n", 2)[0]
+	parts := strings.SplitN(statusLine, " ", 3)
+
+	if len(parts) >= 2 {
+		statusCode, err := strconv.Atoi(parts[1])
+		if err == nil {
+			if (statusCode >= 100 && statusCode < 200) || statusCode == 204 || statusCode == 304 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
