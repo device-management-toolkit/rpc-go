@@ -16,6 +16,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -33,7 +34,11 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
+
+// Minimum terminal width at which OutputText switches to a two-column layout.
+const twoColumnMinWidth = 150
 
 const (
 	notFoundIP = "Not Found"
@@ -71,6 +76,20 @@ var (
 
 	infoCertNameStyle = lipgloss.NewStyle().
 				Bold(true)
+
+	boxBorderColor = lipgloss.Color("238")
+
+	boxBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(boxBorderColor).
+			Padding(1, 1)
+
+	boxBorderCharStyle = lipgloss.NewStyle().
+				Foreground(boxBorderColor)
+
+	boxTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("39"))
 )
 
 func renderInfoHeader(title string) string {
@@ -96,6 +115,45 @@ func styledInfoValue(value string) string {
 	default:
 		return value
 	}
+}
+
+// renderTitledBox wraps content in a rounded bordered box with a title
+// embedded in the top border, like: ╭─ Title ───────╮.
+// If width > 0, the box content is padded to that width.
+// If height > 0, content is vertically centered within that height.
+func renderTitledBox(title, content string, width, height int) string {
+	style := boxBorderStyle
+	if width > 0 {
+		style = style.Width(width)
+	}
+
+	if height > 0 {
+		style = style.Height(height).AlignVertical(lipgloss.Center)
+	}
+
+	box := style.Render(content)
+
+	lines := strings.Split(box, "\n")
+	if len(lines) < 3 {
+		return box
+	}
+
+	// Compute visual (printable) width of the original top border.
+	topWidth := lipgloss.Width(lines[0])
+
+	styledTitle := boxTitleStyle.Render(" " + title + " ")
+	titleWidth := lipgloss.Width(styledTitle)
+
+	// Need room for: left corner (1) + one leading dash (1) + title + right corner (1).
+	if 3+titleWidth > topWidth {
+		return box
+	}
+
+	remaining := topWidth - 3 - titleWidth
+	lines[0] = boxBorderCharStyle.Render("╭─") + styledTitle +
+		boxBorderCharStyle.Render(strings.Repeat("─", remaining)+"╮")
+
+	return strings.Join(lines, "\n")
 }
 
 func indentBlock(s, prefix string) string {
@@ -997,7 +1055,121 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 		}
 	}
 
-	// --- Device Information ---
+	// Build unboxed sections first; they're the default output.
+	deviceSec := buildDeviceSection(result, cmd, showAll, false)
+	rasSec := buildRASSection(result, cmd, showAll)
+	proxySec := buildProxySection(result, cmd, showAll, s.heciAvailable)
+	wiredSec := buildWiredSection(result, cmd, showAll, false)
+	wirelessSec := buildWirelessSection(result, cmd, showAll, false)
+	upidSec := buildUPIDSection(result, cmd, showAll)
+	userCertsSec := buildUserCertsSection(result, cmd)
+
+	// Only use boxed two-column layout when the terminal is wide enough AND
+	// both sides have content to display. Otherwise fall through to single-column.
+	leftHasContent := deviceSec != "" || upidSec != "" || rasSec != "" || proxySec != ""
+	rightHasContent := wiredSec != "" || wirelessSec != ""
+
+	termW := getTerminalWidth()
+
+	if termW >= twoColumnMinWidth && leftHasContent && rightHasContent {
+		// Rebuild sections whose header differs inside a box.
+		deviceBoxed := buildDeviceSection(result, cmd, showAll, true)
+		wiredBoxed := buildWiredSection(result, cmd, showAll, true)
+		wirelessBoxed := buildWirelessSection(result, cmd, showAll, true)
+
+		left := strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
+		right := strings.Trim(wiredBoxed+wirelessBoxed, "\n")
+
+		// Baseline colWidth from upper content (+2 for Padding(1, 1) horizontal).
+		upperContentW := maxInt(lipgloss.Width(left), lipgloss.Width(right))
+		baseColWidth := upperContentW + 2
+
+		// Attempt 2-col cert hashes. If the resulting cert box outer width
+		// (2*colWidth + 6) would overflow the terminal, fall back to 1-col.
+		certsTwoCol := buildCertsSection(result, cmd, showAll, true)
+		certsOneCol := buildCertsSection(result, cmd, showAll, false)
+
+		tryCertContent := strings.Trim(userCertsSec+certsTwoCol, "\n")
+		certNaturalW := lipgloss.Width(tryCertContent)
+
+		// colWidth derived so that cert box inner (colWidth*2 + 4) holds the
+		// natural 2-col content + Padding(1, 1) horizontal (+2).
+		// Solving: 2*colWidth + 4 >= certNaturalW + 2
+		//          colWidth >= (certNaturalW - 2) / 2
+		colFromCerts := (certNaturalW - 2 + 1) / 2
+
+		colWidth := maxInt(baseColWidth, colFromCerts)
+
+		var certContent string
+		// Outer width of combined upper boxes + gutter: 2*(colWidth+2) + 2.
+		if 2*(colWidth+2)+2 <= termW {
+			certContent = tryCertContent
+		} else {
+			// Two-column hashes would overflow — fall back to one column
+			// and shrink colWidth to just what upper content needs.
+			colWidth = baseColWidth
+			certContent = strings.Trim(userCertsSec+certsOneCol, "\n")
+		}
+
+		colHeight := maxInt(lipgloss.Height(left), lipgloss.Height(right)) + 2
+
+		leftBox := renderTitledBox("Device Information", left, colWidth, colHeight)
+		rightBox := renderTitledBox("Network Adapters", right, colWidth, colHeight)
+
+		b.WriteString("\n")
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftBox, "  ", rightBox))
+		b.WriteString("\n")
+
+		if certContent != "" {
+			certBox := renderTitledBox("Certificates", certContent, colWidth*2+4, 0)
+			b.WriteString(certBox)
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString(deviceSec)
+		b.WriteString(rasSec)
+		b.WriteString(proxySec)
+		b.WriteString(wiredSec)
+		b.WriteString(wirelessSec)
+		b.WriteString(upidSec)
+		b.WriteString(userCertsSec)
+		b.WriteString(buildCertsSection(result, cmd, showAll, false))
+	}
+
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
+
+	if _, err := fmt.Fprint(w, b.String()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+
+	return b
+}
+
+// getTerminalWidth returns the width of the controlling terminal in columns,
+// or 0 if stdout is not a terminal (piped, redirected, or in tests).
+// It is a var so tests can override it to exercise the two-column layout.
+var getTerminalWidth = func() int {
+	w, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		return 0
+	}
+
+	return w
+}
+
+// buildDeviceSection renders the device info block. When boxed is true, the
+// sub-header is omitted because the enclosing box's title serves the same role.
+func buildDeviceSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool) string {
 	var main strings.Builder
 
 	if (showAll || cmd.Ver) && result.AMT != "" {
@@ -1041,173 +1213,278 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 		main.WriteString(renderInfoRow("Hostname (OS)", result.HostnameOS))
 	}
 
-	if main.Len() > 0 {
-		b.WriteString(renderInfoHeader("AMT Device Information"))
-		b.WriteString(main.String())
+	if main.Len() == 0 {
+		return ""
 	}
 
-	// --- Remote Access ---
-	if (showAll || cmd.Ras) && result.RAS != nil {
-		b.WriteString(renderInfoHeader("Remote Access"))
-		b.WriteString(renderInfoRow("Network", result.RAS.NetworkStatus))
-		b.WriteString(renderInfoRow("Remote Status", result.RAS.RemoteStatus))
-		b.WriteString(renderInfoRow("Trigger", result.RAS.RemoteTrigger))
-		b.WriteString(renderInfoRow("MPS Hostname", result.RAS.MPSHostname))
+	if boxed {
+		return main.String()
+	}
 
-		if result.RAS.MPSPort > 0 {
-			b.WriteString(renderInfoRow("MPS Port", strconv.Itoa(result.RAS.MPSPort)))
+	return renderInfoHeader("AMT Device Information") + main.String()
+}
+
+func buildRASSection(result *InfoResult, cmd *AmtInfoCmd, showAll bool) string {
+	if (!showAll && !cmd.Ras) || result.RAS == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	b.WriteString(renderInfoHeader("Remote Access"))
+	b.WriteString(renderInfoRow("Network", result.RAS.NetworkStatus))
+	b.WriteString(renderInfoRow("Remote Status", result.RAS.RemoteStatus))
+	b.WriteString(renderInfoRow("Trigger", result.RAS.RemoteTrigger))
+	b.WriteString(renderInfoRow("MPS Hostname", result.RAS.MPSHostname))
+
+	if result.RAS.MPSPort > 0 {
+		b.WriteString(renderInfoRow("MPS Port", strconv.Itoa(result.RAS.MPSPort)))
+	}
+
+	return b.String()
+}
+
+// buildWiredSection renders the wired adapter block. When boxed is true, the
+// header drops "Adapter" since the enclosing "Network Adapters" box provides that context.
+func buildWiredSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool) string {
+	if (!showAll && !cmd.Lan) || result.WiredAdapter == nil || result.WiredAdapter.MACAddress == zeroMAC {
+		return ""
+	}
+
+	header := "Wired Adapter"
+	if boxed {
+		header = "Wired"
+	}
+
+	var b strings.Builder
+
+	b.WriteString(renderInfoHeader(header))
+	b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WiredAdapter.DHCPEnabled)))
+	b.WriteString(renderInfoRow("DHCP Mode", result.WiredAdapter.DHCPMode))
+	b.WriteString(renderInfoRow("Link Status", result.WiredAdapter.LinkStatus))
+	b.WriteString(renderInfoRow("AMT IP Address", result.WiredAdapter.IPAddress))
+	b.WriteString(renderInfoRow("OS IP Address", result.WiredAdapter.OsIPAddress))
+	b.WriteString(renderInfoRow("MAC Address", result.WiredAdapter.MACAddress))
+
+	return b.String()
+}
+
+// buildWirelessSection renders the wireless adapter block. When boxed is true, the
+// header drops "Adapter" since the enclosing "Network Adapters" box provides that context.
+func buildWirelessSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool) string {
+	if (!showAll && !cmd.Lan) || result.WirelessAdapter == nil {
+		return ""
+	}
+
+	header := "Wireless Adapter"
+	if boxed {
+		header = "Wireless"
+	}
+
+	var b strings.Builder
+
+	b.WriteString(renderInfoHeader(header))
+	b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WirelessAdapter.DHCPEnabled)))
+	b.WriteString(renderInfoRow("DHCP Mode", result.WirelessAdapter.DHCPMode))
+	b.WriteString(renderInfoRow("Link Status", result.WirelessAdapter.LinkStatus))
+	b.WriteString(renderInfoRow("AMT IP Address", result.WirelessAdapter.IPAddress))
+	b.WriteString(renderInfoRow("OS IP Address", result.WirelessAdapter.OsIPAddress))
+	b.WriteString(renderInfoRow("MAC Address", result.WirelessAdapter.MACAddress))
+
+	return b.String()
+}
+
+func buildProxySection(result *InfoResult, cmd *AmtInfoCmd, showAll, heciAvailable bool) string {
+	if !showAll && !cmd.Proxy {
+		return ""
+	}
+
+	if result.ProxyAccessPoints != nil && len(*result.ProxyAccessPoints) > 0 {
+		var b strings.Builder
+
+		b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
+
+		for _, ap := range *result.ProxyAccessPoints {
+			b.WriteString(renderInfoRow("Address", ap.Address))
+			b.WriteString(renderInfoRow("Port", strconv.Itoa(ap.Port)))
+			b.WriteString(renderInfoRow("Type", ap.InfoFormat))
+			b.WriteString(renderInfoRow("Network DNS Suffix", ap.NetworkDnsSuffix))
+			b.WriteString("\n")
+		}
+
+		return b.String()
+	}
+
+	// Empty/missing proxy info is only surfaced when the user explicitly asked
+	// for it (--proxy or -A). The default "show all" view hides it.
+	if !cmd.Proxy && !cmd.All {
+		return ""
+	}
+
+	if result.ProxyAccessPoints != nil {
+		return renderInfoHeader("HTTP Proxy Configuration") +
+			infoIndent + infoDimStyle.Render("No HTTP proxy access points configured") + "\n"
+	}
+
+	// Without HECI/admin, WSMAN can't run and "could not be retrieved" is just
+	// noise — the top-of-output banner already explains the situation.
+	if !heciAvailable {
+		return ""
+	}
+
+	return renderInfoHeader("HTTP Proxy Configuration") +
+		infoIndent + infoRedStyle.Render("Proxy configuration could not be retrieved") + "\n"
+}
+
+func buildUPIDSection(result *InfoResult, cmd *AmtInfoCmd, showAll bool) string {
+	if (!showAll && !cmd.UPID) || result.UPID == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	b.WriteString(renderInfoHeader("Intel UPID"))
+
+	for _, line := range strings.Split(result.UPID.String(), "\n") {
+		if strings.HasPrefix(line, "---") {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			label := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+
+			if label == "OEM_PLATFORM_ID_TYPE" {
+				label = "Platform ID Type"
+			}
+
+			b.WriteString(renderInfoRow(label, value))
 		}
 	}
 
-	// --- Wired Adapter ---
-	if (showAll || cmd.Lan) && result.WiredAdapter != nil && result.WiredAdapter.MACAddress != zeroMAC {
-		b.WriteString(renderInfoHeader("Wired Adapter"))
-		b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WiredAdapter.DHCPEnabled)))
-		b.WriteString(renderInfoRow("DHCP Mode", result.WiredAdapter.DHCPMode))
-		b.WriteString(renderInfoRow("Link Status", result.WiredAdapter.LinkStatus))
-		b.WriteString(renderInfoRow("AMT IP Address", result.WiredAdapter.IPAddress))
-		b.WriteString(renderInfoRow("OS IP Address", result.WiredAdapter.OsIPAddress))
-		b.WriteString(renderInfoRow("MAC Address", result.WiredAdapter.MACAddress))
+	return b.String()
+}
+
+// buildCertsSection renders the Certificate Hashes block.
+// When twoCol is true and there are more than a handful of certs, the list
+// is split into two side-by-side halves to reduce vertical space.
+func buildCertsSection(result *InfoResult, cmd *AmtInfoCmd, showAll, twoCol bool) string {
+	if !showAll && !cmd.Cert {
+		return ""
 	}
 
-	// --- Wireless Adapter ---
-	if (showAll || cmd.Lan) && result.WirelessAdapter != nil {
-		b.WriteString(renderInfoHeader("Wireless Adapter"))
-		b.WriteString(renderInfoRow("DHCP Enabled", strconv.FormatBool(result.WirelessAdapter.DHCPEnabled)))
-		b.WriteString(renderInfoRow("DHCP Mode", result.WirelessAdapter.DHCPMode))
-		b.WriteString(renderInfoRow("Link Status", result.WirelessAdapter.LinkStatus))
-		b.WriteString(renderInfoRow("AMT IP Address", result.WirelessAdapter.IPAddress))
-		b.WriteString(renderInfoRow("OS IP Address", result.WirelessAdapter.OsIPAddress))
-		b.WriteString(renderInfoRow("MAC Address", result.WirelessAdapter.MACAddress))
-	}
-
-	// --- Intel UPID ---
-	if (showAll || cmd.UPID) && result.UPID != nil {
-		b.WriteString(renderInfoHeader("Intel UPID"))
-
-		upidStr := result.UPID.String()
-		for _, line := range strings.Split(upidStr, "\n") {
-			if strings.HasPrefix(line, "---") {
-				continue
-			}
-
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				label := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-
-				if label == "OEM_PLATFORM_ID_TYPE" {
-					label = "Platform ID Type"
-				}
-
-				b.WriteString(renderInfoRow(label, value))
-			}
+	if len(result.CertificateHashes) == 0 {
+		if cmd.Cert {
+			return renderInfoHeader("Certificate Hashes") +
+				infoIndent + infoDimStyle.Render("No certificate hashes found") + "\n"
 		}
+
+		return ""
 	}
 
-	// --- Certificate Hashes ---
-	if showAll || cmd.Cert {
-		if len(result.CertificateHashes) > 0 {
-			b.WriteString(renderInfoHeader("Certificate Hashes"))
+	names := make([]string, 0, len(result.CertificateHashes))
+	for name := range result.CertificateHashes {
+		names = append(names, name)
+	}
 
-			l := list.New().
-				EnumeratorStyle(infoDimStyle).
-				ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
-					return lipgloss.NewStyle()
-				})
+	sort.Strings(names)
 
-			for name, cert := range result.CertificateHashes {
-				var flags []string
-				if cert.IsDefault {
-					flags = append(flags, "Default")
-				}
+	renderHalf := func(subset []string) string {
+		l := list.New().
+			EnumeratorStyle(infoDimStyle).
+			ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
+				return lipgloss.NewStyle()
+			})
 
-				if cert.IsActive {
-					flags = append(flags, "Active")
-				}
+		for _, name := range subset {
+			cert := result.CertificateHashes[name]
 
-				title := infoCertNameStyle.Render(name)
-				if len(flags) > 0 {
-					title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
-				}
-
-				sub := list.New(infoDimStyle.Render(cert.Algorithm + ": " + cert.Hash)).
-					Enumerator(func(_ list.Items, _ int) string { return "" })
-
-				l.Item(title).Item(sub)
+			var flags []string
+			if cert.IsDefault {
+				flags = append(flags, "Default")
 			}
 
-			b.WriteString(indentBlock(l.String(), infoIndent) + "\n")
-		} else if cmd.Cert {
-			b.WriteString(renderInfoHeader("Certificate Hashes"))
-			b.WriteString(infoIndent + infoDimStyle.Render("No certificate hashes found") + "\n")
-		}
-	}
-
-	// --- User Certificates ---
-	if cmd.All || cmd.UserCert {
-		if len(result.UserCerts) > 0 {
-			b.WriteString(renderInfoHeader("Public Key Certificates"))
-
-			l := list.New().
-				EnumeratorStyle(infoDimStyle).
-				ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
-					return lipgloss.NewStyle()
-				})
-
-			for name, cert := range result.UserCerts {
-				var flags []string
-				if cert.TrustedRootCertificate {
-					flags = append(flags, "TrustedRoot")
-				}
-
-				if cert.ReadOnlyCertificate {
-					flags = append(flags, "ReadOnly")
-				}
-
-				title := infoCertNameStyle.Render(name)
-				if len(flags) > 0 {
-					title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
-				}
-
-				l.Item(title)
+			if cert.IsActive {
+				flags = append(flags, "Active")
 			}
 
-			b.WriteString(indentBlock(l.String(), infoIndent) + "\n")
-		} else if cmd.UserCert {
-			b.WriteString(renderInfoHeader("Public Key Certificates"))
-			b.WriteString(infoIndent + infoDimStyle.Render("No public key certificates found") + "\n")
-		}
-	}
-
-	// --- HTTP Proxy ---
-	if showAll || cmd.Proxy {
-		if result.ProxyAccessPoints != nil && len(*result.ProxyAccessPoints) > 0 {
-			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
-
-			for _, ap := range *result.ProxyAccessPoints {
-				b.WriteString(renderInfoRow("Address", ap.Address))
-				b.WriteString(renderInfoRow("Port", strconv.Itoa(ap.Port)))
-				b.WriteString(renderInfoRow("Type", ap.InfoFormat))
-				b.WriteString(renderInfoRow("Network DNS Suffix", ap.NetworkDnsSuffix))
-				b.WriteString("\n")
+			title := infoCertNameStyle.Render(name)
+			if len(flags) > 0 {
+				title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
 			}
-		} else if (cmd.Proxy || cmd.All) && result.ProxyAccessPoints != nil {
-			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
-			b.WriteString(infoIndent + infoDimStyle.Render("No HTTP proxy access points configured") + "\n")
-		} else if cmd.Proxy || cmd.All {
-			b.WriteString(renderInfoHeader("HTTP Proxy Configuration"))
-			b.WriteString(infoIndent + infoRedStyle.Render("Proxy configuration could not be retrieved") + "\n")
+
+			sub := list.New(infoDimStyle.Render(cert.Algorithm + ": " + cert.Hash)).
+				Enumerator(func(_ list.Items, _ int) string { return "" })
+
+			l.Item(title).Item(sub)
 		}
+
+		return l.String()
 	}
 
-	if b.Len() > 0 {
-		b.WriteString("\n")
+	var body string
+
+	if twoCol && len(names) > 4 {
+		mid := (len(names) + 1) / 2
+		leftList := renderHalf(names[:mid])
+		rightList := lipgloss.NewStyle().MarginLeft(4).Render(renderHalf(names[mid:]))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, leftList, rightList)
+	} else {
+		body = renderHalf(names)
 	}
 
-	fmt.Fprint(w, b.String())
+	return renderInfoHeader("Certificate Hashes") + indentBlock(body, infoIndent) + "\n"
+}
 
-	return nil
+func buildUserCertsSection(result *InfoResult, cmd *AmtInfoCmd) string {
+	if !cmd.All && !cmd.UserCert {
+		return ""
+	}
+
+	if len(result.UserCerts) == 0 {
+		if cmd.UserCert {
+			return renderInfoHeader("Public Key Certificates") +
+				infoIndent + infoDimStyle.Render("No public key certificates found") + "\n"
+		}
+
+		return ""
+	}
+
+	names := make([]string, 0, len(result.UserCerts))
+	for name := range result.UserCerts {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	l := list.New().
+		EnumeratorStyle(infoDimStyle).
+		ItemStyleFunc(func(_ list.Items, _ int) lipgloss.Style {
+			return lipgloss.NewStyle()
+		})
+
+	for _, name := range names {
+		cert := result.UserCerts[name]
+
+		var flags []string
+		if cert.TrustedRootCertificate {
+			flags = append(flags, "TrustedRoot")
+		}
+
+		if cert.ReadOnlyCertificate {
+			flags = append(flags, "ReadOnly")
+		}
+
+		title := infoCertNameStyle.Render(name)
+		if len(flags) > 0 {
+			title += " " + infoDimStyle.Render("("+strings.Join(flags, ", ")+")")
+		}
+
+		l.Item(title)
+	}
+
+	return renderInfoHeader("Public Key Certificates") + indentBlock(l.String(), infoIndent) + "\n"
 }
 
 // getOSIPAddress gets the OS IP address for a given MAC address
