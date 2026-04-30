@@ -113,7 +113,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
 		if err != nil {
-			logrus.Info("LMS not active, using local transport instead.")
+			logrus.Debug("LMS not active, using local transport instead.")
 
 			g.localTransport = NewLocalTransport()
 			clientParams.Transport = g.localTransport

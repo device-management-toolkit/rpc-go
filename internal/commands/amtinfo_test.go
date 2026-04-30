@@ -846,6 +846,79 @@ func TestInfoService_OutputText(t *testing.T) {
 	}
 }
 
+func TestInfoService_OutputText_TwoColumnLayout(t *testing.T) {
+	origWidth := getTerminalWidth
+	getTerminalWidth = func() int { return 200 }
+
+	defer func() { getTerminalWidth = origWidth }()
+
+	result := &InfoResult{
+		AMT:         "16.1.25",
+		UUID:        "12345678-1234-1234-1234-123456789ABC",
+		ControlMode: "admin control mode",
+		RAS: &amt.RemoteAccessStatus{
+			NetworkStatus: "connected",
+			RemoteStatus:  "connected",
+			RemoteTrigger: "user",
+			MPSHostname:   "mps.example.com",
+		},
+		WiredAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:11:22:33:44:55",
+			IPAddress:   "192.168.1.100",
+			OsIPAddress: "192.168.1.100",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+		WirelessAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:AA:BB:CC:DD:EE",
+			IPAddress:   "192.168.1.101",
+			OsIPAddress: "192.168.1.101",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+	}
+
+	service := NewInfoService(nil)
+	cmd := &AmtInfoCmd{All: true}
+
+	var buf bytes.Buffer
+
+	err := service.OutputText(&buf, result, cmd)
+	out := buf.String()
+
+	assert.NoError(t, err)
+
+	// In two-column mode, the Device block's sub-header is omitted (the box
+	// title replaces it), and "Wired Adapter" / "Wireless Adapter" drop
+	// "Adapter" to avoid redundancy with the "Network Adapters" box title.
+	assert.NotContains(t, out, "AMT Device Information")
+	assert.Contains(t, out, "Remote Access")
+	assert.NotContains(t, out, "Wired Adapter")
+	assert.NotContains(t, out, "Wireless Adapter")
+
+	// Both box titles should appear on the same top-border line.
+	assert.Contains(t, out, "Device Information")
+	assert.Contains(t, out, "Network Adapters")
+
+	var sideBySide bool
+
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Device Information") && strings.Contains(line, "Network Adapters") {
+			sideBySide = true
+
+			break
+		}
+	}
+
+	assert.True(t, sideBySide, "expected box titles on the same line in two-column mode; got:\n%s", out)
+
+	// Left column content (UUID) should not wrap — the whole UUID appears on one line.
+	assert.Regexp(t, `UUID\s+[^\n│]*12345678-1234-1234-1234-123456789ABC`, out,
+		"UUID should not wrap across lines inside the box; got:\n%s", out)
+}
+
 func TestAmtInfoCmd_HasNoFlagsSet(t *testing.T) {
 	tests := []struct {
 		name string

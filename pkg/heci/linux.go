@@ -98,7 +98,7 @@ func (heci *Driver) initLocked(useLME, useWD bool) error {
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
 		if err.Error() == errMsgPermissionDenied {
-			log.Error("need administrator privileges")
+			log.Debug("need administrator privileges")
 		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
@@ -173,7 +173,7 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
 		if err.Error() == errMsgPermissionDenied {
-			log.Error("need administrator privileges")
+			log.Debug("need administrator privileges")
 		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("MEI/driver is missing or the call to the HECI driver failed")
 		} else {
@@ -230,7 +230,7 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
 		if err.Error() == errMsgPermissionDenied {
-			log.Error("need administrator privileges")
+			log.Debug("need administrator privileges")
 		} else if err.Error() == errMsgNoSuchFile {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
