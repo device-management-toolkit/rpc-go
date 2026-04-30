@@ -6,13 +6,11 @@ package lm
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -22,7 +20,6 @@ type LMSConnection struct {
 	address       string
 	port          string
 	useTls        bool
-	tunnelMode    bool
 	data          chan []byte
 	errors        chan error
 	controlMode   int
@@ -50,50 +47,35 @@ func NewLMSConnection(address, port string, useTls bool, data chan []byte, error
 	return lms
 }
 
-// SetTunnelMode configures the connection for TLS tunnel passthrough.
-// In tunnel mode, Connect() uses plain TCP even when useTls is true,
-// because the TLS handshake is handled by RPS through the tunnel.
-func (lms *LMSConnection) SetTunnelMode(tunnel bool) {
-	lms.tunnelMode = tunnel
-}
-
 func (lms *LMSConnection) Initialize() error {
 	return errors.New("not implemented")
 }
 
 // Connect initializes TCP connection to LMS
 func (lms *LMSConnection) Connect() error {
-	var err error
+	if lms.Connection != nil {
+		log.Debug("connected to lms")
 
-	if lms.Connection == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
-		defer cancel()
-
-		if lms.useTls && !lms.tunnelMode {
-			log.Debug("connecting to lms over tls...")
-
-			dialer := &tls.Dialer{
-				NetDialer: &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second},
-				Config:    certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
-			}
-			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
-		} else if lms.tunnelMode {
-			log.Debug("connecting to lms (tunnel mode)...")
-
-			dialer := &net.Dialer{}
-			lms.Connection, err = dialer.DialContext(context.Background(), "tcp4", lms.address+":"+lms.port)
-		} else {
-			log.Debug("connecting to lms...")
-
-			dialer := &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second}
-			lms.Connection, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
-		}
-
-		if err != nil {
-			// handle error
-			return err
-		}
+		return nil
 	}
+
+	if lms.useTls {
+		log.Debug("connecting to lms (tls port, plain tcp; RPS handles TLS)...")
+	} else {
+		log.Debug("connecting to lms...")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), utils.LMSConnectionTimeout*time.Second)
+	defer cancel()
+
+	dialer := &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second}
+
+	conn, err := dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
+	if err != nil {
+		return err
+	}
+
+	lms.Connection = conn
 
 	log.Debug("connected to lms")
 
@@ -142,6 +124,9 @@ func (lms *LMSConnection) Close() error {
 // a non-fatal continuation in tunnel mode. We also skip the trailing
 // `lms.data <- buf` send for that case so callers can rely on the typed
 // error path instead of conflating timeout-no-data with EOF/close semantics.
+// The same skip applies when a non-timeout read error has been emitted on
+// `lms.errors`, so an empty buf is not delivered to `lms.data` afterwards
+// (which the executor would otherwise treat as a connection close).
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
@@ -156,6 +141,7 @@ func (lms *LMSConnection) Listen() {
 	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
 	timedOutNoData := false
+	sentErr := false
 
 	for {
 		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
@@ -166,6 +152,7 @@ func (lms *LMSConnection) Listen() {
 			if errors.As(err, &netErr) && netErr.Timeout() {
 				if len(buf) == 0 {
 					timedOutNoData = true
+
 					lms.errors <- ErrLMSReadTimeoutNoData
 				}
 
@@ -174,7 +161,10 @@ func (lms *LMSConnection) Listen() {
 
 			if err != io.EOF {
 				log.Println("LMS read error:", err)
+
 				lms.errors <- err
+
+				sentErr = true
 			}
 
 			break
@@ -186,7 +176,7 @@ func (lms *LMSConnection) Listen() {
 
 	lms.Connection.SetReadDeadline(time.Time{})
 
-	if !timedOutNoData {
+	if !timedOutNoData && !sentErr {
 		lms.data <- buf
 	}
 

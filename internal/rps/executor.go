@@ -25,6 +25,12 @@ import (
 // goroutine that exits before signaling Done() can't deadlock the activation loop.
 var handshakeTimeout = (utils.HeciReadTimeout + 15) * time.Second
 
+// maxPortSwitchDelaySeconds caps the AMT TLS-restart wait that RPS asks for via
+// the port_switch payload. The server-supplied value is clamped to this maximum
+// to bound how long the activation loop can be blocked on a (possibly hostile
+// or buggy) server-controlled delay.
+const maxPortSwitchDelaySeconds = 60
+
 type Executor struct {
 	server          AMTActivationServer
 	localManagement lm.LocalMananger
@@ -64,6 +70,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 		data:            lmDataChannel,
 		errors:          lmErrorChannel,
 		waitGroup:       &sync.WaitGroup{},
+		tlsTunnelActive: config.LocalTlsEnforced,
 	}
 
 	// TEST CONNECTION TO SEE IF LMS EXISTS
@@ -402,14 +409,42 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 		return err
 	}
 
-	log.Infof("Port switch: closing LMS connection, waiting %ds for AMT TLS restart", psPayload.Delay)
+	// Clamp the server-supplied delay so a hostile or buggy RPS can't block
+	// the activation loop indefinitely.
+	delaySeconds := psPayload.Delay
+	if delaySeconds < 0 {
+		delaySeconds = 0
+	}
+
+	if delaySeconds > maxPortSwitchDelaySeconds {
+		log.Warnf("Port switch: server-requested delay %ds exceeds max %ds; clamping", delaySeconds, maxPortSwitchDelaySeconds)
+		delaySeconds = maxPortSwitchDelaySeconds
+	}
+
+	log.Infof("Port switch: closing LMS connection, waiting %ds for AMT TLS restart", delaySeconds)
 
 	// Close existing LMS connection
 	e.localManagement.Close()
 	e.lmConnected = false
 
-	// Wait for AMT to restart its TLS subsystem
-	time.Sleep(time.Duration(psPayload.Delay) * time.Second)
+	// Wait for AMT to restart its TLS subsystem. Use a cancellable wait so a
+	// user interrupt (Ctrl+C / SIGTERM) can abort the activation loop promptly
+	// instead of being delayed by the full sleep.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	timer := time.NewTimer(time.Duration(delaySeconds) * time.Second)
+
+	select {
+	case <-timer.C:
+	case <-sigCh:
+		timer.Stop()
+		signal.Stop(sigCh)
+
+		return fmt.Errorf("port switch wait interrupted")
+	}
+
+	signal.Stop(sigCh)
 
 	// Create new LMS connection channels
 	lmDataChannel := make(chan []byte)
@@ -421,14 +456,12 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	newLM := lm.NewLMSConnection(
 		utils.LMSAddress,
 		psPayload.Port,
-		true, // useTls flag (for read timeouts)
+		true, // useTls: gate Listen's read-timeout strategy for TLS 1.3 quiet rounds; the dial is plain TCP
 		lmDataChannel,
 		lmErrorChannel,
 		0,     // controlMode not needed for port switch
 		false, // skipCertCheck not relevant — no TLS at this layer
 	)
-
-	newLM.SetTunnelMode(true)
 
 	// Test connection with retries
 	maxRetries := 5
