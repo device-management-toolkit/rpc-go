@@ -210,10 +210,11 @@ func TestProcessMessageHeartbeat(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	msg, err := server.ProcessMessage([]byte(activation))
 	assert.NoError(t, err)
-	assert.False(t, terminal)
-	assert.NotNil(t, decodedMessage)
+	assert.False(t, msg.Terminal)
+	assert.Equal(t, "heartbeat", msg.Method)
+	assert.NotNil(t, msg.Payload)
 }
 
 func TestProcessMessageSuccess(t *testing.T) {
@@ -223,10 +224,9 @@ func TestProcessMessageSuccess(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	msg, err := server.ProcessMessage([]byte(activation))
 	assert.NoError(t, err)
-	assert.True(t, terminal)
-	assert.Nil(t, decodedMessage)
+	assert.True(t, msg.Terminal)
 }
 
 func TestProcessMessageUnformattedSuccess(t *testing.T) {
@@ -236,10 +236,9 @@ func TestProcessMessageUnformattedSuccess(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	msg, err := server.ProcessMessage([]byte(activation))
 	assert.NoError(t, err)
-	assert.True(t, terminal)
-	assert.Nil(t, decodedMessage)
+	assert.True(t, msg.Terminal)
 }
 
 func TestProcessMessageError(t *testing.T) {
@@ -249,10 +248,9 @@ func TestProcessMessageError(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	msg, err := server.ProcessMessage([]byte(activation))
 	assert.Error(t, err)
-	assert.True(t, terminal)
-	assert.Nil(t, decodedMessage)
+	assert.True(t, msg.Terminal)
 }
 
 func TestProcessMessageForLMS(t *testing.T) {
@@ -263,8 +261,45 @@ func TestProcessMessageForLMS(t *testing.T) {
     }`
 	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
 	server.Connect(true)
-	decodedMessage, terminal, err := server.ProcessMessage([]byte(activation))
+	msg, err := server.ProcessMessage([]byte(activation))
 	assert.NoError(t, err)
-	assert.False(t, terminal)
-	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), decodedMessage)
+	assert.False(t, msg.Terminal)
+	assert.Equal(t, []byte("{\"status\":\"ok\", \"network\":\"configured\", \"ciraConnection\":\"configured\"}"), msg.Payload)
+}
+
+func TestProcessMessageTLSData(t *testing.T) {
+	activation := `{
+        "method": "tls_data",
+        "message": "ok",
+        "payload": "dGxzLWhhbmRzaGFrZS1kYXRh"
+    }`
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
+	server.Connect(true)
+	msg, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.False(t, msg.Terminal)
+	assert.Equal(t, MethodTLSData, msg.Method)
+	assert.Equal(t, []byte("tls-handshake-data"), msg.Payload)
+}
+
+func TestProcessMessagePortSwitch(t *testing.T) {
+	activation := `{
+        "method": "port_switch",
+        "message": "ok",
+        "payload": "{\"port\":\"16993\",\"rootCert\":\"abc\",\"delay\":5}"
+    }`
+	server := NewAMTActivationServer(testReq.URL, testReq.Proxy)
+	server.Connect(true)
+	msg, err := server.ProcessMessage([]byte(activation))
+	assert.NoError(t, err)
+	assert.False(t, msg.Terminal)
+	assert.Equal(t, MethodPortSwitch, msg.Method)
+	assert.Equal(t, "{\"port\":\"16993\",\"rootCert\":\"abc\",\"delay\":5}", string(msg.Payload))
+}
+
+func TestCreateMessageResponseWithMethod(t *testing.T) {
+	result := p.CreateMessageResponse([]byte("data"), MethodTLSData)
+	assert.Equal(t, MethodTLSData, result.Method)
+	assert.Equal(t, "ok", result.Status)
+	assert.NotEmpty(t, result.Payload)
 }

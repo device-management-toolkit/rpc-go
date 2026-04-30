@@ -45,6 +45,7 @@ type DeactivateCmd struct {
 	URL                string `help:"Server URL for remote deactivation" short:"u"`
 	Force              bool   `help:"Force deactivation even if device is not matched in MPS" short:"f"`
 	UUID               string `help:"UUID override" name:"uuid"`
+	TLSTunnel          bool   `help:"Tunnel TLS to AMT through RPS (rpc-go forwards plain bytes on the TLS port)" name:"tls-tunnel"`
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -141,6 +142,9 @@ func (cmd *DeactivateCmd) executeRemoteDeactivate(ctx *Context) error {
 		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
 		Force:            cmd.Force,
 		TenantID:         ctx.TenantID,
+		LocalTlsEnforced: cmd.LocalTLSEnforced,
+		ControlMode:      cmd.ControlMode,
+		TLSTunnel:        cmd.TLSTunnel,
 	}
 
 	// Execute via RPS
