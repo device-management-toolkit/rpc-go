@@ -9,7 +9,7 @@ name: Semantic-Release CI
 
 on:
   push:
-    branches: [ main, next, 2.x.x ]
+    branches: [ main, release, 2.x.x ]
 
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false
 
       - name: Docker Login
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/release' }}
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: vprodemo.azurecr.io

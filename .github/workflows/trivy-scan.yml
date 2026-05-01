@@ -2,10 +2,10 @@ name: Trivy Container Scan
 
 on:
   push:
-    branches: [main, next, 2.x.x]
+    branches: [main, release, 2.x.x]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [main, next, 2.x.x]
+    branches: [main, release, 2.x.x]
 permissions:
   contents: read
 
