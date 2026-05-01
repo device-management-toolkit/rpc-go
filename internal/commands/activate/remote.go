@@ -140,7 +140,7 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 	log.Debug("Preparing device information...")
 
 	deviceInfo := map[string]interface{}{
-		"profile": service.config.Profile,
+		keyProfile: service.config.Profile,
 	}
 	// Add optional fields if provided
 	if service.config.DNS != "" {
@@ -156,7 +156,7 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 	}
 
 	if service.config.FriendlyName != "" {
-		deviceInfo["friendly_name"] = service.config.FriendlyName
+		deviceInfo[keyFriendlyName] = service.config.FriendlyName
 	}
 
 	return deviceInfo
@@ -194,15 +194,15 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 	}
 	// Create success result for our Kong CLI pattern
 	result := map[string]interface{}{
-		"status": "success",
+		keyStatus: valSuccess,
 
-		"message": "Device activated successfully via RPS",
+		keyMessage: "Device activated successfully via RPS",
 
 		"rps_server": service.config.URL,
 
-		"profile": service.config.Profile,
+		keyProfile: service.config.Profile,
 
-		"friendly_name": service.config.FriendlyName,
+		keyFriendlyName: service.config.FriendlyName,
 
 		"device_info": deviceInfo,
 	}

@@ -190,8 +190,8 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 
 	if ctx.JsonOutput {
 		result := map[string]interface{}{
-			"status":  "success",
-			"message": "AMT configuration stopped",
+			keyStatus:  valSuccess,
+			keyMessage: "AMT configuration stopped",
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -390,10 +390,10 @@ func (service *LocalActivationService) activateCCM() error {
 	// Output success result
 	if service.context.JsonOutput {
 		result := map[string]interface{}{
-			"status":        "success",
+			keyStatus:       valSuccess,
 			"mode":          "CCM",
-			"message":       "Device activated in Client Control Mode",
-			"friendly_name": service.config.FriendlyName,
+			keyMessage:      "Device activated in Client Control Mode",
+			keyFriendlyName: service.config.FriendlyName,
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -477,10 +477,10 @@ func (service *LocalActivationService) activateACM() error {
 	// Output success result
 	if service.context.JsonOutput {
 		result := map[string]interface{}{
-			"status":        "success",
+			keyStatus:       valSuccess,
 			"mode":          "ACM",
-			"message":       "Device activated in Admin Control Mode",
-			"friendly_name": service.config.FriendlyName,
+			keyMessage:      "Device activated in Admin Control Mode",
+			keyFriendlyName: service.config.FriendlyName,
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -875,7 +875,7 @@ func (service *LocalActivationService) runStartHBCWithRetry(certsAndKeys CertsAn
 
 	for attempt := 1; attempt <= hbcMaxAttempts; attempt++ {
 		response, err = service.startSecureHostBasedConfiguration(certsAndKeys)
-		if err == nil && response.Status == "AMT_STATUS_SUCCESS" {
+		if err == nil && response.Status == "AMT_STATUS_SUCCESS" { //nolint:goconst // AMT response status; remaining occurrences are in tests
 			return response, nil
 		}
 

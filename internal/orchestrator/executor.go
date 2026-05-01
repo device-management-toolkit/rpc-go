@@ -49,12 +49,12 @@ func (e *CLIExecutor) Execute(args []string) error {
 	// Get the current executable path
 	executable, err := os.Executable()
 	if err != nil {
-		// Fallback to "rpc" if we can't determine the executable
-		executable = "rpc"
+		// Fallback to cmdRPC if we can't determine the executable
+		executable = cmdRPC
 	}
 
-	// Replace the first "rpc" argument with the actual executable
-	if len(args) > 0 && args[0] == "rpc" {
+	// Replace the first cmdRPC argument with the actual executable
+	if len(args) > 0 && args[0] == cmdRPC {
 		args = args[1:]
 	}
 

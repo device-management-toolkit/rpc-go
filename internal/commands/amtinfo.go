@@ -103,7 +103,7 @@ func renderInfoRow(label, value string) string {
 
 func styledInfoValue(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "enabled", "connected", "up", "active",
+	case "enabled", "connected", "up", "active", //nolint:goconst // status string literals; remaining occurrences are in tests
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
 	case "disabled", "not connected", "down",

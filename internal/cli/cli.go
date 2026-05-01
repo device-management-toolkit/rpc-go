@@ -163,9 +163,14 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 }
 
 // knownCommands lists the valid top-level command names for hasCommand detection.
+const (
+	cmdAmtInfo = "amtinfo"
+	cmdVersion = "version"
+)
+
 var knownCommands = map[string]bool{
-	"amtinfo": true, "version": true, "activate": true,
-	"deactivate": true, "configure": true, "diagnostics": true, "diag": true,
+	cmdAmtInfo: true, cmdVersion: true, "activate": true,
+	"deactivate": true, "configure": true, "diagnostics": true, "diag": true, //nolint:goconst // command name literals; remaining occurrences are in tests
 }
 
 // hasCommand checks if args contain a recognized command name.
@@ -201,7 +206,7 @@ func Execute(args []string) error {
 	// but let --help/-h pass through so Kong shows the full command list.
 	if !hasCommand(args) && !hasFlag(args, "--help", "-h") {
 		newArgs := make([]string, 0, len(args)+1)
-		newArgs = append(newArgs, args[0], "amtinfo")
+		newArgs = append(newArgs, args[0], cmdAmtInfo)
 		newArgs = append(newArgs, args[1:]...)
 		args = newArgs
 	}
