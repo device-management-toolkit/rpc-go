@@ -57,6 +57,7 @@ type MessagePayload struct {
 	CertificateHashes []string        `json:"certHashes"`
 	IPConfiguration   IPConfiguration `json:"ipConfiguration"`
 	HostnameInfo      HostnameInfo    `json:"hostnameInfo"`
+	LocalTLSEnforced  bool            `json:"localTlsEnforced,omitempty"`
 	FriendlyName      string          `json:"friendlyName,omitempty"`
 	TLSEnforced       bool            `json:"tlsEnforced,omitempty"`
 	TLSTunnel         bool            `json:"tlsTunnel,omitempty"`
@@ -218,6 +219,7 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 
 	payload.IPConfiguration = req.IpConfiguration
 	payload.HostnameInfo = req.HostnameInfo
+	payload.LocalTLSEnforced = req.LocalTLSEnforced
 
 	if req.UUID != "" {
 		if isKnownInvalidUUID(req.UUID) {

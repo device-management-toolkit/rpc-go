@@ -38,7 +38,7 @@ type Request struct {
 	// Connection and server parameters
 	URL              string
 	Proxy            string
-	LocalTlsEnforced bool
+	LocalTLSEnforced bool
 	SkipAmtCertCheck bool
 	ControlMode      int
 	SkipCertCheck    bool
