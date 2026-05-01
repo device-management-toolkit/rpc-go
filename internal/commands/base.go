@@ -34,6 +34,7 @@ type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
+	HECIAvailable    bool               `kong:"-"` // Whether HECI/MEI driver is accessible
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
@@ -41,25 +42,35 @@ type AMTBaseCmd struct {
 	afterApplied bool `kong:"-"`
 }
 
-// ValidatePasswordIfNeeded prompts for password if required and not already provided
-// EnsureAMTPassword prompts (once) if the command requires an AMT password and ctx.AMTPassword is empty.
+// EnsureAMTPassword prompts for an AMT password when required and ctx.AMTPassword is empty.
+// For non-activated devices (control mode 0), it also prompts for password confirmation to prevent typos.
 func (cmd *AMTBaseCmd) EnsureAMTPassword(ctx *Context, requirer PasswordRequirer) error {
 	if !requirer.RequiresAMTPassword() {
 		return nil
 	}
 
 	if strings.TrimSpace(ctx.AMTPassword) != "" {
-		return nil
+		return nil // Password already provided, no prompting
 	}
 
-	fmt.Print("AMT Password: ")
+	var pw string
 
-	pw, err := utils.PR.ReadPassword()
+	var err error
+
+	// If device not activated (control mode 0), require confirmation
+	if cmd.ControlMode == 0 {
+		pw, err = utils.PR.ReadPasswordWithConfirmation("AMT Password: ", "Confirm AMT Password: ")
+	} else {
+		fmt.Print("AMT Password: ")
+
+		pw, err = utils.PR.ReadPassword()
+
+		fmt.Println()
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to read AMT password: %w", err)
 	}
-
-	fmt.Println()
 
 	if pw == "" {
 		return fmt.Errorf("password cannot be empty")
@@ -84,7 +95,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, true)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
@@ -102,6 +113,10 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	log.Trace("Running AfterApply for AMTBaseCmd")
+
+	// Ensure we close the MEI device connection after getting control mode and TLS status
+	defer amtCommand.Close()
+
 	// always have the control mode handy
 	// Get the current control mode using the injected AMT command, with retries if AMT is busy
 	var (
@@ -113,6 +128,19 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		maxAttempts = 4
 		backoff     = 4 * time.Second
 	)
+
+	// HECI requires admin — fail fast when not elevated instead of retrying.
+	if !utils.IsElevated() {
+		if cmd.SkipWSMANSetup {
+			// amtinfo: degrade gracefully, show OS-level data only
+			cmd.ControlMode = -1
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		return utils.IncorrectPermissions
+	}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
@@ -127,12 +155,26 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			continue
 		}
 
-		log.Error("Failed to get control mode: ", err)
+		// For commands that tolerate missing HECI (e.g. amtinfo), degrade gracefully
+		if cmd.SkipWSMANSetup {
+			log.Warn("HECI not available, AMT data will be limited")
 
-		return fmt.Errorf("failed to get control mode: %w", err)
+			cmd.ControlMode = -1
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		log.Error("Failed to execute due to access issues. " +
+			"Please ensure that Intel ME is present, " +
+			"the MEI driver is installed, " +
+			"and the runtime has administrator or root privileges.")
+
+		return utils.HECIDriverNotDetected
 	}
 
 	cmd.ControlMode = controlMode
+	cmd.HECIAvailable = true
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
 	resp, _ := amtCommand.GetChangeEnabled()
@@ -142,7 +184,6 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		log.Info("TLS is enforced on local ports")
 	}
 
-	// We no longer build WSMAN here. Control mode + TLS enforcement only.
 	cmd.afterApplied = true
 
 	return nil

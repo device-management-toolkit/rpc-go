@@ -6,11 +6,26 @@
 package activate
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	amttls "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // MockPasswordReader for testing password scenarios
@@ -20,10 +35,35 @@ func (mpr *MockPasswordReaderSuccess) ReadPassword() (string, error) {
 	return utils.TestPassword, nil
 }
 
+func (mpr *MockPasswordReaderSuccess) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return utils.TestPassword, nil
+}
+
 type MockPasswordReaderFail struct{}
 
 func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
 	return "", errors.New("Read password failed")
+}
+
+func (mpr *MockPasswordReaderFail) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return "", errors.New("Read password failed")
+}
+
+// MockPasswordReaderSpy tracks whether password prompting methods were called
+type MockPasswordReaderSpy struct {
+	Called bool
+}
+
+func (mpr *MockPasswordReaderSpy) ReadPassword() (string, error) {
+	mpr.Called = true
+
+	return utils.TestPassword, nil
+}
+
+func (mpr *MockPasswordReaderSpy) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	mpr.Called = true
+
+	return utils.TestPassword, nil
 }
 
 func TestActivateCmd_Structure(t *testing.T) {
@@ -453,4 +493,395 @@ func TestActivateCmd_Validate_PrecendenceMatrix(t *testing.T) {
 // small helper (avoid importing strings in this test addition section since already used above)
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
+}
+
+// --- Tests for HTTP profile fullflow helpers ---
+
+func TestAddDeviceToConsole_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		assert.Equal(t, "test-guid", p.GUID)
+		assert.Equal(t, "test-host", p.Hostname)
+		assert.Equal(t, "my-device", p.FriendlyName)
+		assert.Equal(t, "amt-pass", p.Password)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "test-host", FriendlyName: "my-device"}
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "test-guid", "amt-pass", "mebx-pass", "", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_FallbackToPatch(t *testing.T) {
+	callCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+
+			return
+		}
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "host"}
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, callCount, "should have called POST then PATCH")
+}
+
+func TestAddDeviceToConsole_CIRASetsMPSFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		assert.Equal(t, "admin", p.MPSUsername)
+		assert.Equal(t, "mps-pass", p.MPSPassword)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "host"}
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "mps-pass", true, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_NoCIRAClearsMPSFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		assert.Empty(t, p.MPSUsername)
+		assert.Empty(t, p.MPSPassword)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "host"}
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "mps-pass", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_FriendlyNameFallsBackToOSHostname(t *testing.T) {
+	expectedHostname, _ := os.Hostname()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		assert.Equal(t, expectedHostname, p.FriendlyName)
+		assert.Equal(t, "my-host", p.Hostname)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "my-host"} // no FriendlyName set
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestResolveTLSFlags_ProfileTLSEnabled(t *testing.T) {
+	cmd := &ActivateCmd{}
+	cfg := &config.Configuration{}
+	cfg.Configuration.TLS.Enabled = true
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.True(t, useTLS)
+	assert.True(t, allowSelfSigned)
+}
+
+func TestResolveTLSFlags_NoWSMAN(t *testing.T) {
+	cmd := &ActivateCmd{} // WSMan is nil
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.False(t, useTLS)
+	assert.False(t, allowSelfSigned)
+}
+
+func TestResolveTLSFlags_WSMANRemoteTLSEnabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	enumerateResp := amttls.Response{}
+	enumerateResp.Body.EnumerateResponse.EnumerationContext = "ctx-123"
+	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(enumerateResp, nil)
+
+	pullResp := amttls.Response{}
+	pullResp.Body.PullResponse.SettingDataItems = []amttls.SettingDataResponse{
+		{
+			InstanceID:                 configure.RemoteTLSInstanceId,
+			Enabled:                    true,
+			AcceptNonSecureConnections: false,
+		},
+	}
+	mockWSMAN.EXPECT().PullTLSSettingData("ctx-123").Return(pullResp, nil)
+
+	cmd := &ActivateCmd{}
+	cmd.WSMan = mockWSMAN
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.True(t, useTLS)
+	assert.True(t, allowSelfSigned)
+}
+
+func TestResolveTLSFlags_WSMANRemoteTLSAcceptsNonSecure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	enumerateResp := amttls.Response{}
+	enumerateResp.Body.EnumerateResponse.EnumerationContext = "ctx-456"
+	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(enumerateResp, nil)
+
+	pullResp := amttls.Response{}
+	pullResp.Body.PullResponse.SettingDataItems = []amttls.SettingDataResponse{
+		{
+			InstanceID:                 configure.RemoteTLSInstanceId,
+			Enabled:                    true,
+			AcceptNonSecureConnections: true, // accepts non-secure → false
+		},
+	}
+	mockWSMAN.EXPECT().PullTLSSettingData("ctx-456").Return(pullResp, nil)
+
+	cmd := &ActivateCmd{}
+	cmd.WSMan = mockWSMAN
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.False(t, useTLS)
+	assert.False(t, allowSelfSigned)
+}
+
+func TestResolveTLSFlags_WSMANEnumerateError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(amttls.Response{}, errors.New("enumerate failed"))
+
+	cmd := &ActivateCmd{}
+	cmd.WSMan = mockWSMAN
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.False(t, useTLS)
+	assert.False(t, allowSelfSigned)
+}
+
+func TestResolveConsoleInfo_WithUUID(t *testing.T) {
+	cmd := &ActivateCmd{UUID: "override-guid"}
+	ctx := &commands.Context{}
+	fetcher := &profile.ProfileFetcher{URL: "https://console.example.com/api/v1/profiles/p1"}
+
+	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://console.example.com", baseURL)
+	assert.Equal(t, "override-guid", guid)
+}
+
+func TestResolveConsoleInfo_FromAMT(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("amt-guid-789", nil)
+
+	cmd := &ActivateCmd{}
+	ctx := &commands.Context{AMTCommand: mockAMT}
+	fetcher := &profile.ProfileFetcher{URL: "https://console.example.com/profile"}
+
+	baseURL, guid, err := cmd.resolveConsoleInfo(ctx, fetcher)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://console.example.com", baseURL)
+	assert.Equal(t, "amt-guid-789", guid)
+}
+
+func TestGetLocalIP(t *testing.T) {
+	ip := getLocalIP()
+	assert.NotEmpty(t, ip)
+	assert.NotEqual(t, "unknown", ip, "should resolve to an IP or hostname")
+}
+
+func TestResolveConsoleAuth_NoOp(t *testing.T) {
+	t.Run("no-op when AuthEndpoint is empty", func(t *testing.T) {
+		cmd := &ActivateCmd{}
+		ctx := &commands.Context{}
+
+		baseURL, _, _, err := cmd.resolveConsoleAuth(ctx)
+		assert.NoError(t, err)
+		assert.Empty(t, baseURL)
+	})
+
+	t.Run("no-op when AuthEndpoint is relative", func(t *testing.T) {
+		cmd := &ActivateCmd{}
+		ctx := &commands.Context{}
+		ctx.AuthEndpoint = "/api/v1/authorize"
+
+		baseURL, _, _, err := cmd.resolveConsoleAuth(ctx)
+		assert.NoError(t, err)
+		assert.Empty(t, baseURL)
+	})
+}
+
+func TestResolveConsoleAuth_WithToken(t *testing.T) {
+	cmd := &ActivateCmd{UUID: "test-guid"}
+	ctx := &commands.Context{}
+	ctx.AuthToken = "my-token"
+	ctx.AuthEndpoint = "https://console.example.com/api/v1/authorize"
+
+	baseURL, token, guid, err := cmd.resolveConsoleAuth(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://console.example.com", baseURL)
+	assert.Equal(t, "my-token", token)
+	assert.Equal(t, "test-guid", guid)
+}
+
+func TestResolveConsoleAuth_UUIDFromAMT(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("amt-uuid-123", nil)
+
+	cmd := &ActivateCmd{}
+	ctx := &commands.Context{AMTCommand: mockAMT}
+	ctx.AuthToken = "token"
+	ctx.AuthEndpoint = "https://console.example.com/api/v1/authorize"
+
+	_, _, guid, err := cmd.resolveConsoleAuth(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "amt-uuid-123", guid)
+}
+
+func TestAddDeviceToConsole_CustomDevicesEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "test-host", FriendlyName: "my-device"}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "test-guid", "amt-pass", "mebx-pass", "", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_CustomDevicesEndpoint_FallbackToPatch(t *testing.T) {
+	callCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+
+			return
+		}
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{Hostname: "host"}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+	cfg := &config.Configuration{}
+
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, callCount, "should have called POST then PATCH")
+}
+
+func TestClearMPSPasswordFromConsole_CustomDevicesEndpoint(t *testing.T) {
+	called := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/custom/v2/devices", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{}
+	ctx := &commands.Context{}
+	ctx.DevicesEndpoint = server.URL + "/custom/v2/devices"
+
+	cmd.clearMPSPasswordFromConsole(ctx, server.URL, "token", "guid-123")
+	assert.Equal(t, 1, called, "expected exactly one PATCH request")
+}
+
+func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
+	// When --profile points to a file and local activation flags are present,
+	// the password prompt should be skipped because the profile contains the AMT password.
+	spy := &MockPasswordReaderSpy{}
+	origPR := utils.PR
+	utils.PR = spy
+
+	defer func() { utils.PR = origPR }()
+
+	cmd := &ActivateCmd{
+		Profile:          "config.yaml", // file path triggers profile fullflow
+		Key:              "some-encryption-key",
+		ProvisioningCert: "base64cert", // triggers hasLocalActivationFlags()
+	}
+	// Simulate deactivated device (control mode 0)
+	cmd.ControlMode = 0
+
+	ctx := &commands.Context{}
+
+	// Run will fail when trying to decrypt the non-existent profile file,
+	// but the important assertion is that the password prompt was NOT invoked.
+	_ = cmd.Run(ctx)
+
+	assert.False(t, spy.Called, "password prompt should not be triggered when profile file is provided")
 }

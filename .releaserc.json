@@ -1,12 +1,12 @@
 {
   "branches": [
-    "main",
     {
       "name": "2.x.x",
       "range": "2.x",
       "channel": "2.x"
     },
-    { "name": "next", "channel": "beta", "prerelease": "beta" }
+    "release",
+    { "name": "main", "channel": "beta", "prerelease": "beta" }
   ],
   "plugins": [
     [

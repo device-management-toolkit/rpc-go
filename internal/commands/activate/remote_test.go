@@ -2,7 +2,6 @@
  * Copyright (c) Intel Corporation 2024
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
-
 package activate
 
 import (
@@ -44,7 +43,6 @@ func TestRemoteActivateCmd_Validate(t *testing.T) {
 			wantErr: false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.cmd.Validate()
@@ -132,7 +130,6 @@ func TestRemoteActivateCmd_Run(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test config conversion instead of full run to avoid RPS dependencies
 			config := tt.cmd.toActivationConfig()
-
 			if config.URL != tt.cmd.URL {
 				t.Errorf("toActivationConfig() URL = %v, want %v", config.URL, tt.cmd.URL)
 			}
@@ -165,7 +162,6 @@ func TestNewRemoteActivationService(t *testing.T) {
 	}
 
 	service := NewRemoteActivationService(config, ctx)
-
 	if service.config != config {
 		t.Error("NewRemoteActivationService() did not set config correctly")
 	}
@@ -192,7 +188,6 @@ func TestRemoteActivationService_validateRPSConnection(t *testing.T) {
 			wantErr: true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &RemoteActivationService{
@@ -242,22 +237,18 @@ func TestRemoteActivationService_prepareDeviceInfo(t *testing.T) {
 			},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &RemoteActivationService{
 				config: tt.config,
 			}
-
 			got := service.prepareDeviceInfo()
-
 			// Check that all expected keys are present
 			for key, expectedValue := range tt.want {
 				if got[key] != expectedValue {
 					t.Errorf("prepareDeviceInfo() key %s = %v, want %v", key, got[key], expectedValue)
 				}
 			}
-
 			// Check that no extra keys are present
 			if len(got) != len(tt.want) {
 				t.Errorf("prepareDeviceInfo() returned %d fields, want %d", len(got), len(tt.want))
@@ -296,7 +287,6 @@ func TestRemoteActivationService_outputResult(t *testing.T) {
 			wantErr: false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &RemoteActivationService{
@@ -334,7 +324,6 @@ func TestRemoteActivationService_Activate_Steps(t *testing.T) {
 			JsonOutput: true,
 		},
 	}
-
 	// Test validateRPSConnection
 	err := service.validateRPSConnection()
 	if err != nil {
@@ -353,10 +342,14 @@ func TestRemoteActivationService_Activate_Steps(t *testing.T) {
 
 	// Test outputResult with mock data
 	mockResult := map[string]interface{}{
-		"status":        "success",
-		"message":       "Test activation",
-		"rps_server":    "https://rps.server",
-		"profile":       "test-profile",
+		"status": "success",
+
+		"message": "Test activation",
+
+		"rps_server": "https://rps.server",
+
+		"profile": "test-profile",
+
 		"friendly_name": "test-device",
 	}
 

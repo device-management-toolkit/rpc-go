@@ -54,6 +54,21 @@ type EncryptedProfileResponse struct {
 	Key      string `json:"key"`
 }
 
+// GetToken returns a bearer token using the fetcher's credentials.
+func (f *ProfileFetcher) GetToken() (string, error) {
+	if f.Token != "" {
+		return f.Token, nil
+	}
+
+	if f.Username != "" && f.Password != "" {
+		logrus.Debug("no token provided, attempting authentication with username/password")
+
+		return f.authenticate()
+	}
+
+	return "", nil
+}
+
 func (f *ProfileFetcher) FetchProfile() (config.Configuration, error) {
 	var cfg config.Configuration
 
@@ -61,18 +76,9 @@ func (f *ProfileFetcher) FetchProfile() (config.Configuration, error) {
 		f.Timeout = 30 * time.Second
 	}
 
-	token := f.Token
-	if token == "" && f.Username != "" && f.Password != "" {
-		logrus.Debug("no token provided, attempting authentication with username/password")
-
-		t, err := f.authenticate()
-		if err != nil {
-			return cfg, fmt.Errorf("authentication failed: %w", err)
-		}
-
-		token = t
-	} else {
-		logrus.Debug("using provided token for profile fetch")
+	token, err := f.GetToken()
+	if err != nil {
+		return cfg, fmt.Errorf("authentication failed: %w", err)
 	}
 
 	body, err := f.fetchData(f.URL, token)
@@ -192,7 +198,11 @@ func (f *ProfileFetcher) fetchData(u, token string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("unauthorized: authentication required or token invalid")
+		if token == "" {
+			return nil, fmt.Errorf("unauthorized: no credentials provided — use --auth-token or --auth-username/--auth-password")
+		}
+
+		return nil, fmt.Errorf("unauthorized: server rejected the bearer token")
 	}
 
 	if resp.StatusCode != http.StatusOK {

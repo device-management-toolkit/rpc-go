@@ -1,3 +1,7 @@
+/*********************************************************************
+ * Copyright (c) Intel Corporation 2025
+ * SPDX-License-Identifier: Apache-2.0
+ **********************************************************************/
 package commands
 
 import (
@@ -12,6 +16,8 @@ type Context struct {
 	ControlMode   int
 	LogLevel      string
 	JsonOutput    bool
+	TableOutput   bool
+	NoColor       bool
 	Verbose       bool
 	SkipCertCheck bool
 	// SkipAMTCertCheck controls whether to skip TLS verification when connecting to AMT/LMS over TLS

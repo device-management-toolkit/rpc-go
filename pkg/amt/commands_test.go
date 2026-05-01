@@ -89,8 +89,12 @@ func (c MockPTHICommands) GetUUID() (uuid string, err error) {
 	return "\xd2?\x11\x1c%3\x94E\xa2rT\xb2\x03\x8b\xeb\a", nil
 }
 
-func (c MockPTHICommands) GetIsAMTEnabled() (state uint8, err error) {
+func (c MockPTHICommands) IsChangeToAMTEnabled() (state uint8, err error) {
 	return uint8(0x83), nil
+}
+
+func (c MockPTHICommands) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
 }
 
 var (
@@ -102,8 +106,9 @@ func (c MockPTHICommands) SetAmtOperationalState(state pthi.AMTOperationalState)
 	return SetOperationsStateStatus, SetOperationsStateError
 }
 
-func (c MockPTHICommands) GetControlMode() (state int, err error)   { return 0, nil }
-func (c MockPTHICommands) GetDNSSuffix() (suffix string, err error) { return "Test", nil }
+func (c MockPTHICommands) GetControlMode() (state int, err error)       { return 0, nil }
+func (c MockPTHICommands) GetProvisioningState() (state int, err error) { return 0, nil }
+func (c MockPTHICommands) GetDNSSuffix() (suffix string, err error)     { return "Test", nil }
 func (c MockPTHICommands) GetCertificateHashes(hashHandles pthi.AMTHashHandles) (hashEntryList []pthi.CertHashEntry, err error) {
 	return []pthi.CertHashEntry{{
 		CertificateHash: [64]uint8{84, 101, 115, 116},
@@ -163,11 +168,43 @@ func (c MockPTHICommands) StopConfiguration() (response pthi.StopConfigurationRe
 	return pthi.StopConfigurationResponse{}, nil
 }
 
+// MockHOTHAMCommands mocks HOTHAM interface for testing
+type MockHOTHAMCommands struct{}
+
+func (c MockHOTHAMCommands) Open() error {
+	if flag {
+		return errors.New("The handle is invalid.")
+	}
+
+	return nil
+}
+
+func (c MockHOTHAMCommands) Close() {}
+
+func (c MockHOTHAMCommands) Call(command []byte, commandSize int) (result []byte, err error) {
+	return nil, nil
+}
+
+func (c MockHOTHAMCommands) GetFlogSize() (size uint32, err error) {
+	return 12, nil
+}
+
+func (c MockHOTHAMCommands) GetFlog() ([]byte, error) {
+	// Return mock FLOG data for testing
+	mockFlogData := []byte{
+		0x46, 0x4C, 0x4F, 0x47, // "FLOG" magic
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+	}
+
+	return mockFlogData, nil
+}
+
 var amt AMTCommand
 
 func init() {
 	amt = AMTCommand{}
 	amt.PTHI = MockPTHICommands{}
+	amt.HOTHAM = MockHOTHAMCommands{}
 }
 
 func TestInitializeNoError(t *testing.T) {
@@ -216,13 +253,13 @@ func TestGetVersionDataFromMEError(t *testing.T) {
 //		assert.Equal(t, "amt internal error", err.Error())
 //		assert.Equal(t, "", result)
 //	}
-func TestGetIsAMTEnabled(t *testing.T) {
+func TestIsChangeToAMTEnabled(t *testing.T) {
 	result, err := amt.GetChangeEnabled()
 	assert.NoError(t, err)
 	assert.True(t, result.IsAMTEnabled())
 }
 
-func TestGetIsAMTEnabledError(t *testing.T) {
+func TestIsChangeToAMTEnabledError(t *testing.T) {
 	flag1 = true
 	result, err := amt.GetChangeEnabled()
 	assert.Error(t, err)
@@ -299,10 +336,11 @@ func TestGetCertificateHashes(t *testing.T) {
 func TestGetRemoteAccessConnectionStatus(t *testing.T) {
 	result, err := amt.GetRemoteAccessConnectionStatus()
 	assert.NoError(t, err)
-	assert.Equal(t, "outside enterprise", result.NetworkStatus)
+	assert.Equal(t, "outside enterprise (CIRA)", result.NetworkStatus)
 	assert.Equal(t, "not connected", result.RemoteStatus)
 	assert.Equal(t, "user initiated", result.RemoteTrigger)
 	assert.Equal(t, "Test", result.MPSHostname)
+	assert.Equal(t, 0, result.MPSPort) // HECI does not return port
 }
 
 func TestGetLANInterfaceSettingsTrue(t *testing.T) {
@@ -341,40 +379,68 @@ func TestUnprovision(t *testing.T) {
 
 func TestChangeEnabledResponse(t *testing.T) {
 	tests := []struct {
-		value              uint8
-		expectNewInterface bool
-		expectEnabled      bool
-		expectTransition   bool
+		value                    uint8
+		expectNewInterface       bool
+		expectEnabled            bool
+		expectTransition         bool
+		expectSupportsSetOpState bool
+		expectTlsEnforced        bool
 	}{
 		{
-			value:              0x83,
-			expectNewInterface: true,
-			expectEnabled:      true,
-			expectTransition:   true,
+			value:                    0x83,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         true,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x82,
-			expectNewInterface: true,
-			expectEnabled:      true,
-			expectTransition:   false,
+			value:                    0x82,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         false,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x80,
-			expectNewInterface: true,
-			expectEnabled:      false,
-			expectTransition:   false,
+			value:                    0x80,
+			expectNewInterface:       true,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x02,
-			expectNewInterface: false,
-			expectEnabled:      true,
-			expectTransition:   false,
+			value:                    0x02,
+			expectNewInterface:       false,
+			expectEnabled:            true,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        false,
 		},
 		{
-			value:              0x00,
-			expectNewInterface: false,
-			expectEnabled:      false,
-			expectTransition:   false,
+			value:                    0x00,
+			expectNewInterface:       false,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        false,
+		},
+		{
+			value:                    0xC3,
+			expectNewInterface:       true,
+			expectEnabled:            true,
+			expectTransition:         true,
+			expectSupportsSetOpState: true,
+			expectTlsEnforced:        true,
+		},
+		{
+			value:                    0x40,
+			expectNewInterface:       false,
+			expectEnabled:            false,
+			expectTransition:         false,
+			expectSupportsSetOpState: false,
+			expectTlsEnforced:        true,
 		},
 	}
 	for _, tt := range tests {
@@ -383,6 +449,65 @@ func TestChangeEnabledResponse(t *testing.T) {
 			assert.Equal(t, tt.expectNewInterface, cer.IsNewInterfaceVersion())
 			assert.Equal(t, tt.expectEnabled, cer.IsAMTEnabled())
 			assert.Equal(t, tt.expectTransition, cer.IsTransitionAllowed())
+			assert.Equal(t, tt.expectSupportsSetOpState, cer.SupportsSetAmtOperationalState())
+			assert.Equal(t, tt.expectTlsEnforced, cer.IsTlsEnforcedOnLocalPorts())
 		})
 	}
+}
+
+func TestGetTransitionBlockedReason(t *testing.T) {
+	tests := []struct {
+		name           string
+		value          uint8
+		expectedReason string
+	}{
+		{
+			name:           "Transition allowed",
+			value:          0x83, // bits 7,1,0 set - new interface, enabled, transition allowed
+			expectedReason: "Transition is allowed",
+		},
+		{
+			name:           "Locked state (bits 7,6,5 set)",
+			value:          0xE0, // bits 7,6,5 set - locked
+			expectedReason: "Device is in locked state - requires unprovisioning first",
+		},
+		{
+			name:           "TLS enforced and provisioned (bits 7,6 set)",
+			value:          0xC0, // bits 7,6 set - TLS + new interface
+			expectedReason: "Device has TLS enforced and is likely provisioned; requires unprovisioning first",
+		},
+		{
+			name:           "Old AMT version (bit 7 not set)",
+			value:          0x00, // no bits set - old interface
+			expectedReason: "AMT version does not support operational state transitions",
+		},
+		{
+			name:           "Restricted (bit 5 set)",
+			value:          0xA0, // bits 7,5 set - new interface + restricted
+			expectedReason: "Device has additional security restrictions or OEM policy lockdown",
+		},
+		{
+			name:           "Default blocked scenario",
+			value:          0x80, // only bit 7 set - new interface, but transition blocked
+			expectedReason: "Device is provisioned or has manufacturer restrictions",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cer := ChangeEnabledResponse(tt.value)
+			assert.Equal(t, tt.expectedReason, cer.GetTransitionBlockedReason())
+		})
+	}
+}
+
+func TestGetFlog(t *testing.T) {
+	result, err := amt.GetFlog()
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Greater(t, len(result), 0)
+	// Verify it contains the expected mock data
+	assert.Equal(t, byte(0x46), result[0]) // 'F'
+	assert.Equal(t, byte(0x4C), result[1]) // 'L'
+	assert.Equal(t, byte(0x4F), result[2]) // 'O'
+	assert.Equal(t, byte(0x47), result[3]) // 'G'
 }

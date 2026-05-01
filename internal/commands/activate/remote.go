@@ -2,7 +2,6 @@
  * Copyright (c) Intel Corporation 2024
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
-
 package activate
 
 import (
@@ -20,15 +19,17 @@ type RemoteActivateCmd struct {
 	// Required for remote activation
 	URL     string `help:"RPS server URL" required:"" short:"u"`
 	Profile string `help:"Profile name to use" env:"PROFILE" required:""`
-
 	// Common flags
 	DNS      string `help:"DNS suffix override" env:"DNS_SUFFIX" short:"d"`
 	Hostname string `help:"Hostname override" env:"HOSTNAME" short:"h"`
-
 	// Optional remote-specific settings
 	UUID         string `help:"UUID override (prevents MPS connection)" name:"uuid"`
 	FriendlyName string `help:"Friendly name to associate with this device" name:"name"`
 	Proxy        string `help:"Proxy server URL for RPS connection" env:"PROXY" name:"proxy"`
+
+	// TLS tunnel support
+	TLSTunnel        bool `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
+	LocalTLSEnforced bool `kong:"-"` // Detected from device, not a CLI flag
 
 	// Authentication to the remote server (optional for websockets today but reserved for future)
 	commands.ServerAuthFlags
@@ -43,6 +44,9 @@ type RemoteActivationConfig struct {
 	UUID         string
 	FriendlyName string
 	Proxy        string
+
+	TLSTunnel        bool
+	LocalTLSEnforced bool
 }
 
 // RemoteActivationService handles the actual remote activation logic
@@ -72,10 +76,8 @@ func (cmd *RemoteActivateCmd) Validate() error {
 // Run executes the remote activation command
 func (cmd *RemoteActivateCmd) Run(ctx *commands.Context) error {
 	log.Infof("Starting remote AMT activation via RPS server: %s", cmd.URL)
-
 	// Convert Kong CLI flags to activation config
 	config := cmd.toActivationConfig()
-
 	// Create and run the activation service
 	service := NewRemoteActivationService(config, ctx)
 
@@ -92,6 +94,9 @@ func (cmd *RemoteActivateCmd) toActivationConfig() RemoteActivationConfig {
 		UUID:         cmd.UUID,
 		FriendlyName: cmd.FriendlyName,
 		Proxy:        cmd.Proxy,
+
+		TLSTunnel:        cmd.TLSTunnel,
+		LocalTLSEnforced: cmd.LocalTLSEnforced,
 	}
 }
 
@@ -99,7 +104,6 @@ func (cmd *RemoteActivateCmd) toActivationConfig() RemoteActivationConfig {
 func (service *RemoteActivationService) Activate() error {
 	log.Infof("Connecting to RPS server: %s", service.config.URL)
 	log.Infof("Using profile: %s", service.config.Profile)
-
 	// Step 1: Validate RPS connection
 	if err := service.validateRPSConnection(); err != nil {
 		return err
@@ -107,7 +111,6 @@ func (service *RemoteActivationService) Activate() error {
 
 	// Step 2: Prepare device information
 	deviceInfo := service.prepareDeviceInfo()
-
 	// Step 3: Request activation from RPS
 	result, err := service.requestActivation(deviceInfo)
 	if err != nil {
@@ -122,7 +125,6 @@ func (service *RemoteActivationService) Activate() error {
 func (service *RemoteActivationService) validateRPSConnection() error {
 	// TODO: Implement RPS connection validation
 	log.Debug("Validating RPS connection...")
-
 	// For now, just validate URL format
 	if service.config.URL == "" {
 		return fmt.Errorf("RPS server URL is required")
@@ -140,7 +142,6 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 	deviceInfo := map[string]interface{}{
 		"profile": service.config.Profile,
 	}
-
 	// Add optional fields if provided
 	if service.config.DNS != "" {
 		deviceInfo["dns"] = service.config.DNS
@@ -164,7 +165,6 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 // requestActivation sends activation request to RPS
 func (service *RemoteActivationService) requestActivation(deviceInfo map[string]interface{}) (map[string]interface{}, error) {
 	log.Info("Sending activation request to RPS...")
-
 	// Build RPS request directly (no internal/flags dependency)
 	req := &rps.Request{
 		Command:          utils.CommandActivate,
@@ -183,6 +183,8 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 		ControlMode:      service.context.ControlMode,
 		TenantID:         service.context.TenantID,
 		Password:         service.context.AMTPassword,
+		LocalTlsEnforced: service.config.LocalTLSEnforced,
+		TLSTunnel:        service.config.TLSTunnel,
 	}
 
 	// Execute activation via RPS
@@ -190,15 +192,19 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 	if err != nil {
 		return nil, fmt.Errorf("RPS activation failed: %w", err)
 	}
-
 	// Create success result for our Kong CLI pattern
 	result := map[string]interface{}{
-		"status":        "success",
-		"message":       "Device activated successfully via RPS",
-		"rps_server":    service.config.URL,
-		"profile":       service.config.Profile,
+		"status": "success",
+
+		"message": "Device activated successfully via RPS",
+
+		"rps_server": service.config.URL,
+
+		"profile": service.config.Profile,
+
 		"friendly_name": service.config.FriendlyName,
-		"device_info":   deviceInfo,
+
+		"device_info": deviceInfo,
 	}
 
 	return result, nil

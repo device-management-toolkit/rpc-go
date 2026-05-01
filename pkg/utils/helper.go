@@ -27,13 +27,26 @@ var ErrUnsupportedCertAlgorithm = errors.New("unsupported certificate algorithm"
 func InterpretControlMode(mode int) string {
 	switch mode {
 	case 0:
-		return "pre-provisioning state"
+		return "not activated"
 	case 1:
-		return "activated in client control mode"
+		return "client control mode"
 	case 2:
-		return "activated in admin control mode"
+		return "admin control mode"
 	default:
-		return unknown + " state"
+		return unknown + " control mode"
+	}
+}
+
+func InterpretProvisioningState(state int) string {
+	switch state {
+	case 0:
+		return "pre-provisioning"
+	case 1:
+		return "in provisioning"
+	case 2:
+		return "post-provisioning"
+	default:
+		return unknown + " provisioning state"
 	}
 }
 
@@ -73,11 +86,11 @@ func InterpretHashAlgorithm(hashAlgorithm int) (hashSize int, algorithm string) 
 func InterpretAMTNetworkConnectionStatus(status int) string {
 	switch status {
 	case 0:
-		return "direct"
+		return "direct (LAN)"
 	case 1:
 		return "vpn"
 	case 2:
-		return "outside enterprise"
+		return "outside enterprise (CIRA)"
 	default:
 		return unknown
 	}
@@ -226,6 +239,78 @@ func GenerateNonce() ([]byte, error) {
 	}
 
 	return nonce, nil
+}
+
+var ErrPasswordGeneration = errors.New("failed to generate valid password")
+
+// GenerateRandomPassword generates a cryptographically secure random password
+// that meets the MPS password requirements (8-16 chars, uppercase, lowercase, digit, special).
+func GenerateRandomPassword(length int) (string, error) {
+	const (
+		minLength  = 8
+		maxLength  = 16
+		maxRetries = 10000
+	)
+
+	if length < minLength {
+		length = minLength
+	} else if length > maxLength {
+		length = maxLength
+	}
+
+	const (
+		uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lowercase = "abcdefghijklmnopqrstuvwxyz"
+		digits    = "0123456789"
+		special   = "!@#$%^*()"
+	)
+
+	allChars := uppercase + lowercase + digits + special
+
+	for i := 0; i < maxRetries; i++ {
+		password, err := generateRandomString(length, allChars)
+		if err != nil {
+			return "", err
+		}
+
+		if ValidateMPSPassword(password) == nil {
+			return password, nil
+		}
+	}
+
+	return "", ErrPasswordGeneration
+}
+
+// generateRandomString creates a random string of the specified length from the given character set.
+// Uses rejection sampling to avoid modulo bias in random character selection.
+func generateRandomString(length int, charset string) (string, error) {
+	charsetLen := len(charset)
+	if charsetLen == 0 {
+		return "", errors.New("charset must not be empty")
+	}
+
+	// Calculate the largest multiple of charsetLen that fits in a byte (256)
+	// to implement rejection sampling and avoid modulo bias
+	maxValidByte := 256 - (256 % charsetLen)
+
+	result := make([]byte, length)
+	randomByte := make([]byte, 1)
+
+	for i := 0; i < length; i++ {
+		for {
+			if _, err := rand.Read(randomByte); err != nil {
+				return "", err
+			}
+			// Reject bytes that would cause bias
+			if int(randomByte[0]) < maxValidByte {
+				result[i] = charset[int(randomByte[0])%charsetLen]
+
+				break
+			}
+		}
+	}
+
+	return string(result), nil
 }
 
 func OrderCertsChain(certs []*x509.Certificate) ([]*x509.Certificate, error) {

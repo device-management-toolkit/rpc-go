@@ -14,6 +14,8 @@ import (
 	time "time"
 
 	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	pthi "github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	upid "github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -99,6 +101,21 @@ func (mr *MockInterfaceMockRecorder) GetChangeEnabled() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChangeEnabled", reflect.TypeOf((*MockInterface)(nil).GetChangeEnabled))
 }
 
+// GetCiraLog mocks base method.
+func (m *MockInterface) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCiraLog")
+	ret0, _ := ret[0].(pthi.GetCiraLogResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCiraLog indicates an expected call of GetCiraLog.
+func (mr *MockInterfaceMockRecorder) GetCiraLog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCiraLog", reflect.TypeOf((*MockInterface)(nil).GetCiraLog))
+}
+
 // GetControlMode mocks base method.
 func (m *MockInterface) GetControlMode() (int, error) {
 	m.ctrl.T.Helper()
@@ -112,6 +129,21 @@ func (m *MockInterface) GetControlMode() (int, error) {
 func (mr *MockInterfaceMockRecorder) GetControlMode() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetControlMode", reflect.TypeOf((*MockInterface)(nil).GetControlMode))
+}
+
+// GetProvisioningState mocks base method.
+func (m *MockInterface) GetProvisioningState() (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProvisioningState")
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProvisioningState indicates an expected call of GetProvisioningState.
+func (mr *MockInterfaceMockRecorder) GetProvisioningState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProvisioningState", reflect.TypeOf((*MockInterface)(nil).GetProvisioningState))
 }
 
 // GetDNSSuffix mocks base method.
@@ -261,4 +293,63 @@ func (m *MockInterface) Unprovision() (int, error) {
 func (mr *MockInterfaceMockRecorder) Unprovision() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unprovision", reflect.TypeOf((*MockInterface)(nil).Unprovision))
+}
+
+// GetUPID mocks base method.
+func (m *MockInterface) GetUPID() (*upid.UPID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUPID")
+	ret0, _ := ret[0].(*upid.UPID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUPID indicates an expected call of GetUPID.
+func (mr *MockInterfaceMockRecorder) GetUPID() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPID", reflect.TypeOf((*MockInterface)(nil).GetUPID))
+}
+
+// GetFlog mocks base method.
+func (m *MockInterface) GetFlog() ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFlog")
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// StopConfiguration mocks base method.
+func (m *MockInterface) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopConfiguration")
+	ret0, _ := ret[0].(amt.StopConfigurationResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFlog indicates an expected call of GetFlog.
+func (mr *MockInterfaceMockRecorder) GetFlog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlog", reflect.TypeOf((*MockInterface)(nil).GetFlog))
+}
+
+// StopConfiguration indicates an expected call of StopConfiguration.
+func (mr *MockInterfaceMockRecorder) StopConfiguration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopConfiguration", reflect.TypeOf((*MockInterface)(nil).StopConfiguration))
+}
+
+// Close mocks base method.
+func (m *MockInterface) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockInterfaceMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockInterface)(nil).Close))
 }

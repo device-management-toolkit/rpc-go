@@ -6,6 +6,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
+	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +43,9 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetUPID().Return(nil, nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 				m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
@@ -90,6 +95,7 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			mockAMT := mock.NewMockInterface(ctrl)
 			tt.setupMock(mockAMT)
 			tt.ctx.AMTCommand = mockAMT
+			tt.cmd.HECIAvailable = true
 
 			// Capture output
 			oldStdout := os.Stdout
@@ -129,10 +135,14 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -158,7 +168,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	defer server.Close()
 
 	// Run command with --sync to test PATCH. Provide full endpoint URL.
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 
 	err := cmd.Run(ctx)
@@ -182,10 +192,14 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -200,7 +214,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthToken = "mytoken"
 
@@ -219,10 +233,14 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -251,7 +269,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	defer server.Close()
 
 	// Provide full devices endpoint; auth defaults will derive from this host
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "alice"
 	ctx.AuthPassword = "s3cr3t"
@@ -271,10 +289,14 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -302,7 +324,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	defer server.Close()
 
 	// Provide full devices endpoint; custom auth endpoint remains respected
-	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 	ctx.AuthUsername = "bob"
 	ctx.AuthPassword = "hunter2"
@@ -342,7 +364,9 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				m.EXPECT().GetUPID().Return(nil, nil)
 				m.EXPECT().GetControlMode().Return(1, nil) // Called once (cached for UserCert check and Mode)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 
 				// Mock ChangeEnabledResponse for operational state
 				// Bit 1 = AMT enabled, Bit 7 = new interface version
@@ -351,6 +375,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 					NetworkStatus: "connected",
 					RemoteStatus:  "connected",
@@ -390,6 +415,7 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 				assert.Equal(t, "enabled", result.OperationalState)
 				assert.Equal(t, "example.com", result.DNSSuffix)
 				assert.Equal(t, "os.example.com", result.DNSSuffixOS)
+				assert.Equal(t, "post-provisioning", result.ProvisioningState)
 				assert.NotNil(t, result.RAS)
 				assert.NotNil(t, result.WiredAdapter)
 				assert.NotNil(t, result.WirelessAdapter)
@@ -425,11 +451,12 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 			cmd:  &AmtInfoCmd{UserCert: true},
 			setupMock: func(m *mock.MockInterface) {
 				m.EXPECT().GetControlMode().Return(1, nil) // Provisioned mode
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
-				// UserCert should be disabled due to missing password
-				assert.Empty(t, result.CertificateHashes)
+				// UserCert unavailable because WSMAN client setup failed (no LSA in test)
+				assert.Nil(t, result.UserCerts)
 			},
 		},
 		{
@@ -479,23 +506,14 @@ func TestInfoService_OutputJSON(t *testing.T) {
 		SKU:         "16392",
 	}
 
-	// Capture output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	var buf bytes.Buffer
 
-	err := service.OutputJSON(result)
-
-	w.Close()
-
-	out, _ := io.ReadAll(r)
-	os.Stdout = oldStdout
-
+	err := service.OutputJSON(&buf, result)
 	assert.NoError(t, err)
 
 	var parsed InfoResult
 
-	assert.NoError(t, json.Unmarshal(out, &parsed))
+	assert.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
 	assert.Equal(t, result.AMT, parsed.AMT)
 	assert.Equal(t, result.BuildNumber, parsed.BuildNumber)
 	assert.Equal(t, result.SKU, parsed.SKU)
@@ -516,8 +534,130 @@ func TestInfoService_OutputJSON_Error(t *testing.T) {
 	// Actually, let's just test that normal marshaling works
 	// and create a separate test for error conditions
 
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
+}
+
+func TestInfoService_OutputTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   *InfoResult
+		cmd      *AmtInfoCmd
+		validate func(*testing.T, string)
+	}{
+		{
+			name: "all information in table format",
+			result: &InfoResult{
+				AMT:              "16.1.25",
+				BuildNumber:      "3425",
+				SKU:              "16392",
+				Features:         "AMT Pro",
+				UUID:             "12345678-1234-1234-1234-123456789ABC",
+				ControlMode:      "Admin",
+				OperationalState: "enabled",
+				DNSSuffix:        "example.com",
+				DNSSuffixOS:      "os.example.com",
+				HostnameOS:       "test-host",
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "connected",
+					RemoteTrigger: "user",
+					MPSHostname:   "mps.example.com",
+				},
+				WiredAdapter: &amt.InterfaceSettings{
+					MACAddress:  "00:11:22:33:44:55",
+					IPAddress:   "192.168.1.100",
+					OsIPAddress: "192.168.1.100",
+					DHCPEnabled: true,
+					DHCPMode:    "active",
+					LinkStatus:  "up",
+				},
+			},
+			cmd: &AmtInfoCmd{All: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "Category")
+				assert.Contains(t, output, "Flag")
+				assert.Contains(t, output, "Property")
+				assert.Contains(t, output, "Value")
+				assert.Contains(t, output, "Device")
+				assert.Contains(t, output, "-r")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "3425")
+				assert.Contains(t, output, "Admin")
+				assert.Contains(t, output, "Remote Access")
+				assert.Contains(t, output, "-a")
+				assert.Contains(t, output, "Wired Adapter")
+				assert.Contains(t, output, "-l")
+				assert.Contains(t, output, "00:11:22:33:44:55")
+			},
+		},
+		{
+			name: "specific flags table",
+			result: &InfoResult{
+				AMT: "16.1.25",
+			},
+			cmd: &AmtInfoCmd{Ver: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.NotContains(t, output, "SKU")
+			},
+		},
+		{
+			name: "proxy flag with access points in table",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{
+					{
+						Address:          "proxy.example.com",
+						Port:             8080,
+						NetworkDnsSuffix: "example.com",
+						InfoFormat:       "FQDN",
+					},
+				},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "proxy.example.com:8080")
+				assert.Contains(t, output, "FQDN")
+			},
+		},
+		{
+			name: "proxy flag with empty slice in table",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "None configured")
+			},
+		},
+		{
+			name:   "proxy flag with nil (unavailable) in table",
+			result: &InfoResult{},
+			cmd:    &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy")
+				assert.Contains(t, output, "Unavailable")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewInfoService(nil)
+
+			var buf bytes.Buffer
+
+			err := service.OutputTable(&buf, tt.result, tt.cmd)
+			assert.NoError(t, err)
+
+			if tt.validate != nil {
+				tt.validate(t, buf.String())
+			}
+		})
+	}
 }
 
 func TestInfoService_OutputText(t *testing.T) {
@@ -574,21 +714,34 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{All: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "Build Number\t\t: 3425")
-				assert.Contains(t, output, "SKU\t\t\t: 16392")
-				assert.Contains(t, output, "Features\t\t: AMT Pro")
-				assert.Contains(t, output, "UUID\t\t\t: 12345678-1234-1234-1234-123456789ABC")
-				assert.Contains(t, output, "Control Mode\t\t: Admin")
-				assert.Contains(t, output, "Operational State\t: enabled")
-				assert.Contains(t, output, "DNS Suffix\t\t: example.com")
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: os.example.com")
-				assert.Contains(t, output, "Hostname (OS)\t\t: test-host")
-				assert.Contains(t, output, "RAS Network\t\t: connected")
-				assert.Contains(t, output, "---Wired Adapter---")
-				assert.Contains(t, output, "---Wireless Adapter---")
-				assert.Contains(t, output, "---Certificate Hashes---")
-				assert.Contains(t, output, "Intel AMT Certificate  (Default, Active)")
+				assert.Contains(t, output, "AMT Device Information")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "Build Number")
+				assert.Contains(t, output, "3425")
+				assert.Contains(t, output, "SKU")
+				assert.Contains(t, output, "16392")
+				assert.Contains(t, output, "Features")
+				assert.Contains(t, output, "AMT Pro")
+				assert.Contains(t, output, "UUID")
+				assert.Contains(t, output, "12345678-1234-1234-1234-123456789ABC")
+				assert.Contains(t, output, "Control Mode")
+				assert.Contains(t, output, "Admin")
+				assert.Contains(t, output, "Operational State")
+				assert.Contains(t, output, "enabled")
+				assert.Contains(t, output, "DNS Suffix")
+				assert.Contains(t, output, "example.com")
+				assert.Contains(t, output, "os.example.com")
+				assert.Contains(t, output, "Hostname (OS)")
+				assert.Contains(t, output, "test-host")
+				assert.Contains(t, output, "Remote Access")
+				assert.Contains(t, output, "connected")
+				assert.Contains(t, output, "Wired Adapter")
+				assert.Contains(t, output, "Wireless Adapter")
+				assert.Contains(t, output, "Certificate Hashes")
+				assert.Contains(t, output, "Intel AMT Certificate")
+				assert.Contains(t, output, "Default")
+				assert.Contains(t, output, "Active")
 			},
 		},
 		{
@@ -599,8 +752,10 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ver: true, Bld: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "Build Number\t\t: 3425")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "Build Number")
+				assert.Contains(t, output, "3425")
 				assert.NotContains(t, output, "SKU")
 			},
 		},
@@ -611,7 +766,8 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
 			},
 		},
 		{
@@ -623,7 +779,7 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Lan: true},
 			validate: func(t *testing.T, output string) {
-				assert.NotContains(t, output, "---Wired Adapter---")
+				assert.NotContains(t, output, "Wired Adapter")
 			},
 		},
 		{
@@ -633,7 +789,7 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Cert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---No Certificate Hashes Found---")
+				assert.Contains(t, output, "No certificate hashes found")
 			},
 		},
 		{
@@ -665,9 +821,11 @@ func TestInfoService_OutputText(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Cert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Cert1  (Default)")
-				assert.Contains(t, output, "Cert2  (Active)")
-				assert.Contains(t, output, "Cert3\n")
+				assert.Contains(t, output, "Cert1")
+				assert.Contains(t, output, "Default")
+				assert.Contains(t, output, "Cert2")
+				assert.Contains(t, output, "Active")
+				assert.Contains(t, output, "Cert3")
 			},
 		},
 	}
@@ -676,25 +834,89 @@ func TestInfoService_OutputText(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service := NewInfoService(nil)
 
-			// Capture output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			var buf bytes.Buffer
 
-			err := service.OutputText(tt.result, tt.cmd)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
-
+			err := service.OutputText(&buf, tt.result, tt.cmd)
 			assert.NoError(t, err)
 
 			if tt.validate != nil {
-				tt.validate(t, string(out))
+				tt.validate(t, buf.String())
 			}
 		})
 	}
+}
+
+func TestInfoService_OutputText_TwoColumnLayout(t *testing.T) {
+	origWidth := getTerminalWidth
+	getTerminalWidth = func() int { return 200 }
+
+	defer func() { getTerminalWidth = origWidth }()
+
+	result := &InfoResult{
+		AMT:         "16.1.25",
+		UUID:        "12345678-1234-1234-1234-123456789ABC",
+		ControlMode: "admin control mode",
+		RAS: &amt.RemoteAccessStatus{
+			NetworkStatus: "connected",
+			RemoteStatus:  "connected",
+			RemoteTrigger: "user",
+			MPSHostname:   "mps.example.com",
+		},
+		WiredAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:11:22:33:44:55",
+			IPAddress:   "192.168.1.100",
+			OsIPAddress: "192.168.1.100",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+		WirelessAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:AA:BB:CC:DD:EE",
+			IPAddress:   "192.168.1.101",
+			OsIPAddress: "192.168.1.101",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+	}
+
+	service := NewInfoService(nil)
+	cmd := &AmtInfoCmd{All: true}
+
+	var buf bytes.Buffer
+
+	err := service.OutputText(&buf, result, cmd)
+	out := buf.String()
+
+	assert.NoError(t, err)
+
+	// In two-column mode, the Device block's sub-header is omitted (the box
+	// title replaces it), and "Wired Adapter" / "Wireless Adapter" drop
+	// "Adapter" to avoid redundancy with the "Network Adapters" box title.
+	assert.NotContains(t, out, "AMT Device Information")
+	assert.Contains(t, out, "Remote Access")
+	assert.NotContains(t, out, "Wired Adapter")
+	assert.NotContains(t, out, "Wireless Adapter")
+
+	// Both box titles should appear on the same top-border line.
+	assert.Contains(t, out, "Device Information")
+	assert.Contains(t, out, "Network Adapters")
+
+	var sideBySide bool
+
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Device Information") && strings.Contains(line, "Network Adapters") {
+			sideBySide = true
+
+			break
+		}
+	}
+
+	assert.True(t, sideBySide, "expected box titles on the same line in two-column mode; got:\n%s", out)
+
+	// Left column content (UUID) should not wrap — the whole UUID appears on one line.
+	assert.Regexp(t, `UUID\s+[^\n│]*12345678-1234-1234-1234-123456789ABC`, out,
+		"UUID should not wrap across lines inside the box; got:\n%s", out)
 }
 
 func TestAmtInfoCmd_HasNoFlagsSet(t *testing.T) {
@@ -893,6 +1115,8 @@ func TestInfoService_GetAMTInfo_ErrorCases(t *testing.T) {
 			name: "GetRemoteAccessConnectionStatus error",
 			cmd:  &AmtInfoCmd{Ras: true},
 			setupMock: func(m *mock.MockInterface) {
+				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, errors.New("RAS not available"))
 			},
 			wantErr: false,
@@ -981,20 +1205,16 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		validate  func(*testing.T, *InfoResult)
 	}{
 		{
-			name: "UserCert with password provided",
+			name: "UserCert without WSMAN available",
 			cmd:  &AmtInfoCmd{UserCert: true},
 			setupMock: func(m *mock.MockInterface) {
-				// Mock GetControlMode call for UserCert check
-				m.EXPECT().GetControlMode().Return(1, nil) // Return "Admin Control Mode" (provisioned)
-				// Note: WSMAN client setup will fail in tests since there's no real device
-				// This is expected behavior - the user cert retrieval will fail but the command should not error
+				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 			},
 			wantErr: false,
 			validate: func(t *testing.T, result *InfoResult) {
-				// UserCerts should be empty since WSMAN client setup fails in tests
-				assert.Empty(t, result.UserCerts)
-				// No other fields should be populated since only UserCert flag is set
-				assert.Empty(t, result.CertificateHashes)
+				// UserCerts should be nil since WSMAN client setup fails
+				assert.Nil(t, result.UserCerts)
 			},
 		},
 		{
@@ -1041,7 +1261,7 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 		{
 			name: "All individual flags set",
 			cmd: &AmtInfoCmd{
-				Ver: true, Bld: true, Sku: true, UUID: true, Mode: true,
+				Ver: true, Bld: true, Sku: true, UUID: true, Mode: true, ProvState: true,
 				DNS: true, Hostname: true, Lan: true, Ras: true, OpState: true,
 				Cert: true,
 			},
@@ -1051,11 +1271,13 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 				m.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 				m.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 				m.EXPECT().GetControlMode().Return(1, nil)
+				m.EXPECT().GetProvisioningState().Return(2, nil)
 
 				response := amt.ChangeEnabledResponse(0x82) // AMT enabled and new interface
 				m.EXPECT().GetChangeEnabled().Return(response, nil)
 				m.EXPECT().GetDNSSuffix().Return("example.com", nil)
 				m.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+				m.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
 				m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
 				m.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55"}, nil)
 				m.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
@@ -1101,6 +1323,143 @@ func TestInfoService_GetAMTInfo_AdditionalCoverage(t *testing.T) {
 	}
 }
 
+func TestInfoService_GetAMTInfo_RAS_WSMANSuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	// Only RAS flag set; controlMode starts at -1 so GetControlMode will be called
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{
+		{AccessInfo: "wsman-mps.example.com", Port: 4433},
+	}, nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "connected",
+		RemoteStatus:  "connected",
+		RemoteTrigger: "user",
+		MPSHostname:   "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	// WSMAN hostname + port should override HECI hostname
+	assert.Equal(t, "wsman-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 4433, result.RAS.MPSPort)
+	// Status fields come from HECI
+	assert.Equal(t, "connected", result.RAS.NetworkStatus)
+	assert.Equal(t, "connected", result.RAS.RemoteStatus)
+	assert.Equal(t, "user", result.RAS.RemoteTrigger)
+}
+
+func TestInfoService_GetAMTInfo_RAS_WSMANFallbackToHECI(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetMPSSAP().Return(nil, errors.New("WSMAN error"))
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "connected",
+		RemoteStatus:  "not connected",
+		RemoteTrigger: "alert",
+		MPSHostname:   "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	// WSMAN failed, so HECI hostname is used and port stays 0
+	assert.Equal(t, "heci-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 0, result.RAS.MPSPort)
+	assert.Equal(t, "connected", result.RAS.NetworkStatus)
+}
+
+func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+
+	// Control mode 0 = pre-provisioning; ensureWSMANClient skips setup, so WSMAN falls back to HECI
+	mockAMT.EXPECT().GetControlMode().Return(0, nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		MPSHostname: "heci-mps.example.com",
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Ras: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.RAS)
+	assert.Equal(t, "heci-mps.example.com", result.RAS.MPSHostname)
+	assert.Equal(t, 0, result.RAS.MPSPort)
+}
+
+func TestInfoService_GetAMTInfo_Proxy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return([]ipshttp.HTTPProxyAccessPointItem{
+		{
+			AccessInfo:       "proxy.example.com",
+			Port:             8080,
+			NetworkDnsSuffix: "example.com",
+			InfoFormat:       201,
+		},
+		{
+			AccessInfo:       "10.0.0.1",
+			Port:             3128,
+			NetworkDnsSuffix: "corp.local",
+			InfoFormat:       3,
+		},
+	}, nil)
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Proxy: true})
+	assert.NoError(t, err)
+	assert.NotNil(t, result.ProxyAccessPoints)
+	assert.Len(t, *result.ProxyAccessPoints, 2)
+	assert.Equal(t, "proxy.example.com", (*result.ProxyAccessPoints)[0].Address)
+	assert.Equal(t, 8080, (*result.ProxyAccessPoints)[0].Port)
+	assert.Equal(t, "FQDN", (*result.ProxyAccessPoints)[0].InfoFormat)
+	assert.Equal(t, "10.0.0.1", (*result.ProxyAccessPoints)[1].Address)
+	assert.Equal(t, "IPv4", (*result.ProxyAccessPoints)[1].InfoFormat)
+}
+
+func TestInfoService_GetAMTInfo_Proxy_WSMANError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return(nil, errors.New("WSMAN error"))
+
+	service := NewInfoService(mockAMT)
+	service.wsman = mockWSMAN
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{Proxy: true})
+	assert.NoError(t, err)
+	assert.Nil(t, result.ProxyAccessPoints)
+}
+
 func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1117,9 +1476,12 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Ver: true, Sku: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "Version\t\t\t: 16.1.25")
-				assert.Contains(t, output, "SKU\t\t\t: 16392")
-				assert.Contains(t, output, "Features\t\t: AMT Pro")
+				assert.Contains(t, output, "Version")
+				assert.Contains(t, output, "16.1.25")
+				assert.Contains(t, output, "SKU")
+				assert.Contains(t, output, "16392")
+				assert.Contains(t, output, "Features")
+				assert.Contains(t, output, "AMT Pro")
 			},
 		},
 		{
@@ -1129,8 +1491,9 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{DNS: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: os.example.com")
-				assert.Contains(t, output, "DNS Suffix\t\t: ")
+				assert.Contains(t, output, "DNS Suffix (OS)")
+				assert.Contains(t, output, "os.example.com")
+				assert.Contains(t, output, "DNS Suffix")
 			},
 		},
 		{
@@ -1140,8 +1503,46 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{DNS: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "DNS Suffix\t\t: example.com")
-				assert.Contains(t, output, "DNS Suffix (OS)\t\t: ")
+				assert.Contains(t, output, "DNS Suffix")
+				assert.Contains(t, output, "example.com")
+				assert.Contains(t, output, "DNS Suffix (OS)")
+			},
+		},
+		{
+			name: "RAS with MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "connected",
+					RemoteTrigger: "user",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       4433,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "MPS Hostname")
+				assert.Contains(t, output, "mps.example.com")
+				assert.Contains(t, output, "MPS Port")
+				assert.Contains(t, output, "4433")
+			},
+		},
+		{
+			name: "RAS without MPS port",
+			result: &InfoResult{
+				RAS: &amt.RemoteAccessStatus{
+					NetworkStatus: "connected",
+					RemoteStatus:  "not connected",
+					RemoteTrigger: "alert",
+					MPSHostname:   "mps.example.com",
+					MPSPort:       0,
+				},
+			},
+			cmd: &AmtInfoCmd{Ras: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "MPS Hostname")
+				assert.Contains(t, output, "mps.example.com")
+				assert.NotContains(t, output, "MPS Port")
 			},
 		},
 		{
@@ -1158,11 +1559,14 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{Lan: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---Wireless Adapter---")
-				assert.Contains(t, output, "DHCP Enabled\t\t: false")
-				assert.Contains(t, output, "DHCP Mode\t\t: disabled")
-				assert.Contains(t, output, "Link Status\t\t: down")
-				assert.NotContains(t, output, "---Wired Adapter---")
+				assert.Contains(t, output, "Wireless Adapter")
+				assert.Contains(t, output, "DHCP Enabled")
+				assert.Contains(t, output, "false")
+				assert.Contains(t, output, "DHCP Mode")
+				assert.Contains(t, output, "disabled")
+				assert.Contains(t, output, "Link Status")
+				assert.Contains(t, output, "down")
+				assert.NotContains(t, output, "Wired Adapter")
 			},
 		},
 		{
@@ -1179,9 +1583,71 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 			},
 			cmd: &AmtInfoCmd{UserCert: true},
 			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "---Public Key Certs---")
-				assert.Contains(t, output, "User Cert\n")
-				assert.NotContains(t, output, "---Certificate Hashes---")
+				assert.Contains(t, output, "Public Key Certificates")
+				assert.Contains(t, output, "User Cert")
+				assert.NotContains(t, output, "Certificate Hashes")
+			},
+		},
+		{
+			name: "Proxy flag with access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{
+					{
+						Address:          "proxy.example.com",
+						Port:             8080,
+						NetworkDnsSuffix: "example.com",
+						InfoFormat:       "FQDN",
+					},
+				},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "proxy.example.com")
+				assert.Contains(t, output, "8080")
+				assert.Contains(t, output, "FQDN")
+				assert.Contains(t, output, "example.com")
+			},
+		},
+		{
+			name: "Proxy flag with no access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "No HTTP proxy access points configured")
+			},
+		},
+		{
+			name: "All flag with no proxy access points",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{All: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "No HTTP proxy access points configured")
+			},
+		},
+		{
+			name:   "Proxy flag with unavailable proxy",
+			result: &InfoResult{},
+			cmd:    &AmtInfoCmd{Proxy: true},
+			validate: func(t *testing.T, output string) {
+				assert.Contains(t, output, "HTTP Proxy Configuration")
+				assert.Contains(t, output, "Proxy configuration could not be retrieved")
+			},
+		},
+		{
+			name: "Default view hides empty proxy section",
+			result: &InfoResult{
+				ProxyAccessPoints: &[]ProxyAccessPoint{},
+			},
+			cmd: &AmtInfoCmd{},
+			validate: func(t *testing.T, output string) {
+				assert.NotContains(t, output, "HTTP Proxy Configuration")
 			},
 		},
 	}
@@ -1190,22 +1656,13 @@ func TestInfoService_OutputText_AdditionalCoverage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			service := NewInfoService(nil)
 
-			// Capture output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			var buf bytes.Buffer
 
-			err := service.OutputText(tt.result, tt.cmd)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
-
+			err := service.OutputText(&buf, tt.result, tt.cmd)
 			assert.NoError(t, err)
 
 			if tt.validate != nil {
-				tt.validate(t, string(out))
+				tt.validate(t, buf.String())
 			}
 		})
 	}
@@ -1276,7 +1733,7 @@ func TestInfoService_OutputJSON_MarshalError(t *testing.T) {
 	// so we can't really test the marshal error easily without reflection
 	// Let's just test that valid marshaling works
 	result := &InfoResult{AMT: "test"}
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
 }
 
@@ -1299,6 +1756,7 @@ func TestInfoService_hasNoFlagsSet_AllCombinations(t *testing.T) {
 		{"Lan", &AmtInfoCmd{Lan: true}},
 		{"Hostname", &AmtInfoCmd{Hostname: true}},
 		{"OpState", &AmtInfoCmd{OpState: true}},
+		{"Proxy", &AmtInfoCmd{Proxy: true}},
 	}
 
 	for _, flag := range flags {
@@ -1325,8 +1783,24 @@ func TestInfoService_OutputJSON_ActualMarshalError(t *testing.T) {
 
 	// Actually test with a normal valid result to ensure normal operation works
 	result := &InfoResult{AMT: "test"}
-	err := service.OutputJSON(result)
+	err := service.OutputJSON(io.Discard, result)
 	assert.NoError(t, err)
+}
+
+func TestInfoService_OutputJSON_ProxyAccessPoints(t *testing.T) {
+	t.Run("nil pointer omits field", func(t *testing.T) {
+		result := &InfoResult{ProxyAccessPoints: nil}
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		assert.NoError(t, err)
+		assert.NotContains(t, string(jsonBytes), "proxyAccessPoints")
+	})
+
+	t.Run("empty slice renders as empty array", func(t *testing.T) {
+		result := &InfoResult{ProxyAccessPoints: &[]ProxyAccessPoint{}}
+		jsonBytes, err := json.MarshalIndent(result, "", "  ")
+		assert.NoError(t, err)
+		assert.Contains(t, string(jsonBytes), `"proxyAccessPoints": []`)
+	})
 }
 
 // Test for more complete getOSIPAddress coverage

@@ -47,8 +47,9 @@ import (
 type WSMANer = interfaces.WSMANer
 
 type GoWSMANMessages struct {
-	wsmanMessages wsman.Messages
-	target        string
+	wsmanMessages  wsman.Messages
+	target         string
+	localTransport *LocalTransport
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -58,6 +59,15 @@ func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
 }
 
 func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+	// Release any prior local transport's MEI handle; re-setup leaks handles otherwise.
+	if g.localTransport != nil {
+		if err := g.localTransport.Close(); err != nil {
+			logrus.Debugf("closing previous local transport: %v", err)
+		}
+
+		g.localTransport = nil
+	}
+
 	clientParams := client.Parameters{
 		Target:         g.target,
 		Username:       username,
@@ -68,10 +78,12 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		LogAMTMessages: logAMTMessages,
 	}
 
+	probeTimeout := time.Duration(utils.LMSDialerTimeout) * time.Second
+
 	if clientParams.UseTLS {
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 
 		dialer := &cryptotls.Dialer{
@@ -83,7 +95,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
 			logrus.Error(err)
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
@@ -94,23 +106,33 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			defer conn.Close()
 		}
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 
 		dialer := &net.Dialer{}
 
 		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
 		if err != nil {
-			logrus.Info("Failed to connect to LMS, using local transport instead.")
+			logrus.Debug("LMS not active, using local transport instead.")
 
-			clientParams.Transport = NewLocalTransport()
+			g.localTransport = NewLocalTransport()
+			clientParams.Transport = g.localTransport
 		} else {
-			logrus.Info("Successfully connected to LMS.")
+			logrus.Debug("Successfully connected to LMS.")
 			con.Close()
 		}
 	}
 
 	g.wsmanMessages = wsman.NewMessages(clientParams)
+
+	return nil
+}
+
+// Close closes any open local transport connections
+func (g *GoWSMANMessages) Close() error {
+	if g.localTransport != nil {
+		return g.localTransport.Close()
+	}
 
 	return nil
 }

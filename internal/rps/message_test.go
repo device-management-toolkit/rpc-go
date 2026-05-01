@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -27,9 +29,17 @@ func (mpr *MockPasswordReaderSuccess) ReadPassword() (string, error) {
 	return utils.TestPassword, nil
 }
 
+func (mpr *MockPasswordReaderSuccess) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return utils.TestPassword, nil
+}
+
 type MockPasswordReaderFail struct{}
 
 func (mpr *MockPasswordReaderFail) ReadPassword() (string, error) {
+	return "", errors.New("Read password failed")
+}
+
+func (mpr *MockPasswordReaderFail) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
 	return "", errors.New("Read password failed")
 }
 
@@ -55,14 +65,15 @@ func (c MockAMT) GetVersionDataFromME(key string, amtTimeout time.Duration) (str
 func (c MockAMT) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
 	return amt.ChangeEnabledResponse(0x01), nil
 }
-func (c MockAMT) EnableAMT() error                { return nil }
-func (c MockAMT) DisableAMT() error               { return nil }
-func (c MockAMT) GetUUID() (string, error)        { return "123-456-789", nil }
-func (c MockAMT) GetUUIDV2() (string, error)      { return "", nil }
-func (c MockAMT) GetControlMode() (int, error)    { return controlMode, nil }
-func (c MockAMT) GetControlModeV2() (int, error)  { return controlMode, nil }
-func (c MockAMT) GetOSDNSSuffix() (string, error) { return osDNSSuffix, nil }
-func (c MockAMT) GetDNSSuffix() (string, error)   { return mebxDNSSuffix, nil }
+func (c MockAMT) EnableAMT() error                   { return nil }
+func (c MockAMT) DisableAMT() error                  { return nil }
+func (c MockAMT) GetUUID() (string, error)           { return "123-456-789", nil }
+func (c MockAMT) GetUUIDV2() (string, error)         { return "", nil }
+func (c MockAMT) GetControlMode() (int, error)       { return controlMode, nil }
+func (c MockAMT) GetProvisioningState() (int, error) { return 0, nil }
+func (c MockAMT) GetControlModeV2() (int, error)     { return controlMode, nil }
+func (c MockAMT) GetOSDNSSuffix() (string, error)    { return osDNSSuffix, nil }
+func (c MockAMT) GetDNSSuffix() (string, error)      { return mebxDNSSuffix, nil }
 func (c MockAMT) GetCertificateHashes() ([]amt.CertHashEntry, error) {
 	return []amt.CertHashEntry{}, nil
 }
@@ -85,6 +96,26 @@ func (c MockAMT) Unprovision() (int, error) {
 
 func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
 	return amt.SecureHBasedResponse{}, nil
+}
+
+func (c MockAMT) GetUPID() (*upid.UPID, error) {
+	return nil, nil
+}
+
+func (c MockAMT) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (c MockAMT) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	return amt.StopConfigurationResponse{}, nil
+}
+
+func (c MockAMT) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
+}
+
+func (c MockAMT) Close() error {
+	return nil
 }
 
 var p Payload
@@ -203,7 +234,7 @@ func TestCreateActivationRequestWithDNSSuffix(t *testing.T) {
 }
 
 func TestCreateActivationResponse(t *testing.T) {
-	result := p.CreateMessageResponse([]byte("123"))
+	result := p.CreateMessageResponse([]byte("123"), "response")
 	assert.Equal(t, "response", result.Method)
 	assert.Equal(t, "key", result.APIKey)
 	assert.Equal(t, "ok", result.Status)
@@ -330,6 +361,24 @@ func TestCreateMessageRequestWithoutFriendlyName(t *testing.T) {
 	assert.False(t, isInMap)
 }
 
+func TestCreateMessageRequestTLSTunnelFields(t *testing.T) {
+	flags := Request{
+		LocalTlsEnforced: true,
+		TLSTunnel:        true,
+	}
+	result, createErr := p.CreateMessageRequest(flags)
+	assert.NoError(t, createErr)
+	assert.NotEmpty(t, result.Payload)
+	decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+	assert.NoError(t, decodeErr)
+
+	msgPayload := MessagePayload{}
+	jsonErr := json.Unmarshal(decodedBytes, &msgPayload)
+	assert.NoError(t, jsonErr)
+	assert.True(t, msgPayload.TLSEnforced)
+	assert.True(t, msgPayload.TLSTunnel)
+}
+
 func TestIsKnownInvalidUUID(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -369,6 +418,10 @@ func (c MockAMTInvalidUUID) GetUUID() (string, error) {
 	return "00000000-0000-0000-0000-000000000000", nil
 }
 
+func (c MockAMTInvalidUUID) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
 func TestCreateMessageRequestWithInvalidUUID(t *testing.T) {
 	mockAMT := MockAMTInvalidUUID{}
 	payload := Payload{
@@ -386,6 +439,10 @@ type MockAMTInvalidUUIDPattern struct {
 
 func (c MockAMTInvalidUUIDPattern) GetUUID() (string, error) {
 	return "03000200-0400-0500-0006-000700080009", nil
+}
+
+func (c MockAMTInvalidUUIDPattern) GetFlog() ([]byte, error) {
+	return []byte{}, nil
 }
 
 func TestCreateMessageRequestWithInvalidUUIDPattern(t *testing.T) {

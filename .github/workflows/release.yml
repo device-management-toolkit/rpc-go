@@ -9,7 +9,7 @@ name: Semantic-Release CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main, release, 2.x.x ]
 
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false
 
       - name: Docker Login
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/release' }}
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: vprodemo.azurecr.io
@@ -44,6 +44,11 @@ jobs:
           registry: docker.io
           username: ${{ secrets.INTC_DOCKER_USERNAME }}
           password: ${{ secrets.INTC_DOCKER_PASSWORD }}
+
+      - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.3.0
+        with:
+          go-version: 'stable'
+          check-latest: true
       - name: Install go-licenses
         run: |
           go install github.com/google/go-licenses@v1.0.0
@@ -52,8 +57,8 @@ jobs:
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
         with:
-          semantic_version:
-            19.0.5 # It is recommended to specify specifying version range
+          semantic_version: 19.0.5
+            # It is recommended to specify specifying version range
             # for semantic-release.
           extra_plugins: |
             @semantic-release/exec@6.0.3

@@ -24,14 +24,33 @@ func TestInterpretControlMode(t *testing.T) {
 		input    int
 		expected string
 	}{
-		{"Mode0", 0, "pre-provisioning state"},
-		{"Mode1", 1, "activated in client control mode"},
-		{"Mode2", 2, "activated in admin control mode"},
-		{"Mode3", 3, "unknown state"},
+		{"Mode0", 0, "not activated"},
+		{"Mode1", 1, "client control mode"},
+		{"Mode2", 2, "admin control mode"},
+		{"Mode3", 3, "unknown control mode"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := InterpretControlMode(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestInterpretProvisioningState(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int
+		expected string
+	}{
+		{"State0", 0, "pre-provisioning"},
+		{"State1", 1, "in provisioning"},
+		{"State2", 2, "post-provisioning"},
+		{"State3", 3, "unknown provisioning state"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := InterpretProvisioningState(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -86,9 +105,9 @@ func TestInterpretAMTNetworkConnectionStatus(t *testing.T) {
 		input    int
 		expected string
 	}{
-		{"Status0", 0, "direct"},
+		{"Status0", 0, "direct (LAN)"},
 		{"Status1", 1, "vpn"},
-		{"Status2", 2, "outside enterprise"},
+		{"Status2", 2, "outside enterprise (CIRA)"},
 		{"Status3", 3, "unknown"},
 	}
 	for _, tt := range tests {
@@ -380,6 +399,53 @@ func TestOrderCertsChain(t *testing.T) {
 
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (needle == haystack || (len(needle) > 0 && string([]rune(haystack)[0:len(needle)]) == needle))
+}
+
+func TestGenerateRandomPassword(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+	}{
+		{"DefaultLength16", 16},
+		{"Length8", 8},
+		{"Length12", 12},
+		{"BelowMinClampsTo8", 4},
+		{"AboveMaxClampsTo16", 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			password, err := GenerateRandomPassword(tt.length)
+			assert.NoError(t, err)
+
+			expectedLen := tt.length
+			if expectedLen < 8 {
+				expectedLen = 8
+			} else if expectedLen > 16 {
+				expectedLen = 16
+			}
+
+			assert.Equal(t, expectedLen, len(password))
+
+			// Verify the password passes validation
+			assert.NoError(t, ValidateMPSPassword(password))
+		})
+	}
+}
+
+func TestGenerateRandomPassword_Uniqueness(t *testing.T) {
+	passwords := make(map[string]bool)
+
+	for i := 0; i < 100; i++ {
+		password, err := GenerateRandomPassword(16)
+		assert.NoError(t, err)
+
+		if passwords[password] {
+			t.Errorf("generated duplicate password: %s", password)
+		}
+
+		passwords[password] = true
+	}
 }
 
 func TestDecodeAMT(t *testing.T) {

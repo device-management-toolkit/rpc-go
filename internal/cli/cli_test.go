@@ -57,6 +57,8 @@ func TestParse(t *testing.T) {
 				mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 				// Mock GetControlMode to return a valid provisioned state (1) for amtinfo validation
 				mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+				// Mock Close to satisfy cleanup
+				mockAMT.EXPECT().Close().Return(nil).AnyTimes()
 			}
 
 			ctx, cli, err := Parse(tt.args, mockAMT)
@@ -76,6 +78,25 @@ func TestParse(t *testing.T) {
 				assert.Equal(t, tt.expected, ctx.Selected().Name)
 			}
 		})
+	}
+}
+
+func TestParse_WSManCommandAliases(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+
+	aliasArgs := [][]string{
+		{"rpc", "diag", "wsman", "list"},
+		{"rpc", "diag", "ws-man", "list"},
+	}
+
+	for _, args := range aliasArgs {
+		ctx, cli, err := Parse(args, mockAMT)
+		assert.NoError(t, err)
+		assert.NotNil(t, ctx)
+		assert.NotNil(t, cli)
 	}
 }
 
@@ -143,4 +164,24 @@ func TestGlobalsBeforeApply(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHasCommand(t *testing.T) {
+	assert.False(t, hasCommand([]string{"rpc"}))
+	assert.False(t, hasCommand([]string{"rpc", "--json"}))
+	assert.False(t, hasCommand([]string{"rpc", "--lmsaddress", "127.0.0.1"}))
+	assert.False(t, hasCommand([]string{"rpc", "--password", "secret", "--json"}))
+	assert.False(t, hasCommand([]string{"rpc", "--lmsaddress=127.0.0.1"}))
+	assert.False(t, hasCommand([]string{"rpc", "--json", "unknowncmd"}))
+	assert.True(t, hasCommand([]string{"rpc", "amtinfo"}))
+	assert.True(t, hasCommand([]string{"rpc", "--json", "version"}))
+	assert.True(t, hasCommand([]string{"rpc", "--lmsaddress", "127.0.0.1", "activate"}))
+	assert.True(t, hasCommand([]string{"rpc", "diag"}))
+}
+
+func TestHasFlag(t *testing.T) {
+	assert.True(t, hasFlag([]string{"rpc", "--help"}, "--help", "-h"))
+	assert.True(t, hasFlag([]string{"rpc", "-h"}, "--help", "-h"))
+	assert.False(t, hasFlag([]string{"rpc", "amtinfo"}, "--help", "-h"))
+	assert.True(t, hasFlag([]string{"rpc", "amtinfo", "--help"}, "--help", "-h"))
 }

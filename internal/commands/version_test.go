@@ -9,13 +9,21 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	// Disable colors in tests so assertions match plain text.
+	lipgloss.SetColorProfile(termenv.Ascii)
+}
 
 func TestVersionCmd_Run_PlainText(t *testing.T) {
 	tests := []struct {
@@ -74,20 +82,20 @@ func TestVersionCmd_Run_PlainText(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Check required fields
-				assert.Equal(t, strings.ToUpper(utils.ProjectName), info["app"])
+				assert.Equal(t, utils.ProjectName, info["app"])
 				assert.Equal(t, utils.ProjectVersion, info["version"])
 				assert.Equal(t, utils.ProtocolVersion, info["protocol"])
-
-				// Verify structure
-				assert.Len(t, info, 3, "JSON output should have exactly 3 fields")
+				assert.Equal(t, runtime.Version(), info["go"])
+				assert.Equal(t, runtime.GOOS+"/"+runtime.GOARCH, info["platform"])
+				assert.NotEmpty(t, info["commit"])
+				assert.NotEmpty(t, info["date"])
 			} else {
-				// Verify plain text output
-				lines := strings.Split(strings.TrimSpace(outputStr), "\n")
-				assert.Len(t, lines, 3, "Plain text output should have exactly 3 lines")
-
-				assert.Equal(t, strings.ToUpper(utils.ProjectName), lines[0])
-				assert.Equal(t, "Version "+utils.ProjectVersion, lines[1])
-				assert.Equal(t, "Protocol "+utils.ProtocolVersion, lines[2])
+				// Verify styled plain text output contains expected content
+				assert.Contains(t, outputStr, strings.ToUpper(utils.ProjectName))
+				assert.Contains(t, outputStr, utils.ProjectVersion)
+				assert.Contains(t, outputStr, utils.ProtocolVersion)
+				assert.Contains(t, outputStr, "Version")
+				assert.Contains(t, outputStr, "Protocol")
 			}
 		})
 	}
@@ -126,16 +134,18 @@ func TestVersionCmd_Run_JSONStructure(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify JSON structure and content
-	expectedFields := []string{"app", "version", "protocol"}
+	expectedFields := []string{"app", "version", "protocol", "commit", "date", "go", "platform"}
 	for _, field := range expectedFields {
 		assert.Contains(t, result, field, "JSON output should contain %s field", field)
 		assert.NotEmpty(t, result[field], "%s field should not be empty", field)
 	}
 
 	// Verify specific values
-	assert.Equal(t, strings.ToUpper(utils.ProjectName), result["app"])
+	assert.Equal(t, utils.ProjectName, result["app"])
 	assert.Equal(t, utils.ProjectVersion, result["version"])
 	assert.Equal(t, utils.ProtocolVersion, result["protocol"])
+	assert.Equal(t, runtime.Version(), result["go"])
+	assert.Equal(t, runtime.GOOS+"/"+runtime.GOARCH, result["platform"])
 }
 
 func TestVersionCmd_Run_PlainTextContent(t *testing.T) {
@@ -172,6 +182,12 @@ func TestVersionCmd_Run_PlainTextContent(t *testing.T) {
 	assert.Contains(t, outputStr, utils.ProtocolVersion)
 	assert.Contains(t, outputStr, "Version")
 	assert.Contains(t, outputStr, "Protocol")
+	assert.Contains(t, outputStr, "Commit")
+	assert.Contains(t, outputStr, "Built")
+	assert.Contains(t, outputStr, "Go")
+	assert.Contains(t, outputStr, "Platform")
+	assert.Contains(t, outputStr, runtime.Version())
+	assert.Contains(t, outputStr, runtime.GOOS+"/"+runtime.GOARCH)
 }
 
 func TestVersionCmd_Run_JSONIndentation(t *testing.T) {
@@ -244,9 +260,10 @@ func TestVersionCmd_Run_EmptyContext(t *testing.T) {
 
 	outputStr := string(output)
 
-	// Should default to plain text output
-	lines := strings.Split(strings.TrimSpace(outputStr), "\n")
-	assert.Len(t, lines, 3, "Empty context should default to plain text output with 3 lines")
+	// Should default to styled plain text output
+	assert.Contains(t, outputStr, strings.ToUpper(utils.ProjectName))
+	assert.Contains(t, outputStr, "Version")
+	assert.Contains(t, outputStr, "Protocol")
 }
 
 // Test that verifies the version command works with different utils constants
@@ -292,6 +309,10 @@ func TestVersionCmd_Run_UtilsIntegration(t *testing.T) {
 				assert.NotEmpty(t, info["app"])
 				assert.NotEmpty(t, info["version"])
 				assert.NotEmpty(t, info["protocol"])
+				assert.NotEmpty(t, info["commit"])
+				assert.NotEmpty(t, info["date"])
+				assert.NotEmpty(t, info["go"])
+				assert.NotEmpty(t, info["platform"])
 			} else {
 				assert.NotEmpty(t, outputStr)
 				assert.NotEqual(t, "\n\n\n", outputStr, "Output should not be empty lines")

@@ -2,9 +2,9 @@ name: .NET
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, release, 2.x.x]
   pull_request:
-    branches: [ main ]
+    branches: [main, release, 2.x.x]
 
 permissions:
   contents: read

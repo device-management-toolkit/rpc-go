@@ -2,7 +2,6 @@
  * Copyright (c) Intel Corporation 2024
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
-
 package activate
 
 import (
@@ -13,6 +12,9 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
@@ -44,7 +46,6 @@ func TestLocalActivateCmd_Validate(t *testing.T) {
 			wantErr: true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.cmd.Validate()
@@ -77,7 +78,6 @@ func TestLocalActivateCmd_Validate_StopConfig(t *testing.T) {
 			wantErr: true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.cmd.Validate()
@@ -113,6 +113,7 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				Hostname:            "test-host",
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
+				MEBxPassword:        "mebx-pwd",
 				FriendlyName:        "test-device",
 				SkipIPRenew:         true,
 			},
@@ -121,6 +122,7 @@ func TestLocalActivateCmd_toActivationConfig(t *testing.T) {
 				DNS:                 "test.dns",
 				Hostname:            "test-host",
 				AMTPassword:         "password123",
+				MEBxPassword:        "mebx-pwd",
 				ProvisioningCert:    "cert-data",
 				ProvisioningCertPwd: "cert-pwd",
 				FriendlyName:        "test-device",
@@ -187,19 +189,16 @@ func TestActivationMode_String(t *testing.T) {
 func TestNewLocalActivationService(t *testing.T) {
 	// Mock AMT command for testing
 	mockAMT := &MockAMTCommand{}
-
 	config := LocalActivationConfig{
 		Mode:        ModeCCM,
 		DNS:         "test.dns",
 		AMTPassword: "password123",
 	}
-
 	ctx := &commands.Context{
 		JsonOutput: true,
 	}
 
 	service := NewLocalActivationService(mockAMT, config, ctx)
-
 	if service.amtCommand == nil {
 		t.Error("NewLocalActivationService() did not set amtCommand correctly")
 	}
@@ -219,8 +218,10 @@ type MockAMTCommand struct {
 	changeEnabled   MockChangeEnabled
 	shouldErrorOn   string
 	unProvisionMode int
+	hbcResponses    []amt.SecureHBasedResponse
+	hbcErrors       []error
+	hbcCalls        int
 }
-
 type MockChangeEnabled struct {
 	amtEnabled bool
 }
@@ -235,6 +236,14 @@ func (m *MockAMTCommand) GetControlMode() (int, error) {
 	}
 
 	return m.controlMode, nil
+}
+
+func (m *MockAMTCommand) GetProvisioningState() (int, error) {
+	if m.shouldErrorOn == "GetProvisioningState" {
+		return 0, errors.New("mock error")
+	}
+
+	return 0, nil
 }
 
 func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
@@ -328,7 +337,47 @@ func (m *MockAMTCommand) GetLocalSystemAccount() (amt.LocalSystemAccount, error)
 }
 
 func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParameters) (amt.SecureHBasedResponse, error) {
-	return amt.SecureHBasedResponse{}, nil
+	m.hbcCalls++
+
+	if len(m.hbcResponses) == 0 {
+		return amt.SecureHBasedResponse{}, nil
+	}
+
+	idx := m.hbcCalls - 1
+	if idx >= len(m.hbcResponses) {
+		idx = len(m.hbcResponses) - 1
+	}
+
+	var err error
+	if idx < len(m.hbcErrors) {
+		err = m.hbcErrors[idx]
+	}
+
+	return m.hbcResponses[idx], err
+}
+
+func (m *MockAMTCommand) GetUPID() (*upid.UPID, error) {
+	return nil, nil
+}
+
+func (m *MockAMTCommand) GetFlog() ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, error) {
+	if m.shouldErrorOn == "StopConfiguration" {
+		return amt.StopConfigurationResponse{}, errors.New("mock error")
+	}
+
+	return amt.StopConfigurationResponse{Status: "Success"}, nil
+}
+
+func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
+	return pthi.GetCiraLogResponse{}, nil
+}
+
+func (m *MockAMTCommand) Close() error {
+	return nil
 }
 
 func TestLocalActivationService_validateAMTState(t *testing.T) {
@@ -340,23 +389,21 @@ func TestLocalActivationService_validateAMTState(t *testing.T) {
 	}{
 		{
 			name:        "valid pre-provisioning state",
-			controlMode: 0,
+			controlMode: AMTControlModePreProvisioning,
 			shouldError: false,
 		},
 		{
 			name:        "already activated device",
-			controlMode: 1,
+			controlMode: AMTControlModeCCM,
 			shouldError: true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
 				controlMode:   tt.controlMode,
 				shouldErrorOn: tt.errorOn,
 			}
-
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 				config: LocalActivationConfig{
@@ -454,10 +501,10 @@ func TestLocalActivationService_enableAMT(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:          "error getting change enabled",
+			name:          "error getting change enabled continues",
 			amtEnabled:    false,
 			shouldErrorOn: "GetChangeEnabled",
-			wantErr:       true,
+			wantErr:       false,
 		},
 		{
 			name:          "error enabling AMT",
@@ -466,7 +513,6 @@ func TestLocalActivationService_enableAMT(t *testing.T) {
 			wantErr:       true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -490,7 +536,6 @@ func TestLocalActivationService_enableAMT(t *testing.T) {
 
 // Removed password prompt test: password now supplied via global context (EnsureAMTPassword),
 // interactive prompt behavior covered in base tests.
-
 func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -509,13 +554,12 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:          "error during unprovision",
+			name:          "error during StopConfiguration",
 			jsonOutput:    false,
-			shouldErrorOn: "Unprovision",
+			shouldErrorOn: "StopConfiguration",
 			wantErr:       true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -526,7 +570,6 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			cmd := &LocalActivateCmd{
 				StopConfig: true,
 			}
-
 			ctx := &commands.Context{
 				AMTCommand: mockAMT,
 				JsonOutput: tt.jsonOutput,
@@ -554,7 +597,7 @@ func TestLocalActivationService_Activate(t *testing.T) {
 				Mode:        ActivationMode(999), // Invalid mode
 				AMTPassword: "password123",
 			},
-			controlMode: 0,
+			controlMode: AMTControlModePreProvisioning,
 			wantErr:     true,
 		},
 		{
@@ -563,7 +606,7 @@ func TestLocalActivationService_Activate(t *testing.T) {
 				Mode:        ModeCCM,
 				AMTPassword: "password123",
 			},
-			controlMode: 1, // Already activated
+			controlMode: AMTControlModeCCM, // Already activated
 			wantErr:     true,
 		},
 		{
@@ -572,11 +615,10 @@ func TestLocalActivationService_Activate(t *testing.T) {
 				Mode:        ModeCCM,
 				AMTPassword: "", // Missing password
 			},
-			controlMode: 0,
+			controlMode: AMTControlModePreProvisioning,
 			wantErr:     true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -586,7 +628,6 @@ func TestLocalActivationService_Activate(t *testing.T) {
 					amtEnabled: true, // AMT already enabled
 				},
 			}
-
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 				config:     tt.config,
@@ -615,24 +656,23 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 		{
 			name:          "error during AMT state validation",
 			cmd:           LocalActivateCmd{CCM: true},
-			controlMode:   0,
+			controlMode:   AMTControlModePreProvisioning,
 			shouldErrorOn: "GetControlMode",
 			wantErr:       true,
 		},
 		{
 			name:        "CCM activation will fail during WSMAN setup (expected)",
 			cmd:         LocalActivateCmd{CCM: true},
-			controlMode: 0,
+			controlMode: AMTControlModePreProvisioning,
 			wantErr:     true, // Expect error due to missing WSMAN infrastructure
 		},
 		{
 			name:        "ACM activation will fail during certificate processing (expected)",
 			cmd:         LocalActivateCmd{ACM: true, ProvisioningCert: "dGVzdC1jZXJ0", ProvisioningCertPwd: "cert-password"},
-			controlMode: 0,
+			controlMode: AMTControlModePreProvisioning,
 			wantErr:     true, // Expect error due to invalid certificate
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -642,7 +682,6 @@ func TestLocalActivateCmd_Run(t *testing.T) {
 					amtEnabled: true,
 				},
 			}
-
 			ctx := &commands.Context{
 				AMTCommand: mockAMT,
 				JsonOutput: false,
@@ -681,7 +720,6 @@ func TestLocalActivationService_activateCCM(t *testing.T) {
 			wantErr:    true, // Expect error due to missing WSMAN infrastructure
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -704,6 +742,72 @@ func TestLocalActivationService_activateCCM(t *testing.T) {
 				t.Errorf("activateCCM() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_AllowsSuccessWhenControlModeUpdated(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeCCM},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != nil {
+		t.Fatalf("handleCCMSetupError() returned error for successful control mode transition: %v", err)
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_FailsWhenControlModeUnchanged(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedControlMode {
+		t.Fatalf("handleCCMSetupError() = %v, want %v", err, utils.ActivationFailedControlMode)
+	}
+}
+
+func TestLocalActivationService_handleCCMSetupError_GetControlModeFailure(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning, shouldErrorOn: "Initialize"},
+	}
+
+	err := service.handleCCMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedGetControlMode {
+		t.Fatalf("handleCCMSetupError() = %v, want %v", err, utils.ActivationFailedGetControlMode)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_AllowsSuccessWhenControlModeUpdated(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeACM},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != nil {
+		t.Fatalf("handleACMSetupError() returned error for successful control mode transition: %v", err)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_FailsWhenControlModeUnchanged(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeCCM},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedControlMode {
+		t.Fatalf("handleACMSetupError() = %v, want %v", err, utils.ActivationFailedControlMode)
+	}
+}
+
+func TestLocalActivationService_handleACMSetupError_GetControlModeFailure(t *testing.T) {
+	service := &LocalActivationService{
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModePreProvisioning, shouldErrorOn: "Initialize"},
+	}
+
+	err := service.handleACMSetupError(errors.New("wsman error"))
+	if err != utils.ActivationFailedGetControlMode {
+		t.Fatalf("handleACMSetupError() = %v, want %v", err, utils.ActivationFailedGetControlMode)
 	}
 }
 
@@ -732,7 +836,6 @@ func TestLocalActivationService_activateACM(t *testing.T) {
 			wantErr:    true, // Expect error due to invalid certificate
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
@@ -761,7 +864,6 @@ func TestLocalActivationService_activateACM(t *testing.T) {
 }
 
 // Removed readPasswordFromUser coverage test since password prompting is centralized elsewhere
-
 // Test for certificate-related functions with valid input
 func TestLocalActivationService_convertPfxToObject(t *testing.T) {
 	service := &LocalActivationService{}
@@ -785,7 +887,6 @@ func TestLocalActivationService_convertPfxToObject(t *testing.T) {
 			wantErr:    true,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := service.convertPfxToObject(tt.pfxb64, tt.passphrase)
@@ -799,7 +900,6 @@ func TestLocalActivationService_convertPfxToObject(t *testing.T) {
 // Test for dumpPfx function
 func TestLocalActivationService_dumpPfx(t *testing.T) {
 	service := &LocalActivationService{}
-
 	tests := []struct {
 		name    string
 		pfxobj  CertsAndKeys
@@ -825,7 +925,7 @@ func TestLocalActivationService_dumpPfx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := service.dumpPfx(tt.pfxobj)
+			_, err := service.dumpPfx(tt.pfxobj)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("dumpPfx() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -874,7 +974,7 @@ func TestLocalActivationService_compareCertHashes(t *testing.T) {
 				},
 			}
 
-			err := service.compareCertHashes(tt.fingerprint)
+			err := service.compareCertHashes()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("compareCertHashes() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -906,11 +1006,9 @@ func TestLocalActivationService_setupACMTLSConfig(t *testing.T) {
 			wantErr:             true, // Should fail due to invalid certificate
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{}
-
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 				config: LocalActivationConfig{
@@ -949,7 +1047,7 @@ func TestLocalActivationService_activateACMWithTLS(t *testing.T) {
 		}
 	}()
 
-	_ = service.activateACMWithTLS()
+	_ = service.activateACMWithTLS(nil)
 }
 
 // Test for activateACMLegacy function coverage
@@ -966,7 +1064,7 @@ func TestLocalActivationService_activateACMLegacy(t *testing.T) {
 	}
 
 	// Test that it fails due to invalid certificate first
-	err := service.activateACMLegacy()
+	err := service.activateACMLegacy(nil)
 	if err == nil {
 		t.Error("activateACMLegacy() should fail with invalid certificate")
 	}
@@ -1001,7 +1099,7 @@ func TestLocalActivationService_getProvisioningCertObj(t *testing.T) {
 		},
 	}
 
-	_, _, err := service.getProvisioningCertObj()
+	_, err := service.getProvisioningCertObj()
 	if err == nil {
 		t.Error("getProvisioningCertObj() should fail with invalid certificate")
 	}
@@ -1010,7 +1108,6 @@ func TestLocalActivationService_getProvisioningCertObj(t *testing.T) {
 // Test for injectCertificate function coverage
 func TestLocalActivationService_injectCertificate(t *testing.T) {
 	service := &LocalActivationService{}
-
 	// Test with empty cert chain - this should not cause a panic
 	err := service.injectCertificate([]string{})
 	// Empty chain should succeed since no operations are performed
@@ -1036,7 +1133,6 @@ func TestLocalActivationService_injectCertificate(t *testing.T) {
 // Test for signString function coverage
 func TestLocalActivationService_signString(t *testing.T) {
 	service := &LocalActivationService{}
-
 	// Test with invalid private key
 	_, err := service.signString([]byte("test message"), "invalid-key")
 	if err == nil {
@@ -1047,7 +1143,6 @@ func TestLocalActivationService_signString(t *testing.T) {
 // Test for createSignedString function coverage
 func TestLocalActivationService_createSignedString(t *testing.T) {
 	service := &LocalActivationService{}
-
 	// Test with invalid private key
 	_, err := service.createSignedString([]byte("nonce"), []byte("fw-nonce"), "invalid-key")
 	if err == nil {
@@ -1064,9 +1159,8 @@ func TestLocalActivateCmd_Run_PasswordPrompting(t *testing.T) {
 		CCM:        true,
 		AMTBaseCmd: commands.AMTBaseCmd{}, // Password supplied via context globally
 	}
-
 	mockAMT := &MockAMTCommand{
-		controlMode: 0,
+		controlMode: AMTControlModePreProvisioning,
 		changeEnabled: MockChangeEnabled{
 			amtEnabled: true,
 		},
@@ -1076,7 +1170,6 @@ func TestLocalActivateCmd_Run_PasswordPrompting(t *testing.T) {
 		AMTCommand: mockAMT,
 		JsonOutput: false,
 	}
-
 	// This will fail during password prompting since we can't mock stdin easily
 	err := cmd.Run(ctx)
 	if err == nil {
@@ -1108,7 +1201,6 @@ func TestLocalActivateCmd_Validate_EdgeCases(t *testing.T) {
 			wantErr: false,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.cmd.Validate()
@@ -1165,24 +1257,20 @@ func TestLocalActivationService_startSecureHostBasedConfiguration(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{}
-
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 			}
-
 			// Create a minimal certificate with the specified algorithm
 			cert := &x509.Certificate{
 				SignatureAlgorithm: tt.certAlgo,
 				Raw:                []byte("test-cert-data"),
 			}
-
 			certsAndKeys := CertsAndKeys{
 				certs: []*x509.Certificate{cert},
 				keys:  []interface{}{"test-key"},
 			}
 
 			_, err := service.startSecureHostBasedConfiguration(certsAndKeys)
-
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("startSecureHostBasedConfiguration() expected error but got none")
@@ -1193,6 +1281,118 @@ func TestLocalActivationService_startSecureHostBasedConfiguration(t *testing.T) 
 				if err != nil {
 					t.Errorf("startSecureHostBasedConfiguration() unexpected error = %v", err)
 				}
+			}
+		})
+	}
+}
+
+// Test retry behavior of runStartHBCWithRetry.
+func TestLocalActivationService_runStartHBCWithRetry(t *testing.T) {
+	// Speed up tests: drop backoff to near-zero for the duration of this test.
+	origBackoff := hbcBackoff
+	hbcBackoff = time.Millisecond
+
+	defer func() { hbcBackoff = origBackoff }()
+
+	tests := []struct {
+		name          string
+		responses     []amt.SecureHBasedResponse
+		errs          []error
+		wantErr       bool
+		wantErrSubstr string
+		wantStatus    string
+		wantCalls     int
+	}{
+		{
+			name:       "success on first attempt",
+			responses:  []amt.SecureHBasedResponse{{Status: "AMT_STATUS_SUCCESS"}},
+			errs:       []error{nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  1,
+		},
+		{
+			name: "non-success status then success (transient FW hiccup)",
+			responses: []amt.SecureHBasedResponse{
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_SUCCESS"},
+			},
+			errs:       []error{nil, nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  2,
+		},
+		{
+			name: "Go error then success (transient HECI glitch)",
+			responses: []amt.SecureHBasedResponse{
+				{},
+				{Status: "AMT_STATUS_SUCCESS"},
+			},
+			errs:       []error{errors.New("HECI busy"), nil},
+			wantStatus: "AMT_STATUS_SUCCESS",
+			wantCalls:  2,
+		},
+		{
+			name: "exhausts attempts with non-success status",
+			responses: []amt.SecureHBasedResponse{
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+				{Status: "AMT_STATUS_INTERNAL_ERROR"},
+			},
+			errs:          []error{nil, nil, nil},
+			wantErr:       true,
+			wantErrSubstr: "rejected after 3 attempts",
+			wantCalls:     3,
+		},
+		{
+			name: "exhausts attempts with Go error",
+			responses: []amt.SecureHBasedResponse{
+				{}, {}, {},
+			},
+			errs:          []error{errors.New("HECI busy"), errors.New("HECI busy"), errors.New("HECI busy")},
+			wantErr:       true,
+			wantErrSubstr: "HECI busy",
+			wantCalls:     3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockAMT := &MockAMTCommand{
+				hbcResponses: tt.responses,
+				hbcErrors:    tt.errs,
+			}
+			service := &LocalActivationService{
+				amtCommand: mockAMT,
+			}
+			cert := &x509.Certificate{
+				SignatureAlgorithm: x509.SHA256WithRSA,
+				Raw:                []byte("test-cert-data"),
+			}
+			certsAndKeys := CertsAndKeys{
+				certs: []*x509.Certificate{cert},
+				keys:  []interface{}{"test-key"},
+			}
+
+			resp, err := service.runStartHBCWithRetry(certsAndKeys)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("runStartHBCWithRetry() expected error, got nil")
+				}
+
+				if tt.wantErrSubstr != "" && !contains(err.Error(), tt.wantErrSubstr) {
+					t.Errorf("runStartHBCWithRetry() error = %v, want substring %q", err, tt.wantErrSubstr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("runStartHBCWithRetry() unexpected error = %v", err)
+				}
+
+				if resp.Status != tt.wantStatus {
+					t.Errorf("runStartHBCWithRetry() status = %q, want %q", resp.Status, tt.wantStatus)
+				}
+			}
+
+			if mockAMT.hbcCalls != tt.wantCalls {
+				t.Errorf("runStartHBCWithRetry() made %d calls, want %d", mockAMT.hbcCalls, tt.wantCalls)
 			}
 		})
 	}
@@ -1251,7 +1451,6 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 			mockAMT := &MockAMTCommandWithCustomHashes{
 				hashes: tt.returnedHashes,
 			}
-
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 				config: LocalActivationConfig{
@@ -1259,9 +1458,7 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 					ProvisioningCertPwd: "password",
 				},
 			}
-
-			err := service.compareCertHashes("test-fingerprint")
-
+			err := service.compareCertHashes()
 			// We expect an error during certificate conversion, which is acceptable
 			// This test primarily documents the multi-algorithm logic
 			if err == nil && tt.wantErr {
@@ -1269,6 +1466,127 @@ func TestLocalActivationService_compareCertHashes_MultiAlgorithm(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsDataMissingError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "error containing 2057",
+			err:  errors.New("CommitChanges failed: error code 2057"),
+			want: true,
+		},
+		{
+			name: "error with PT_STATUS_DATA_MISSING and 2057",
+			err:  errors.New("PT_STATUS_DATA_MISSING (2057)"),
+			want: true,
+		},
+		{
+			name: "unrelated error",
+			err:  errors.New("connection timeout"),
+			want: false,
+		},
+		{
+			name: "error with similar but different number",
+			err:  errors.New("error code 20570"),
+			want: true, // substring match includes this
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDataMissingError(tt.err)
+			if got != tt.want {
+				t.Errorf("isDataMissingError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPromptMEBxPassword(t *testing.T) {
+	tests := []struct {
+		name      string
+		password  string
+		confirmFn func(prompt, confirmPrompt string) (string, error)
+		wantErr   bool
+		errMsg    string
+	}{
+		{
+			name:     "matching passwords",
+			password: "P@ssw0rd!",
+			confirmFn: func(_, _ string) (string, error) {
+				return "P@ssw0rd!", nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "mismatched passwords",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", utils.PasswordsDoNotMatch
+			},
+			wantErr: true,
+			errMsg:  "PasswordsDoNotMatch",
+		},
+		{
+			name:     "empty password",
+			password: "",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", nil
+			},
+			wantErr: true,
+			errMsg:  "cannot be empty",
+		},
+		{
+			name: "read fails",
+			confirmFn: func(_, _ string) (string, error) {
+				return "", errors.New("read error")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			utils.PR = &mockConfirmPasswordReader{
+				confirmFn: tt.confirmFn,
+			}
+
+			defer func() { utils.PR = new(utils.RealPasswordReader) }()
+
+			got, err := promptMEBxPassword()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("promptMEBxPassword() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr && got != tt.password {
+				t.Errorf("promptMEBxPassword() = %v, want %v", got, tt.password)
+			}
+
+			if tt.wantErr && tt.errMsg != "" && err != nil && !contains(err.Error(), tt.errMsg) {
+				t.Errorf("promptMEBxPassword() error = %v, want error containing %q", err, tt.errMsg)
+			}
+		})
+	}
+}
+
+// mockConfirmPasswordReader mocks the PasswordReader interface for prompt testing
+type mockConfirmPasswordReader struct {
+	confirmFn func(prompt, confirmPrompt string) (string, error)
+}
+
+func (m *mockConfirmPasswordReader) ReadPassword() (string, error) {
+	return "", errors.New("unexpected call to ReadPassword")
+}
+
+func (m *mockConfirmPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return m.confirmFn(prompt, confirmPrompt)
 }
 
 // MockAMTCommandWithCustomHashes extends MockAMTCommand for hash testing

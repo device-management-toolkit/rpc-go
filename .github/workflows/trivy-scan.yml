@@ -2,10 +2,10 @@ name: Trivy Container Scan
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, release, 2.x.x]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ main ]
+    branches: [main, release, 2.x.x]
 permissions:
   contents: read
 
@@ -27,18 +27,18 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
-          image-ref: 'vprodemo.azurecr.io/rpc-go:${{ github.sha }}'
-          format: 'sarif'
-          output: 'rpcgo-trivy-results.sarif'
-          exit-code: '1'
+          image-ref: "vprodemo.azurecr.io/rpc-go:${{ github.sha }}"
+          format: "sarif"
+          output: "rpcgo-trivy-results.sarif"
+          exit-code: "1"
           ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+          vuln-type: "os,library"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v3.29.5
         if: always()
         with:
-          sarif_file: 'rpcgo-trivy-results.sarif'
+          sarif_file: "rpcgo-trivy-results.sarif"
       - name: Upload Trivy Artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
