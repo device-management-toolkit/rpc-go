@@ -173,11 +173,15 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	// Detect TLS ClientHello - need to close old connection for new handshake
 	isTLSClientHello := len(msgPayload) >= 6 && msgPayload[0] == 0x16 && msgPayload[5] == 0x01
 	if isTLSClientHello && e.lmConnected {
+		log.Debug("TLS ClientHello detected from RPS payload; closing existing LMS socket for fresh handshake")
 		e.localManagement.Close()
 		e.lmConnected = false
 	}
 
 	if !e.localTlsEnforced || !e.lmConnected {
+		if e.localTlsEnforced {
+			log.Debug("LMS reconnect attempt for TLS tunnel message")
+		}
 		err := e.localManagement.Connect()
 		if err != nil {
 			log.Error(err)
@@ -186,6 +190,9 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		}
 
 		e.lmConnected = true
+		if e.localTlsEnforced {
+			log.Debug("LMS reconnect successful for TLS tunnel message")
+		}
 
 		if e.isLME {
 			go e.localManagement.Listen()
