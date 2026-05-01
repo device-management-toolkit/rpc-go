@@ -23,6 +23,7 @@ var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 
 const (
 	ACMMODE = "acmactivate"
+	cmdRPC  = "rpc"
 )
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
@@ -59,7 +60,7 @@ func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassw
 
 // baseArgs returns the common CLI arguments including global flags like password and skip-amt-cert-check.
 func (po *ProfileOrchestrator) baseArgs() []string {
-	args := []string{"rpc"}
+	args := []string{cmdRPC}
 	if po.skipAMTCertCheck {
 		args = append(args, "--skip-amt-cert-check")
 	}
@@ -203,7 +204,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
-		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		change := []string{cmdRPC, "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
 		if po.skipAMTCertCheck {
 			change = append(change, "--skip-amt-cert-check")
 		}
@@ -243,7 +244,7 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 		}
 
 		// Execute password change: configure amtpassword --password <old> --newamtpassword <new>
-		change := []string{"rpc", "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
+		change := []string{cmdRPC, "configure", "amtpassword", "--password", oldPass, "--newamtpassword", newPass}
 		if po.skipAMTCertCheck {
 			change = append(change, "--skip-amt-cert-check")
 		}
@@ -691,7 +692,7 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
-		change := []string{"rpc", "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
+		change := []string{cmdRPC, "configure", "amtpassword", "--password", po.currentPassword, "--newamtpassword", newPass}
 		if po.skipAMTCertCheck {
 			change = append(change, "--skip-amt-cert-check")
 		}

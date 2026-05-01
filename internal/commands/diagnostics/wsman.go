@@ -103,7 +103,7 @@ var wsmanClassFetchers = map[string]classFetcher{
 	"AMT_EnvironmentDetectionSettingData": fetchAMTEnvironmentDetectionSettingData,
 	"AMT_EventLogEntry":                   rawWSMANClassFetcher("AMT_EventLogEntry"),
 	"AMT_EthernetPortSettings":            fetchAMTEthernetPortSettings,
-	"AMT_GeneralSettings":                 fetchAMTGeneralSettings,
+	"AMT_GeneralSettings":                 fetchAMTGeneralSettings, //nolint:goconst // WSMAN class name; remaining occurrences are in tests
 	"AMT_Hdr8021Filter":                   rawWSMANClassFetcher("AMT_Hdr8021Filter"),
 	"AMT_ManagementPresenceRemoteSAP":     fetchAMTManagementPresenceRemoteSAP,
 	"AMT_MessageLog":                      fetchAMTMessageLog,
