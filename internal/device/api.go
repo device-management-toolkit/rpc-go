@@ -120,6 +120,7 @@ type DevicePayload struct {
 	MPSPassword     string   `json:"mpspassword,omitempty"`
 	UseTLS          bool     `json:"useTLS"`
 	AllowSelfSigned bool     `json:"allowSelfSigned"`
+	IsLMSAvailable  bool     `json:"isLMSAvailable"`
 }
 
 // AddDevice registers a device via POST to the devices API endpoint.
