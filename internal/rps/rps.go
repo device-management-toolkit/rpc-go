@@ -40,6 +40,7 @@ func ExecuteCommand(req *Request) error {
 		SkipAmtCertCheck: req.SkipAmtCertCheck,
 		ControlMode:      req.ControlMode,
 		SkipCertCheck:    req.SkipCertCheck,
+		TLSTunnel:        req.TLSTunnel,
 	}
 
 	executor, err := NewExecutor(config)
@@ -190,10 +191,17 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 	return dataChannel
 }
 
+// ProcessedMessage holds the result of processing an RPS message.
+type ProcessedMessage struct {
+	Payload  []byte
+	Method   string // Original RPS method (e.g. "wsman", "tls_data", "port_switch")
+	Terminal bool
+}
+
 // ProcessMessage inspects RPS messages, decodes the base64 payload from the server and relays it to LMS.
-// It returns payload data, whether this is a terminal RPS message, and an error for malformed/error terminal messages.
-func (amt *AMTActivationServer) ProcessMessage(message []byte) ([]byte, bool, error) {
-	log.Debug("received messages from RPS")
+func (amt *AMTActivationServer) ProcessMessage(message []byte) (ProcessedMessage, error) {
+	log.Debug("received message from RPS")
+	log.Tracef("  <- Raw message: %s", string(message))
 
 	activation := Message{}
 
@@ -201,13 +209,34 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) ([]byte, bool, er
 	if err != nil {
 		log.Error(err)
 
-		return nil, true, fmt.Errorf("failed to parse RPS message: %w", err)
+		return ProcessedMessage{Terminal: true}, fmt.Errorf("failed to parse RPS message: %w", err)
 	}
+
+	log.Debugf("  <- Method: %s, Status: %s", activation.Method, activation.Status)
 
 	if activation.Method == "heartbeat_request" {
 		heartbeat, _ := amt.GenerateHeartbeatResponse(activation)
 
-		return heartbeat, false, nil
+		return ProcessedMessage{Payload: heartbeat, Method: "heartbeat"}, nil
+	}
+
+	// TLS tunnel data - decode and pass raw bytes through to LMS
+	if activation.Method == MethodTLSData {
+		msgPayload, err := base64.StdEncoding.DecodeString(activation.Payload)
+		if err != nil {
+			return ProcessedMessage{Terminal: true}, fmt.Errorf("failed to decode tls_data payload: %w", err)
+		}
+
+		log.Debugf("TLS tunnel: passing through %d bytes to LMS", len(msgPayload))
+
+		return ProcessedMessage{Payload: msgPayload, Method: MethodTLSData}, nil
+	}
+
+	// Port switch - RPS wants us to reconnect on a TLS port
+	if activation.Method == MethodPortSwitch {
+		log.Info("Received port_switch from RPS")
+
+		return ProcessedMessage{Payload: []byte(activation.Payload), Method: MethodPortSwitch}, nil
 	}
 
 	statusMessage := StatusMessage{}
@@ -225,7 +254,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) ([]byte, bool, er
 			log.Info("TLS: " + statusMessage.TLSConfiguration)
 		}
 
-		return nil, true, nil
+		return ProcessedMessage{Terminal: true}, nil
 	case "error":
 		err := json.Unmarshal([]byte(activation.Message), &statusMessage)
 		errMessage := activation.Message
@@ -237,19 +266,19 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) ([]byte, bool, er
 			log.Error(activation.Message)
 		}
 
-		return nil, true, fmt.Errorf("rps returned error: %s", errMessage)
+		return ProcessedMessage{Terminal: true}, fmt.Errorf("rps returned error: %s", errMessage)
 	}
 
 	msgPayload, err := base64.StdEncoding.DecodeString(activation.Payload)
 	if err != nil {
 		log.Error("unable to decode base64 payload from RPS")
 
-		return nil, true, fmt.Errorf("unable to decode base64 payload from RPS: %w", err)
+		return ProcessedMessage{Terminal: true}, fmt.Errorf("unable to decode base64 payload from RPS: %w", err)
 	}
 
 	log.Trace("PAYLOAD:" + string(msgPayload))
 
-	return msgPayload, false, nil
+	return ProcessedMessage{Payload: msgPayload, Method: activation.Method}, nil
 }
 
 func (amt *AMTActivationServer) GenerateHeartbeatResponse(activation Message) ([]byte, error) {

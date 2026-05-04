@@ -1,3 +1,12 @@
+# [3.0.0-beta.25](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.24...v3.0.0-beta.25) (2026-05-01)
+
+# [3.0.0-beta.24](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.23...v3.0.0-beta.24) (2026-04-30)
+
+
+### Features
+
+* enables tls tunnel for v3 ([3fe6aac](https://github.com/device-management-toolkit/rpc-go/commit/3fe6aac00163340daf9f1b4f17984341cd2758b6))
+
 # [3.0.0-beta.23](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.22...v3.0.0-beta.23) (2026-04-22)
 
 

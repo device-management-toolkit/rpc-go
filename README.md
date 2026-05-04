@@ -16,7 +16,7 @@ The Remote Provisioning Client (RPC) is an application that assists with activat
 
 ## v3.0.0 Beta
 
-The current `next` channel publishes the **v3.0.0 beta** series, introducing the new restful profile activation flow, refreshed flag syntax, and CLI/config naming alignment. These changes are **breaking** relative to the v2.x line. To learn more,read about the guidance in the [v3 Changes](./v3.0-changes.md). The v2.x maintenance branch continues to receive updates for teams that are not ready to adopt the beta yet.
+The current `main` branch publishes the **v3.0.0 beta** series on the `beta` channel, introducing the new restful profile activation flow, refreshed flag syntax, and CLI/config naming alignment. These changes are **breaking** relative to the v2.x line. To learn more,read about the guidance in the [v3 Changes](./v3.0-changes.md). The v2.x maintenance branch continues to receive updates for teams that are not ready to adopt the beta yet.
 
 ---
 

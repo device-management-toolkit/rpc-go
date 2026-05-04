@@ -9,7 +9,7 @@ require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.38.4
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.43.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
@@ -17,7 +17,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.43.0
 )
 
 require (
@@ -42,7 +42,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/term v0.41.0
+	golang.org/x/term v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
-	software.sslmate.com/src/go-pkcs12 v0.7.0
+	software.sslmate.com/src/go-pkcs12 v0.7.1
 )
