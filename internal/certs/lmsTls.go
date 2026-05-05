@@ -20,19 +20,26 @@ import (
 func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
 	tlsConfig := &tls.Config{}
 
-	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
+	// Honor skipAMTCertCheck unconditionally across all control modes.
+	if skipAMTCertCheck {
+		tlsConfig.InsecureSkipVerify = true
+
+		return tlsConfig
+	}
 
 	if *mode == 0 { // pre-provisioning mode
+		// Use custom chain validation in pre-provisioning mode.
+		// InsecureSkipVerify must be true so Go's default verification does not
+		// reject the connection before VerifyPeerCertificate is invoked.
+		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			if skipAMTCertCheck {
-				return nil
-			}
-
 			return VerifyCertificates(rawCerts, mode, amtCertInfo)
 		}
 	} else {
 		// default tls config if device is in ACM or CCM
 		log.Trace("Setting default TLS Config for ACM/CCM mode")
+
+		tlsConfig.InsecureSkipVerify = skipAMTCertCheck
 	}
 
 	return tlsConfig

@@ -69,7 +69,7 @@ func TestGetTLSConfig(t *testing.T) {
 	tlsConfig := GetTLSConfig(&mode, nil, true)
 	assert.NotNil(t, tlsConfig)
 	assert.True(t, tlsConfig.InsecureSkipVerify)
-	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+	assert.Nil(t, tlsConfig.VerifyPeerCertificate)
 
 	mode = 1
 	tlsConfig = GetTLSConfig(&mode, nil, true)

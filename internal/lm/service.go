@@ -186,7 +186,10 @@ func (lms *LMSConnection) Listen() {
 				}
 
 				if lms.tlsTunnel {
-					lms.errors <- ErrLMSReadTimeoutNoData
+					select {
+					case lms.errors <- ErrLMSReadTimeoutNoData:
+					default:
+					}
 
 					return
 				}
@@ -197,7 +200,10 @@ func (lms *LMSConnection) Listen() {
 			if err != io.EOF {
 				log.Println("read error:", err)
 
-				lms.errors <- err
+				select {
+				case lms.errors <- err:
+				default:
+				}
 
 				errOccurred = true
 			}
@@ -230,7 +236,7 @@ func isCompleteHTTPResponse(buf []byte) bool {
 	lowerHeaders := strings.ToLower(headers)
 
 	if strings.Contains(lowerHeaders, "transfer-encoding: chunked") {
-		return bytes.Contains(body, []byte("\r\n0\r\n\r\n"))
+		return isCompleteChunkedBody(body)
 	}
 
 	for _, line := range strings.Split(headers, "\r\n") {
@@ -262,4 +268,35 @@ func isCompleteHTTPResponse(buf []byte) bool {
 	}
 
 	return false
+}
+
+func isCompleteChunkedBody(body []byte) bool {
+	if bytes.HasSuffix(body, []byte("0\r\n\r\n")) {
+		return true
+	}
+
+	if !bytes.HasSuffix(body, []byte("\r\n\r\n")) {
+		return false
+	}
+
+	lastZeroChunk := bytes.LastIndex(body, []byte("0\r\n"))
+	if lastZeroChunk < 0 || lastZeroChunk+3 > len(body)-4 {
+		return false
+	}
+
+	trailers := body[lastZeroChunk+3 : len(body)-4]
+	for len(trailers) > 0 {
+		lineEnd := bytes.Index(trailers, []byte("\r\n"))
+		if lineEnd <= 0 {
+			return false
+		}
+
+		if !bytes.Contains(trailers[:lineEnd], []byte(":")) {
+			return false
+		}
+
+		trailers = trailers[lineEnd+2:]
+	}
+
+	return true
 }
