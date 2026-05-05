@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"html"
 	"net"
 	"os"
 	"path/filepath"
@@ -28,7 +27,6 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -92,57 +90,58 @@ type xmlResults struct {
 	Items   []classResult `xml:"Class"`
 }
 
+//nolint:goconst // class names are canonical map keys and should not be extracted as constants
 var wsmanClassFetchers = map[string]classFetcher{
 	"AMT_8021XProfile":                    fetchAMT8021XProfile,
-	"AMT_AssetTable":                      rawWSMANClassFetcher("AMT_AssetTable"),
-	"AMT_AssetTableService":               rawWSMANClassFetcher("AMT_AssetTableService"),
+	"AMT_AssetTable":                      fetchAMTAssetTable,
+	"AMT_AssetTableService":               fetchAMTAssetTableService,
 	"AMT_AuditLog":                        fetchAMTAuditLog,
 	"AMT_BootCapabilities":                fetchAMTBootCapabilities,
 	"AMT_BootSettingData":                 fetchAMTBootSettingData,
-	"AMT_CryptographicCapabilities":       rawWSMANClassFetcher("AMT_CryptographicCapabilities"),
+	"AMT_CryptographicCapabilities":       fetchAMTCryptographicCapabilities,
 	"AMT_EnvironmentDetectionSettingData": fetchAMTEnvironmentDetectionSettingData,
-	"AMT_EventLogEntry":                   rawWSMANClassFetcher("AMT_EventLogEntry"),
+	"AMT_EventLogEntry":                   fetchAMTEventLogEntry,
 	"AMT_EthernetPortSettings":            fetchAMTEthernetPortSettings,
 	"AMT_GeneralSettings":                 fetchAMTGeneralSettings,
-	"AMT_Hdr8021Filter":                   rawWSMANClassFetcher("AMT_Hdr8021Filter"),
+	"AMT_Hdr8021Filter":                   fetchAMTHdr8021Filter,
 	"AMT_ManagementPresenceRemoteSAP":     fetchAMTManagementPresenceRemoteSAP,
 	"AMT_MessageLog":                      fetchAMTMessageLog,
 	"AMT_RedirectionService":              fetchAMTRedirectionService,
-	"AMT_RemoteAccessCapabilities":        rawWSMANClassFetcher("AMT_RemoteAccessCapabilities"),
+	"AMT_RemoteAccessCapabilities":        fetchAMTRemoteAccessCapabilities,
 	"AMT_RemoteAccessPolicyAppliesToMPS":  fetchAMTRemoteAccessPolicyAppliesToMPS,
 	"AMT_RemoteAccessPolicyRule":          fetchAMTRemoteAccessPolicyRule,
 	"AMT_SetupAndConfigurationService":    fetchAMTSetupAndConfigurationService,
-	"AMT_SystemPowerScheme":               rawWSMANClassFetcher("AMT_SystemPowerScheme"),
-	"AMT_TimeSynchronizationService":      rawWSMANClassFetcher("AMT_TimeSynchronizationService"),
+	"AMT_SystemPowerScheme":               fetchAMTSystemPowerScheme,
+	"AMT_TimeSynchronizationService":      fetchAMTTimeSynchronizationService,
 	"AMT_UserInitiatedConnectionService":  fetchAMTUserInitiatedConnectionService,
-	"AMT_WiFiPortConfigurationService":    rawWSMANClassFetcher("AMT_WiFiPortConfigurationService"),
-	"CIM_BIOSFeature":                     rawWSMANClassFetcher("CIM_BIOSFeature"),
+	"AMT_WiFiPortConfigurationService":    fetchAMTWiFiPortConfigurationService,
+	"CIM_BIOSFeature":                     fetchCIMBIOSFeature,
 	"CIM_BIOSElement":                     fetchCIMBIOSElement,
 	"CIM_Card":                            fetchCIMCard,
 	"CIM_Chassis":                         fetchCIMChassis,
 	"CIM_ComputerSystemPackage":           fetchCIMComputerSystemPackage,
-	"CIM_EthernetPort":                    rawWSMANClassFetcher("CIM_EthernetPort"),
+	"CIM_EthernetPort":                    fetchCIMEthernetPort,
 	"CIM_KVMRedirectionSAP":               fetchCIMKVMRedirectionSAP,
-	"CIM_PowerManagementCapabilities":     rawWSMANClassFetcher("CIM_PowerManagementCapabilities"),
+	"CIM_PowerManagementCapabilities":     fetchCIMPowerManagementCapabilities,
 	"CIM_PowerManagementService":          fetchCIMPowerManagementService,
 	"CIM_Processor":                       fetchCIMProcessor,
-	"CIM_RedirectionService":              rawWSMANClassFetcher("CIM_RedirectionService"),
+	"CIM_RedirectionService":              fetchCIMRedirectionService,
 	"CIM_SoftwareIdentity":                fetchCIMSoftwareIdentity,
-	"CIM_WiFiEndpoint":                    rawWSMANClassFetcher("CIM_WiFiEndpoint"),
-	"CIM_WiFiEndpointCapabilities":        rawWSMANClassFetcher("CIM_WiFiEndpointCapabilities"),
-	"CIM_WiFiEndpointSettings":            rawWSMANClassFetcher("CIM_WiFiEndpointSettings"),
-	"CIM_WiFiPort":                        rawWSMANClassFetcher("CIM_WiFiPort"),
-	"CIM_WiFiPortCapabilities":            rawWSMANClassFetcher("CIM_WiFiPortCapabilities"),
+	"CIM_WiFiEndpoint":                    fetchCIMWiFiEndpoint,
+	"CIM_WiFiEndpointCapabilities":        fetchCIMWiFiEndpointCapabilities,
+	"CIM_WiFiEndpointSettings":            fetchCIMWiFiEndpointSettings,
+	"CIM_WiFiPort":                        fetchCIMWiFiPort,
+	"CIM_WiFiPortCapabilities":            fetchCIMWiFiPortCapabilities,
 	"IPS_HostBasedSetupService":           fetchIPSHostBasedSetupService,
-	"IPS_HostBootReason":                  rawWSMANClassFetcher("IPS_HostBootReason"),
-	"IPS_HostIPSettings":                  rawWSMANClassFetcher("IPS_HostIPSettings"),
+	"IPS_HostBootReason":                  fetchIPSHostBootReason,
+	"IPS_HostIPSettings":                  fetchIPSHostIPSettings,
 	"IPS_HTTPProxyAccessPoint":            fetchIPSHTTPProxyAccessPoint,
 	"IPS_IEEE8021xSettings":               fetchIPSIEEE8021xSettings,
-	"IPS_IPv6PortSettings":                rawWSMANClassFetcher("IPS_IPv6PortSettings"),
+	"IPS_IPv6PortSettings":                fetchIPSIPv6PortSettings,
 	"IPS_KVMRedirectionSettingData":       fetchIPSKVMRedirectionSettingData,
-	"IPS_LANEndpoint":                     rawWSMANClassFetcher("IPS_LANEndpoint"),
+	"IPS_LANEndpoint":                     fetchIPSLANEndpoint,
 	"IPS_OptInService":                    fetchIPSOptInService,
-	"IPS_ProvisioningRecordLog":           rawWSMANClassFetcher("IPS_ProvisioningRecordLog"),
+	"IPS_ProvisioningRecordLog":           fetchIPSProvisioningRecordLog,
 	"IPS_ScreenSettingData":               fetchIPSScreenSettingData,
 	"IPS_SecIOService":                    fetchIPSSecIOService,
 }
@@ -551,6 +550,24 @@ func fetchAMTAuditLog(messages wsman.Messages) (any, error) {
 	return messages.AMT.AuditLog.Get()
 }
 
+func fetchAMTAssetTable(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.AssetTable.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.AssetTable.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchAMTAssetTableService(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.AssetTableService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.AssetTableService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
 func fetchAMTBootCapabilities(messages wsman.Messages) (any, error) {
 	return messages.AMT.BootCapabilities.Get()
 }
@@ -559,8 +576,26 @@ func fetchAMTBootSettingData(messages wsman.Messages) (any, error) {
 	return messages.AMT.BootSettingData.Get()
 }
 
+func fetchAMTCryptographicCapabilities(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.CryptographicCapabilities.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.CryptographicCapabilities.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
 func fetchAMTEnvironmentDetectionSettingData(messages wsman.Messages) (any, error) {
 	return messages.AMT.EnvironmentDetectionSettingData.Get()
+}
+
+func fetchAMTEventLogEntry(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.EventLogEntry.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.EventLogEntry.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
 }
 
 func fetchAMTMessageLog(messages wsman.Messages) (any, error) {
@@ -594,6 +629,24 @@ func fetchAMTRedirectionService(messages wsman.Messages) (any, error) {
 	return messages.AMT.RedirectionService.Get()
 }
 
+func fetchAMTHdr8021Filter(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.Hdr8021Filter.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.Hdr8021Filter.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchAMTRemoteAccessCapabilities(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.RemoteAccessCapabilities.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.RemoteAccessCapabilities.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
 func fetchAMTRemoteAccessPolicyRule(messages wsman.Messages) (any, error) {
 	enumerateResponse, err := messages.AMT.RemoteAccessPolicyRule.Enumerate()
 	if err != nil {
@@ -620,6 +673,42 @@ func fetchAMTUserInitiatedConnectionService(messages wsman.Messages) (any, error
 	return messages.AMT.UserInitiatedConnectionService.Get()
 }
 
+func fetchAMTSystemPowerScheme(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.SystemPowerScheme.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.SystemPowerScheme.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchAMTTimeSynchronizationService(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.TimeSynchronizationService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.TimeSynchronizationService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchAMTWiFiPortConfigurationService(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.AMT.WiFiPortConfigurationService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.AMT.WiFiPortConfigurationService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMBIOSFeature(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.BIOSFeature.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.BIOSFeature.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
 func fetchCIMBIOSElement(messages wsman.Messages) (any, error) {
 	enumerateResponse, err := messages.CIM.BIOSElement.Enumerate()
 	if err != nil {
@@ -635,6 +724,33 @@ func fetchCIMProcessor(messages wsman.Messages) (any, error) {
 
 func fetchCIMPowerManagementService(messages wsman.Messages) (any, error) {
 	return messages.CIM.PowerManagementService.Get()
+}
+
+func fetchCIMEthernetPort(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.EthernetPort.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.EthernetPort.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMPowerManagementCapabilities(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.PowerManagementCapabilities.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.PowerManagementCapabilities.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMRedirectionService(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.RedirectionService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.RedirectionService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
 }
 
 func fetchCIMComputerSystemPackage(messages wsman.Messages) (any, error) {
@@ -666,12 +782,102 @@ func fetchCIMKVMRedirectionSAP(messages wsman.Messages) (any, error) {
 	return messages.CIM.KVMRedirectionSAP.Get()
 }
 
+func fetchCIMWiFiEndpoint(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.WiFiEndpoint.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.WiFiEndpoint.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMWiFiEndpointCapabilities(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.WiFiEndpointCapabilities.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.WiFiEndpointCapabilities.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMWiFiEndpointSettings(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.WiFiEndpointSettings.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.WiFiEndpointSettings.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMWiFiPort(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.WiFiPort.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.WiFiPort.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchCIMWiFiPortCapabilities(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.CIM.WiFiPortCapabilities.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.CIM.WiFiPortCapabilities.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
 func fetchIPSHostBasedSetupService(messages wsman.Messages) (any, error) {
 	return messages.IPS.HostBasedSetupService.Get()
 }
 
 func fetchIPSIEEE8021xSettings(messages wsman.Messages) (any, error) {
 	return messages.IPS.IEEE8021xSettings.Get()
+}
+
+func fetchIPSHostBootReason(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.IPS.HostBootReason.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.IPS.HostBootReason.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchIPSHostIPSettings(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.IPS.HostIPSettings.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.IPS.HostIPSettings.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchIPSIPv6PortSettings(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.IPS.IPv6PortSettings.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.IPS.IPv6PortSettings.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchIPSLANEndpoint(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.IPS.LANEndpoint.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.IPS.LANEndpoint.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
+}
+
+func fetchIPSProvisioningRecordLog(messages wsman.Messages) (any, error) {
+	enumerateResponse, err := messages.IPS.ProvisioningRecordLog.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	return messages.IPS.ProvisioningRecordLog.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
 }
 
 func fetchIPSKVMRedirectionSettingData(messages wsman.Messages) (any, error) {
@@ -693,120 +899,4 @@ func fetchIPSHTTPProxyAccessPoint(messages wsman.Messages) (any, error) {
 	}
 
 	return messages.IPS.HTTPProxyAccessPointService.Pull(enumerateResponse.Body.EnumerateResponse.EnumerationContext)
-}
-
-func rawWSMANClassFetcher(className string) classFetcher {
-	return func(messages wsman.Messages) (any, error) {
-		resourceURI, err := classResourceURI(className)
-		if err != nil {
-			return nil, err
-		}
-
-		enumerationContext, err := wsmanEnumerate(messages, resourceURI)
-		if err != nil {
-			return nil, err
-		}
-
-		pullXML, err := wsmanPull(messages, resourceURI, enumerationContext)
-		if err != nil {
-			return nil, err
-		}
-
-		return rawWSMANClassData{
-			Class:       className,
-			ResourceURI: resourceURI,
-			XMLOutput:   pullXML,
-		}, nil
-	}
-}
-
-func classResourceURI(className string) (string, error) {
-	switch {
-	case strings.HasPrefix(className, "AMT_"):
-		return "http://intel.com/wbem/wscim/1/amt-schema/1/" + className, nil
-	case strings.HasPrefix(className, "CIM_"):
-		return "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/" + className, nil
-	case strings.HasPrefix(className, "IPS_"):
-		return "http://intel.com/wbem/wscim/1/ips-schema/1/" + className, nil
-	default:
-		return "", fmt.Errorf("unsupported class prefix for %s", className)
-	}
-}
-
-func wsmanEnumerate(messages wsman.Messages, resourceURI string) (string, error) {
-	toAddress := wsmanEndpoint(messages)
-	envelope := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="%s" xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsen="http://schemas.xmlsoap.org/ws/2004/09/enumeration"><soap:Header><wsa:To>%s</wsa:To><wsa:ReplyTo><wsa:Address soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo><wsa:Action soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/enumeration/Enumerate</wsa:Action><wsman:MaxEnvelopeSize soap:mustUnderstand="true">51200</wsman:MaxEnvelopeSize><wsa:MessageID>uuid:%s</wsa:MessageID><wsman:ResourceURI soap:mustUnderstand="true">%s</wsman:ResourceURI><wsman:OperationTimeout>PT60.000S</wsman:OperationTimeout></soap:Header><soap:Body><wsen:Enumerate /></soap:Body></soap:Envelope>`, resourceURI, toAddress, uuid.NewString(), resourceURI)
-
-	response, err := messages.Client.Post(envelope)
-	if err != nil {
-		return "", err
-	}
-
-	var root xmlNode
-	if err := xml.Unmarshal(response, &root); err != nil {
-		return "", err
-	}
-
-	node := findFirstNodeByLocalName(root, "EnumerationContext")
-	if node == nil {
-		return "", fmt.Errorf("enumeration context not found in response")
-	}
-
-	enumerationContext := strings.TrimSpace(nodeInnerText(*node))
-	if enumerationContext == "" {
-		return "", fmt.Errorf("empty enumeration context in response")
-	}
-
-	return enumerationContext, nil
-}
-
-func wsmanPull(messages wsman.Messages, resourceURI, enumerationContext string) (string, error) {
-	escapedContext := html.EscapeString(enumerationContext)
-	toAddress := wsmanEndpoint(messages)
-	envelope := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tns="%s" xmlns:wsman="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:wsen="http://schemas.xmlsoap.org/ws/2004/09/enumeration"><soap:Header><wsa:To>%s</wsa:To><wsa:ReplyTo><wsa:Address soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</wsa:Address></wsa:ReplyTo><wsa:Action soap:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/09/enumeration/Pull</wsa:Action><wsman:MaxEnvelopeSize soap:mustUnderstand="true">51200</wsman:MaxEnvelopeSize><wsa:MessageID>uuid:%s</wsa:MessageID><wsman:ResourceURI soap:mustUnderstand="true">%s</wsman:ResourceURI><wsman:OperationTimeout>PT60.000S</wsman:OperationTimeout></soap:Header><soap:Body><wsen:Pull><wsen:EnumerationContext>%s</wsen:EnumerationContext><wsen:MaxElements>101</wsen:MaxElements></wsen:Pull></soap:Body></soap:Envelope>`, resourceURI, toAddress, uuid.NewString(), resourceURI, escapedContext)
-
-	response, err := messages.Client.Post(envelope)
-	if err != nil {
-		return "", err
-	}
-
-	return string(response), nil
-}
-
-func findFirstNodeByLocalName(node xmlNode, localName string) *xmlNode {
-	if node.XMLName.Local == localName {
-		matched := node
-
-		return &matched
-	}
-
-	for _, child := range node.Children {
-		matched := findFirstNodeByLocalName(child, localName)
-		if matched != nil {
-			return matched
-		}
-	}
-
-	return nil
-}
-
-func wsmanEndpoint(messages wsman.Messages) string {
-	target, ok := messages.Client.(*client.Target)
-	if !ok {
-		return "/wsman"
-	}
-
-	value := reflect.ValueOf(target)
-	if value.Kind() == reflect.Pointer {
-		value = value.Elem()
-	}
-
-	endpointField := value.FieldByName("endpoint")
-	if endpointField.IsValid() && endpointField.Kind() == reflect.String {
-		if endpoint := endpointField.String(); endpoint != "" {
-			return endpoint
-		}
-	}
-
-	return "/wsman"
 }
