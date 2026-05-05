@@ -5,12 +5,14 @@
 package rps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -147,8 +149,8 @@ func (e Executor) HandleInterrupt() {
 	// waiting (with timeout) for the server to close the connection.
 	// err := e.localManagement.Close()
 	// if err != nil {
-	// 	log.Error("Connection close failed", err)
-	// 	return
+	//      log.Error("Connection close failed", err)
+	//      return
 	// }
 	err := e.server.Close()
 	if err != nil {
@@ -195,6 +197,9 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	}
 
 	log.Debug("RPS sent activation data, processing...")
+
+	isAdminSetup := isAdminSetupRequest(msg.Payload)
+
 
 	// Set up connection and listener based on transport mode
 	if e.isLME {
@@ -244,6 +249,18 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		select {
 		case dataFromLM := <-e.data:
 			if len(dataFromLM) == 0 {
+				// AdminSetup: AMT closes the LMS connection without sending a response.
+				// This is expected behavior — synthesize a success response so RPS can
+				// proceed to verify the provisioning state via IPS_HostBasedSetupService GET.
+				if isAdminSetup {
+					log.Warn("AdminSetup: AMT closed connection without responding (expected); sending synthetic success response")
+
+					fallbackResponse := buildAdminSetupFallbackResponse(msg.Payload)
+					e.HandleDataFromLM(fallbackResponse)
+
+					return false
+				}
+
 				if e.tlsTunnelActive {
 					log.Warn("Empty response from LMS - sending connection_reset")
 					e.localManagement.Close()
@@ -257,6 +274,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			}
 
 			log.Debug("Received response from LME/LMS, forwarding to RPS")
+
+
 			e.HandleDataFromLM(dataFromLM)
 			log.Debug("Response sent to RPS, waiting for next RPS message")
 
@@ -451,17 +470,18 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	lmErrorChannel := make(chan error)
 
 	// Create new plain TCP LMS connection on the TLS port.
-	// rpc-go only passes raw bytes — the actual TLS handshake is handled
+	// rpc-go only passes raw bytes here — the actual TLS handshake is handled
 	// by RPS's TLSTunnelManager through the WebSocket tunnel.
 	newLM := lm.NewLMSConnection(
 		utils.LMSAddress,
 		psPayload.Port,
-		true, // useTls: gate Listen's read-timeout strategy for TLS 1.3 quiet rounds; the dial is plain TCP
+		false, // useTls must remain false here: RPS handles TLS, rpc-go forwards raw tunnel bytes
 		lmDataChannel,
 		lmErrorChannel,
 		0,     // controlMode not needed for port switch
 		false, // skipCertCheck not relevant — no TLS at this layer
 	)
+	newLM.SetTLSTunnelMode(true)
 
 	// Test connection with retries
 	maxRetries := 5
@@ -504,6 +524,50 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	return nil
 }
 
+func isAdminSetupRequest(payload []byte) bool {
+	return bytes.Contains(payload, []byte("IPS_HostBasedSetupService/AdminSetup")) ||
+		bytes.Contains(payload, []byte("<h:AdminSetup_INPUT"))
+}
+
+func buildAdminSetupFallbackResponse(requestPayload []byte) []byte {
+	return buildSetupServiceSuccessResponse(requestPayload, "AdminSetup", "AdminSetup_OUTPUT")
+}
+
+func buildSetupServiceSuccessResponse(requestPayload []byte, actionName string, outputTag string) []byte {
+	messageID := extractMessageID(requestPayload)
+	soapBody := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+		"<a:Envelope xmlns:a=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:b=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" xmlns:c=\"http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd\" xmlns:g=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService\">" +
+		"<a:Header>" +
+		"<b:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</b:To>" +
+		"<b:RelatesTo>" + messageID + "</b:RelatesTo>" +
+		"<b:Action a:mustUnderstand=\"true\">http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService/" + actionName + "Response</b:Action>" +
+		"<b:MessageID>uuid:00000000-8086-8086-8086-000000000000</b:MessageID>" +
+		"<c:ResourceURI>http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService</c:ResourceURI>" +
+		"</a:Header>" +
+		"<a:Body><g:" + outputTag + "><g:ReturnValue>0</g:ReturnValue></g:" + outputTag + "></a:Body>" +
+		"</a:Envelope>"
+
+	chunkLen := fmt.Sprintf("%X", len(soapBody))
+
+	response := "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: application/octet-stream\r\n" +
+		"Transfer-Encoding: chunked\r\n\r\n" +
+		chunkLen + "\r\n" +
+		soapBody + "\r\n" +
+		"0\r\n\r\n"
+
+	return []byte(response)
+}
+
+func extractMessageID(payload []byte) string {
+	messageID, ok := extractTagValue(payload, "<a:MessageID>", "</a:MessageID>")
+	if !ok {
+		return "0"
+	}
+
+	return messageID
+}
+
 func (e *Executor) HandleDataFromLM(data []byte) {
 	if len(data) > 0 {
 		method := "response"
@@ -516,4 +580,27 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 			log.Error(err)
 		}
 	}
+}
+
+func extractTagValue(payload []byte, openTag string, closeTag string) (string, bool) {
+	text := string(payload)
+
+	start := strings.Index(text, openTag)
+	if start == -1 {
+		return "", false
+	}
+
+	start += len(openTag)
+
+	end := strings.Index(text[start:], closeTag)
+	if end == -1 {
+		return "", false
+	}
+
+	value := strings.TrimSpace(text[start : start+end])
+	if value == "" {
+		return "", false
+	}
+
+	return value, true
 }

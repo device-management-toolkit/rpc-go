@@ -98,3 +98,25 @@ func TestListen(t *testing.T) {
 	<-wait2
 	lms.Close() // should close client pipe
 }
+
+func TestIsCompleteHTTPResponse(t *testing.T) {
+	t.Run("chunked complete", func(t *testing.T) {
+		payload := []byte("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n")
+		assert.True(t, isCompleteHTTPResponse(payload))
+	})
+
+	t.Run("chunked incomplete", func(t *testing.T) {
+		payload := []byte("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n")
+		assert.False(t, isCompleteHTTPResponse(payload))
+	})
+
+	t.Run("content length complete", func(t *testing.T) {
+		payload := []byte("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
+		assert.True(t, isCompleteHTTPResponse(payload))
+	})
+
+	t.Run("content length incomplete", func(t *testing.T) {
+		payload := []byte("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhel")
+		assert.False(t, isCompleteHTTPResponse(payload))
+	})
+}

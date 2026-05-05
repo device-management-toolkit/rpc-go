@@ -5,12 +5,17 @@
 package lm
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -20,6 +25,7 @@ type LMSConnection struct {
 	address       string
 	port          string
 	useTls        bool
+	tlsTunnel     bool
 	data          chan []byte
 	errors        chan error
 	controlMode   int
@@ -47,6 +53,10 @@ func NewLMSConnection(address, port string, useTls bool, data chan []byte, error
 	return lms
 }
 
+func (lms *LMSConnection) SetTLSTunnelMode(enabled bool) {
+	lms.tlsTunnel = enabled
+}
+
 func (lms *LMSConnection) Initialize() error {
 	return errors.New("not implemented")
 }
@@ -59,7 +69,9 @@ func (lms *LMSConnection) Connect() error {
 		return nil
 	}
 
-	if lms.useTls {
+	if lms.useTls && !lms.tlsTunnel {
+		log.Debug("connecting to lms over TLS...")
+	} else if lms.tlsTunnel {
 		log.Debug("connecting to lms (tls port, plain tcp; RPS handles TLS)...")
 	} else {
 		log.Debug("connecting to lms...")
@@ -70,7 +82,22 @@ func (lms *LMSConnection) Connect() error {
 
 	dialer := &net.Dialer{Timeout: utils.LMSDialerTimeout * time.Second}
 
-	conn, err := dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
+	var (
+		conn net.Conn
+		err  error
+	)
+
+	if lms.useTls && !lms.tlsTunnel {
+		tlsDialer := &tls.Dialer{
+			NetDialer: dialer,
+			Config:    certs.GetTLSConfig(&lms.controlMode, nil, lms.skipCertCheck),
+		}
+
+		conn, err = tlsDialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp4", lms.address+":"+lms.port)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -118,67 +145,121 @@ func (lms *LMSConnection) Close() error {
 // round-trips. TLS 1.3 has handshake rounds that legitimately produce zero
 // AMT-side bytes (e.g. immediately after our client Finished). To keep those
 // quiet rounds from stalling the tunnel and from being misread as a dead
-// connection, we use a short first-byte timeout (2s, well below RPS's
-// per-operation budget) and signal "silence before first byte" via a typed
+// connection, we signal "silence before first byte" via typed
 // ErrLMSReadTimeoutNoData on the errors channel. The executor treats that as
 // a non-fatal continuation in tunnel mode. We also skip the trailing
-// `lms.data <- buf` send for that case so callers can rely on the typed
-// error path instead of conflating timeout-no-data with EOF/close semantics.
+// `lms.data <- buf` send for timeout-no-data and for non-timeout read errors so
+// callers can distinguish timeout-no-data from EOF/close semantics.
 // The same skip applies when a non-timeout read error has been emitted on
 // `lms.errors`, so an empty buf is not delivered to `lms.data` afterwards
 // (which the executor would otherwise treat as a connection close).
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
-	readTimeout := 500 * time.Millisecond
-	subsequentReadTimeout := 100 * time.Millisecond
-
-	if lms.useTls {
-		readTimeout = 2 * time.Second
-		subsequentReadTimeout = 2 * time.Second
-	}
+	readIdleTimeout := utils.LMSReadIdleTimeout * time.Second
 
 	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
-	timedOutNoData := false
-	sentErr := false
+	errOccurred := false
 
 	for {
-		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = lms.Connection.SetReadDeadline(time.Now().Add(readIdleTimeout))
 
 		n, err := lms.Connection.Read(tmp)
-		if err != nil {
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				if len(buf) == 0 {
-					timedOutNoData = true
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
 
-					lms.errors <- ErrLMSReadTimeoutNoData
+			if isCompleteHTTPResponse(buf) {
+				break
+			}
+		}
+
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if len(buf) > 0 {
+					// For HTTP responses, require completeness before breaking to avoid
+					// forwarding truncated bodies (e.g. slow Content-Length delivery).
+					// For non-HTTP data (raw protocol), break on any data as before.
+					if !strings.HasPrefix(string(buf), "HTTP/") || isCompleteHTTPResponse(buf) {
+						break
+					}
 				}
 
-				break
+				if lms.tlsTunnel {
+					lms.errors <- ErrLMSReadTimeoutNoData
+
+					return
+				}
+
+				continue
 			}
 
 			if err != io.EOF {
-				log.Println("LMS read error:", err)
+				log.Println("read error:", err)
 
 				lms.errors <- err
 
-				sentErr = true
+				errOccurred = true
 			}
 
 			break
 		}
-
-		buf = append(buf, tmp[:n]...)
-		readTimeout = subsequentReadTimeout
 	}
 
-	lms.Connection.SetReadDeadline(time.Time{})
-
-	if !timedOutNoData && !sentErr {
-		lms.data <- buf
+	if errOccurred {
+		return
 	}
+
+	if len(buf) == 0 {
+		log.Trace("Sending empty LMS response to data channel (AMT closed connection with no data)")
+	}
+
+	lms.data <- buf
 
 	log.Trace("done listening")
+}
+
+func isCompleteHTTPResponse(buf []byte) bool {
+	headerEnd := bytes.Index(buf, []byte("\r\n\r\n"))
+	if headerEnd < 0 {
+		return false
+	}
+
+	headers := string(buf[:headerEnd])
+	body := buf[headerEnd+4:]
+	lowerHeaders := strings.ToLower(headers)
+
+	if strings.Contains(lowerHeaders, "transfer-encoding: chunked") {
+		return bytes.Contains(body, []byte("\r\n0\r\n\r\n"))
+	}
+
+	for _, line := range strings.Split(headers, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+			value := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(line), "content-length:"))
+
+			contentLen, err := strconv.Atoi(value)
+			if err != nil {
+				return false
+			}
+
+			return len(body) >= contentLen
+		}
+	}
+
+	// No Content-Length and not chunked: only treat as complete for status codes
+	// that are defined to have no body (1xx, 204, 304). For all others, the body
+	// is delimited by connection close, so return false and let EOF signal completion.
+	statusLine := strings.SplitN(headers, "\r\n", 2)[0]
+	parts := strings.SplitN(statusLine, " ", 3)
+
+	if len(parts) >= 2 {
+		statusCode, err := strconv.Atoi(parts[1])
+		if err == nil {
+			if (statusCode >= 100 && statusCode < 200) || statusCode == 204 || statusCode == 304 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
