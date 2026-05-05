@@ -90,6 +90,9 @@ func (cmd *DeactivateCmd) Validate() error {
 
 // Run executes the deactivate command
 func (cmd *DeactivateCmd) Run(ctx *Context) error {
+	ctx.ControlMode = cmd.ControlMode
+	ctx.LocalTLSEnforced = cmd.LocalTLSEnforced
+
 	if cmd.URL != "" {
 		lower := strings.ToLower(cmd.URL)
 		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
