@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -275,6 +276,33 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 			log.Debug("Received response from LME/LMS, forwarding to RPS")
 
+			if isAdminSetup {
+				if rv, ok := extractSetupReturnValue(dataFromLM); ok && rv != 0 {
+					if rv == 1 {
+						fallbackSucceeded, fallbackErr := e.tryAdminSetupFallback(msg.Payload)
+						if fallbackErr != nil {
+							e.lastError = fmt.Errorf("AMT Setup returned NotSupported and AdminSetup fallback failed: %w", fallbackErr)
+							log.Error(e.lastError)
+							e.HandleDataFromLM(dataFromLM)
+
+							return true
+						}
+
+						if fallbackSucceeded {
+							log.Warn("AMT Setup returned NotSupported; AdminSetup fallback succeeded, synthesizing Setup success for RPS")
+							e.HandleDataFromLM(buildSetupFallbackResponse(msg.Payload))
+
+							return false
+						}
+					}
+
+					e.lastError = formatSetupReturnValueError(rv)
+					log.Error(e.lastError)
+					e.HandleDataFromLM(dataFromLM)
+
+					return true
+				}
+			}
 
 			e.HandleDataFromLM(dataFromLM)
 			log.Debug("Response sent to RPS, waiting for next RPS message")
@@ -525,12 +553,19 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 }
 
 func isAdminSetupRequest(payload []byte) bool {
-	return bytes.Contains(payload, []byte("IPS_HostBasedSetupService/AdminSetup")) ||
+	// RPS sends "Setup" action for device provisioning (which is AMT's AdminSetup operation)
+	return bytes.Contains(payload, []byte("IPS_HostBasedSetupService/Setup")) ||
+		bytes.Contains(payload, []byte("<h:Setup_INPUT")) ||
+		bytes.Contains(payload, []byte("IPS_HostBasedSetupService/AdminSetup")) ||
 		bytes.Contains(payload, []byte("<h:AdminSetup_INPUT"))
 }
 
 func buildAdminSetupFallbackResponse(requestPayload []byte) []byte {
 	return buildSetupServiceSuccessResponse(requestPayload, "AdminSetup", "AdminSetup_OUTPUT")
+}
+
+func buildSetupFallbackResponse(requestPayload []byte) []byte {
+	return buildSetupServiceSuccessResponse(requestPayload, "Setup", "Setup_OUTPUT")
 }
 
 func buildSetupServiceSuccessResponse(requestPayload []byte, actionName string, outputTag string) []byte {
@@ -559,6 +594,71 @@ func buildSetupServiceSuccessResponse(requestPayload []byte, actionName string, 
 	return []byte(response)
 }
 
+func rewriteSetupToAdminSetupPayload(payload []byte) ([]byte, bool) {
+	request := string(payload)
+
+	if !strings.Contains(request, "IPS_HostBasedSetupService/Setup") || !strings.Contains(request, "<h:Setup_INPUT") {
+		return nil, false
+	}
+
+	rewritten := strings.ReplaceAll(request, "IPS_HostBasedSetupService/Setup", "IPS_HostBasedSetupService/AdminSetup")
+	rewritten = strings.ReplaceAll(rewritten, "<h:Setup_INPUT", "<h:AdminSetup_INPUT")
+	rewritten = strings.ReplaceAll(rewritten, "</h:Setup_INPUT>", "</h:AdminSetup_INPUT>")
+
+	return []byte(rewritten), true
+}
+
+func (e *Executor) tryAdminSetupFallback(originalSetupPayload []byte) (bool, error) {
+	if e.isLME {
+		return false, nil
+	}
+
+	adminSetupPayload, ok := rewriteSetupToAdminSetupPayload(originalSetupPayload)
+	if !ok {
+		return false, nil
+	}
+
+	log.Warn("Attempting AdminSetup fallback after Setup returned NotSupported")
+
+	e.localManagement.Close()
+
+	if err := e.localManagement.Connect(); err != nil {
+		return false, fmt.Errorf("failed to connect to LMS for AdminSetup fallback: %w", err)
+	}
+	defer e.localManagement.Close()
+
+	go e.localManagement.Listen()
+
+	if err := e.localManagement.Send(adminSetupPayload); err != nil {
+		return false, fmt.Errorf("failed to send AdminSetup fallback payload: %w", err)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), utils.AMTResponseTimeout*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case dataFromLM := <-e.data:
+			if len(dataFromLM) == 0 {
+				// AdminSetup may complete by silently closing the socket.
+				return true, nil
+			}
+
+			if rv, ok := extractSetupReturnValue(dataFromLM); ok && rv == 0 {
+				return true, nil
+			}
+
+			return false, nil
+		case errFromLMS := <-e.errors:
+			if errFromLMS != nil && !errors.Is(errFromLMS, heci.ErrReadTimeout) {
+				return false, fmt.Errorf("LMS error during AdminSetup fallback: %w", errFromLMS)
+			}
+		case <-timeoutCtx.Done():
+			return false, fmt.Errorf("timeout waiting for AdminSetup fallback response")
+		}
+	}
+}
+
 func extractMessageID(payload []byte) string {
 	messageID, ok := extractTagValue(payload, "<a:MessageID>", "</a:MessageID>")
 	if !ok {
@@ -582,6 +682,25 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 	}
 }
 
+func extractSetupReturnValue(response []byte) (int, bool) {
+	resp := string(response)
+	if !strings.Contains(resp, "Setup_OUTPUT") && !strings.Contains(resp, "AdminSetup_OUTPUT") {
+		return 0, false
+	}
+
+	valueStr, ok := extractTagValue(response, "<g:ReturnValue>", "</g:ReturnValue>")
+	if !ok {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return 0, false
+	}
+
+	return value, true
+}
+
 func extractTagValue(payload []byte, openTag string, closeTag string) (string, bool) {
 	text := string(payload)
 
@@ -603,4 +722,11 @@ func extractTagValue(payload []byte, openTag string, closeTag string) (string, b
 	}
 
 	return value, true
+}
+func formatSetupReturnValueError(rv int) error {
+	if rv == 1 {
+		return fmt.Errorf("AMT Setup failed with ReturnValue=1 (NotSupported): device likely has CCM disabled or profile is incompatible")
+	}
+
+	return fmt.Errorf("AMT Setup failed with ReturnValue=%d (device/profile does not support this provisioning flow)", rv)
 }
