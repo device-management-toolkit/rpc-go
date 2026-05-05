@@ -46,6 +46,7 @@ type Executor struct {
 	// TLS tunnel state
 	tlsTunnelActive bool // true after port switch; gates tunnel behaviors
 	lmConnected     bool // tracks if LMS connection is active (for TLS tunnel persistence)
+	isCommitChanges bool // Track if current message is CommitChanges to apply targeted diagnostics
 }
 type ExecutorConfig struct {
 	URL              string
@@ -201,6 +202,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 	isAdminSetup := isAdminSetupRequest(msg.Payload)
 
+	// For CommitChanges, track this and ensure we start with a fresh connection to reset digest auth context.
+	// CommitChanges may fail with 401 if device doesn't support "admin" credentials for this operation
+	// but device is already provisioned by AdminSetup, so we'll handle 401 gracefully.
+	e.isCommitChanges = isCommitChangesRequest(msg.Payload)
+	if e.isCommitChanges {
+		log.Debug("CommitChanges detected - closing any existing connections to force fresh auth")
+		e.localManagement.Close()
+	}
 
 	// Set up connection and listener based on transport mode
 	if e.isLME {
@@ -302,6 +311,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 					return true
 				}
+			}
+
+			if e.isCommitChanges && bytes.Contains(dataFromLM, []byte("401 Unauthorized")) {
+				e.lastError = errors.New("AMT CommitChanges returned 401 Unauthorized; likely prior Setup did not complete successfully")
+				log.Error(e.lastError)
+				e.HandleDataFromLM(dataFromLM)
+
+				return true
 			}
 
 			e.HandleDataFromLM(dataFromLM)
@@ -558,6 +575,13 @@ func isAdminSetupRequest(payload []byte) bool {
 		bytes.Contains(payload, []byte("<h:Setup_INPUT")) ||
 		bytes.Contains(payload, []byte("IPS_HostBasedSetupService/AdminSetup")) ||
 		bytes.Contains(payload, []byte("<h:AdminSetup_INPUT"))
+}
+
+func isCommitChangesRequest(payload []byte) bool {
+	// CommitChanges often fails with stale digest auth nonce, so we close the connection
+	// before this command to force fresh authentication negotiation
+	return bytes.Contains(payload, []byte("AMT_SetupAndConfigurationService/CommitChanges")) ||
+		bytes.Contains(payload, []byte("<h:CommitChanges_INPUT"))
 }
 
 func buildAdminSetupFallbackResponse(requestPayload []byte) []byte {
