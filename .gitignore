@@ -1,4 +1,3 @@
-realthing
 rpc
 !/cmd/rpc
 *.exe
@@ -11,10 +10,5 @@ coverage
 **/*.h
 **/launch.json
 .nextVersion
-.github/copilot-instructions.md
-*.md
-!README.md
-!v3.0-changes.md
 *.yaml
 !config.yaml
-node_modules
