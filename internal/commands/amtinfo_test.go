@@ -18,11 +18,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -917,6 +919,72 @@ func TestInfoService_OutputText_TwoColumnLayout(t *testing.T) {
 	// Left column content (UUID) should not wrap — the whole UUID appears on one line.
 	assert.Regexp(t, `UUID\s+[^\n│]*12345678-1234-1234-1234-123456789ABC`, out,
 		"UUID should not wrap across lines inside the box; got:\n%s", out)
+}
+
+// When content is wider than half the terminal, the boxed two-column layout
+// would render past termW and the terminal would wrap each row mid-border.
+// In that case the renderer must fall back to single-column unboxed output.
+func TestInfoService_OutputText_FallsBackWhenBoxesDoNotFit(t *testing.T) {
+	origWidth := getTerminalWidth
+	defer func() { getTerminalWidth = origWidth }()
+
+	result := &InfoResult{
+		AMT:         "16.1.25.2049",
+		BuildNumber: "1234",
+		UUID:        "12345678-1234-1234-1234-123456789ABC",
+		ControlMode: "admin control mode",
+		DNSSuffix:   "this-is-a-pretty-long-dns-suffix.corp.example.com",
+		HostnameOS:  "my-host-name-that-is-fairly-long",
+		RAS: &amt.RemoteAccessStatus{
+			NetworkStatus: "connected",
+			RemoteStatus:  "connected",
+			RemoteTrigger: "user",
+			MPSHostname:   "mps.long-name.example.internal.local",
+		},
+		WiredAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:11:22:33:44:55",
+			IPAddress:   "192.168.100.123",
+			OsIPAddress: "192.168.100.123",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+		WirelessAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:AA:BB:CC:DD:EE",
+			IPAddress:   "192.168.100.124",
+			OsIPAddress: "192.168.100.124",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+	}
+
+	service := NewInfoService(nil)
+	cmd := &AmtInfoCmd{All: true}
+
+	for _, tw := range []int{150, 160} {
+		t.Run("", func(t *testing.T) {
+			getTerminalWidth = func() int { return tw }
+
+			var buf bytes.Buffer
+
+			err := service.OutputText(&buf, result, cmd)
+			require.NoError(t, err)
+
+			out := buf.String()
+
+			maxLine := 0
+			for _, line := range strings.Split(out, "\n") {
+				if w := lipgloss.Width(line); w > maxLine {
+					maxLine = w
+				}
+			}
+
+			assert.LessOrEqualf(t, maxLine, tw,
+				"rendered line width %d > termW %d — terminal will wrap and break box borders\n%s",
+				maxLine, tw, out)
+		})
+	}
 }
 
 func TestAmtInfoCmd_HasNoFlagsSet(t *testing.T) {

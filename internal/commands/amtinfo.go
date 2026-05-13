@@ -1071,19 +1071,33 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 
 	termW := getTerminalWidth()
 
+	// Decide layout up front. The boxed two-column path is only safe when the
+	// joined outer width (2*(baseColWidth+2)+2) fits the terminal; otherwise the
+	// terminal wraps each row mid-border. Compute content width first, then gate.
+	var (
+		useBoxed     bool
+		left, right  string
+		baseColWidth int
+	)
+
 	if termW >= twoColumnMinWidth && leftHasContent && rightHasContent {
 		// Rebuild sections whose header differs inside a box.
 		deviceBoxed := buildDeviceSection(result, cmd, showAll, true)
 		wiredBoxed := buildWiredSection(result, cmd, showAll, true)
 		wirelessBoxed := buildWirelessSection(result, cmd, showAll, true)
 
-		left := strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
-		right := strings.Trim(wiredBoxed+wirelessBoxed, "\n")
+		left = strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
+		right = strings.Trim(wiredBoxed+wirelessBoxed, "\n")
 
 		// Baseline colWidth from upper content (+2 for Padding(1, 1) horizontal).
 		upperContentW := maxInt(lipgloss.Width(left), lipgloss.Width(right))
-		baseColWidth := upperContentW + 2
+		baseColWidth = upperContentW + 2
 
+		// Outer width of joined upper boxes: 2*(colWidth + 2 borders) + 2 gutter.
+		useBoxed = 2*(baseColWidth+2)+2 <= termW
+	}
+
+	if useBoxed {
 		// Attempt 2-col cert hashes. If the resulting cert box outer width
 		// (2*colWidth + 6) would overflow the terminal, fall back to 1-col.
 		certsTwoCol := buildCertsSection(result, cmd, showAll, true)
