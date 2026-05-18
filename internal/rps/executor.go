@@ -41,8 +41,9 @@ type Executor struct {
 	waitGroup       *sync.WaitGroup
 	lastError       error
 	// TLS tunnel state
-	tlsTunnelActive bool // true after port switch; gates tunnel behaviors
-	lmConnected     bool // tracks if LMS connection is active (for TLS tunnel persistence)
+	tlsTunnelActive  bool // true after port switch; gates tunnel behaviors
+	lmConnected      bool // tracks if LMS connection is active (for TLS tunnel persistence)
+	switchedToTunnel bool // true once we are in plain-TCP tunnel mode (after port_switch or auto-switch on tls_data)
 }
 type ExecutorConfig struct {
 	URL              string
@@ -64,13 +65,24 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 		port = utils.LMSTLSPort
 	}
 
+	lmsConn := lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck)
+	if config.LocalTlsEnforced {
+		// When TLS is enforced, use plain-TCP tunnel mode from the start.
+		// rpc-go forwards raw bytes; the TLS session is managed end-to-end by
+		// RPS's TLSTunnelManager. Sending our own TLS layer on top would cause
+		// TLS-in-TLS which AMT rejects. This also avoids needing an autoSwitch
+		// when the first tls_data message arrives.
+		lmsConn.SetTLSTunnelMode(true)
+	}
+
 	client := Executor{
-		server:          NewAMTActivationServer(config.URL, config.Proxy),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
-		data:            lmDataChannel,
-		errors:          lmErrorChannel,
-		waitGroup:       &sync.WaitGroup{},
-		tlsTunnelActive: config.LocalTlsEnforced,
+		server:           NewAMTActivationServer(config.URL, config.Proxy),
+		localManagement:  lmsConn,
+		data:             lmDataChannel,
+		errors:           lmErrorChannel,
+		waitGroup:        &sync.WaitGroup{},
+		tlsTunnelActive:  config.LocalTlsEnforced,
+		switchedToTunnel: config.LocalTlsEnforced, // already in plain-TCP tunnel mode from the start
 	}
 
 	// TEST CONNECTION TO SEE IF LMS EXISTS
@@ -185,6 +197,13 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		}
 
 		return false
+	case MethodTLSData:
+		// RPS v2.x sends tls_data directly without a prior port_switch.
+		// Auto-switch to plain-TCP tunnel mode so raw TLS bytes pass through
+		// unmodified instead of being wrapped in another TLS layer (TLS-in-TLS).
+		if e.tlsTunnelActive && !e.switchedToTunnel {
+			e.autoSwitchToRawTunnel()
+		}
 	}
 
 	// Detect TLS ClientHello - close existing connection so firmware can renegotiate
@@ -451,17 +470,18 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	lmErrorChannel := make(chan error)
 
 	// Create new plain TCP LMS connection on the TLS port.
-	// rpc-go only passes raw bytes — the actual TLS handshake is handled
+	// rpc-go only passes raw bytes here — the actual TLS handshake is handled
 	// by RPS's TLSTunnelManager through the WebSocket tunnel.
 	newLM := lm.NewLMSConnection(
 		utils.LMSAddress,
 		psPayload.Port,
-		true, // useTls: gate Listen's read-timeout strategy for TLS 1.3 quiet rounds; the dial is plain TCP
+		false, // useTls must remain false here: RPS handles TLS, rpc-go forwards raw tunnel bytes
 		lmDataChannel,
 		lmErrorChannel,
 		0,     // controlMode not needed for port switch
 		false, // skipCertCheck not relevant — no TLS at this layer
 	)
+	newLM.SetTLSTunnelMode(true)
 
 	// Test connection with retries
 	maxRetries := 5
@@ -501,7 +521,44 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 
 	log.Info("Port switch: sent port_switch_ack to RPS")
 
+	e.switchedToTunnel = true
+
 	return nil
+}
+
+// autoSwitchToRawTunnel switches the LMS connection from TLS mode to plain-TCP
+// tunnel mode. This is needed when RPS (v2.x protocol) sends tls_data directly
+// without a prior port_switch message. In raw-tunnel mode rpc-go forwards the
+// bytes as-is; the TLS handshake is between RPS's TLSTunnelManager and AMT.
+func (e *Executor) autoSwitchToRawTunnel() {
+	log.Debug("Auto-switching to plain-TCP tunnel mode (tls_data received without prior port_switch)")
+
+	// Close the existing TLS connection to LMS.
+	e.localManagement.Close()
+	e.lmConnected = false
+
+	lmDataChannel := make(chan []byte)
+	lmErrorChannel := make(chan error)
+
+	// Plain TCP to the LMS TLS port — no TLS wrapping at our level.
+	// RPS's TLSTunnelManager owns the TLS session end-to-end.
+	newLM := lm.NewLMSConnection(
+		utils.LMSAddress,
+		utils.LMSTLSPort,
+		false, // useTls=false: raw byte forwarding, not TLS client
+		lmDataChannel,
+		lmErrorChannel,
+		0,
+		false,
+	)
+	newLM.SetTLSTunnelMode(true)
+
+	e.localManagement = newLM
+	e.data = lmDataChannel
+	e.errors = lmErrorChannel
+	e.switchedToTunnel = true
+
+	log.Info("Auto-switched to plain-TCP tunnel mode on port ", utils.LMSTLSPort)
 }
 
 func (e *Executor) HandleDataFromLM(data []byte) {

@@ -20,6 +20,7 @@ type LMSConnection struct {
 	address       string
 	port          string
 	useTls        bool
+	tlsTunnel     bool
 	data          chan []byte
 	errors        chan error
 	controlMode   int
@@ -45,6 +46,17 @@ func NewLMSConnection(address, port string, useTls bool, data chan []byte, error
 	}
 
 	return lms
+}
+
+func (lms *LMSConnection) SetTLSTunnelMode(enabled bool) {
+	lms.tlsTunnel = enabled
+}
+
+// ActivateTLSTunnelMode switches this LMS connection to raw TCP tunnel mode.
+// RPS handles TLS framing in this mode, so local TLS must be disabled.
+func (lms *LMSConnection) ActivateTLSTunnelMode() {
+	lms.useTls = false
+	lms.tlsTunnel = true
 }
 
 func (lms *LMSConnection) Initialize() error {
