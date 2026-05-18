@@ -206,3 +206,35 @@ func (lms *LMSConnection) Listen() {
 
 	log.Trace("done listening")
 }
+
+// PeekClose does a brief read (bounded by peekTimeout) to detect whether AMT
+// closed the connection after sending a response. Used in TLS-tunnel mode after
+// forwarding the last LMS response: if AMT issued TCP close (FIN/RST) right
+// after the final WSMAN reply, we need to signal RPS via connection_reset.
+// Returns closed=true and any extra bytes (e.g. TLS close_notify) that arrived
+// before the close. Returns closed=false if the connection is still alive.
+func (lms *LMSConnection) PeekClose(peekTimeout time.Duration) (closed bool, extraData []byte) {
+	if lms.Connection == nil {
+		return true, nil
+	}
+
+	lms.Connection.SetReadDeadline(time.Now().Add(peekTimeout))
+	defer lms.Connection.SetReadDeadline(time.Time{}) //nolint:errcheck // best-effort reset on a connection we may already have torn down
+
+	buf := make([]byte, 4096)
+
+	n, err := lms.Connection.Read(buf)
+	if n > 0 {
+		extraData = buf[:n]
+	}
+
+	if err != nil {
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			return false, extraData // timeout = still alive
+		}
+
+		return true, extraData // EOF or other error = closed
+	}
+
+	return false, extraData // got data, no error = still alive
+}

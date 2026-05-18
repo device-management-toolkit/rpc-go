@@ -48,6 +48,7 @@ type Executor struct {
 	tlsTunnelActive  bool // true after port switch; gates tunnel behaviors
 	lmConnected      bool // tracks if LMS connection is active (for TLS tunnel persistence)
 	switchedToTunnel bool // true once we are in plain-TCP tunnel mode (after port_switch or auto-switch on tls_data)
+	isCommitChanges  bool // Track if current message is CommitChanges to apply targeted diagnostics
 }
 type ExecutorConfig struct {
 	URL              string
@@ -139,6 +140,12 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 		select {
 		case dataFromServer, ok := <-rpsDataChannel:
 			if !ok {
+				if e.tlsTunnelActive && e.isProvisionedAfterUnexpectedRPSClose() {
+					e.lastError = nil
+
+					return nil
+				}
+
 				e.lastError = errors.New("rps connection closed unexpectedly")
 
 				return e.lastError
@@ -154,6 +161,44 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 			return fmt.Errorf("interrupted by user")
 		}
 	}
+}
+
+// isProvisionedAfterUnexpectedRPSClose verifies AMT state when RPS closes
+// unexpectedly in TLS tunnel mode. Some RPS/CCM_P flows provision the device
+// and onboard it but never send terminal success, then close the websocket.
+// In that case we treat the close as success if AMT is already provisioned.
+func (e *Executor) isProvisionedAfterUnexpectedRPSClose() bool {
+	const (
+		postProvisioningState = 2
+		verifyAttempts        = 3
+		verifyDelay           = 500 * time.Millisecond
+	)
+
+	for attempt := 1; attempt <= verifyAttempts; attempt++ {
+		amtCmd := amt.NewAMTCommand()
+
+		controlMode, cmErr := amtCmd.GetControlMode()
+		if cmErr == nil && controlMode != 0 {
+			log.Warnf("RPS closed websocket without terminal success, but AMT is provisioned (control mode %d); treating activation as success", controlMode)
+
+			return true
+		}
+
+		provisioningState, psErr := amtCmd.GetProvisioningState()
+		if psErr == nil && provisioningState == postProvisioningState {
+			log.Warn("RPS closed websocket without terminal success, but AMT is post-provisioning; treating activation as success")
+
+			return true
+		}
+
+		log.Debugf("Unexpected RPS close verification attempt %d/%d: controlMode=%d err=%v provisioningState=%d err=%v", attempt, verifyAttempts, controlMode, cmErr, provisioningState, psErr)
+
+		if attempt < verifyAttempts {
+			time.Sleep(verifyDelay)
+		}
+	}
+
+	return false
 }
 
 func (e Executor) HandleInterrupt() {
@@ -220,6 +265,15 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	log.Debug("RPS sent activation data, processing...")
 
 	isSilentCloseCommand := isAdminSetupRequest(msg.Payload)
+
+	// For CommitChanges, track this and ensure we start with a fresh connection to reset digest auth context.
+	// CommitChanges may fail with 401 if device doesn't support "admin" credentials for this operation
+	// but device is already provisioned by AdminSetup, so we'll handle 401 gracefully.
+	e.isCommitChanges = isCommitChangesRequest(msg.Payload)
+	if e.isCommitChanges {
+		log.Debug("CommitChanges detected - closing any existing connections to force fresh auth")
+		e.localManagement.Close()
+	}
 
 	// Set up connection and listener based on transport mode
 	if e.isLME {
@@ -335,6 +389,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 				}
 			}
 
+			if e.isCommitChanges && bytes.Contains(dataFromLM, []byte("401 Unauthorized")) {
+				e.lastError = errors.New("AMT CommitChanges returned 401 Unauthorized; likely prior Setup did not complete successfully")
+				log.Error(e.lastError)
+				e.HandleDataFromLM(dataFromLM)
+
+				return true
+			}
+
 			e.HandleDataFromLM(dataFromLM)
 			log.Debug("Response sent to RPS, waiting for next RPS message")
 
@@ -345,6 +407,29 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			if !e.tlsTunnelActive {
 				e.localManagement.Close()
 				e.lmConnected = false
+			} else {
+				// In TLS tunnel mode, after forwarding the response, check immediately
+				// whether AMT closed its side of the TCP connection. After CommitChanges
+				// (and other final WSMAN ops), AMT issues a TCP close right after the
+				// response. RPS waits for a connection_reset signal before it sends
+				// "success"; without it we deadlock (we wait for RPS, RPS waits for us)
+				// and RPS closes with 1006 after ~60s even though the device is
+				// already provisioned.
+				if lmsConn, ok := e.localManagement.(*lm.LMSConnection); ok {
+					closed, extra := lmsConn.PeekClose(150 * time.Millisecond)
+					if len(extra) > 0 {
+						log.Debug("TLS tunnel: extra bytes after response (e.g. TLS close_notify), forwarding to RPS")
+						e.HandleDataFromLM(extra)
+					}
+
+					if closed {
+						log.Debug("TLS tunnel: AMT closed connection after response, sending connection_reset to RPS")
+						e.localManagement.Close()
+						e.lmConnected = false
+						resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
+						e.server.Send(resetMsg) //nolint:errcheck // best-effort signal; RPS will time out the session if it doesn't arrive
+					}
+				}
 			}
 
 			return false
@@ -630,6 +715,13 @@ func isAdminSetupRequest(payload []byte) bool {
 		bytes.Contains(payload, []byte("AMT_SetupAndConfigurationService/Unprovision")) ||
 		bytes.Contains(payload, []byte("<h:Unprovision_INPUT")) ||
 		bytes.Contains(payload, []byte("/transfer/Delete"))
+}
+
+func isCommitChangesRequest(payload []byte) bool {
+	// CommitChanges often fails with stale digest auth nonce, so we close the connection
+	// before this command to force fresh authentication negotiation
+	return bytes.Contains(payload, []byte("AMT_SetupAndConfigurationService/CommitChanges")) ||
+		bytes.Contains(payload, []byte("<h:CommitChanges_INPUT"))
 }
 
 func buildAdminSetupFallbackResponse(requestPayload []byte) []byte {
