@@ -5,17 +5,21 @@
 package rps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -215,6 +219,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 	log.Debug("RPS sent activation data, processing...")
 
+	isSilentCloseCommand := isAdminSetupRequest(msg.Payload)
+
 	// Set up connection and listener based on transport mode
 	if e.isLME {
 		if err := e.prepareLME(); err != nil {
@@ -263,6 +269,48 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		select {
 		case dataFromLM := <-e.data:
 			if len(dataFromLM) == 0 {
+				// Silent-close commands: AMT closes the LMS connection without sending a response.
+				// Verify provisioning actually succeeded via HECI GetControlMode before synthesizing
+				// a success response, so we don't lie to RPS if the device is still unprovisioned.
+				if isSilentCloseCommand {
+					// In TLS tunnel mode, do not synthesize a plaintext SOAP response as tls_data.
+					// RPS expects tunnel bytes here; injecting XML can desynchronize the tunnel
+					// and lead to idle timeout/EOF. Let the flow continue to the next RPS step.
+					if e.tlsTunnelActive {
+						log.Debug("AdminSetup silent close in TLS tunnel mode; skipping synthetic fallback response")
+
+						return false
+					}
+
+					if !e.isLME {
+						// LMS path: HECI is free — verify control mode.
+						controlMode, cmErr := amt.NewAMTCommand().GetControlMode()
+						if cmErr != nil {
+							e.lastError = fmt.Errorf("AdminSetup silent-close: GetControlMode failed, cannot confirm provisioning: %w", cmErr)
+							log.Error(e.lastError)
+
+							return true
+						}
+
+						if controlMode == 0 {
+							e.lastError = errors.New("AdminSetup silent-close: device still unprovisioned (control mode 0) after silent close")
+							log.Error(e.lastError)
+
+							return true
+						}
+
+						log.Warnf("AdminSetup: verified provisioned (control mode %d); sending synthetic success response", controlMode)
+					} else {
+						// LME path: HECI is in use by the APF tunnel — skip verification.
+						log.Warn("AdminSetup: AMT closed connection without responding (expected, LME path); sending synthetic success response")
+					}
+
+					fallbackResponse := buildAdminSetupFallbackResponse(msg.Payload)
+					e.HandleDataFromLM(fallbackResponse)
+
+					return false
+				}
+
 				if e.tlsTunnelActive {
 					log.Warn("Empty response from LMS - sending connection_reset")
 					e.localManagement.Close()
@@ -276,6 +324,17 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			}
 
 			log.Debug("Received response from LME/LMS, forwarding to RPS")
+
+			if isSilentCloseCommand {
+				if rv, ok := extractSetupReturnValue(dataFromLM); ok && rv != 0 {
+					e.lastError = formatSetupReturnValueError(rv)
+					log.Error(e.lastError)
+					e.HandleDataFromLM(dataFromLM)
+
+					return true
+				}
+			}
+
 			e.HandleDataFromLM(dataFromLM)
 			log.Debug("Response sent to RPS, waiting for next RPS message")
 
@@ -561,6 +620,57 @@ func (e *Executor) autoSwitchToRawTunnel() {
 	log.Info("Auto-switched to plain-TCP tunnel mode on port ", utils.LMSTLSPort)
 }
 
+func isAdminSetupRequest(payload []byte) bool {
+	// Commands that close the LMS connection without sending HTTP response body:
+	// - AdminSetup (provisioning): IPS_HostBasedSetupService/AdminSetup
+	// - Unprovision (deactivation): AMT_SetupAndConfigurationService/Unprovision
+	// - Delete (certificate cleanup): /transfer/Delete
+	return bytes.Contains(payload, []byte("IPS_HostBasedSetupService/AdminSetup")) ||
+		bytes.Contains(payload, []byte("<h:AdminSetup_INPUT")) ||
+		bytes.Contains(payload, []byte("AMT_SetupAndConfigurationService/Unprovision")) ||
+		bytes.Contains(payload, []byte("<h:Unprovision_INPUT")) ||
+		bytes.Contains(payload, []byte("/transfer/Delete"))
+}
+
+func buildAdminSetupFallbackResponse(requestPayload []byte) []byte {
+	return buildSetupServiceSuccessResponse(requestPayload, "AdminSetup", "AdminSetup_OUTPUT")
+}
+
+func buildSetupServiceSuccessResponse(requestPayload []byte, actionName, outputTag string) []byte {
+	messageID := extractMessageID(requestPayload)
+	soapBody := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+		"<a:Envelope xmlns:a=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:b=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" xmlns:c=\"http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd\" xmlns:g=\"http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService\">" +
+		"<a:Header>" +
+		"<b:To>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</b:To>" +
+		"<b:RelatesTo>" + messageID + "</b:RelatesTo>" +
+		"<b:Action a:mustUnderstand=\"true\">http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService/" + actionName + "Response</b:Action>" +
+		"<b:MessageID>uuid:00000000-8086-8086-8086-000000000000</b:MessageID>" +
+		"<c:ResourceURI>http://intel.com/wbem/wscim/1/ips-schema/1/IPS_HostBasedSetupService</c:ResourceURI>" +
+		"</a:Header>" +
+		"<a:Body><g:" + outputTag + "><g:ReturnValue>0</g:ReturnValue></g:" + outputTag + "></a:Body>" +
+		"</a:Envelope>"
+
+	chunkLen := fmt.Sprintf("%X", len(soapBody))
+
+	response := "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: application/octet-stream\r\n" +
+		"Transfer-Encoding: chunked\r\n\r\n" +
+		chunkLen + "\r\n" +
+		soapBody + "\r\n" +
+		"0\r\n\r\n"
+
+	return []byte(response)
+}
+
+func extractMessageID(payload []byte) string {
+	messageID, ok := extractTagValue(payload, "<a:MessageID>", "</a:MessageID>")
+	if !ok {
+		return "0"
+	}
+
+	return messageID
+}
+
 func (e *Executor) HandleDataFromLM(data []byte) {
 	if len(data) > 0 {
 		method := "response"
@@ -573,4 +683,54 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 			log.Error(err)
 		}
 	}
+}
+
+func extractSetupReturnValue(response []byte) (int, bool) {
+	resp := string(response)
+	if !strings.Contains(resp, "Setup_OUTPUT") && !strings.Contains(resp, "AdminSetup_OUTPUT") {
+		return 0, false
+	}
+
+	valueStr, ok := extractTagValue(response, "<g:ReturnValue>", "</g:ReturnValue>")
+	if !ok {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return 0, false
+	}
+
+	return value, true
+}
+
+func extractTagValue(payload []byte, openTag, closeTag string) (string, bool) {
+	text := string(payload)
+
+	start := strings.Index(text, openTag)
+	if start == -1 {
+		return "", false
+	}
+
+	start += len(openTag)
+
+	end := strings.Index(text[start:], closeTag)
+	if end == -1 {
+		return "", false
+	}
+
+	value := strings.TrimSpace(text[start : start+end])
+	if value == "" {
+		return "", false
+	}
+
+	return value, true
+}
+
+func formatSetupReturnValueError(rv int) error {
+	if rv == 1 {
+		return fmt.Errorf("AMT Setup failed with ReturnValue=1 (NotSupported): device likely has CCM disabled or profile is incompatible")
+	}
+
+	return fmt.Errorf("AMT Setup failed with ReturnValue=%d (device/profile does not support this provisioning flow)", rv)
 }

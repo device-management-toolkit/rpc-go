@@ -152,45 +152,57 @@ func (lms *LMSConnection) Listen() {
 
 	buf := make([]byte, 0, 8192)
 	tmp := make([]byte, 4096)
-	timedOutNoData := false
 	sentErr := false
 
 	for {
 		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
 
 		n, err := lms.Connection.Read(tmp)
-		if err != nil {
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				if len(buf) == 0 {
-					timedOutNoData = true
+		if n > 0 {
+			buf = append(buf, tmp[:n]...)
+		}
 
-					lms.errors <- ErrLMSReadTimeoutNoData
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if len(buf) == 0 {
+					// In tunnel mode, surface timeout-no-data as a typed error so executor knows
+					// this is a legitimate TLS 1.3 quiet round, not a connection failure.
+					// In non-tunnel mode, just continue reading; AdminSetup silent-close is expected.
+					if lms.tlsTunnel {
+						lms.errors <- ErrLMSReadTimeoutNoData
+
+						return
+					}
+
+					// Non-tunnel: loop back and continue reading
+					continue
 				}
 
+				// Got some data before timeout; break and return it
 				break
 			}
 
 			if err != io.EOF {
-				log.Println("LMS read error:", err)
-
+				log.Println("read error:", err)
 				lms.errors <- err
-
 				sentErr = true
 			}
 
 			break
 		}
 
-		buf = append(buf, tmp[:n]...)
 		readTimeout = subsequentReadTimeout
 	}
 
-	lms.Connection.SetReadDeadline(time.Time{})
-
-	if !timedOutNoData && !sentErr {
-		lms.data <- buf
+	if sentErr {
+		return
 	}
+
+	if len(buf) == 0 {
+		log.Trace("Sending empty LMS response to data channel (AMT closed connection with no data)")
+	}
+
+	lms.data <- buf
 
 	log.Trace("done listening")
 }
