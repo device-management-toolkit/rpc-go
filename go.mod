@@ -1,6 +1,6 @@
 module github.com/device-management-toolkit/rpc-go/v2
 
-go 1.25.0
+go 1.26.3
 
 // uncomment when developing locally
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
