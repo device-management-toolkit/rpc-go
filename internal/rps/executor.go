@@ -208,8 +208,8 @@ func (e Executor) HandleInterrupt() {
 	// waiting (with timeout) for the server to close the connection.
 	// err := e.localManagement.Close()
 	// if err != nil {
-	// 	log.Error("Connection close failed", err)
-	// 	return
+	//      log.Error("Connection close failed", err)
+	//      return
 	// }
 	err := e.server.Close()
 	if err != nil {
@@ -366,12 +366,17 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 				}
 
 				if e.tlsTunnelActive {
-					log.Warn("Empty response from LMS - sending connection_reset")
+					// In TLS 1.3, AMT closes the TCP connection after applying TLS settings
+					// (e.g. SetTLSSettingData) without sending a WSMAN response first.
+					// Send connection_reset to signal RPS that the TLS session ended — this
+					// triggers RPS to proceed with Phase 2 (ACM certificate operations).
+					// The resulting "Already configured" error from a redundant 3rd-session
+					// attempt is handled gracefully in ProcessMessage.
+					log.Warn("Empty response from LMS in TLS tunnel mode - sending connection_reset to trigger Phase 2")
 					e.localManagement.Close()
 					e.lmConnected = false
-
 					resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
-					e.server.Send(resetMsg)
+					e.server.Send(resetMsg) //nolint:errcheck // best-effort signal; RPS will time out the session if it doesn't arrive
 				}
 
 				return false

@@ -146,8 +146,13 @@ func (lms *LMSConnection) Listen() {
 	subsequentReadTimeout := 100 * time.Millisecond
 
 	if lms.useTls {
+		// Initial read: AMT may take up to ~2s to produce the first TLS record.
+		// Subsequent reads: once bytes are flowing, remaining packets for the
+		// same response arrive within milliseconds. Keep 100ms here — using
+		// 1s makes every single round-trip pay an extra 1-second tax (this
+		// alone accounted for ~100s of overhead across an ACM/CCM flow).
 		readTimeout = 2 * time.Second
-		subsequentReadTimeout = 2 * time.Second
+		subsequentReadTimeout = 100 * time.Millisecond
 	}
 
 	buf := make([]byte, 0, 8192)

@@ -125,8 +125,9 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	)
 
 	const (
-		maxAttempts = 4
-		backoff     = 4 * time.Second
+		maxAttempts    = 4
+		initialBackoff = 500 * time.Millisecond
+		maxBackoff     = 4 * time.Second
 	)
 
 	// HECI requires admin — fail fast when not elevated instead of retrying.
@@ -142,6 +143,8 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		return utils.IncorrectPermissions
 	}
 
+	backoff := initialBackoff
+
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
 		if err == nil {
@@ -151,6 +154,11 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		if attempt < maxAttempts {
 			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
 			time.Sleep(backoff)
+
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 
 			continue
 		}
