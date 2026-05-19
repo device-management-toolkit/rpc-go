@@ -109,17 +109,23 @@ func doJSONRequest(method, requestURL, token string, body []byte, skipCertCheck 
 
 // DevicePayload is the JSON body sent to /api/v1/devices.
 type DevicePayload struct {
-	GUID            string   `json:"guid"`
-	Hostname        string   `json:"hostname"`
-	FriendlyName    string   `json:"friendlyName,omitempty"`
-	Tags            []string `json:"tags"`
-	MPSUsername     string   `json:"mpsusername"`
-	Username        string   `json:"username"`
-	Password        string   `json:"password,omitempty"`
-	MEBXPassword    string   `json:"mebxpassword,omitempty"`
-	MPSPassword     string   `json:"mpspassword,omitempty"`
-	UseTLS          bool     `json:"useTLS"`
-	AllowSelfSigned bool     `json:"allowSelfSigned"`
+	GUID            string      `json:"guid"`
+	Hostname        string      `json:"hostname"`
+	FriendlyName    string      `json:"friendlyName,omitempty"`
+	Tags            []string    `json:"tags"`
+	MPSUsername     string      `json:"mpsusername"`
+	Username        string      `json:"username"`
+	Password        string      `json:"password,omitempty"`
+	MEBXPassword    string      `json:"mebxpassword,omitempty"`
+	MPSPassword     string      `json:"mpspassword,omitempty"`
+	UseTLS          bool        `json:"useTLS"`
+	AllowSelfSigned bool        `json:"allowSelfSigned"`
+	DeviceInfo      *DeviceInfo `json:"deviceInfo,omitempty"`
+}
+
+// DeviceInfo carries device metadata sent to the console.
+type DeviceInfo struct {
+	LMSInstalled *bool `json:"lmsInstalled,omitempty"`
 }
 
 // AddDevice registers a device via POST to the devices API endpoint.

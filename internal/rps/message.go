@@ -60,6 +60,7 @@ type MessagePayload struct {
 	FriendlyName      string          `json:"friendlyName,omitempty"`
 	TLSEnforced       bool            `json:"tlsEnforced,omitempty"`
 	TLSTunnel         bool            `json:"tlsTunnel,omitempty"`
+	LMSInstalled      bool            `json:"lmsInstalled,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -240,6 +241,7 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	payload.FriendlyName = req.FriendlyName
 	payload.TLSEnforced = req.LocalTlsEnforced
 	payload.TLSTunnel = req.TLSTunnel
+	payload.LMSInstalled = utils.DetectLMS(req.LocalTlsEnforced)
 
 	// convert struct to json
 	data, err := json.Marshal(payload)

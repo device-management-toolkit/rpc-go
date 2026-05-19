@@ -50,6 +50,7 @@ type GoWSMANMessages struct {
 	wsmanMessages  wsman.Messages
 	target         string
 	localTransport *LocalTransport
+	lmsAvailable   bool
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -78,6 +79,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		LogAMTMessages: logAMTMessages,
 	}
 
+	g.lmsAvailable = false
+
 	probeTimeout := time.Duration(utils.LMSDialerTimeout) * time.Second
 
 	if clientParams.UseTLS {
@@ -96,6 +99,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			logrus.Error(err)
 		} else {
 			logrus.Debug("Successfully connected to LMS.")
+
+			g.lmsAvailable = true
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
@@ -119,6 +124,9 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			clientParams.Transport = g.localTransport
 		} else {
 			logrus.Debug("Successfully connected to LMS.")
+
+			g.lmsAvailable = true
+
 			con.Close()
 		}
 	}
@@ -126,6 +134,11 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	g.wsmanMessages = wsman.NewMessages(clientParams)
 
 	return nil
+}
+
+// IsLMSAvailable returns whether LMS was reachable during the last SetupWsmanClient call.
+func (g *GoWSMANMessages) IsLMSAvailable() bool {
+	return g.lmsAvailable
 }
 
 // Close closes any open local transport connections

@@ -183,6 +183,20 @@ func (mr *MockWSMANerMockRecorder) AddWiFiSettings(wifiEndpointSettings, ieee802
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddWiFiSettings", reflect.TypeOf((*MockWSMANer)(nil).AddWiFiSettings), wifiEndpointSettings, ieee8021xSettings, wifiEndpoint, clientCredential, caCredential)
 }
 
+// Close mocks base method.
+func (m *MockWSMANer) Close() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Close")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Close indicates an expected call of Close.
+func (mr *MockWSMANerMockRecorder) Close() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockWSMANer)(nil).Close))
+}
+
 // CommitChanges mocks base method.
 func (m *MockWSMANer) CommitChanges() (setupandconfiguration.Response, error) {
 	m.ctrl.T.Helper()
@@ -643,6 +657,20 @@ func (mr *MockWSMANerMockRecorder) HostBasedSetupServiceAdmin(password, digestRe
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HostBasedSetupServiceAdmin", reflect.TypeOf((*MockWSMANer)(nil).HostBasedSetupServiceAdmin), password, digestRealm, nonce, signature, isUpgrade)
 }
 
+// IsLMSAvailable mocks base method.
+func (m *MockWSMANer) IsLMSAvailable() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsLMSAvailable")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsLMSAvailable indicates an expected call of IsLMSAvailable.
+func (mr *MockWSMANerMockRecorder) IsLMSAvailable() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsLMSAvailable", reflect.TypeOf((*MockWSMANer)(nil).IsLMSAvailable))
+}
+
 // PUTTLSSettings mocks base method.
 func (m *MockWSMANer) PUTTLSSettings(instanceID string, tlsSettingData tls0.SettingDataRequest) (tls0.Response, error) {
 	m.ctrl.T.Helper()
@@ -968,18 +996,4 @@ func (m *MockWSMANer) UpdateAMTPassword(passwordBase64 string) (authorization.Re
 func (mr *MockWSMANerMockRecorder) UpdateAMTPassword(passwordBase64 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAMTPassword", reflect.TypeOf((*MockWSMANer)(nil).UpdateAMTPassword), passwordBase64)
-}
-
-// Close mocks base method.
-func (m *MockWSMANer) Close() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Close")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Close indicates an expected call of Close.
-func (mr *MockWSMANerMockRecorder) Close() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockWSMANer)(nil).Close))
 }
