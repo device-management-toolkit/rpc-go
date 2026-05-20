@@ -18,7 +18,6 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
-	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
@@ -331,12 +330,31 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		return fmt.Errorf("failed to resolve console info: %w", err)
 	}
 
-	// Add device to console with resolved passwords
 	hasCIRA := cfg.Configuration.AMTSpecific.CIRA.MPSAddress != ""
 
-	addDeviceFailed := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg)
-	if addDeviceFailed != nil {
-		return fmt.Errorf("failed to add device to console: %w", addDeviceFailed)
+	if consoleBaseURL != "" {
+		// Already-activated device with TLS not decided by the profile: read its live TLS state, then release before orchestration.
+		if cmd.ControlMode != AMTControlModePreProvisioning && !cmd.tlsResolvedFromProfile(&cfg) {
+			// Prompt for the AMT password (if not supplied) so we can read TLS over WSMAN; ctx.AMTPassword is reused by the orchestrator.
+			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+				log.Warnf("Could not obtain AMT password for TLS read; device TLS settings will default to off: %v", err)
+			}
+
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				log.Warnf("WSMAN setup failed; device TLS settings will default to off: %v", err)
+			}
+		}
+
+		addErr := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg)
+
+		if cmd.WSMan != nil {
+			cmd.WSMan.Close()
+			cmd.WSMan = nil
+		}
+
+		if addErr != nil {
+			return fmt.Errorf("failed to add device to console: %w", addErr)
+		}
 	}
 
 	// Pass through the current AMT password (if provided) so orchestrator can
@@ -452,13 +470,18 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	return err
 }
 
+// tlsResolvedFromProfile reports whether TLS flags are already decided by the profile (or local enforcement), so AMT need not be queried.
+func (cmd *ActivateCmd) tlsResolvedFromProfile(cfg *config.Configuration) bool {
+	return cfg.Configuration.TLS.Enabled || cmd.LocalTLSEnforced
+}
+
 // resolveTLSFlags determines UseTLS and AllowSelfSigned for the device payload.
 // 1. If the profile has TLS enabled → both true.
 // 2. Otherwise query the device's current Remote TLS settings via WSMAN:
-//   - Remote TLS enabled with AcceptNonSecureConnections=false → both true.
+//   - Remote TLS enabled → both true.
 //   - All other cases → both false.
 func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allowSelfSigned bool) {
-	if cfg.Configuration.TLS.Enabled || cmd.LocalTLSEnforced {
+	if cmd.tlsResolvedFromProfile(cfg) {
 		return true, true
 	}
 
@@ -482,8 +505,11 @@ func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allo
 		return false, false
 	}
 
+	// AMT firmware emits the Remote TLS InstanceID with either the ASCII trademark
+	// "Intel(r) AMT 802.3 TLS Settings" or the Unicode "Intel® AMT 802.3 TLS Settings"
+	// depending on version, so match on the stable suffix instead of an exact literal.
 	for _, item := range pullRsp.Body.PullResponse.SettingDataItems {
-		if item.InstanceID == configure.RemoteTLSInstanceId && item.Enabled && !item.AcceptNonSecureConnections {
+		if strings.HasSuffix(item.InstanceID, "AMT 802.3 TLS Settings") && item.Enabled {
 			return true, true
 		}
 	}
@@ -551,8 +577,27 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	if consoleBaseURL != "" {
-		if err := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg); err != nil {
-			return fmt.Errorf("failed to add device to console: %w", err)
+		// Already-activated device with TLS not decided by the profile: read its live TLS state, then release before orchestration.
+		if cmd.ControlMode != AMTControlModePreProvisioning && !cmd.tlsResolvedFromProfile(&cfg) {
+			// Prompt for the AMT password (if not supplied) so we can read TLS over WSMAN; ctx.AMTPassword is reused by the orchestrator.
+			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+				log.Warnf("Could not obtain AMT password for TLS read; device TLS settings will default to off: %v", err)
+			}
+
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				log.Warnf("WSMAN setup failed; device TLS settings will default to off: %v", err)
+			}
+		}
+
+		addErr := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword, hasCIRA, &cfg)
+
+		if cmd.WSMan != nil {
+			cmd.WSMan.Close()
+			cmd.WSMan = nil
+		}
+
+		if addErr != nil {
+			return fmt.Errorf("failed to add device to console: %w", addErr)
 		}
 	}
 
