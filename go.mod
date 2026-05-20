@@ -6,7 +6,7 @@ go 1.25.9
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.46.0
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.46.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
@@ -22,11 +22,11 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/zalando/go-keyring v0.2.8 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 )
 
 require (
-	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
