@@ -1,3 +1,10 @@
+# [3.0.0-beta.26](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.25...v3.0.0-beta.26) (2026-05-20)
+
+
+### Bug Fixes
+
+* register device with TLS whenever AMT Remote TLS is on ([#1330](https://github.com/device-management-toolkit/rpc-go/issues/1330)) ([7771e1a](https://github.com/device-management-toolkit/rpc-go/commit/7771e1a1f4362bd8290457d7d4d3ce9155c3cde4))
+
 # [3.0.0-beta.25](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.24...v3.0.0-beta.25) (2026-05-01)
 
 # [3.0.0-beta.24](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.23...v3.0.0-beta.24) (2026-04-30)
