@@ -624,6 +624,34 @@ func TestResolveTLSFlags_ProfileTLSEnabled(t *testing.T) {
 	assert.True(t, allowSelfSigned)
 }
 
+// tlsResolvedFromProfile gates whether the fullflow paths set up WSMAN and prompt for the AMT password; true skips that work.
+func TestTLSResolvedFromProfile(t *testing.T) {
+	tests := []struct {
+		name             string
+		profileTLS       bool
+		localTLSEnforced bool
+		want             bool
+	}{
+		{name: "neither set", profileTLS: false, localTLSEnforced: false, want: false},
+		{name: "profile TLS enabled", profileTLS: true, localTLSEnforced: false, want: true},
+		{name: "local TLS enforced", profileTLS: false, localTLSEnforced: true, want: true},
+		{name: "both set", profileTLS: true, localTLSEnforced: true, want: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &ActivateCmd{}
+			cmd.LocalTLSEnforced = tt.localTLSEnforced
+			cfg := &config.Configuration{}
+			cfg.Configuration.TLS.Enabled = tt.profileTLS
+
+			assert.Equal(t, tt.want, cmd.tlsResolvedFromProfile(cfg))
+		})
+	}
+}
+
 func TestResolveTLSFlags_NoWSMAN(t *testing.T) {
 	cmd := &ActivateCmd{} // WSMan is nil
 	cfg := &config.Configuration{}
@@ -662,7 +690,7 @@ func TestResolveTLSFlags_WSMANRemoteTLSEnabled(t *testing.T) {
 	assert.True(t, allowSelfSigned)
 }
 
-func TestResolveTLSFlags_WSMANRemoteTLSAcceptsNonSecure(t *testing.T) {
+func TestResolveTLSFlags_WSMANRemoteTLSEnabledAcceptsNonSecure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -677,7 +705,7 @@ func TestResolveTLSFlags_WSMANRemoteTLSAcceptsNonSecure(t *testing.T) {
 		{
 			InstanceID:                 configure.RemoteTLSInstanceId,
 			Enabled:                    true,
-			AcceptNonSecureConnections: true, // accepts non-secure → false
+			AcceptNonSecureConnections: true,
 		},
 	}
 	mockWSMAN.EXPECT().PullTLSSettingData("ctx-456").Return(pullResp, nil)
@@ -687,8 +715,36 @@ func TestResolveTLSFlags_WSMANRemoteTLSAcceptsNonSecure(t *testing.T) {
 	cfg := &config.Configuration{}
 
 	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
-	assert.False(t, useTLS)
-	assert.False(t, allowSelfSigned)
+	assert.True(t, useTLS)
+	assert.True(t, allowSelfSigned)
+}
+
+func TestResolveTLSFlags_WSMANRemoteTLSEnabledUnicodeInstanceID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	enumerateResp := amttls.Response{}
+	enumerateResp.Body.EnumerateResponse.EnumerationContext = "ctx-789"
+	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(enumerateResp, nil)
+
+	pullResp := amttls.Response{}
+	pullResp.Body.PullResponse.SettingDataItems = []amttls.SettingDataResponse{
+		{
+			InstanceID: "Intel® AMT 802.3 TLS Settings",
+			Enabled:    true,
+		},
+	}
+	mockWSMAN.EXPECT().PullTLSSettingData("ctx-789").Return(pullResp, nil)
+
+	cmd := &ActivateCmd{}
+	cmd.WSMan = mockWSMAN
+	cfg := &config.Configuration{}
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	assert.True(t, useTLS)
+	assert.True(t, allowSelfSigned)
 }
 
 func TestResolveTLSFlags_WSMANEnumerateError(t *testing.T) {
