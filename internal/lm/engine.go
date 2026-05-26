@@ -23,26 +23,44 @@ type LMEConnection struct {
 	Command    pthi.Command
 	Session    *apf.Session
 	ourChannel int
-	retries    int
+	// port is the AMT-side port the forwarded-tcpip channel targets. Defaults to
+	// 16992 (plaintext); the TLS path targets 16993.
+	port    uint32
+	retries int
 }
 
-// apfInitHandler signals ready once ME advertises tcpip-forward for port 16992.
+// apfInitHandler signals ready once ME advertises tcpip-forward for a local AMT
+// port. AMT 19+ advertises both 16992 (plaintext) and 16993 (TLS); older firmware
+// advertises only 16992. Initialize returns once either has been seen.
 type apfInitHandler struct {
 	apf.DefaultHandler
-	portForwardReady bool
+	forward16992 bool
+	forward16993 bool
 }
 
 func (h *apfInitHandler) OnGlobalRequest(req apf.GlobalRequest) bool {
-	if req.RequestType == "tcpip-forward" && req.Port == 16992 {
-		h.portForwardReady = true
+	if req.RequestType == "tcpip-forward" {
+		switch req.Port {
+		case utils.LMSPortNum:
+			h.forward16992 = true
+		case utils.LMSTLSPortNum:
+			h.forward16993 = true
+		}
 	}
 
 	return false
 }
 
+// portForwardReady reports whether ME has advertised tcpip-forward for any local
+// AMT port we can open a channel to.
+func (h *apfInitHandler) portForwardReady() bool {
+	return h.forward16992 || h.forward16993
+}
+
 func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *LMEConnection {
 	lme := &LMEConnection{
 		ourChannel: 1,
+		port:       utils.LMSPortNum,
 	}
 	lme.Command = pthi.NewCommand()
 	lme.Session = &apf.Session{
@@ -106,7 +124,7 @@ func (lme *LMEConnection) Initialize() error {
 			}
 		}
 
-		if handler.portForwardReady {
+		if handler.portForwardReady() {
 			return nil
 		}
 	}
@@ -132,7 +150,7 @@ func (lme *LMEConnection) Connect() error {
 			lme.ourChannel = channel
 		}
 
-		bin_buf := apf.ChannelOpen(lme.ourChannel)
+		bin_buf := apf.ChannelOpenPort(lme.ourChannel, lme.port)
 
 		err := lme.Command.Send(bin_buf.Bytes())
 		if err != nil {

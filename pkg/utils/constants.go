@@ -25,6 +25,10 @@ const (
 	// LMSPort is used for determining what port to connect to LMS on
 	LMSPort    = "16992"
 	LMSTLSPort = "16993"
+	// LMSPortNum and LMSTLSPortNum are the numeric forms used for APF
+	// tcpip-forward matching and channel-open requests over the LME path.
+	LMSPortNum    uint32 = 16992
+	LMSTLSPortNum uint32 = 16993
 
 	AMTUserName = "admin"
 

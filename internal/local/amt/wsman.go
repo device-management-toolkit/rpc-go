@@ -9,7 +9,9 @@ import (
 	"context"
 	cryptotls "crypto/tls"
 	"encoding/base64"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -46,10 +48,18 @@ import (
 // WSMANer interface is now in the interfaces package
 type WSMANer = interfaces.WSMANer
 
+// localTransportCloser is an http.RoundTripper backed by a HECI handle that must
+// be released on Close. Both the plaintext LocalTransport and the TLS-capable
+// LocalTLSTransport satisfy it.
+type localTransportCloser interface {
+	http.RoundTripper
+	io.Closer
+}
+
 type GoWSMANMessages struct {
 	wsmanMessages  wsman.Messages
 	target         string
-	localTransport *LocalTransport
+	localTransport localTransportCloser
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -92,8 +102,13 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
 		if err != nil {
-			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
-			logrus.Error(err)
+			// LMS daemon isn't listening on the TLS port; on AMT 19+ we can still
+			// reach the firmware directly over the LME/APF path on HECI, running
+			// TLS over the APF channel to port 16993.
+			logrus.Debug("LMS TLS port not active, using LME (APF) transport over HECI")
+
+			g.localTransport = NewLocalTLSTransport(tlsConfig)
+			clientParams.Transport = g.localTransport
 		} else {
 			logrus.Debug("Successfully connected to LMS.")
 
