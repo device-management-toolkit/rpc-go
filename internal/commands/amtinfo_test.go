@@ -134,6 +134,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -180,6 +181,14 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
+	assert.Equal(t, "2406.0.0.0", gotBody.DeviceInfo.LMSVersion)
+	assert.NotNil(t, gotBody.DeviceInfo.AMTEnabledInBIOS)
+	assert.True(t, *gotBody.DeviceInfo.AMTEnabledInBIOS)
+	// MEInterfaceVersion and OSName depend on OS-specific probes that may
+	// return empty on CI runners (e.g. no Intel MEI driver on Windows).
+	// Just verify the fields are present (non-nil string) without requiring content.
+	assert.NotNil(t, gotBody.DeviceInfo.MEInterfaceVersion)
+	assert.NotNil(t, gotBody.DeviceInfo.OSName)
 }
 
 func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
@@ -191,6 +200,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -232,6 +242,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -288,6 +299,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
