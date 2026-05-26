@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"reflect"
 	"syscall"
 	"unsafe"
@@ -255,11 +256,38 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 		return 0, errors.New("couldn't create some sort of event")
 	}
 
-	windows.WriteFile(heci.meiDevice, buffer, done, &overlapped)
+	// WriteFile on an overlapped handle returns nil (completed synchronously) or
+	// ERROR_IO_PENDING (will complete asynchronously and signal the event). Any other
+	// error means the driver rejected the write outright and the event will never fire,
+	// so bail out before waiting on it.
+	if writeErr := windows.WriteFile(heci.meiDevice, buffer, done, &overlapped); writeErr != nil && !errors.Is(writeErr, windows.ERROR_IO_PENDING) {
+		return 0, fmt.Errorf("WriteFile failed: %w", writeErr)
+	}
 
-	event, err := windows.WaitForSingleObject(overlapped.HEvent, 2000)
-	if event == (uint32)(windows.WAIT_TIMEOUT) {
-		return 0, errors.New("wait timeout while sending data")
+	event, werr := windows.WaitForSingleObject(overlapped.HEvent, 2000)
+	if event != uint32(windows.WAIT_OBJECT_0) {
+		// The write is still pending inside the MEI driver. CancelIoEx only *requests*
+		// cancellation and returns immediately, so we MUST then block on
+		// GetOverlappedResult(bWait=true) until the driver is actually finished with the
+		// overlapped struct and buffer. Returning while the IRP is still in flight lets it
+		// later complete into reclaimed stack memory and the event handle freed by the
+		// deferred CloseHandle above, corrupting the MEI client until the next reboot
+		// ("a device attached to the system is not functioning").
+		_ = windows.CancelIoEx(heci.meiDevice, &overlapped)
+
+		var drained uint32
+
+		_ = windows.GetOverlappedResult(heci.meiDevice, &overlapped, &drained, true)
+
+		if event == uint32(windows.WAIT_TIMEOUT) {
+			return 0, errors.New("wait timeout while sending data")
+		}
+
+		if werr == nil {
+			werr = errors.New("wait failed while sending data")
+		}
+
+		return 0, werr
 	}
 
 	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, done, false)
