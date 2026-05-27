@@ -100,31 +100,26 @@ func main() {
 }
 
 func updateConnectionSettings(flags *flags.Flags) error {
-	// Check if TLS is Mandatory for LMS connection
-	resp, err := flags.AmtCommand.GetChangeEnabled()
 	flags.LocalTlsEnforced = false
 
-	if err != nil {
-		if err.Error() == "wait timeout while sending data" {
-			log.Trace("Operation timed out while sending data. This may occur on systems with AMT version 11 and below.")
-
-			return nil
-		} else {
-			log.Error(err)
-
-			return err
-		}
-	}
-
-	if resp.IsTlsEnforcedOnLocalPorts() {
-		flags.LocalTlsEnforced = true
-
-		log.Trace("TLS is enforced on local ports")
-	}
-	// Check the current provisioning mode
-	flags.ControlMode, err = flags.AmtCommand.GetControlMode()
+	controlMode, err := flags.AmtCommand.GetControlMode()
 	if err != nil {
 		return err
+	}
+
+	flags.ControlMode = controlMode
+
+	// Best-effort, non-fatal: the watchdog HECI client may be busy/held by LMS. When it
+	// succeeds, cache it and honor local-port TLS enforcement (so WSMAN picks 16993).
+	if resp, err := flags.AmtCommand.GetChangeEnabled(); err == nil {
+		flags.ChangeEnabled = resp
+		flags.ChangeEnabledValid = true
+
+		if resp.IsTlsEnforcedOnLocalPorts() {
+			flags.LocalTlsEnforced = true
+
+			log.Trace("TLS is enforced on local ports")
+		}
 	}
 
 	return nil
