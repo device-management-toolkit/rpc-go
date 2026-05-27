@@ -7,6 +7,7 @@ package commands
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -21,6 +22,18 @@ import (
 // DefaultSkipAMTCertCheck is set by CLI context to control AMT TLS verification at WSMAN setup time.
 // It is used in AMTBaseCmd.AfterApply where the CLI context isn't directly accessible.
 var DefaultSkipAMTCertCheck bool
+
+// amtCapableArch reports whether the CPU architecture can host Intel AMT/MEI.
+// AMT is an Intel x86 platform feature; ARM and other architectures never have
+// it, so the HECI/MEI probe can be short-circuited on those builds.
+func amtCapableArch() bool {
+	switch runtime.GOARCH {
+	case "amd64", "386":
+		return true
+	default:
+		return false
+	}
+}
 
 // PasswordRequirer interface to be implemented by commands that conditionally require passwords
 type PasswordRequirer interface {
@@ -116,6 +129,21 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 
 	// Ensure we close the MEI device connection after getting control mode and TLS status
 	defer amtCommand.Close()
+
+	// AMT/MEI is an Intel x86 feature. On other architectures (e.g. ARM) there
+	// is no HECI to probe, so short-circuit without retrying or prompting for
+	// elevation — neither would surface an AMT device that cannot exist.
+	if !amtCapableArch() {
+		cmd.afterApplied = true
+
+		if cmd.SkipWSMANSetup {
+			cmd.ControlMode = -1
+
+			return nil
+		}
+
+		return utils.HECIDriverNotDetected
+	}
 
 	// always have the control mode handy
 	// Get the current control mode using the injected AMT command, with retries if AMT is busy
