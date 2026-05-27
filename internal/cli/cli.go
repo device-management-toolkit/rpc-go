@@ -51,6 +51,7 @@ type CLI struct {
 	commands.ServerAuthFlags
 
 	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Status      commands.StatusCmd         `cmd:"status" aliases:"health,doctor" help:"Check whether the device is ready to be provisioned"`
 	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
@@ -166,6 +167,7 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 var knownCommands = map[string]bool{
 	"amtinfo": true, "version": true, "activate": true,
 	"deactivate": true, "configure": true, "diagnostics": true, "diag": true,
+	"status": true, "health": true, "doctor": true,
 }
 
 // hasCommand checks if args contain a recognized command name.
