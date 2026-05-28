@@ -193,14 +193,10 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		const minimumAMTVersion = 11
 		// Check if the AMT major version is greater than 11
 		if majorVersion > minimumAMTVersion {
-			result, err := cmd.GetChangeEnabled()
-			if err != nil {
-				log.Error(err)
-			}
-
-			if result.IsNewInterfaceVersion() {
+			// Use the cached GetChangeEnabled result; unavailable if the watchdog open failed.
+			if service.flags.ChangeEnabledValid && service.flags.ChangeEnabled.IsNewInterfaceVersion() {
 				opStateValue := "disabled"
-				if result.IsAMTEnabled() {
+				if service.flags.ChangeEnabled.IsAMTEnabled() {
 					opStateValue = "enabled"
 				}
 

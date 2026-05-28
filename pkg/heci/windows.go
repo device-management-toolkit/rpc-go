@@ -299,12 +299,17 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint3
 }
 
 func (heci *Driver) Close() {
-	// NOTE: We intentionally do NOT call CloseHandle here. On some versions of
-	// the Intel MEI driver (e.g. rolled-back/older drivers), calling CloseHandle
-	// on the MEI device file handle after ConnectHeciClient triggers a null-pointer
-	// execute-AV in the driver's kernel close dispatch routine, crashing the process.
-	// Since rpc is a short-lived CLI process, the OS will clean up all open handles
-	// when the process exits, so not closing explicitly is safe and correct.
+	// Close to release the single-instance Watchdog client (leaking it eventually makes
+	// CONNECT_CLIENT fail until reboot); cancel pending I/O first to avoid a close-time
+	// AV on un-updated Win11 MEI drivers.
+	if heci.meiDevice != 0 && heci.meiDevice != windows.InvalidHandle {
+		_ = windows.CancelIoEx(heci.meiDevice, nil)
+
+		if err := windows.CloseHandle(heci.meiDevice); err != nil {
+			log.Debugf("MEI CloseHandle returned: %v", err)
+		}
+	}
+
 	heci.meiDevice = 0
 	heci.bufferSize = 0
 }

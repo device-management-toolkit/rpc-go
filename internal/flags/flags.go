@@ -124,6 +124,9 @@ type Flags struct {
 	LocalTlsEnforced                    bool
 	TLSTunnel                           bool
 	ControlMode                         int
+	// Best-effort cached GetChangeEnabled result, reused by amtinfo to avoid reopening the watchdog.
+	ChangeEnabled      amt.ChangeEnabledResponse
+	ChangeEnabledValid bool
 }
 
 func NewFlags(args []string, pr utils.PasswordReader) *Flags {
