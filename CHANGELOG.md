@@ -1,3 +1,10 @@
+## [2.50.7](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.6...v2.50.7) (2026-05-28)
+
+
+### Bug Fixes
+
+* handle busy watchdog HECI client in amtinfo ([#1343](https://github.com/device-management-toolkit/rpc-go/issues/1343)) ([b473599](https://github.com/device-management-toolkit/rpc-go/commit/b473599ef87ec8202ff9f5473f2296581714f89d))
+
 ## [2.50.6](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.5...v2.50.6) (2026-05-21)
 
 ## [2.50.5](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.4...v2.50.5) (2026-05-14)
