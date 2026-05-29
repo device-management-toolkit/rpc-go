@@ -6,6 +6,7 @@
 package activate
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
@@ -21,8 +23,32 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+// skuQueryTimeout bounds each GetVersionDataFromME call; mirrors amtinfo's ceiling.
+const skuQueryTimeout = 2 * time.Minute
+
+// Console-facing labels for the device-identity columns.
+const (
+	connectionTypeCIRA   = "CIRA"
+	connectionTypeDirect = "Direct"
+	skuVPro              = "vpro"
+	skuISM               = "ism"
+)
+
+// controlModeLabel maps an AMT control mode to Console's label; "" for pre-provisioning/unknown.
+func controlModeLabel(mode int) string {
+	switch mode {
+	case AMTControlModeCCM:
+		return "ccm"
+	case AMTControlModeACM:
+		return "acm"
+	default:
+		return ""
+	}
+}
 
 // ActivateCmd represents the activate command with automatic mode detection
 // Uses -u/--url for remote activation and -l/--local for explicit local activation
@@ -369,6 +395,8 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		return err
 	}
 
+	cmd.markDeviceControlMode(ctx, consoleBaseURL, token, guid)
+
 	log.Info("Profile fullflow completed successfully")
 
 	return nil
@@ -392,6 +420,24 @@ func (cmd *ActivateCmd) resolveConsoleInfo(ctx *commands.Context, fetcher *profi
 	}
 
 	return consoleBaseURL, guid, nil
+}
+
+// markDeviceControlMode re-reads the live control mode after activation and
+// PATCHes it into Console. Best-effort: activation already succeeded, so a
+// failure here is warn-only and must not unwind it.
+func (cmd *ActivateCmd) markDeviceControlMode(ctx *commands.Context, consoleBaseURL, token, guid string) {
+	if consoleBaseURL == "" || guid == "" {
+		return
+	}
+
+	mode := readControlMode(ctx)
+	if mode == "" {
+		return
+	}
+
+	if err := device.UpdateDeviceControlMode(consoleBaseURL, token, guid, mode, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
+		log.Warnf("failed to update controlMode on console: %v", err)
+	}
 }
 
 // removes the MPS password from the device record in the console.
@@ -430,6 +476,11 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
 
+	connectionType := connectionTypeDirect
+	if hasCIRA {
+		connectionType = connectionTypeCIRA
+	}
+
 	payload := device.DevicePayload{
 		GUID:            guid,
 		Hostname:        hostname,
@@ -440,6 +491,11 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		MEBXPassword:    mebxPassword,
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
+		SoftDelete:      false,
+		ControlMode:     controlModeLabel(cmd.ControlMode),
+		UPID:            readUPID(ctx),
+		SKU:             readSKU(ctx),
+		ConnectionType:  connectionType,
 	}
 
 	if hasCIRA {
@@ -515,6 +571,83 @@ func (cmd *ActivateCmd) resolveTLSFlags(cfg *config.Configuration) (useTLS, allo
 	}
 
 	return false, false
+}
+
+// readUPID returns the device's Intel UPID as a hex string, or "" when the
+// platform doesn't expose one (older firmware, not provisioned, or HECI/MEI is
+// unavailable). UPID is informational metadata for Console — failures here must
+// never block device registration.
+func readUPID(ctx *commands.Context) string {
+	if ctx == nil || ctx.AMTCommand == nil {
+		return ""
+	}
+
+	u, err := ctx.AMTCommand.GetUPID()
+	if err != nil {
+		log.Debugf("UPID unavailable, omitting from device payload: %v", err)
+
+		return ""
+	}
+
+	if u == nil || len(u.Raw) == 0 {
+		return ""
+	}
+
+	return strings.ToUpper(hex.EncodeToString(u.Raw))
+}
+
+// readControlMode returns the live control mode as Console's label, "" on any
+// failure. GetControlMode owns its MEI handle, so this is safe after the
+// orchestrator subprocesses finish.
+func readControlMode(ctx *commands.Context) string {
+	if ctx == nil || ctx.AMTCommand == nil {
+		return ""
+	}
+
+	mode, err := ctx.AMTCommand.GetControlMode()
+	if err != nil {
+		log.Debugf("control mode unavailable, omitting from device update: %v", err)
+
+		return ""
+	}
+
+	return controlModeLabel(mode)
+}
+
+// readSKU derives the manageability SKU label (vPro/ISM) the way amtinfo does
+// (version + raw SKU → features), "" on any failure.
+func readSKU(ctx *commands.Context) string {
+	if ctx == nil || ctx.AMTCommand == nil {
+		return ""
+	}
+
+	version, err := ctx.AMTCommand.GetVersionDataFromME("AMT", skuQueryTimeout)
+	if err != nil {
+		log.Debugf("AMT version unavailable, omitting SKU from device payload: %v", err)
+
+		return ""
+	}
+
+	sku, err := ctx.AMTCommand.GetVersionDataFromME("Sku", skuQueryTimeout)
+	if err != nil {
+		log.Debugf("SKU unavailable, omitting from device payload: %v", err)
+
+		return ""
+	}
+
+	return manageabilitySKU(utils.DecodeAMTFeatures(version, sku))
+}
+
+// manageabilitySKU collapses a decoded AMT feature string to vPro/ISM, "" otherwise.
+func manageabilitySKU(features string) string {
+	switch {
+	case strings.Contains(features, "AMT Pro"):
+		return skuVPro
+	case strings.Contains(features, "Intel Standard Manageability"):
+		return skuISM
+	default:
+		return ""
+	}
 }
 
 // getLocalIP returns the first non-loopback IPv4 address, falling back to os.Hostname().
@@ -610,6 +743,8 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 
 		return err
 	}
+
+	cmd.markDeviceControlMode(ctx, consoleBaseURL, token, guid)
 
 	log.Info("Profile fullflow completed successfully")
 
@@ -725,5 +860,11 @@ func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 		}
 	}
 
-	return localCmd.Run(ctx)
+	if err := localCmd.Run(ctx); err != nil {
+		return err
+	}
+
+	cmd.markDeviceControlMode(ctx, consoleBaseURL, token, guid)
+
+	return nil
 }

@@ -61,6 +61,56 @@ func TestDevicePayload_JSON_WithoutPasswords(t *testing.T) {
 	assert.False(t, hasMPS, "mpspassword should be omitted when empty")
 }
 
+func TestDevicePayload_JSON_IdentityFields(t *testing.T) {
+	payload := DevicePayload{
+		GUID:        "test-guid",
+		Hostname:    "test-host",
+		Tags:        []string{},
+		MPSUsername: "admin",
+		ControlMode: "ACM",
+		UPID:        "ABCDEF0123456789",
+	}
+
+	data, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &m))
+
+	// softDelete has no omitempty: false must round-trip explicitly so the
+	// server can distinguish "not provided" from "set to false".
+	sd, hasSoftDelete := m["softDelete"]
+	assert.True(t, hasSoftDelete, "softDelete must always be serialized")
+	assert.Equal(t, false, sd)
+
+	assert.Equal(t, "ACM", m["controlMode"])
+	assert.Equal(t, "ABCDEF0123456789", m["upid"])
+
+	// id and createdDate are server-managed; the client omits them when empty.
+	_, hasID := m["id"]
+	_, hasCreatedDate := m["createdDate"]
+	assert.False(t, hasID, "id should be omitted when empty (server-managed)")
+	assert.False(t, hasCreatedDate, "createdDate should be omitted when empty (server-managed)")
+}
+
+func TestDevicePayload_JSON_ControlModeOmittedWhenEmpty(t *testing.T) {
+	payload := DevicePayload{
+		GUID:        "test-guid",
+		Hostname:    "test-host",
+		Tags:        []string{},
+		MPSUsername: "admin",
+	}
+
+	data, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &m))
+
+	_, hasControlMode := m["controlMode"]
+	assert.False(t, hasControlMode, "controlMode should be omitted when empty (pre-provisioning)")
+}
+
 func TestAddDevice_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
@@ -182,6 +232,43 @@ func TestClearDeviceMPSPassword_Failure(t *testing.T) {
 	defer server.Close()
 
 	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestUpdateDeviceControlMode_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		body, _ := io.ReadAll(r.Body)
+
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &m))
+
+		// Partial update: only guid + controlMode must be present so Console's
+		// providedJSONFields tracker won't touch other columns.
+		assert.Equal(t, "guid-123", m["guid"])
+		assert.Equal(t, "ACM", m["controlMode"])
+		assert.Len(t, m, 2, "PATCH body should contain only guid and controlMode")
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := UpdateDeviceControlMode(server.URL, "test-token", "guid-123", "ACM", false, "")
+	assert.NoError(t, err)
+}
+
+func TestUpdateDeviceControlMode_Failure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := UpdateDeviceControlMode(server.URL, "test-token", "guid-123", "ACM", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }

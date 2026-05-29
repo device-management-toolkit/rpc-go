@@ -557,6 +557,7 @@ func TestAddDeviceToConsole_CIRASetsMPSFields(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &p))
 		assert.Equal(t, "admin", p.MPSUsername)
 		assert.Equal(t, "mps-pass", p.MPSPassword)
+		assert.Equal(t, "CIRA", p.ConnectionType)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -578,6 +579,7 @@ func TestAddDeviceToConsole_NoCIRAClearsMPSFields(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &p))
 		assert.Empty(t, p.MPSUsername)
 		assert.Empty(t, p.MPSPassword)
+		assert.Equal(t, "Direct", p.ConnectionType)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -940,4 +942,42 @@ func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
 	_ = cmd.Run(ctx)
 
 	assert.False(t, spy.Called, "password prompt should not be triggered when profile file is provided")
+}
+
+func TestControlModeLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		mode int
+		want string
+	}{
+		{"pre-provisioning maps to empty", AMTControlModePreProvisioning, ""},
+		{"CCM", AMTControlModeCCM, "ccm"},
+		{"ACM", AMTControlModeACM, "acm"},
+		{"unknown maps to empty", 99, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, controlModeLabel(tt.mode))
+		})
+	}
+}
+
+func TestManageabilitySKU(t *testing.T) {
+	tests := []struct {
+		name     string
+		features string
+		want     string
+	}{
+		{"vPro from AMT Pro", "AMT Pro Corporate", "vpro"},
+		{"ISM from standard manageability", "Intel Standard Manageability Corporate", "ism"},
+		{"empty features map to empty", "", ""},
+		{"unrecognized features map to empty", "iQST ASF", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, manageabilitySKU(tt.features))
+		})
+	}
 }

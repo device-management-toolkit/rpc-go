@@ -107,7 +107,8 @@ func doJSONRequest(method, requestURL, token string, body []byte, skipCertCheck 
 	return nil
 }
 
-// DevicePayload is the JSON body sent to /api/v1/devices.
+// DevicePayload is the JSON body sent to /api/v1/devices. ID and CreatedDate
+// are server-managed; the client sends them empty.
 type DevicePayload struct {
 	GUID            string   `json:"guid"`
 	Hostname        string   `json:"hostname"`
@@ -120,6 +121,13 @@ type DevicePayload struct {
 	MPSPassword     string   `json:"mpspassword,omitempty"`
 	UseTLS          bool     `json:"useTLS"`
 	AllowSelfSigned bool     `json:"allowSelfSigned"`
+	ID              string   `json:"id,omitempty"`
+	CreatedDate     string   `json:"createdDate,omitempty"`
+	SoftDelete      bool     `json:"softDelete"`
+	ControlMode     string   `json:"controlMode,omitempty"`
+	UPID            string   `json:"upid,omitempty"`
+	SKU             string   `json:"sku,omitempty"`
+	ConnectionType  string   `json:"connectionType,omitempty"`
 }
 
 // AddDevice registers a device via POST to the devices API endpoint.
@@ -179,6 +187,28 @@ func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bo
 	}
 
 	log.Infof("MPS password cleared from device %s", guid)
+
+	return nil
+}
+
+// UpdateDeviceControlMode PATCHes only the controlMode column. A map (not
+// DevicePayload) keeps it a true partial update so Console leaves other columns
+// untouched.
+func UpdateDeviceControlMode(consoleBaseURL, token, guid, controlMode string, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
+
+	log.Debugf("Updating controlMode on device %s to %q", guid, controlMode)
+
+	body, err := json.Marshal(map[string]string{"guid": guid, "controlMode": controlMode})
+	if err != nil {
+		return fmt.Errorf("failed to marshal control-mode payload: %w", err)
+	}
+
+	if err := doJSONRequest(http.MethodPatch, endpoint, token, body, skipCertCheck); err != nil {
+		return fmt.Errorf("update controlMode failed: %w", err)
+	}
+
+	log.Infof("Device %s controlMode set to %s", guid, controlMode)
 
 	return nil
 }
