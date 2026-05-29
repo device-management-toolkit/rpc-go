@@ -431,12 +431,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
 
-	isLMSAvailable := false
-	if cmd.WSMan != nil {
-		isLMSAvailable = cmd.WSMan.IsLMSAvailable()
-	} else {
-		isLMSAvailable = utils.DetectLMS(cmd.LocalTLSEnforced)
-	}
+	isLMSAvailable := utils.DetectLMS(cmd.LocalTLSEnforced)
 
 	payload := device.DevicePayload{
 		GUID:            guid,

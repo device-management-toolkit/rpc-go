@@ -657,20 +657,6 @@ func (mr *MockWSMANerMockRecorder) HostBasedSetupServiceAdmin(password, digestRe
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HostBasedSetupServiceAdmin", reflect.TypeOf((*MockWSMANer)(nil).HostBasedSetupServiceAdmin), password, digestRealm, nonce, signature, isUpgrade)
 }
 
-// IsLMSAvailable mocks base method.
-func (m *MockWSMANer) IsLMSAvailable() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsLMSAvailable")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// IsLMSAvailable indicates an expected call of IsLMSAvailable.
-func (mr *MockWSMANerMockRecorder) IsLMSAvailable() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsLMSAvailable", reflect.TypeOf((*MockWSMANer)(nil).IsLMSAvailable))
-}
-
 // PUTTLSSettings mocks base method.
 func (m *MockWSMANer) PUTTLSSettings(instanceID string, tlsSettingData tls0.SettingDataRequest) (tls0.Response, error) {
 	m.ctrl.T.Helper()

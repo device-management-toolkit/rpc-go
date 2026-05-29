@@ -20,9 +20,16 @@ func DetectLMS(localTLSEnforced bool) bool {
 		port = LMSTLSPort
 	}
 
+	return lmsPortReachable(net.JoinHostPort(LMSAddress, port))
+}
+
+// lmsPortReachable reports whether a TCP connection to addr can be established
+// within LMSDialerTimeout. It only confirms the port is open, not that any
+// protocol handshake would succeed.
+func lmsPortReachable(addr string) bool {
 	dialer := &net.Dialer{Timeout: time.Duration(LMSDialerTimeout) * time.Second}
 
-	conn, err := dialer.DialContext(context.Background(), "tcp4", net.JoinHostPort(LMSAddress, port))
+	conn, err := dialer.DialContext(context.Background(), "tcp4", addr)
 	if err != nil {
 		return false
 	}
