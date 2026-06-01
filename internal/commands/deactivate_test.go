@@ -234,6 +234,30 @@ func TestDeactivateCmd_Run_Local_CCM(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "partial unprovisioning is only supported in ACM mode")
 	})
+
+	t.Run("CCM deactivation does not prompt for AMT password", func(t *testing.T) {
+		// Failing reader: a prompt would error before reaching Unprovision.
+		originalPR := utils.PR
+		utils.PR = &MockPasswordReaderFail{}
+
+		defer func() { utils.PR = originalPR }()
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
+
+		ctx := &Context{AMTCommand: mockAMT} // no AMTPassword
+		cmd := DeactivateCmd{Local: true}
+		cmd.ControlMode = ControlModeCCM
+
+		assert.False(t, cmd.RequiresAMTPassword())
+
+		err := cmd.Run(ctx)
+		assert.NoError(t, err)
+	})
 }
 
 func TestDeactivateCmd_Run_Local_GetControlModeFailure(t *testing.T) {
