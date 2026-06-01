@@ -1,3 +1,10 @@
+# [3.0.0-beta.27](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.26...v3.0.0-beta.27) (2026-06-01)
+
+
+### Bug Fixes
+
+* skip AMT password prompt for local CCM deactivation ([#1345](https://github.com/device-management-toolkit/rpc-go/issues/1345)) ([5c44be5](https://github.com/device-management-toolkit/rpc-go/commit/5c44be5ad97834583a528502db35390e2e6cac89))
+
 # [3.0.0-beta.26](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.25...v3.0.0-beta.26) (2026-05-20)
 
 
