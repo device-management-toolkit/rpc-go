@@ -1,3 +1,10 @@
+# [3.0.0-beta.28](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.27...v3.0.0-beta.28) (2026-06-02)
+
+
+### Features
+
+* detect LMS availability and report to console ([#1290](https://github.com/device-management-toolkit/rpc-go/issues/1290)) ([e6da61f](https://github.com/device-management-toolkit/rpc-go/commit/e6da61fc8c658b404d8682fe68ca0de2bfca15ed)), closes [#1246](https://github.com/device-management-toolkit/rpc-go/issues/1246)
+
 # [3.0.0-beta.27](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.26...v3.0.0-beta.27) (2026-06-01)
 
 
