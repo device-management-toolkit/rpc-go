@@ -379,13 +379,14 @@ type syncPayload struct {
 }
 
 type syncDeviceInfo struct {
-	FWVersion   string    `json:"fwVersion"`
-	FWBuild     string    `json:"fwBuild"`
-	FWSku       string    `json:"fwSku"`
-	CurrentMode string    `json:"currentMode"`
-	Features    string    `json:"features"`
-	IPAddress   string    `json:"ipAddress"`
-	LastUpdated time.Time `json:"lastUpdated"`
+	FWVersion    string    `json:"fwVersion"`
+	FWBuild      string    `json:"fwBuild"`
+	FWSku        string    `json:"fwSku"`
+	CurrentMode  string    `json:"currentMode"`
+	Features     string    `json:"features"`
+	IPAddress    string    `json:"ipAddress"`
+	LastUpdated  time.Time `json:"lastUpdated"`
+	LMSInstalled bool      `json:"lmsInstalled"`
 }
 
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
@@ -397,13 +398,14 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	payload := syncPayload{
 		GUID: result.UUID,
 		DeviceInfo: syncDeviceInfo{
-			FWVersion:   result.AMT,
-			FWBuild:     result.BuildNumber,
-			FWSku:       result.SKU,
-			CurrentMode: result.ControlMode,
-			Features:    result.Features,
-			IPAddress:   bestIPAddress(result),
-			LastUpdated: time.Now(),
+			FWVersion:    result.AMT,
+			FWBuild:      result.BuildNumber,
+			FWSku:        result.SKU,
+			CurrentMode:  result.ControlMode,
+			Features:     result.Features,
+			IPAddress:    bestIPAddress(result),
+			LastUpdated:  time.Now(),
+			LMSInstalled: utils.DetectLMS(s.localTLSEnforced),
 		},
 	}
 
@@ -458,6 +460,10 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		return fmt.Errorf("sync request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("device not found; activate the device before syncing device info")
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("sync failed with status %s", resp.Status)

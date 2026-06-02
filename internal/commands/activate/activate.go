@@ -21,6 +21,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -430,6 +431,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
 
+	isLMSAvailable := utils.DetectLMS(cmd.LocalTLSEnforced)
+
 	payload := device.DevicePayload{
 		GUID:            guid,
 		Hostname:        hostname,
@@ -440,6 +443,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		MEBXPassword:    mebxPassword,
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
+		DeviceInfo:      &device.DeviceInfo{LMSInstalled: &isLMSAvailable},
 	}
 
 	if hasCIRA {
