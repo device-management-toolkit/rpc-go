@@ -48,10 +48,13 @@ type DeactivateCmd struct {
 	TLSTunnel          bool   `help:"Tunnel TLS to AMT through RPS (rpc-go forwards plain bytes on the TLS port)" name:"tls-tunnel"`
 }
 
-// RequiresAMTPassword indicates whether this command requires AMT password
-// For deactivate, password is required for both local and remote modes
+// RequiresAMTPassword indicates whether this command requires AMT password.
 func (cmd *DeactivateCmd) RequiresAMTPassword() bool {
-	// Password required for local mode or remote mode (when URL is provided)
+	// CCM deactivation uses HECI Unprovision directly — no password or WSMAN needed.
+	if cmd.Local && cmd.GetControlMode() == ControlModeCCM {
+		return false
+	}
+
 	return cmd.Local || cmd.URL != ""
 }
 
