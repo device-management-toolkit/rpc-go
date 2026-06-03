@@ -40,6 +40,34 @@ type StatusMessage struct {
 	Network          string `json:"Network,omitempty"`
 	CIRAConnection   string `json:"CIRAConnection,omitempty"`
 	TLSConfiguration string `json:"TLSConfiguration,omitempty"`
+	// Components carries the additive, structured per-component provisioning result
+	// introduced by RPS (rps#2665). Older RPS releases omit it; in that case the flat
+	// fields above remain the source of truth.
+	Components *ComponentResults `json:"Components,omitempty"`
+}
+
+// Component result status values, mirroring the RPS ComponentResultStatus enum (rps#2665).
+const (
+	ComponentResultSuccess       = "Success"
+	ComponentResultFailure       = "Failure"
+	ComponentResultNotApplicable = "NotApplicable"
+)
+
+// ComponentResult is the per-component outcome of an activation step.
+type ComponentResult struct {
+	Result  string `json:"Result"`            // Success, Failure, or NotApplicable
+	Mode    string `json:"Mode,omitempty"`    // optional mode, e.g. ACM or LocalProfileSync
+	Details string `json:"Details,omitempty"` // optional human-readable note (failure reason on failure)
+}
+
+// ComponentResults groups the structured per-component activation results.
+type ComponentResults struct {
+	Activation      *ComponentResult `json:"Activation,omitempty"`
+	WiredNetwork    *ComponentResult `json:"WiredNetwork,omitempty"`
+	WirelessNetwork *ComponentResult `json:"WirelessNetwork,omitempty"`
+	TLS             *ComponentResult `json:"TLS,omitempty"`
+	CIRAProxy       *ComponentResult `json:"CIRAProxy,omitempty"`
+	CIRAConnection  *ComponentResult `json:"CIRAConnection,omitempty"`
 }
 
 // MessagePayload struct is used for the initial request to RPS to activate or manage a device
