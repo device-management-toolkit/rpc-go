@@ -135,13 +135,17 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// TEST CONNECTION TO SEE IF LMS EXISTS
 	err := client.localManagement.Connect()
 	if err != nil {
-		if config.LocalTlsEnforced {
-			return client, utils.LMSConnectionFailed
-		}
-		// client.localManagement.Close()
-		log.Trace("LMS not running.  Using LME Connection\n")
+		log.Tracef("LMS dial failed (%v); falling back to LME (in-band HECI/APF)", err)
 
-		client.localManagement = lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
+		lme := lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
+		// On TLS-enforced AMT the active local port is 16993; aim the first
+		// CHANNEL_OPEN there so RPS doesn't have to issue a port_switch just
+		// to get past the activation handshake.
+		if config.LocalTlsEnforced {
+			lme.SetPort(16993)
+		}
+
+		client.localManagement = lme
 		client.isLME = true
 		client.localManagement.Initialize()
 	} else {
