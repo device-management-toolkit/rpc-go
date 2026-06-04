@@ -264,7 +264,11 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 				e.waitGroup.Wait()
 			}
 
-			if !e.tlsTunnelActive {
+			// LME holds a persistent HECI handle whose tcpip-forward registrations
+			// are established once in Initialize(); closing it between requests
+			// invalidates the device for the next RPS message. MakeItSo's deferred
+			// Close() handles end-of-flow teardown for LME.
+			if !e.tlsTunnelActive && !e.isLME {
 				e.localManagement.Close()
 				e.lmConnected = false
 			}
