@@ -32,14 +32,34 @@ const (
 	MPSServerMaxLength = 256
 
 	// LMSConnectionTimeout is the maximum wait for LMS TCP connection setup.
-	LMSConnectionTimeout    = 10   // seconds
+	LMSConnectionTimeout    = 5    // seconds
 	LMSDialerTimeout        = 5    // seconds
-	HeciReadTimeout         = 30   // seconds
-	HeciRetryDelay          = 3000 // milliseconds
-	HeciReinitDelay         = 500  // milliseconds
-	HeciConnectRetryBackoff = 500  // milliseconds
+	HeciReadTimeout         = 3    // seconds
+	HeciRetryDelay          = 1500 // milliseconds
+	HeciReinitDelay         = 300  // milliseconds
+	HeciReopenSettleDelay   = 50   // milliseconds
+	HeciConnectRetryBackoff = 750  // milliseconds
 	WebSocketTimeout        = 60   // seconds
-	AMTResponseTimeout      = 30   // seconds
+	AMTResponseTimeout      = 4    // seconds
+
+	// LMEChannelOpenTimeout bounds the wait for APF_CHANNEL_OPEN_CONFIRMATION
+	// before a Listen goroutine that never signals Done() is abandoned. It is a
+	// safety net only: the happy path returns the moment the handshake WaitGroup
+	// drains, so this value never affects timing on a healthy session. Kept at
+	// the hardware-validated HeciReadTimeout + 15 (=18s) - do not lower it
+	// without on-hardware validation; it only ever costs latency on a wedged
+	// listener, never on the happy path.
+	LMEChannelOpenTimeout = HeciReadTimeout + 15 // seconds
+	// TLSTunnelResponseTimeout bounds how long the RPS loop waits for AMT's
+	// response to a forwarded message while the TLS tunnel is active; AMT can
+	// take 60+ seconds to restart its TLS subsystem after a port switch, so this
+	// is deliberately well above the non-tunnel AMTResponseTimeout.
+	TLSTunnelResponseTimeout = 90 // seconds
+	// LMEPortSwitchMaxRetries and LMEPortSwitchRetryDelay bound the LMS reconnect
+	// probe issued after an AMT TLS port switch (16992 -> 16993) while the AMT
+	// TLS subsystem is still settling on the new port.
+	LMEPortSwitchMaxRetries = 5
+	LMEPortSwitchRetryDelay = 5 // seconds
 
 	HelpHeader = "\nRemote Provisioning Client (RPC) - used for activation, deactivation, maintenance and status of AMT\n\n"
 

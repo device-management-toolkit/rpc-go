@@ -42,6 +42,16 @@ const (
 	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
 	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
 	pollWarnLogInterval      = 15 * time.Second
+	// heciConnectAttempts bounds the MEI_CONNECT_CLIENT EBUSY retry loop.
+	// Connect almost always succeeds on retry 1 after a reopen; the extra
+	// attempts only cover the rarer cases where the ME stays busy. The
+	// backoff ramps per attempt (HeciConnectRetryBackoff * (i+1)) so repeated
+	// "mei connect busy" retries are spaced further apart as the ME settles.
+	heciConnectAttempts = 8
+	// guidConnectAttempts bounds the MEI_CONNECT_CLIENT retry loop for the
+	// GUID-targeted clients (InitWithGUID / InitHOTHAM). These paths are not
+	// EBUSY-tuned like initLocked; a small fixed number of attempts is enough.
+	guidConnectAttempts = 3
 )
 
 // PTHI
@@ -82,29 +92,59 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return heci.initLocked(useLME, useWD)
 }
 
-func (heci *Driver) initLocked(useLME, useWD bool) error {
-	heci.useLME = useLME
-	heci.useWD = useWD
-	heci.useGUIDClient = false
-
-	var err error
-
-	// Close any previous device handle before reopening
+// openMEIDevice closes any previously opened MEI handle and reopens the device,
+// logging a privilege/availability hint when the open fails. Shared by every
+// Init* entry point so the close-then-reopen and error-classification logic
+// lives in one place.
+func (heci *Driver) openMEIDevice() error {
 	if heci.meiDevice != nil {
 		_ = heci.meiDevice.Close()
 		heci.meiDevice = nil
 	}
 
-	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
+	dev, err := os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == errMsgPermissionDenied {
+		switch err.Error() {
+		case errMsgPermissionDenied:
 			log.Debug("need administrator privileges")
-		} else if err.Error() == errMsgNoSuchFile {
+		case errMsgNoSuchFile:
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			log.Error("Cannot open MEI Device")
+		default:
+			log.Errorf("Cannot open MEI Device: %v", err)
 		}
 
+		return err
+	}
+
+	heci.meiDevice = dev
+
+	return nil
+}
+
+// parseConnectClientData reads the MEI_CONNECT_CLIENT response out of data and
+// records the negotiated buffer size and protocol version on the driver. Shared
+// by every Init* entry point.
+func (heci *Driver) parseConnectClientData(data CMEIConnectClientData) error {
+	t := MEIConnectClientData{}
+
+	err := binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
+	if err != nil {
+		return err
+	}
+
+	heci.bufferSize = t.MaxMessageLength
+	heci.protocolVersion = t.ProtocolVersion
+
+	return nil
+}
+
+func (heci *Driver) initLocked(useLME, useWD bool) error {
+	heci.useLME = useLME
+	heci.useWD = useWD
+	heci.useGUIDClient = false
+
+	// Close any previous device handle before reopening.
+	if err := heci.openMEIDevice(); err != nil {
 		return err
 	}
 
@@ -117,34 +157,34 @@ func (heci *Driver) initLocked(useLME, useWD bool) error {
 		data.data = MEI_IAMTHIF
 	}
 
-	// retry with backoff in case the device is busy after a reset
-	for i := 0; i < 5; i++ {
+	var err error
+
+	// retry with backoff in case the device is busy after a reset. The ME is
+	// typically ready within a few ms of a reopen and connect succeeds on the
+	// first retry, so start with a short backoff and ramp up only for the
+	// rarer cases where it stays busy longer. Don't sleep after the final
+	// attempt - there's no retry left to wait for.
+	for i := 0; i < heciConnectAttempts; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 		if err == nil {
 			break
 		}
 
-		if errors.Is(err, syscall.EBUSY) {
-			log.Warnf("mei connect busy, retry %d", i+1)
-			time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
+		// Only a busy device is worth retrying; any other error won't clear by
+		// waiting. Don't sleep after the final attempt - there's no retry left.
+		if !errors.Is(err, syscall.EBUSY) || i == heciConnectAttempts-1 {
+			break
 		}
+
+		log.Warnf("mei connect busy, retry %d", i+1)
+		time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	t := MEIConnectClientData{}
-
-	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
-	if err != nil {
-		return err
-	}
-
-	heci.bufferSize = t.MaxMessageLength
-	heci.protocolVersion = t.ProtocolVersion // should be 4?
-
-	return nil
+	return heci.parseConnectClientData(data)
 }
 
 // InitWithGUID initializes the HECI driver with a specific GUID
@@ -156,8 +196,6 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	heci.useWD = false
 	heci.useGUIDClient = true
 
-	var err error
-
 	// Type assert to [16]uint8
 	guidBytes, ok := guid.([16]uint8)
 	if !ok {
@@ -165,28 +203,16 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 	}
 
 	// Close any previous device handle before reopening.
-	if heci.meiDevice != nil {
-		_ = heci.meiDevice.Close()
-		heci.meiDevice = nil
-	}
-
-	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
-	if err != nil {
-		if err.Error() == errMsgPermissionDenied {
-			log.Debug("need administrator privileges")
-		} else if err.Error() == errMsgNoSuchFile {
-			log.Error("MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			log.Error("Cannot open MEI Device")
-		}
-
+	if err := heci.openMEIDevice(); err != nil {
 		return err
 	}
 
 	data := CMEIConnectClientData{}
 	data.data = guidBytes
 
-	for i := 0; i < 3; i++ {
+	var err error
+
+	for i := 0; i < guidConnectAttempts; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 		if err == nil {
 			break
@@ -197,17 +223,7 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 		return err
 	}
 
-	t := MEIConnectClientData{}
-
-	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
-	if err != nil {
-		return err
-	}
-
-	heci.bufferSize = t.MaxMessageLength
-	heci.protocolVersion = t.ProtocolVersion
-
-	return nil
+	return heci.parseConnectClientData(data)
 }
 
 // InitHOTHAM configures the HECI driver for the HOTHAM GUID interface.
@@ -219,31 +235,17 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.useWD = false
 	heci.useGUIDClient = true
 
-	var err error
-
 	// Close any previous device handle before reopening.
-	if heci.meiDevice != nil {
-		_ = heci.meiDevice.Close()
-		heci.meiDevice = nil
-	}
-
-	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
-	if err != nil {
-		if err.Error() == errMsgPermissionDenied {
-			log.Debug("need administrator privileges")
-		} else if err.Error() == errMsgNoSuchFile {
-			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			log.Errorf("Cannot open MEI Device: %v", err)
-		}
-
+	if err := heci.openMEIDevice(); err != nil {
 		return err
 	}
 
 	data := CMEIConnectClientData{}
 	data.data = MEI_HOTHAM
 
-	for i := 0; i < 3; i++ {
+	var err error
+
+	for i := 0; i < guidConnectAttempts; i++ {
 		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
 		if err == nil {
 			log.Tracef("InitHOTHAM: Connected successfully on attempt %d", i+1)
@@ -253,22 +255,16 @@ func (heci *Driver) InitHOTHAM() error {
 	}
 
 	if err != nil {
-		log.Errorf("InitHOTHAM: Failed to connect to HOTHAM GUID after 3 attempts: %v", err)
+		log.Errorf("InitHOTHAM: Failed to connect to HOTHAM GUID after %d attempts: %v", guidConnectAttempts, err)
 
 		return err
 	}
 
-	t := MEIConnectClientData{}
-
-	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
-	if err != nil {
+	if err := heci.parseConnectClientData(data); err != nil {
 		log.Errorf("InitHOTHAM: Failed to parse connection data: %v", err)
 
 		return err
 	}
-
-	heci.bufferSize = t.MaxMessageLength
-	heci.protocolVersion = t.ProtocolVersion
 
 	log.Tracef("InitHOTHAM: Connected to HOTHAM GUID: %s, Buffer size: %d, Protocol version: %d",
 		formatGUID(MEI_HOTHAM), heci.bufferSize, heci.protocolVersion)
@@ -299,8 +295,13 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 
 	if err != nil {
 		if errors.Is(err, syscall.ENODEV) || err.Error() == "no such device" {
-			log.Warn("mei device unavailable, reinitializing")
-
+			log.Warn("mei device unavailable, reinitializing, and retrying write")
+			// Brief settle to let the kernel finish tearing down the closed
+			// fd before reopen. initLocked retries MEI_CONNECT_CLIENT on EBUSY
+			// with its own ramped backoff, so this only needs to cover the
+			// teardown - not the full reinit delay that used to pad every
+			// post-keygen reinit by half a second.
+			time.Sleep(utils.HeciReopenSettleDelay * time.Millisecond)
 			// Use write lock during reinitialization.
 			heci.mu.Lock()
 
@@ -311,15 +312,11 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 
 			if heci.useGUIDClient {
 				heci.mu.Unlock()
-
 				return 0, ErrDeviceNotInitialized
 			}
 
-			time.Sleep(utils.HeciRetryDelay * time.Millisecond)
-
 			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
 				heci.mu.Unlock()
-
 				return 0, initErr
 			}
 
@@ -459,13 +456,23 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 
 			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
 				heci.mu.Unlock()
-
 				return 0, initErr
 			}
 
 			deadline = time.Now().Add(utils.HeciReadTimeout * time.Second)
 
 			heci.mu.Unlock()
+
+			// In LME mode the firmware resets the APF session on reinit (it
+			// replays PROTOCOL_VERSION + tcpip-forwards), so any in-flight
+			// channel id is now stale. Surface that explicitly - mirroring the
+			// SendMessage ENODEV path - so the caller replays the handshake and
+			// re-opens the channel instead of silently waiting on a confirmation
+			// that will never arrive. LMS has no APF session, so it keeps
+			// transparently retrying.
+			if heci.useLME {
+				return 0, ErrDeviceReinitialized
+			}
 
 			continue
 		}
