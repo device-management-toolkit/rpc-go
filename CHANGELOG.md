@@ -1,3 +1,5 @@
+# [3.0.0-beta.29](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.28...v3.0.0-beta.29) (2026-06-04)
+
 # [3.0.0-beta.28](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.27...v3.0.0-beta.28) (2026-06-02)
 
 
