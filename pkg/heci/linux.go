@@ -323,6 +323,16 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 				return 0, initErr
 			}
 
+			// In LME mode the firmware also resets the APF session on reinit
+			// (it replays PROTOCOL_VERSION + tcpip-forwards), so the caller's
+			// in-flight channel id is now stale. Surface that explicitly
+			// instead of silently replaying the original write.
+			if heci.useLME {
+				heci.mu.Unlock()
+
+				return 0, ErrDeviceReinitialized
+			}
+
 			fd = int(heci.meiDevice.Fd())
 			size, err = syscall.Write(fd, buffer)
 
