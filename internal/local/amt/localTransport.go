@@ -8,6 +8,8 @@ package amt
 import (
 	"bufio"
 	"bytes"
+	"context"
+	cryptotls "crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -23,41 +25,65 @@ import (
 )
 
 // listenSafetyTimeout guards against Listen exiting without signaling, leaving RoundTrip blocked.
-var listenSafetyTimeout = (utils.HeciReadTimeout + 15) * time.Second
+// Derived from utils.LMEChannelOpenTimeout so executor and localTransport share a
+// single source of truth for the value.
+var listenSafetyTimeout = utils.LMEChannelOpenTimeout * time.Second
 
 type LocalTransport struct {
-	local  lm.LocalMananger
-	data   chan []byte
-	errors chan error
-	status chan bool
+	local     lm.LocalMananger
+	lme       *lm.LMEConnection // non-nil when TLS termination is required
+	data      chan []byte
+	errors    chan error
+	status    chan bool
+	tlsConfig *cryptotls.Config
 }
 
+// NewLocalTransport returns a LocalTransport that speaks cleartext HTTP over
+// an APF channel on the AMT HTTP port (16992).
 func NewLocalTransport() *LocalTransport {
+	return newLocalTransport(nil, amtHTTPPort)
+}
+
+// NewLocalTransportTLS returns a LocalTransport that opens an APF channel to
+// the AMT TLS port (16993) and terminates AMT's TLS inside this process using
+// the supplied tls.Config, so HTTP/WSMAN traffic can be sent over the encrypted
+// stream. Used as the fallback when no LMS daemon is listening on the device.
+func NewLocalTransportTLS(tlsConfig *cryptotls.Config) *LocalTransport {
+	return newLocalTransport(tlsConfig, amtHTTPSPort)
+}
+
+const (
+	amtHTTPPort  uint32 = 16992
+	amtHTTPSPort uint32 = 16993
+)
+
+func newLocalTransport(tlsConfig *cryptotls.Config, port uint32) *LocalTransport {
 	lmDataChannel := make(chan []byte, 1)
 	lmErrorChannel := make(chan error, 1)
 	// A throwaway WG keeps the NewLMEConnection signature happy; each RoundTrip
 	// attempt installs a fresh WG via resetHandshake so a stuck counter from a
 	// prior failed attempt can't deadlock the next one.
-	lm := &LocalTransport{
-		local:  lm.NewLMEConnection(lmDataChannel, lmErrorChannel, &sync.WaitGroup{}),
-		data:   lmDataChannel,
-		errors: lmErrorChannel,
-	}
-	// defer lm.local.Close()
-	// defer close(lmDataChannel)
-	// defer close(lmErrorChannel)
-	// defer close(lmStatus)
+	conn := lm.NewLMEConnection(lmDataChannel, lmErrorChannel, &sync.WaitGroup{})
+	conn.SetPort(port)
 
-	err := lm.local.Initialize()
+	t := &LocalTransport{
+		local:     conn,
+		lme:       conn,
+		data:      lmDataChannel,
+		errors:    lmErrorChannel,
+		tlsConfig: tlsConfig,
+	}
+
+	err := t.local.Initialize()
 	if err != nil {
-		if errors.Is(err, heci.ErrReadTimeout) || strings.Contains(err.Error(), "heci read timeout") {
+		if heci.IsReadTimeout(err) {
 			logrus.Warn(err)
 		} else {
 			logrus.Error(err)
 		}
 	}
 
-	return lm
+	return t
 }
 
 // Close closes the LME connection and releases the MEI device
@@ -84,7 +110,17 @@ func (l *LocalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := l.attemptRoundTrip(r, rawRequest)
+		var (
+			resp *http.Response
+			err  error
+		)
+
+		if l.tlsConfig != nil {
+			resp, err = l.attemptTLSRoundTrip(r, rawRequest)
+		} else {
+			resp, err = l.attemptRoundTrip(r, rawRequest)
+		}
+
 		if err == nil {
 			return resp, nil
 		}
@@ -134,12 +170,7 @@ func (l *LocalTransport) attemptRoundTrip(r *http.Request, rawRequest []byte) (r
 
 	// Wait for channel open confirmation (or open failure, which also calls Done()).
 	// Bounded so a Listen goroutine that exits early on a HECI error can't block forever.
-	handshakeDone := make(chan struct{})
-
-	go func() {
-		handshake.Wait()
-		close(handshakeDone)
-	}()
+	handshakeDone := lm.WaitChan(handshake)
 
 	select {
 	case <-handshakeDone:
@@ -216,18 +247,106 @@ Loop:
 	return response, nil
 }
 
+// attemptTLSRoundTrip opens an APF channel to AMT's TLS port, runs a TLS
+// handshake over it using NewAPFChannelConn as the underlying net.Conn, then
+// writes the pre-serialized HTTP request and reads the HTTP response back
+// through the TLS connection. Used when the device has no LMS daemon listening
+// on :16993 but TLS is enforced on the local AMT ports.
+func (l *LocalTransport) attemptTLSRoundTrip(r *http.Request, rawRequest []byte) (*http.Response, error) {
+	if l.lme == nil {
+		return nil, errors.New("TLS LocalTransport requires an LMEConnection")
+	}
+
+	handshake := l.resetHandshake()
+
+	// Drain the WG on the way out so the goroutine created by lm.WaitChan(handshake)
+	// doesn't leak if Listen exits before the APF handshake completes.
+	defer func() {
+		defer func() { _ = recover() }()
+
+		handshake.Done()
+	}()
+
+	l.lme.StopListen()
+	apfConn := lm.NewAPFChannelConn(l.lme)
+
+	if err := l.lme.Connect(); err != nil {
+		return nil, err
+	}
+
+	go l.lme.Listen()
+
+	handshakeDone := lm.WaitChan(handshake)
+
+	select {
+	case <-handshakeDone:
+		logrus.Trace("APF channel open confirmation received (TLS path)")
+	case errFromLMS := <-l.errors:
+		if errFromLMS != nil {
+			return nil, errFromLMS
+		}
+	case <-time.After(listenSafetyTimeout):
+		return nil, fmt.Errorf("timed out waiting for APF channel open after %s", listenSafetyTimeout)
+	}
+
+	tlsConn := cryptotls.Client(apfConn, l.tlsConfig)
+	if err := tlsConn.SetDeadline(time.Now().Add(listenSafetyTimeout)); err != nil {
+		_ = tlsConn.Close()
+
+		return nil, err
+	}
+
+	handshakeCtx, cancel := context.WithTimeout(context.Background(), listenSafetyTimeout)
+	defer cancel()
+
+	if err := tlsConn.HandshakeContext(handshakeCtx); err != nil {
+		_ = tlsConn.Close()
+
+		return nil, fmt.Errorf("AMT TLS handshake over APF channel failed: %w", err)
+	}
+
+	state := tlsConn.ConnectionState()
+	logrus.Debugf("AMT TLS handshake over APF complete (version=0x%x, cipher=0x%x)", state.Version, state.CipherSuite)
+
+	if _, err := tlsConn.Write(rawRequest); err != nil {
+		_ = tlsConn.Close()
+
+		return nil, fmt.Errorf("write request over AMT TLS: %w", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(tlsConn), r)
+	if err != nil {
+		_ = tlsConn.Close()
+
+		return nil, fmt.Errorf("read response over AMT TLS: %w", err)
+	}
+
+	// Drain and re-buffer the body so we can close the TLS connection and the
+	// underlying APF channel before returning to the caller.
+	body, readErr := io.ReadAll(resp.Body)
+
+	_ = resp.Body.Close()
+	_ = tlsConn.Close()
+
+	if readErr != nil {
+		return nil, fmt.Errorf("read response body over AMT TLS: %w", readErr)
+	}
+
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+
+	return resp, nil
+}
+
 // resetHandshake installs a fresh WaitGroup on the LME session so the current
 // round-trip attempt starts from a known-zero counter. On non-LME transports
 // the WaitGroup is returned but not wired through; the attempt's timeout guards
 // it regardless.
 func (l *LocalTransport) resetHandshake() *sync.WaitGroup {
-	wg := &sync.WaitGroup{}
-
-	if lmec, ok := l.local.(*lm.LMEConnection); ok && lmec.Session != nil {
-		lmec.Session.WaitGroup = wg
+	if lmec, ok := l.local.(*lm.LMEConnection); ok {
+		return lmec.ResetHandshake()
 	}
 
-	return wg
+	return &sync.WaitGroup{}
 }
 
 // isTransientLMEError reports whether err is a retryable APF/HTTP hiccup (EOF, channel refusal).
