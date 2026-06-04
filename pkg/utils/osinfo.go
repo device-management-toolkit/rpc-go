@@ -7,10 +7,13 @@ package utils
 
 import (
 	"bufio"
-	"net"
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/host"
+	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
 // OSInfo holds operating system metadata.
@@ -26,64 +29,102 @@ func GetOSInfo() OSInfo {
 		Name: runtime.GOOS,
 	}
 
-	info.Version = getKernelVersion()
-	info.Distro = getDistro()
+	hostInfo, err := host.Info()
+	if err != nil {
+		return info
+	}
+
+	info.Version = strings.TrimSpace(hostInfo.KernelVersion)
+
+	switch runtime.GOOS {
+	case "linux":
+		// Use PRETTY_NAME from /etc/os-release for full distro string (e.g. "Ubuntu 22.04.5 LTS")
+		if prettyName := readPrettyName(); prettyName != "" {
+			info.Distro = prettyName
+		} else {
+			info.Distro = strings.TrimSpace(hostInfo.Platform + " " + hostInfo.PlatformVersion)
+		}
+	case "windows":
+		// Combine platform + version for friendly name (e.g. "Microsoft Windows 11 Enterprise 24H2")
+		info.Distro = strings.TrimSpace(hostInfo.Platform + " " + hostInfo.PlatformVersion)
+	default:
+		info.Distro = strings.TrimSpace(hostInfo.Platform)
+	}
 
 	return info
 }
 
-// GetCPUModel returns the CPU model name from /proc/cpuinfo (Linux) or a fallback.
-func GetCPUModel() string {
-	return getCPUModel()
-}
-
-// GetOSIPAddress returns the primary non-loopback IPv4 address.
-func GetOSIPAddress() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
-
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok {
-			continue
-		}
-
-		ip := ipNet.IP
-		if ip.IsLoopback() || ip.To4() == nil {
-			continue
-		}
-
-		return ip.String()
-	}
-
-	return ""
-}
-
-// readOSRelease reads /etc/os-release and returns a key-value map.
-func readOSRelease() map[string]string {
-	result := make(map[string]string)
-
+// readPrettyName reads PRETTY_NAME from /etc/os-release.
+func readPrettyName() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {
-		return result
+		return ""
 	}
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+		}
+	}
 
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+	return ""
+}
+
+// GetCPUModel returns the CPU model name.
+func GetCPUModel() string {
+	cpuInfo, err := cpu.Info()
+	if err != nil || len(cpuInfo) == 0 {
+		return ""
+	}
+
+	return strings.TrimSpace(cpuInfo[0].ModelName)
+}
+
+// GetOSIPAddress returns the primary non-loopback IPv4 address.
+func GetOSIPAddress() string {
+	ifaces, err := gnet.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		if strings.Contains(strings.ToLower(iface.Name), "lo") {
 			continue
 		}
 
-		key := parts[0]
-		value := strings.Trim(parts[1], "\"")
-		result[key] = value
+		for _, addr := range iface.Addrs {
+			ip := strings.SplitN(addr.Addr, "/", 2)[0]
+			if ip != "" && !strings.Contains(ip, ":") {
+				return ip
+			}
+		}
 	}
 
-	return result
+	return ""
+}
+
+// GetEthernetAdapterCount returns the number of physical ethernet adapters.
+func GetEthernetAdapterCount() int {
+	ifaces, err := gnet.Interfaces()
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+
+	for _, iface := range ifaces {
+		name := strings.ToLower(iface.Name)
+		if strings.Contains(name, "lo") || iface.HardwareAddr == "" {
+			continue
+		}
+
+		if strings.HasPrefix(name, "eth") || strings.HasPrefix(name, "en") {
+			count++
+		}
+	}
+
+	return count
 }
