@@ -24,25 +24,68 @@ type LMEConnection struct {
 	Session    *apf.Session
 	ourChannel int
 	retries    int
+	// port is the AMT-side TCP port that each CHANNEL_OPEN targets. Defaults
+	// to 16992 (HTTP); switched to 16993 after RPS port_switch so subsequent
+	// wsman traffic rides the TLS-enforced port.
+	port uint32
 }
 
-// apfInitHandler signals ready once ME advertises tcpip-forward for port 16992.
+// SetPort changes the AMT-side port used for subsequent CHANNEL_OPENs.
+func (lme *LMEConnection) SetPort(port uint32) {
+	lme.port = port
+}
+
+// apfInitHandler signals ready once ME has advertised tcpip-forward for all
+// four standard AMT ports. Returning after only 16992 races the trailing
+// 16993/623/664 registrations against the next CHANNEL_OPEN, which after a
+// mid-flow reinit can result in a lost OPEN_CONFIRMATION.
+var apfInitExpectedPorts = []uint32{16992, 16993, 623, 664}
+
 type apfInitHandler struct {
 	apf.DefaultHandler
+	seenPorts        map[uint32]bool
 	portForwardReady bool
 }
 
 func (h *apfInitHandler) OnGlobalRequest(req apf.GlobalRequest) bool {
-	if req.RequestType == "tcpip-forward" && req.Port == 16992 {
+	if req.RequestType != "tcpip-forward" {
+		return false
+	}
+
+	if h.seenPorts == nil {
+		h.seenPorts = make(map[uint32]bool, len(apfInitExpectedPorts))
+	}
+
+	h.seenPorts[req.Port] = true
+
+	// Port 16992 is mandatory; the others are advertised only when the
+	// matching service is enabled, so treat 16992 + any one of the rest
+	// (or just 16992 after the heci read timeout fallback) as ready.
+	if req.Port == 16992 {
 		h.portForwardReady = true
 	}
 
 	return false
 }
 
+func (h *apfInitHandler) allExpectedSeen() bool {
+	if !h.portForwardReady {
+		return false
+	}
+
+	for _, p := range apfInitExpectedPorts {
+		if !h.seenPorts[p] {
+			return false
+		}
+	}
+
+	return true
+}
+
 func NewLMEConnection(data chan []byte, errors chan error, wg *sync.WaitGroup) *LMEConnection {
 	lme := &LMEConnection{
 		ourChannel: 1,
+		port:       16992,
 	}
 	lme.Command = pthi.NewCommand()
 	lme.Session = &apf.Session{
@@ -106,7 +149,7 @@ func (lme *LMEConnection) Initialize() error {
 			}
 		}
 
-		if handler.portForwardReady {
+		if handler.allExpectedSeen() {
 			return nil
 		}
 	}
@@ -132,12 +175,17 @@ func (lme *LMEConnection) Connect() error {
 			lme.ourChannel = channel
 		}
 
-		bin_buf := apf.ChannelOpen(lme.ourChannel)
+		port := lme.port
+		if port == 0 {
+			port = 16992
+		}
+
+		bin_buf := apf.ChannelOpenPort(lme.ourChannel, port)
 
 		err := lme.Command.Send(bin_buf.Bytes())
 		if err != nil {
 			lastErr = err
-			if attempts < 4 && (err.Error() == "no such device" || err.Error() == "The device is not connected.") {
+			if attempts < 4 && (errors.Is(err, heci.ErrDeviceReinitialized) || err.Error() == "no such device" || err.Error() == "The device is not connected.") {
 				log.Warn(err.Error())
 				log.Warn("Retrying...")
 

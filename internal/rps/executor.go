@@ -5,12 +5,14 @@
 package rps
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -28,8 +30,65 @@ var handshakeTimeout = (utils.HeciReadTimeout + 15) * time.Second
 // maxPortSwitchDelaySeconds caps the AMT TLS-restart wait that RPS asks for via
 // the port_switch payload. The server-supplied value is clamped to this maximum
 // to bound how long the activation loop can be blocked on a (possibly hostile
-// or buggy) server-controlled delay.
-const maxPortSwitchDelaySeconds = 60
+// or buggy) server-controlled delay. Overridable via RPC_PORT_SWITCH_MAX_DELAY.
+var maxPortSwitchDelaySeconds = envInt("RPC_PORT_SWITCH_MAX_DELAY", 60)
+
+// extraPortSwitchDelaySeconds is added on top of the server-requested delay
+// (after clamping). Useful when AMT's TLS subsystem needs more time than RPS
+// expects to bind the freshly-committed server cert to port 16993; raise this
+// if you see "Failed to establish TLS tunnel connection" errors immediately
+// after port_switch. Overridable via RPC_PORT_SWITCH_EXTRA_DELAY.
+var extraPortSwitchDelaySeconds = envInt("RPC_PORT_SWITCH_EXTRA_DELAY", 0)
+
+// lmePostKeygenPause: AMT 18.x briefly drops the LME MEI client after
+// GenerateKeyPair persists the new key; pausing here pre-empts an ENODEV on
+// the next CHANNEL_OPEN that would otherwise cost ~6s re-handshake.
+// Overridable (milliseconds) via RPC_LME_POST_KEYGEN_PAUSE_MS.
+var lmePostKeygenPause = time.Duration(envInt("RPC_LME_POST_KEYGEN_PAUSE_MS", 750)) * time.Millisecond
+
+const soapActionGenerateKeyPair = "AMT_PublicKeyManagementService/GenerateKeyPair"
+
+// envInt returns the integer value of env var name, or def if unset/invalid.
+func envInt(name string, def int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		log.Warnf("ignoring invalid %s=%q: %v", name, v, err)
+
+		return def
+	}
+
+	return n
+}
+
+// waitWithSignal sleeps for d but returns early with an error if SIGINT/SIGTERM
+// arrives, so the activation loop can abort promptly on Ctrl+C rather than
+// being held by a server-requested delay.
+func waitWithSignal(d time.Duration) error {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	timer := time.NewTimer(d)
+
+	select {
+	case <-timer.C:
+		return nil
+	case sig := <-sigCh:
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+
+		return fmt.Errorf("port-switch wait interrupted by %v", sig)
+	}
+}
 
 type Executor struct {
 	server          AMTActivationServer
@@ -262,6 +321,11 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 			if e.isLME {
 				e.waitGroup.Wait()
+
+				if bytes.Contains(msg.Payload, []byte(soapActionGenerateKeyPair)) {
+					log.Debugf("LME: pausing %s after GenerateKeyPair to let AMT settle before next channel open", lmePostKeygenPause)
+					time.Sleep(lmePostKeygenPause)
+				}
 			}
 
 			// LME holds a persistent HECI handle whose tcpip-forward registrations
@@ -425,7 +489,48 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 		delaySeconds = maxPortSwitchDelaySeconds
 	}
 
-	log.Infof("Port switch: closing LMS connection, waiting %ds for AMT TLS restart", delaySeconds)
+	if extraPortSwitchDelaySeconds > 0 {
+		log.Infof("Port switch: adding %ds extra delay (RPC_PORT_SWITCH_EXTRA_DELAY)", extraPortSwitchDelaySeconds)
+
+		delaySeconds += extraPortSwitchDelaySeconds
+	}
+
+	log.Infof("Port switch: waiting %ds for AMT TLS restart", delaySeconds)
+
+	// In LME mode there is no LMS daemon to reconnect to; transport stays on
+	// HECI/APF and the only thing that changes is the AMT-side port future
+	// CHANNEL_OPENs target. Close-and-redial would dial a 127.0.0.1:16993
+	// socket that isn't listening (that's why we're on LME in the first
+	// place). Keep the LME handle, honour the delay, flip the port.
+	if e.isLME {
+		if err := waitWithSignal(time.Duration(delaySeconds) * time.Second); err != nil {
+			return err
+		}
+
+		if lmec, ok := e.localManagement.(*lm.LMEConnection); ok {
+			port, perr := strconv.ParseUint(psPayload.Port, 10, 32)
+			if perr != nil {
+				return fmt.Errorf("port switch: invalid port %q: %w", psPayload.Port, perr)
+			}
+
+			lmec.SetPort(uint32(port))
+		}
+
+		e.tlsTunnelActive = true
+
+		log.Info("Port switch: LME retargeted to port ", psPayload.Port)
+
+		ackMsg := e.payload.CreateMessageResponse([]byte("ok"), MethodPortSwitchAck)
+		if err := e.server.Send(ackMsg); err != nil {
+			return err
+		}
+
+		log.Info("Port switch: sent port_switch_ack to RPS")
+
+		return nil
+	}
+
+	log.Infof("Port switch: closing LMS connection")
 
 	// Close existing LMS connection
 	e.localManagement.Close()
@@ -434,21 +539,9 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	// Wait for AMT to restart its TLS subsystem. Use a cancellable wait so a
 	// user interrupt (Ctrl+C / SIGTERM) can abort the activation loop promptly
 	// instead of being delayed by the full sleep.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-	timer := time.NewTimer(time.Duration(delaySeconds) * time.Second)
-
-	select {
-	case <-timer.C:
-	case <-sigCh:
-		timer.Stop()
-		signal.Stop(sigCh)
-
-		return fmt.Errorf("port switch wait interrupted")
+	if err := waitWithSignal(time.Duration(delaySeconds) * time.Second); err != nil {
+		return err
 	}
-
-	signal.Stop(sigCh)
 
 	// Create new LMS connection channels
 	lmDataChannel := make(chan []byte)
