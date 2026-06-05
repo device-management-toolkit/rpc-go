@@ -181,14 +181,16 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
-	assert.Equal(t, "2406.0.0.0", gotBody.DeviceInfo.LMSVersion)
+	// LMSVersion depends on whether LMS is running on the test machine;
+	// only assert if LMSInstalled is true in the payload.
+	if gotBody.DeviceInfo.LMSInstalled {
+		assert.NotEmpty(t, gotBody.DeviceInfo.LMSVersion)
+	}
+
 	assert.NotNil(t, gotBody.DeviceInfo.AMTEnabledInBIOS)
 	assert.True(t, *gotBody.DeviceInfo.AMTEnabledInBIOS)
-	// MEInterfaceVersion and OSName depend on OS-specific probes that may
-	// return empty on CI runners (e.g. no Intel MEI driver on Windows).
-	// Just verify the fields are present (non-nil string) without requiring content.
-	assert.NotNil(t, gotBody.DeviceInfo.MEInterfaceVersion)
-	assert.NotNil(t, gotBody.DeviceInfo.OSName)
+	// MEInterfaceVersion may legitimately be empty on CI runners; don't assert its value here.
+	assert.NotEmpty(t, gotBody.DeviceInfo.OSName)
 }
 
 func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {

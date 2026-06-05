@@ -84,26 +84,81 @@ func GetCPUModel() string {
 }
 
 // GetOSIPAddress returns the primary non-loopback IPv4 address.
+// It prefers physical ethernet adapters, skips link-local (169.254.x.x),
+// and skips virtual adapters (Hyper-V, WSL, Docker, VPN, etc.).
 func GetOSIPAddress() string {
 	ifaces, err := gnet.Interfaces()
 	if err != nil {
 		return ""
 	}
 
+	var fallback string
+
 	for _, iface := range ifaces {
-		if strings.Contains(strings.ToLower(iface.Name), "lo") {
+		name := strings.ToLower(iface.Name)
+		if name == "lo" || strings.Contains(name, "loopback") {
+			continue
+		}
+
+		// Skip virtual/software adapters
+		if isVirtualAdapter(name) {
 			continue
 		}
 
 		for _, addr := range iface.Addrs {
 			ip := strings.SplitN(addr.Addr, "/", 2)[0]
-			if ip != "" && !strings.Contains(ip, ":") {
+			if ip == "" || strings.Contains(ip, ":") {
+				continue
+			}
+
+			// Skip link-local (APIPA) addresses
+			if strings.HasPrefix(ip, "169.254.") {
+				continue
+			}
+
+			// Prefer physical ethernet interfaces
+			if isPhysicalEthernet(name) {
 				return ip
+			}
+
+			// Store first valid non-link-local as fallback
+			if fallback == "" {
+				fallback = ip
 			}
 		}
 	}
 
-	return ""
+	return fallback
+}
+
+// isVirtualAdapter returns true for known virtual/software adapter names.
+func isVirtualAdapter(name string) bool {
+	virtualPrefixes := []string{
+		"vethernet", // Hyper-V / WSL
+		"vmnet",     // VMware
+		"vboxnet",   // VirtualBox
+		"docker",    // Docker
+		"br-",       // Docker bridge
+		"veth",      // Container veth pairs
+		"virbr",     // libvirt
+	}
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(name, prefix) || strings.Contains(name, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isPhysicalEthernet returns true for likely physical ethernet interface names.
+func isPhysicalEthernet(name string) bool {
+	// Linux: eth0, eno1, ens3, enp0s3
+	// Windows: "ethernet", "ethernet 2"
+	return strings.HasPrefix(name, "eth") ||
+		strings.HasPrefix(name, "en") ||
+		name == "ethernet" ||
+		strings.HasPrefix(name, "ethernet ")
 }
 
 // GetEthernetAdapterCount returns the number of physical ethernet adapters.
@@ -117,7 +172,7 @@ func GetEthernetAdapterCount() int {
 
 	for _, iface := range ifaces {
 		name := strings.ToLower(iface.Name)
-		if strings.Contains(name, "lo") || iface.HardwareAddr == "" {
+		if name == "lo" || strings.Contains(name, "loopback") || iface.HardwareAddr == "" {
 			continue
 		}
 

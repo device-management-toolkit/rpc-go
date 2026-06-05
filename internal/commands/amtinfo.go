@@ -527,6 +527,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	// Certificate hashes (extract hash strings)
 	if result.CertificateHashes != nil {
 		hashes := make([]string, 0, len(result.CertificateHashes))
+
 		for _, entry := range result.CertificateHashes {
 			if entry.Hash != "" {
 				hashes = append(hashes, entry.Hash)
@@ -538,15 +539,17 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 		}
 	}
 
-	// LMS version — try HECI CodeVersions first, then OS-level fallback
-	if s.heciAvailable {
-		if lmsVer, err := s.amtCommand.GetVersionDataFromME("LMS", 30*time.Second); err == nil && lmsVer != "" {
-			info.LMSVersion = lmsVer
+	// LMS version — only attempt if LMS is detected as installed
+	if info.LMSInstalled {
+		if s.heciAvailable {
+			if lmsVer, err := s.amtCommand.GetVersionDataFromME("LMS", 30*time.Second); err == nil && lmsVer != "" {
+				info.LMSVersion = lmsVer
+			}
 		}
-	}
 
-	if info.LMSVersion == "" {
-		info.LMSVersion = utils.GetLMSVersion()
+		if info.LMSVersion == "" {
+			info.LMSVersion = utils.GetLMSVersion()
+		}
 	}
 
 	// TLS mode (requires WSMan)
