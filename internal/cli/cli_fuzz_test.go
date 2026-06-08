@@ -273,3 +273,316 @@ func FuzzDeactivateFlagCombinations(f *testing.F) {
 		_ = err
 	})
 }
+
+// FuzzActivate tests the activate command with various flag combinations and inputs
+func FuzzActivate(f *testing.F) {
+	// Seed corpus with valid and invalid activate command patterns
+	seeds := []string{
+		// Local activation (CCM)
+		"--local --ccm",
+		"--ccm",
+		"--ccm --password admin",
+		"--local --ccm --password Passw0rd!",
+
+		// Local activation (ACM, provisioning cert path)
+		"--local --acm",
+		"--acm",
+		"--acm --password admin --provisioningCert MIIabc== --provisioningCertPwd certpass",
+		"--acm --password admin --provisioningCert MIIabc== --provisioningCertPwd certpass --mebxpassword Mebx123!",
+		"--acm --tls-tunnel --password admin",
+
+		// Stop configuration
+		"--local --stopConfig",
+		"--stopConfig",
+
+		// Legacy remote activation (ws/wss)
+		"--url wss://server.com --profile profile1",
+		"--url ws://server.com:8080/path --profile profile1",
+		"--url wss://server.com --profile p1 --proxy http://proxy.corp:8080",
+		"--url wss://server.com --profile p1 --tenantid tenant-1",
+
+		// HTTP profile activation (fullflow) with auth
+		"--url https://server.com/api/v1/admin/profiles/export/default",
+		"--url http://localhost:8080/profiles/export/default --key 12345678901234567890123456789012",
+		"--url https://server.com/api/v1/admin/profiles/export/p1 --auth-token abc.def.ghi",
+		"--url https://server.com/api/v1/admin/profiles/export/p1 --auth-username user --auth-password secret",
+		"--url https://server.com/profiles/export/p1 --auth-endpoint https://server.com/api/v1/authorize --auth-token abc",
+		"--url https://server.com/profiles/export/p1 --devices-endpoint https://server.com/api/v1/devices --auth-token abc",
+
+		// Local profile file activation
+		"--profile profile.yaml",
+		"--profile ./configs/profile.yml --key 12345678901234567890123456789012",
+
+		// Optional fields
+		"--local --ccm --dns corp.example.com --hostname host-1 --name my-device",
+		"--local --ccm --skipIPRenew",
+		"--url wss://server.com --profile p1 --uuid 123e4567-e89b-12d3-a456-426614174000",
+
+		// Invalid combinations (should fail validation)
+		"--local",
+		"--local --ccm --acm",
+		"--url wss://server.com",
+		"--url wss://server.com --profile p1 --local",
+		"--url wss://server.com --profile p1 --ccm",
+		"--url wss://server.com --profile p1 --provisioningCert MIIabc==",
+		"--url wss://server.com --profile p1 --skipIPRenew",
+		"--url https://server.com/export/p1 --ccm",
+		"--auth-username user",
+		"--profile profile-name",
+		"",
+
+		// Edge cases
+		"--url " + strings.Repeat("https://a", 40),
+		"--profile " + strings.Repeat("a", 500),
+		"--password " + strings.Repeat("a", 500),
+		"--local --ccm --name \"device with spaces\"",
+		"--url https://user:pass@host:9999/path?query=value",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, flags string) {
+		if len(flags) > 10000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "activate"}
+		if trimmed := strings.TrimSpace(flags); trimmed != "" {
+			args = append(args, strings.Fields(flags)...)
+		}
+
+		defer recoverPanic(t, flags)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzActivateURL tests URL parsing and validation for activate command
+func FuzzActivateURL(f *testing.F) {
+	seeds := []string{
+		"https://localhost",
+		"https://server.com",
+		"https://server.com:443",
+		"https://server.com:8080/path",
+		"wss://websocket.server.com",
+		"ws://websocket.server.com",
+		"http://insecure.server.com",
+		"://missing-scheme",
+		"ftp://wrong-protocol.com",
+		"https://",
+		"server.com",
+		strings.Repeat("https://", 100),
+		"https://" + strings.Repeat("a", 2000),
+		"https://server.com/path?query=value#fragment",
+		"https://server.com/path with spaces",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, url string) {
+		if len(url) > 5000 {
+			t.Skip("URL too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "activate", "--url", url, "--profile", "default"}
+		defer recoverPanic(t, url)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzActivateProfile tests profile input handling for activate command
+func FuzzActivateProfile(f *testing.F) {
+	seeds := []string{
+		"default",
+		"profile-1",
+		"profile.yaml",
+		"./profiles/default.yml",
+		"../profiles/edge.case.json",
+		"",
+		"profile with spaces.yaml",
+		"path/with/special_-.chars.yaml",
+		strings.Repeat("a", 1000),
+		"パスファイル.yaml",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, profile string) {
+		if len(profile) > 5000 {
+			t.Skip("Profile too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "activate", "--profile", profile}
+		defer recoverPanic(t, profile)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzActivatePassword tests AMT password input handling for activate command.
+// The AMT password is set during local CCM/ACM activation, so malformed or
+// unusual passwords must be parsed without panicking.
+func FuzzActivatePassword(f *testing.F) {
+	seeds := []string{
+		"admin",
+		"Password123!",
+		"",
+		"pass with spaces",
+		"pass\"with\"quotes",
+		"pass'with'quotes",
+		"pass\\with\\escapes",
+		"パスワード", // Unicode
+		"🔒🔑",    // Emoji
+		strings.Repeat("a", 1000),
+		"$pecial@Ch@rs!",
+		"$(command)",
+		"`backticks`",
+		"; echo test",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, password string) {
+		if len(password) > 5000 {
+			t.Skip("Password too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		// Local CCM activation is the primary path that consumes --password.
+		args := []string{"rpc", "activate", "--local", "--ccm", "--password", password}
+		defer recoverPanic(t, password)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzActivateFlagCombinations tests various combinations of activate flags
+func FuzzActivateFlagCombinations(f *testing.F) {
+	f.Fuzz(func(t *testing.T,
+		local bool,
+		ccm bool,
+		acm bool,
+		stopConfig bool,
+		tlsTunnel bool,
+		skipIPRenew bool,
+		url string,
+		profile string,
+		key string,
+		password string,
+		provisioningCert string,
+		mebxPassword string,
+		authToken string,
+		jsonOutput bool,
+		verbose bool,
+	) {
+		if len(url) > 1000 || len(profile) > 1000 || len(key) > 1000 ||
+			len(password) > 1000 || len(provisioningCert) > 1000 ||
+			len(mebxPassword) > 1000 || len(authToken) > 1000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "activate"}
+
+		if local {
+			args = append(args, "--local")
+		}
+
+		if ccm {
+			args = append(args, "--ccm")
+		}
+
+		if acm {
+			args = append(args, "--acm")
+		}
+
+		if stopConfig {
+			args = append(args, "--stopConfig")
+		}
+
+		if tlsTunnel {
+			args = append(args, "--tls-tunnel")
+		}
+
+		if skipIPRenew {
+			args = append(args, "--skipIPRenew")
+		}
+
+		if url != "" {
+			args = append(args, "--url", url)
+		}
+
+		if profile != "" {
+			args = append(args, "--profile", profile)
+		}
+
+		if key != "" {
+			args = append(args, "--key", key)
+		}
+
+		if password != "" {
+			args = append(args, "--password", password)
+		}
+
+		if provisioningCert != "" {
+			args = append(args, "--provisioningCert", provisioningCert)
+		}
+
+		if mebxPassword != "" {
+			args = append(args, "--mebxpassword", mebxPassword)
+		}
+
+		if authToken != "" {
+			args = append(args, "--auth-token", authToken)
+		}
+
+		if jsonOutput {
+			args = append(args, "--json")
+		}
+
+		if verbose {
+			args = append(args, "--verbose")
+		}
+
+		defer recoverPanic(t, strings.Join(args, " "))
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}

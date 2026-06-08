@@ -49,6 +49,11 @@ jobs:
           go test -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzDeactivatePassword$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzDeactivateFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzActivate$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzActivateURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzActivateProfile$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzActivatePassword$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzActivateFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
 
       - name: Upload fuzz failure artifacts
         if: failure()
@@ -100,6 +105,11 @@ jobs:
           go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivatePassword$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzDeactivateFlagCombinations$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzActivate$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzActivateURL$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzActivateProfile$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzActivatePassword$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzActivateFlagCombinations$ -fuzztime=1x
 
       - name: Report regression test results
         if: failure()
