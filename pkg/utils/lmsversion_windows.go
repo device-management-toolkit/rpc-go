@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // GetLMSVersion retrieves the Intel LMS file version from the Windows service binary.
@@ -24,6 +26,7 @@ func GetLMSVersion() string {
 
 	out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Output()
 	if err != nil {
+		log.Debugf("failed to get LMS version on windows: %v", err)
 		return ""
 	}
 

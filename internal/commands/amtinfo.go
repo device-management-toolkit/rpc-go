@@ -518,6 +518,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	// ME Interface (driver) version
 	info.MEInterfaceVersion = utils.GetMEIDriverVersion()
+	log.Debugf("Collected ME interface version: %q", info.MEInterfaceVersion)
 
 	// DHCP from wired adapter
 	if result.WiredAdapter != nil {
@@ -563,6 +564,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	}
 
 	// OS-level info
+	log.Debug("Collecting OS-level discovery information")
+
 	osInfo := utils.GetOSInfo()
 	info.OSName = osInfo.Name
 	info.OSVersion = osInfo.Version
@@ -571,6 +574,21 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	info.OSIPAddress = utils.GetOSIPAddress()
 	info.EthernetAdapterCount = utils.GetEthernetAdapterCount()
 	info.MonitorConnected = utils.DetectMonitorConnected()
+
+	monitorConnected := "unknown"
+	if info.MonitorConnected != nil {
+		monitorConnected = strconv.FormatBool(*info.MonitorConnected)
+	}
+
+	log.Debugf("Collected OS-level discovery information: os_name=%q os_version=%q os_distro=%q cpu_model=%q os_ip=%q ethernet_adapter_count=%d monitor_connected=%s",
+		info.OSName,
+		info.OSVersion,
+		info.OSDistro,
+		info.CPUModel,
+		info.OSIPAddress,
+		info.EthernetAdapterCount,
+		monitorConnected,
+	)
 }
 
 // getTLSModeFromWSMAN queries AMT TLS settings via WSMan and returns the mode string.
