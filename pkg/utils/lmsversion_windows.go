@@ -16,15 +16,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	lmsVersionWindowsTimeout = 10 * time.Second
+	lmsVersionWindowsScript  = `$p=((Get-WmiObject Win32_Service -Filter "Name='LMS'").PathName -replace '"', '').Split(' ')[0]; (Get-Item $p).VersionInfo.FileVersion`
+)
+
 // GetLMSVersion retrieves the Intel LMS file version from the Windows service binary.
 func GetLMSVersion() string {
-	// Use PowerShell to query Win32_Service for LMS path and extract FileVersion.
-	script := `$p=((Get-WmiObject Win32_Service -Filter "Name='LMS'").PathName -replace '"', '').Split(' ')[0]; (Get-Item $p).VersionInfo.FileVersion`
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), lmsVersionWindowsTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Output()
+	out, err := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", lmsVersionWindowsScript).Output()
 	if err != nil {
 		log.Debugf("failed to get LMS version on windows: %v", err)
 		return ""

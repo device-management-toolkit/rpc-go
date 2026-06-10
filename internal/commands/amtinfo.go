@@ -16,6 +16,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -394,7 +395,7 @@ type syncDeviceInfo struct {
 	CertHashes           []string      `json:"certHashes,omitempty"`
 	LMSInstalled         bool          `json:"lmsInstalled"`
 	LMSVersion           string        `json:"lmsVersion,omitempty"`
-	OSName               string        `json:"osName,omitempty"`
+	OSName               string        `json:"osName"`
 	OSVersion            string        `json:"osVersion,omitempty"`
 	OSDistro             string        `json:"osDistro,omitempty"`
 	CPUModel             string        `json:"cpuModel,omitempty"`
@@ -568,6 +569,11 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	osInfo := utils.GetOSInfo()
 	info.OSName = osInfo.Name
+
+	if strings.TrimSpace(info.OSName) == "" {
+		info.OSName = runtime.GOOS
+	}
+
 	info.OSVersion = osInfo.Version
 	info.OSDistro = osInfo.Distro
 	info.CPUModel = utils.GetCPUModel()

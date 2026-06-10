@@ -8,56 +8,62 @@ package utils
 import (
 	"context"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
+var meiModulePathRegex = regexp.MustCompile(`.*/lib/modules/([^/]+)/(.*)`)
+
+var (
+	runModinfo = func(ctx context.Context, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, "modinfo", args...).Output()
+	}
+	getKernelRelease = func() string {
+		var uname unix.Utsname
+
+		if err := unix.Uname(&uname); err != nil {
+			return ""
+		}
+
+		return strings.TrimRight(string(uname.Release[:]), "\x00")
+	}
+)
+
 // GetMEIDriverVersion returns the MEI kernel module version.
-// Uses modinfo path when available and falls back to uname release.
+// Prefers explicit module version and falls back to module path / kernel release.
 func GetMEIDriverVersion() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "modinfo", "-n", "mei_me").Output()
+	out, err := runModinfo(ctx, "-F", "version", "mei_me")
+	if err == nil {
+		if version := strings.TrimSpace(string(out)); version != "" {
+			return version
+		}
+	}
+
+	out, err = runModinfo(ctx, "-n", "mei_me")
 	if err == nil {
 		if version, ok := parseMEIModuleVersionFromPath(strings.TrimSpace(string(out))); ok {
 			return version
 		}
 	}
 
-	var uname unix.Utsname
-
-	if err := unix.Uname(&uname); err != nil {
-		return ""
-	}
-
-	return strings.TrimRight(string(uname.Release[:]), "\x00")
+	return getKernelRelease()
 }
 
 func parseMEIModuleVersionFromPath(modulePath string) (string, bool) {
-	const modulesPrefix = "/lib/modules/"
-
-	idx := strings.Index(modulePath, modulesPrefix)
-	if idx == -1 {
+	matches := meiModulePathRegex.FindStringSubmatch(modulePath)
+	if len(matches) != 3 || matches[1] == "" {
 		return "", false
 	}
 
-	rest := modulePath[idx+len(modulesPrefix):]
+	version := matches[1]
+	moduleSubPath := "/" + matches[2]
 
-	parts := strings.SplitN(rest, "/", 2)
-
-	if len(parts) == 0 || parts[0] == "" {
-		return "", false
-	}
-
-	version := parts[0]
-	if len(parts) == 1 {
-		return version, true
-	}
-
-	moduleSubPath := "/" + parts[1]
 	if strings.Contains(moduleSubPath, "/updates/") {
 		return version + "-updates", true
 	}
