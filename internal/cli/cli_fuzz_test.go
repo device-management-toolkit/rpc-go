@@ -44,6 +44,83 @@ func recoverPanic(t *testing.T, input string) {
 	}
 }
 
+// splitFuzzFlags splits a command-like flag string and preserves quoted segments.
+func splitFuzzFlags(input string) []string {
+	var (
+		args         []string
+		current      strings.Builder
+		quote        rune
+		escaped      bool
+		tokenStarted bool
+	)
+
+	flush := func() {
+		if tokenStarted {
+			args = append(args, current.String())
+			current.Reset()
+
+			tokenStarted = false
+		}
+	}
+
+	for _, r := range input {
+		if escaped {
+			current.WriteRune(r)
+
+			escaped = false
+			tokenStarted = true
+
+			continue
+		}
+
+		if r == '\\' {
+			escaped = true
+			tokenStarted = true
+
+			continue
+		}
+
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+
+				continue
+			}
+
+			current.WriteRune(r)
+
+			tokenStarted = true
+
+			continue
+		}
+
+		if r == '"' || r == '\'' {
+			quote = r
+			tokenStarted = true
+
+			continue
+		}
+
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			flush()
+
+			continue
+		}
+
+		current.WriteRune(r)
+
+		tokenStarted = true
+	}
+
+	if escaped {
+		current.WriteRune('\\')
+	}
+
+	flush()
+
+	return args
+}
+
 // FuzzDeactivate tests the deactivate command with various flag combinations and inputs
 func FuzzDeactivate(f *testing.F) {
 	// Seed corpus with valid deactivate command patterns
@@ -355,7 +432,7 @@ func FuzzActivate(f *testing.F) {
 
 		args := []string{"rpc", "activate"}
 		if trimmed := strings.TrimSpace(flags); trimmed != "" {
-			args = append(args, strings.Fields(flags)...)
+			args = append(args, splitFuzzFlags(flags)...)
 		}
 
 		defer recoverPanic(t, flags)
