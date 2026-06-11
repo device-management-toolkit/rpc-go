@@ -59,6 +59,12 @@ func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
 }
 
 func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, logAMTMessages bool, tlsConfig *cryptotls.Config) error {
+	if useTLS && tlsConfig == nil {
+		logrus.Warn("SetupWsmanClient called with useTLS=true and nil tlsConfig; using default tls.Config")
+
+		tlsConfig = &cryptotls.Config{}
+	}
+
 	// Release any prior local transport's MEI handle; re-setup leaks handles otherwise.
 	if g.localTransport != nil {
 		if err := g.localTransport.Close(); err != nil {
@@ -102,8 +108,10 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
 				state := tlsConn.ConnectionState()
-				cert := state.PeerCertificates[0]
-				logrus.Trace("Server certificate: ", cert)
+				if len(state.PeerCertificates) > 0 {
+					cert := state.PeerCertificates[0]
+					logrus.Trace("Server certificate: ", cert)
+				}
 			}
 
 			defer conn.Close()

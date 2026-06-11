@@ -29,13 +29,20 @@ import (
 // single source of truth for the value.
 var listenSafetyTimeout = utils.LMEChannelOpenTimeout * time.Second
 
+// localLMEListenStopTimeout bounds how long LocalTransport waits for a prior
+// persistent LME Listen goroutine to exit after StopListen is signaled.
+var localLMEListenStopTimeout = (utils.HeciReadTimeout + 1) * time.Second
+
 type LocalTransport struct {
 	local     lm.LocalMananger
-	lme       *lm.LMEConnection // non-nil when TLS termination is required
+	lme       *lm.LMEConnection // underlying LME session; TLS path uses it directly
 	data      chan []byte
 	errors    chan error
 	status    chan bool
 	tlsConfig *cryptotls.Config
+
+	lmeListenMu   sync.Mutex
+	lmeListenDone chan struct{}
 }
 
 // NewLocalTransport returns a LocalTransport that speaks cleartext HTTP over
@@ -88,6 +95,8 @@ func newLocalTransport(tlsConfig *cryptotls.Config, port uint32) *LocalTransport
 
 // Close closes the LME connection and releases the MEI device
 func (l *LocalTransport) Close() error {
+	l.stopLMEListen()
+
 	if l.local != nil {
 		return l.local.Close()
 	}
@@ -151,14 +160,6 @@ func (l *LocalTransport) attemptRoundTrip(r *http.Request, rawRequest []byte) (r
 	// Fresh handshake WaitGroup per attempt: if a prior Listen exited without
 	// signaling Done(), the old WG is abandoned rather than deadlocking this one.
 	handshake := l.resetHandshake()
-
-	// Drain the WG on the way out so the goroutine waiting on it never leaks,
-	// even when Listen exits before the APF handshake completes.
-	defer func() {
-		defer func() { _ = recover() }()
-
-		handshake.Done()
-	}()
 
 	if err := l.local.Connect(); err != nil {
 		logrus.Error(err)
@@ -259,22 +260,14 @@ func (l *LocalTransport) attemptTLSRoundTrip(r *http.Request, rawRequest []byte)
 
 	handshake := l.resetHandshake()
 
-	// Drain the WG on the way out so the goroutine created by lm.WaitChan(handshake)
-	// doesn't leak if Listen exits before the APF handshake completes.
-	defer func() {
-		defer func() { _ = recover() }()
-
-		handshake.Done()
-	}()
-
-	l.lme.StopListen()
+	l.stopLMEListen()
 	apfConn := lm.NewAPFChannelConn(l.lme)
 
 	if err := l.lme.Connect(); err != nil {
 		return nil, err
 	}
 
-	go l.lme.Listen()
+	l.startLMEListen()
 
 	handshakeDone := lm.WaitChan(handshake)
 
@@ -335,6 +328,46 @@ func (l *LocalTransport) attemptTLSRoundTrip(r *http.Request, rawRequest []byte)
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 
 	return resp, nil
+}
+
+// stopLMEListen retires LocalTransport's prior persistent LME listener and
+// waits for exit so a new TLS round never races a second Receive loop on the
+// same HECI handle.
+func (l *LocalTransport) stopLMEListen() {
+	l.lmeListenMu.Lock()
+	done := l.lmeListenDone
+	l.lmeListenMu.Unlock()
+
+	if done == nil || l.lme == nil {
+		return
+	}
+
+	l.lme.StopListen()
+
+	select {
+	case <-done:
+	case <-time.After(localLMEListenStopTimeout):
+		logrus.Warn("LocalTransport TLS path: timed out waiting for previous LME listener to exit")
+	}
+
+	l.lmeListenMu.Lock()
+	if l.lmeListenDone == done {
+		l.lmeListenDone = nil
+	}
+	l.lmeListenMu.Unlock()
+}
+
+func (l *LocalTransport) startLMEListen() {
+	done := make(chan struct{})
+
+	l.lmeListenMu.Lock()
+	l.lmeListenDone = done
+	l.lmeListenMu.Unlock()
+
+	go func() {
+		l.lme.Listen()
+		close(done)
+	}()
 }
 
 // resetHandshake installs a fresh WaitGroup on the LME session so the current

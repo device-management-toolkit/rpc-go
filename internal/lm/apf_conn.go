@@ -6,9 +6,11 @@
 package lm
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,12 +20,14 @@ import (
 // lifecycle: the caller is responsible for Connect()/OPEN_CONFIRMATION and
 // for letting AMT's CHANNEL_CLOSE tear the channel down.
 type APFChannelConn struct {
-	lme      *LMEConnection
-	incoming chan []byte
+	lme       *LMEConnection
+	incoming  chan []byte
+	closeCh   chan struct{}
+	closed    atomic.Bool
+	closeOnce sync.Once
 
 	readMu       sync.Mutex
 	leftover     []byte
-	closed       bool
 	readDeadline time.Time
 }
 
@@ -36,51 +40,75 @@ func NewAPFChannelConn(lme *LMEConnection) *APFChannelConn {
 	stream := make(chan []byte, lmeAPFStreamBuffer)
 	lme.EnableTunnel(stream)
 
-	return &APFChannelConn{lme: lme, incoming: stream}
+	return &APFChannelConn{lme: lme, incoming: stream, closeCh: make(chan struct{})}
 }
 
 const lmeAPFStreamBuffer = 16
 
 func (c *APFChannelConn) Read(p []byte) (int, error) {
 	c.readMu.Lock()
-	defer c.readMu.Unlock()
+	if c.closeCh == nil {
+		c.closeCh = make(chan struct{})
+	}
 
 	if len(c.leftover) > 0 {
 		n := copy(p, c.leftover)
 		c.leftover = c.leftover[n:]
+		c.readMu.Unlock()
 
 		return n, nil
 	}
 
-	if c.closed {
+	if c.closed.Load() {
+		c.readMu.Unlock()
+
 		return 0, io.EOF
 	}
+
+	readDeadline := c.readDeadline
+	incoming := c.incoming
+	closeCh := c.closeCh
+	c.readMu.Unlock()
 
 	var (
 		chunk []byte
 		ok    bool
 	)
 
-	if c.readDeadline.IsZero() {
-		chunk, ok = <-c.incoming
+	if readDeadline.IsZero() {
+		select {
+		case chunk, ok = <-incoming:
+		case <-closeCh:
+			return 0, io.EOF
+		}
 	} else {
-		remaining := time.Until(c.readDeadline)
+		remaining := time.Until(readDeadline)
 		if remaining <= 0 {
 			return 0, apfDeadlineExceeded{}
 		}
 
 		t := time.NewTimer(remaining)
-		defer t.Stop()
-
 		select {
-		case chunk, ok = <-c.incoming:
+		case chunk, ok = <-incoming:
+			t.Stop()
+		case <-closeCh:
+			t.Stop()
+
+			return 0, io.EOF
 		case <-t.C:
 			return 0, apfDeadlineExceeded{}
 		}
 	}
 
 	if !ok {
-		c.closed = true
+		c.closed.Store(true)
+
+		return 0, io.EOF
+	}
+
+	c.readMu.Lock()
+	if c.closed.Load() {
+		c.readMu.Unlock()
 
 		return 0, io.EOF
 	}
@@ -89,11 +117,16 @@ func (c *APFChannelConn) Read(p []byte) (int, error) {
 	if n < len(chunk) {
 		c.leftover = chunk[n:]
 	}
+	c.readMu.Unlock()
 
 	return n, nil
 }
 
 func (c *APFChannelConn) Write(p []byte) (int, error) {
+	if c.lme == nil {
+		return 0, errors.New("nil LME connection")
+	}
+
 	if err := c.lme.Send(p); err != nil {
 		return 0, err
 	}
@@ -102,9 +135,19 @@ func (c *APFChannelConn) Write(p []byte) (int, error) {
 }
 
 func (c *APFChannelConn) Close() error {
+	c.closed.Store(true)
+
 	c.readMu.Lock()
-	c.closed = true
+	if c.closeCh == nil {
+		c.closeCh = make(chan struct{})
+	}
+
+	closeCh := c.closeCh
 	c.readMu.Unlock()
+
+	c.closeOnce.Do(func() {
+		close(closeCh)
+	})
 
 	return nil
 }
