@@ -56,6 +56,12 @@ func envInt(name string, def int) int {
 		return def
 	}
 
+	if n < 0 {
+		log.Warnf("ignoring negative %s=%q", name, v)
+
+		return def
+	}
+
 	return n
 }
 
@@ -99,9 +105,9 @@ type Executor struct {
 	lmConnected     bool // tracks if LMS connection is active (for TLS tunnel persistence)
 
 	// lmeStream carries individual APF_CHANNEL_DATA chunks from the AMT side
-	// during LME TLS-tunnel mode; lmeStreamForwarder concatenates and pushes
-	// them into e.data so the main receive loop sees one delivery per RPS
-	// round-trip. nil outside LME tunnel mode.
+	// during LME TLS-tunnel mode; lmeStreamForwarder forwards them into e.data,
+	// and HandleDataFromRPS coalesces chunks per RPS round-trip before
+	// forwarding to RPS. nil outside LME tunnel mode.
 	lmeStream chan []byte
 
 	// lmeListenDone is closed when the current persistent LME tunnel Listen
@@ -109,6 +115,12 @@ type Executor struct {
 	// so two Receive loops never race on the same HECI handle. nil when no
 	// tunnel listener has been started.
 	lmeListenDone chan struct{}
+
+	// lmeForwarderStop/lmeForwarderDone control the APF stream forwarder
+	// goroutine lifecycle so a superseded session cannot leave a stale forwarder
+	// blocked forever on a stream channel that never closes.
+	lmeForwarderStop chan struct{}
+	lmeForwarderDone chan struct{}
 }
 type ExecutorConfig struct {
 	URL              string
@@ -154,7 +166,9 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 
 		client.localManagement = lme
 		client.isLME = true
-		client.localManagement.Initialize()
+		if err := client.localManagement.Initialize(); err != nil {
+			return Executor{}, fmt.Errorf("failed to initialize LME connection: %w", err)
+		}
 	} else {
 		log.Trace("Using existing LMS\n")
 		client.localManagement.Close()
@@ -610,7 +624,9 @@ func (e *Executor) resetHandshake() *sync.WaitGroup {
 // next RPS message. Long enough to coalesce TLS handshake fragments, short
 // enough not to add noticeable latency to each round-trip.
 const (
-	lmeTunnelIdleWindow = 200 * time.Millisecond // lmeTunnelCloseWait is how long the LME tunnel receive loop keeps waiting,
+	lmeTunnelIdleWindow = 200 * time.Millisecond
+
+	// lmeTunnelCloseWait is how long the LME tunnel receive loop keeps waiting,
 	// after AMT's response data has stopped arriving, specifically for the trailing
 	// APF_CHANNEL_CLOSE that AMT sends after each HTTP/WSMAN response in
 	// TLS-enforced mode (Connection: close — every WSMAN call gets its own channel
@@ -858,8 +874,12 @@ drain:
 			log.Trace("LME tunnel: CHANNEL_OPEN_CONFIRMATION received")
 
 			e.lmConnected = true
+			forwarderStop := make(chan struct{})
+			forwarderDone := make(chan struct{})
+			e.lmeForwarderStop = forwarderStop
+			e.lmeForwarderDone = forwarderDone
 
-			go e.lmeStreamForwarder()
+			go e.lmeStreamForwarder(e.lmeStream, forwarderStop, forwarderDone)
 
 			return nil
 		}
@@ -873,6 +893,8 @@ drain:
 // Receive loop against it on the same HECI handle. No-op when no listener is
 // tracked (first session) or it has already exited.
 func (e *Executor) stopLMEListen(lmec *lm.LMEConnection) {
+	e.stopLMEForwarder()
+
 	if e.lmeListenDone == nil {
 		return
 	}
@@ -888,46 +910,64 @@ func (e *Executor) stopLMEListen(lmec *lm.LMEConnection) {
 	e.lmeListenDone = nil
 }
 
+func (e *Executor) stopLMEForwarder() {
+	if e.lmeForwarderStop == nil || e.lmeForwarderDone == nil {
+		return
+	}
+
+	close(e.lmeForwarderStop)
+
+	select {
+	case <-e.lmeForwarderDone:
+	case <-time.After(lmeListenStopTimeout):
+		log.Warn("LME tunnel: timed out waiting for previous stream forwarder to exit")
+	}
+
+	e.lmeForwarderStop = nil
+	e.lmeForwarderDone = nil
+}
+
 // lmeStreamForwarder pipes streaming CHANNEL_DATA chunks into the existing
 // e.data channel so the receive loop in HandleDataFromRPS picks them up the
 // same way it picks up LMS reads. Exits when the stream channel is closed
 // (apf processor closes it on CHANNEL_CLOSE for the active channel). On exit
 // it pushes a zero-length sentinel into e.data so the receive loop knows the
 // AMT-side TLS session is gone and must trigger a connection_reset to RPS.
-func (e *Executor) lmeStreamForwarder() {
-	// Capture the stream we own at start so a forwarder for a superseded
-	// channel can detect that prepareLMETunnel has already moved on and
-	// exit silently instead of clobbering the new session's state.
-	myStream := e.lmeStream
+func (e *Executor) lmeStreamForwarder(stream <-chan []byte, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 
-	for chunk := range myStream {
-		if len(chunk) == 0 {
-			continue
+	for {
+		select {
+		case <-stop:
+			log.Debug("LME tunnel: stream forwarder stopped for superseding session")
+
+			return
+		case chunk, ok := <-stream:
+			if !ok {
+				log.Debug("LME tunnel: stream forwarder exited (channel closed)")
+
+				// AMT closed the APF channel. Push a zero-length sentinel so the
+				// receive loop asks RPS to re-handshake.
+				select {
+				case e.data <- nil:
+				default:
+				}
+
+				return
+			}
+
+			if len(chunk) == 0 {
+				continue
+			}
+
+			select {
+			case e.data <- chunk:
+			case <-stop:
+				log.Debug("LME tunnel: stream forwarder stop while forwarding")
+
+				return
+			}
 		}
-
-		e.data <- chunk
-	}
-
-	log.Debug("LME tunnel: stream forwarder exited (channel closed)")
-
-	if e.lmeStream != myStream {
-		// A newer forwarder has taken over; don't reset lmConnected or push
-		// a sentinel that would trigger a spurious connection_reset on the
-		// fresh channel.
-		log.Debug("LME tunnel: stale forwarder exit ignored (superseded)")
-
-		return
-	}
-
-	// AMT closed the APF channel — the TLS state on its side is gone. Mark
-	// the LME tunnel as disconnected so the next RPS write reopens a fresh
-	// channel, and push a zero-length sentinel so the receive loop falls
-	// through to the connection_reset path that asks RPS to re-handshake.
-	e.lmConnected = false
-
-	select {
-	case e.data <- nil:
-	default:
 	}
 }
 
