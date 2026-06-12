@@ -6,7 +6,7 @@ go 1.25.9
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.47.2
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
