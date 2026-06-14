@@ -570,7 +570,10 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 		}
 
 		tlsConfig.Certificates = append(tlsConfig.Certificates, tlsCert)
+		// Pin to TLS 1.2: AMT 21 FW fails host-based provisioning over TLS 1.3
+		// (handshake completes, then FW drops the first WSMAN request).
 		tlsConfig.MinVersion = tls.VersionTLS12
+		tlsConfig.MaxVersion = tls.VersionTLS12
 	}
 
 	return tlsConfig, nil

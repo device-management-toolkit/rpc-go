@@ -5,8 +5,14 @@
 package activate
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -15,6 +21,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
@@ -1024,6 +1031,109 @@ func TestLocalActivationService_setupACMTLSConfig(t *testing.T) {
 				t.Errorf("setupACMTLSConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// makeTestProvisioningPFX returns a base64 PKCS#12 chain (self-signed root + leaf)
+// for use as ProvisioningCert; OrderCertsChain needs both a leaf and a root.
+func makeTestProvisioningPFX(t *testing.T, password string) string {
+	t.Helper()
+
+	rootKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate root key: %v", err)
+	}
+
+	rootTmpl := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test provisioning root"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		SignatureAlgorithm:    x509.SHA256WithRSA,
+	}
+
+	rootDER, err := x509.CreateCertificate(rand.Reader, &rootTmpl, &rootTmpl, &rootKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("create root cert: %v", err)
+	}
+
+	rootCert, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatalf("parse root cert: %v", err)
+	}
+
+	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate leaf key: %v", err)
+	}
+
+	leafTmpl := x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "test.provisioning.local"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		SignatureAlgorithm:    x509.SHA256WithRSA,
+	}
+
+	leafDER, err := x509.CreateCertificate(rand.Reader, &leafTmpl, rootCert, &leafKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("create leaf cert: %v", err)
+	}
+
+	leafCert, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("parse leaf cert: %v", err)
+	}
+
+	pfx, err := pkcs12.Modern.Encode(leafKey, leafCert, []*x509.Certificate{rootCert}, password)
+	if err != nil {
+		t.Fatalf("encode pfx: %v", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(pfx)
+}
+
+// Regression test: ACM provisioning TLS must be pinned to 1.2 (AMT 21 can't provision over 1.3).
+func TestLocalActivationService_setupACMTLSConfig_PinsTLS12(t *testing.T) {
+	const pwd = "test-pfx-pass"
+
+	certB64 := makeTestProvisioningPFX(t, pwd)
+
+	mockAMT := &MockAMTCommand{
+		hbcResponses: []amt.SecureHBasedResponse{{Status: "AMT_STATUS_SUCCESS"}},
+	}
+	service := &LocalActivationService{
+		amtCommand: mockAMT,
+		config: LocalActivationConfig{
+			ProvisioningCert:    certB64,
+			ProvisioningCertPwd: pwd,
+			ControlMode:         AMTControlModePreProvisioning,
+		},
+		context:          &commands.Context{SkipAMTCertCheck: true},
+		localTLSEnforced: true,
+	}
+
+	tlsConfig, err := service.setupACMTLSConfig()
+	if err != nil {
+		t.Fatalf("setupACMTLSConfig() unexpected error: %v", err)
+	}
+
+	if tlsConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %#x, want TLS 1.2 (%#x)", tlsConfig.MinVersion, tls.VersionTLS12)
+	}
+
+	if tlsConfig.MaxVersion != tls.VersionTLS12 {
+		t.Errorf("MaxVersion = %#x, want TLS 1.2 (%#x); FW cannot provision over TLS 1.3", tlsConfig.MaxVersion, tls.VersionTLS12)
+	}
+
+	if len(tlsConfig.Certificates) == 0 {
+		t.Error("expected provisioning client certificate to be set on the TLS config")
 	}
 }
 
