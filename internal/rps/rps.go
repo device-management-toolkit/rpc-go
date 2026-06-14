@@ -36,7 +36,7 @@ func ExecuteCommand(req *Request) error {
 	config := ExecutorConfig{
 		URL:              req.URL,
 		Proxy:            req.Proxy,
-		LocalTlsEnforced: req.LocalTlsEnforced,
+		LocalTLSEnforced: req.LocalTLSEnforced,
 		SkipAmtCertCheck: req.SkipAmtCertCheck,
 		ControlMode:      req.ControlMode,
 		SkipCertCheck:    req.SkipCertCheck,

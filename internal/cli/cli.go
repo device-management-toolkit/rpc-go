@@ -248,6 +248,7 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 
 	appCtx := &commands.Context{
 		AMTCommand:       amtCommand,
+		LocalTLSEnforced: false,
 		LogLevel:         cli.LogLevel,
 		JsonOutput:       cli.JsonOutput,
 		TableOutput:      cli.TableOutput,
