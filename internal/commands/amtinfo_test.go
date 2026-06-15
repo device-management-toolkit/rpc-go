@@ -22,6 +22,7 @@ import (
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -134,6 +135,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -180,6 +182,28 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
+	// LMSVersion depends on whether LMS is running on the test machine;
+	// only assert if LMSInstalled is true in the payload.
+	if gotBody.DeviceInfo.LMSInstalled {
+		assert.NotEmpty(t, gotBody.DeviceInfo.LMSVersion)
+	}
+
+	assert.NotNil(t, gotBody.DeviceInfo.AMTEnabledInBIOS)
+	assert.True(t, *gotBody.DeviceInfo.AMTEnabledInBIOS)
+	// MEInterfaceVersion may legitimately be empty on CI runners; don't assert its value here.
+	assert.NotEmpty(t, gotBody.DeviceInfo.OSName)
+}
+
+func TestInfoService_populateDiscoveryFields_MEInterfaceVersion(t *testing.T) {
+	expectedMEIVersion := utils.GetMEIDriverVersion()
+
+	service := NewInfoService(nil)
+	info := &syncDeviceInfo{LMSInstalled: false}
+	result := &InfoResult{}
+
+	service.populateDiscoveryFields(info, result)
+
+	assert.Equal(t, expectedMEIVersion, info.MEInterfaceVersion)
 }
 
 func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
@@ -191,6 +215,7 @@ func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -232,6 +257,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_DefaultEndpoint(t *testi
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
@@ -288,6 +314,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
 	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
 	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()

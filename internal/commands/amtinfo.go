@@ -16,6 +16,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -379,14 +380,35 @@ type syncPayload struct {
 }
 
 type syncDeviceInfo struct {
-	FWVersion    string    `json:"fwVersion"`
-	FWBuild      string    `json:"fwBuild"`
-	FWSku        string    `json:"fwSku"`
-	CurrentMode  string    `json:"currentMode"`
-	Features     string    `json:"features"`
-	IPAddress    string    `json:"ipAddress"`
-	LastUpdated  time.Time `json:"lastUpdated"`
-	LMSInstalled bool      `json:"lmsInstalled"`
+	FWVersion            string        `json:"fwVersion"`
+	FWBuild              string        `json:"fwBuild"`
+	FWSku                string        `json:"fwSku"`
+	CurrentMode          string        `json:"currentMode"`
+	Features             string        `json:"features"`
+	IPAddress            string        `json:"ipAddress"`
+	LastUpdated          time.Time     `json:"lastUpdated"`
+	TLSMode              string        `json:"tlsMode,omitempty"`
+	UPID                 *syncUPIDInfo `json:"upid,omitempty"`
+	AMTEnabledInBIOS     *bool         `json:"amtEnabledInBIOS,omitempty"`
+	MEInterfaceVersion   string        `json:"meInterfaceVersion,omitempty"`
+	DHCPEnabled          *bool         `json:"dhcpEnabled,omitempty"`
+	CertHashes           []string      `json:"certHashes,omitempty"`
+	LMSInstalled         bool          `json:"lmsInstalled"`
+	LMSVersion           string        `json:"lmsVersion,omitempty"`
+	OSName               string        `json:"osName"`
+	OSVersion            string        `json:"osVersion,omitempty"`
+	OSDistro             string        `json:"osDistro,omitempty"`
+	CPUModel             string        `json:"cpuModel,omitempty"`
+	OSIPAddress          string        `json:"osIpAddress,omitempty"`
+	EthernetAdapterCount int           `json:"ethernetAdapterCount,omitempty"`
+	MonitorConnected     *bool         `json:"monitorConnected,omitempty"`
+	IEEE8021xEnabled     *bool         `json:"ieee8021xEnabled,omitempty"`
+}
+
+type syncUPIDInfo struct {
+	CSMEId            string `json:"csmeId,omitempty"`
+	OEMId             string `json:"oemId,omitempty"`
+	OEMPlatformIdType string `json:"oemPlatformIdType,omitempty"`
 }
 
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
@@ -408,6 +430,9 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			LMSInstalled: utils.DetectLMS(s.localTLSEnforced),
 		},
 	}
+
+	// Populate additional discovery fields
+	s.populateDiscoveryFields(&payload.DeviceInfo, result)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -470,6 +495,188 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	}
 
 	return nil
+}
+
+// populateDiscoveryFields fills additional device discovery fields into the sync payload.
+func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *InfoResult) {
+	// UPID
+	if result.UPID != nil {
+		info.UPID = &syncUPIDInfo{
+			CSMEId:            formatHex(result.UPID.HWSerialNum),
+			OEMId:             formatHex(result.UPID.OEMPlatformID),
+			OEMPlatformIdType: interpretPlatformIDType(result.UPID.PlatformIdType),
+		}
+	}
+
+	// AMT enabled in BIOS: use OperationalState if available, otherwise infer from HECI availability
+	if result.OperationalState != "" {
+		enabled := result.OperationalState == "enabled"
+		info.AMTEnabledInBIOS = &enabled
+	} else if s.heciAvailable {
+		enabled := true
+		info.AMTEnabledInBIOS = &enabled
+	}
+
+	// ME Interface (driver) version
+	info.MEInterfaceVersion = utils.GetMEIDriverVersion()
+	log.Debugf("Collected ME interface version: %q", info.MEInterfaceVersion)
+
+	// DHCP from wired adapter
+	if result.WiredAdapter != nil {
+		info.DHCPEnabled = &result.WiredAdapter.DHCPEnabled
+	}
+
+	// Certificate hashes (extract hash strings)
+	if result.CertificateHashes != nil {
+		hashes := make([]string, 0, len(result.CertificateHashes))
+
+		for _, entry := range result.CertificateHashes {
+			if entry.Hash != "" {
+				hashes = append(hashes, entry.Hash)
+			}
+		}
+
+		if len(hashes) > 0 {
+			info.CertHashes = hashes
+		}
+	}
+
+	// LMS version — only attempt if LMS is detected as installed
+	if info.LMSInstalled {
+		if s.heciAvailable {
+			if lmsVer, err := s.amtCommand.GetVersionDataFromME("LMS", 30*time.Second); err == nil && lmsVer != "" {
+				info.LMSVersion = lmsVer
+			}
+		}
+
+		if info.LMSVersion == "" {
+			info.LMSVersion = utils.GetLMSVersion()
+		}
+	}
+
+	// TLS mode (requires WSMan)
+	if s.wsman != nil {
+		info.TLSMode = s.getTLSModeFromWSMAN()
+	}
+
+	// IEEE 802.1x (requires WSMan)
+	if s.wsman != nil {
+		info.IEEE8021xEnabled = s.getIEEE8021xEnabled()
+	}
+
+	// OS-level info
+	log.Debug("Collecting OS-level discovery information")
+
+	osInfo := utils.GetOSInfo()
+	info.OSName = osInfo.Name
+
+	if strings.TrimSpace(info.OSName) == "" {
+		info.OSName = runtime.GOOS
+	}
+
+	info.OSVersion = osInfo.Version
+	info.OSDistro = osInfo.Distro
+	info.CPUModel = utils.GetCPUModel()
+	info.OSIPAddress = utils.GetOSIPAddress()
+	info.EthernetAdapterCount = utils.GetEthernetAdapterCount()
+	info.MonitorConnected = utils.DetectMonitorConnected()
+
+	monitorConnected := "unknown"
+	if info.MonitorConnected != nil {
+		monitorConnected = strconv.FormatBool(*info.MonitorConnected)
+	}
+
+	log.Debugf("Collected OS-level discovery information: os_name=%q os_version=%q os_distro=%q cpu_model=%q os_ip=%q ethernet_adapter_count=%d monitor_connected=%s",
+		info.OSName,
+		info.OSVersion,
+		info.OSDistro,
+		info.CPUModel,
+		info.OSIPAddress,
+		info.EthernetAdapterCount,
+		monitorConnected,
+	)
+}
+
+// getTLSModeFromWSMAN queries AMT TLS settings via WSMan and returns the mode string.
+func (s *InfoService) getTLSModeFromWSMAN() string {
+	enumerateRsp, err := s.wsman.EnumerateTLSSettingData()
+	if err != nil {
+		log.Debug("Failed to enumerate TLS settings: ", err)
+
+		return ""
+	}
+
+	pullRsp, err := s.wsman.PullTLSSettingData(enumerateRsp.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		log.Debug("Failed to pull TLS settings: ", err)
+
+		return ""
+	}
+
+	// Use the remote TLS instance to determine the effective mode
+	for _, item := range pullRsp.Body.PullResponse.SettingDataItems {
+		if strings.HasSuffix(item.InstanceID, "AMT 802.3 TLS Settings") {
+			return determineTLSMode(item.MutualAuthentication, item.Enabled, item.AcceptNonSecureConnections)
+		}
+	}
+
+	return ""
+}
+
+// determineTLSMode converts TLS setting flags to a mode string.
+func determineTLSMode(mutualAuth, enabled, allowNonTLS bool) string {
+	switch {
+	case enabled && !allowNonTLS && !mutualAuth:
+		return "Server"
+	case enabled && allowNonTLS && !mutualAuth:
+		return "ServerAndNonTLS"
+	case enabled && !allowNonTLS && mutualAuth:
+		return "Mutual"
+	case enabled && allowNonTLS && mutualAuth:
+		return "MutualAndNonTLS"
+	case !enabled:
+		return "None"
+	default:
+		return "Unknown"
+	}
+}
+
+// getIEEE8021xEnabled queries whether 802.1x is enabled on the wired port.
+func (s *InfoService) getIEEE8021xEnabled() *bool {
+	resp, err := s.wsman.GetIPSIEEE8021xSettings()
+	if err != nil {
+		log.Debug("Failed to get IEEE 802.1x settings: ", err)
+
+		return nil
+	}
+
+	// Enabled(2), Disabled(3), Enabled without certificates(6)
+	enabled := resp.Body.IEEE8021xSettingsResponse.Enabled != 3
+
+	return &enabled
+}
+
+// formatHex converts a byte slice to an uppercase hex string.
+func formatHex(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%X", b)
+}
+
+// interpretPlatformIDType maps the UPID platform ID type enum to a human-readable string.
+func interpretPlatformIDType(t uint32) string {
+	switch t {
+	case 0:
+		return "Not Set (0)"
+	case 1:
+		return "Binary (1)"
+	case 2:
+		return "Printable String (2)"
+	default:
+		return fmt.Sprintf("Unknown (%d)", t)
+	}
 }
 
 // bestIPAddress chooses a reasonable IP address for reporting

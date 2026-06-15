@@ -433,6 +433,13 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 
 	isLMSAvailable := utils.DetectLMS(cmd.LocalTLSEnforced)
 
+	osInfo := utils.GetOSInfo()
+
+	var lmsVersion string
+	if isLMSAvailable {
+		lmsVersion = utils.GetLMSVersion()
+	}
+
 	payload := device.DevicePayload{
 		GUID:            guid,
 		Hostname:        hostname,
@@ -443,7 +450,17 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		MEBXPassword:    mebxPassword,
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
-		DeviceInfo:      &device.DeviceInfo{LMSInstalled: &isLMSAvailable},
+		DeviceInfo: &device.DeviceInfo{
+			LMSInstalled:         &isLMSAvailable,
+			LMSVersion:           lmsVersion,
+			OSName:               osInfo.Name,
+			OSVersion:            osInfo.Version,
+			OSDistro:             osInfo.Distro,
+			CPUModel:             utils.GetCPUModel(),
+			OSIPAddress:          utils.GetOSIPAddress(),
+			EthernetAdapterCount: utils.GetEthernetAdapterCount(),
+			MonitorConnected:     utils.DetectMonitorConnected(),
+		},
 	}
 
 	if hasCIRA {
