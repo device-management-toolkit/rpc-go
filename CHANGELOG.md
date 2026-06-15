@@ -1,3 +1,10 @@
+# [3.0.0-beta.30](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.29...v3.0.0-beta.30) (2026-06-15)
+
+
+### Features
+
+* expand deviceInfo with discovery fields ([#1341](https://github.com/device-management-toolkit/rpc-go/issues/1341)) ([24170fc](https://github.com/device-management-toolkit/rpc-go/commit/24170fc4e584702510280315b130a76cb0b1aa05)), closes [#1340](https://github.com/device-management-toolkit/rpc-go/issues/1340)
+
 # [3.0.0-beta.29](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.28...v3.0.0-beta.29) (2026-06-04)
 
 # [3.0.0-beta.28](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.27...v3.0.0-beta.28) (2026-06-02)
