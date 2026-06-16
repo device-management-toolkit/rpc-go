@@ -947,10 +947,14 @@ func (e *Executor) lmeStreamForwarder(stream <-chan []byte, stop <-chan struct{}
 				log.Debug("LME tunnel: stream forwarder exited (channel closed)")
 
 				// AMT closed the APF channel. Push a zero-length sentinel so the
-				// receive loop asks RPS to re-handshake.
+				// receive loop asks RPS to re-handshake. Use non-blocking send with
+				// brief timeout fallback to avoid blocking if receiver is not active
+				// (e.g., during session teardown), while ensuring sentinel is
+				// delivered in normal operation (receive loop listening on e.data).
 				select {
 				case e.data <- nil:
-				default:
+				case <-time.After(100 * time.Millisecond):
+					log.Debug("LME tunnel: stream close sentinel dropped (no receiver)")
 				}
 
 				return
