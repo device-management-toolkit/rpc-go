@@ -418,12 +418,16 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 				log.Debug("Response sent to RPS, waiting for next RPS message")
 
 				if channelClosed {
-					log.Debug("LME tunnel: APF channel closed by AMT mid-session; asking RPS to re-handshake")
-
 					e.lmConnected = false
 
-					resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
-					e.server.Send(resetMsg)
+					if len(coalesced) == 0 {
+						log.Debug("LME tunnel: APF channel closed with no payload; asking RPS to re-handshake")
+
+						resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
+						e.server.Send(resetMsg)
+					} else {
+						log.Debug("LME tunnel: APF channel closed after payload; reopening channel on next TLS round")
+					}
 
 					return false
 				}
