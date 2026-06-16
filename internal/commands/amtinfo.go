@@ -782,7 +782,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		if result.UUID == "" {
 			uuid, err := getSMBIOSSystemUUID()
 			if err != nil {
-				log.Warn("SMBIOS UUID not available: ", err)
+				log.Warn("SMBIOS UUID not available:", err)
 			} else {
 				result.UUID = uuid
 			}

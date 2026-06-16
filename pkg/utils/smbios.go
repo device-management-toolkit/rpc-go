@@ -27,7 +27,7 @@ const (
 var readSMBIOSUUIDFile = os.ReadFile
 var currentGOOS = runtime.GOOS
 var runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	return exec.CommandContext(ctx, name, args...).Output()
