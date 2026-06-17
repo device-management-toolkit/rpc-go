@@ -6,6 +6,7 @@
 package commands
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -178,4 +179,25 @@ func TestAMTBaseCmd_GetWSManClient(t *testing.T) {
 	cmd := &AMTBaseCmd{}
 	// Initially should be nil
 	assert.Nil(t, cmd.GetWSManClient())
+}
+
+func TestIsPermanentHECIError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{"inappropriate ioctl (non-vPro hardware)", errors.New("inappropriate ioctl for device"), true},
+		{"no such file (MEI driver missing)", errors.New("open /dev/mei0: no such file or directory"), true},
+		{"HECIDriverNotDetected sentinel", utils.HECIDriverNotDetected, true},
+		{"transient no such device", errors.New("no such device"), false},
+		{"transient device not connected", errors.New("The device is not connected."), false},
+		{"generic error", errors.New("some other error"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isPermanentHECIError(tt.err))
+		})
+	}
 }

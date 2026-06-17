@@ -24,6 +24,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -523,6 +524,52 @@ func TestInfoService_GetAMTInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInfoService_GetAMTInfo_UUIDFallbackToSMBIOS(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	orig := getSMBIOSSystemUUID
+	defer func() { getSMBIOSSystemUUID = orig }()
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "e9e3aaba-2cc1-6c7b-c176-1c697a0bedfa", nil
+	}
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	service := NewInfoService(mockAMT)
+	service.heciAvailable = false
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{UUID: true})
+	assert.NoError(t, err)
+	assert.Equal(t, "e9e3aaba-2cc1-6c7b-c176-1c697a0bedfa", result.UUID)
+
+	assert.NotNil(t, result.HECIAvailable)
+	assert.False(t, *result.HECIAvailable)
+}
+
+func TestInfoService_GetAMTInfo_UUIDFallbackSMBIOSUnavailable(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	orig := getSMBIOSSystemUUID
+	defer func() { getSMBIOSSystemUUID = orig }()
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "", errors.New("not available")
+	}
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	service := NewInfoService(mockAMT)
+	service.heciAvailable = false
+
+	result, err := service.GetAMTInfo(&AmtInfoCmd{UUID: true})
+	assert.NoError(t, err)
+	assert.Empty(t, result.UUID)
+
+	assert.NotNil(t, result.HECIAvailable)
+	assert.False(t, *result.HECIAvailable)
 }
 
 func TestInfoService_OutputJSON(t *testing.T) {
@@ -1430,6 +1477,41 @@ func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
 	assert.NotNil(t, result.RAS)
 	assert.Equal(t, "heci-mps.example.com", result.RAS.MPSHostname)
 	assert.Equal(t, 0, result.RAS.MPSPort)
+}
+
+func TestInfoService_SyncDeviceInfo_EmptyUUID_ReturnsError(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{}
+	result := &InfoResult{}
+
+	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+}
+
+func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{}
+
+	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+}
+
+func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{}
+
+	for _, sentinel := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"ffffffff-ffff-ffff-ffff-ffffffffffff",
+		"03000200-0400-0500-0006-000700080009",
+	} {
+		result := &InfoResult{UUID: sentinel}
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid device UUID sentinel value")
+	}
 }
 
 func TestInfoService_GetAMTInfo_Proxy(t *testing.T) {

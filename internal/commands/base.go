@@ -148,13 +148,22 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			break
 		}
 
+		// Permanent hardware-absence errors — no point retrying (e.g. non-vPro device)
+		if isPermanentHECIError(err) {
+			log.Debugf("HECI permanently unavailable: %v", err)
+
+			break
+		}
+
 		if attempt < maxAttempts {
 			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
 			time.Sleep(backoff)
 
 			continue
 		}
+	}
 
+	if err != nil {
 		// For commands that tolerate missing HECI (e.g. amtinfo), degrade gracefully
 		if cmd.SkipWSMANSetup {
 			log.Warn("HECI not available, AMT data will be limited")
@@ -203,4 +212,14 @@ func (cmd *AMTBaseCmd) GetControlMode() int {
 // This can be overridden by embedding commands if they have conditional requirements.
 func (cmd *AMTBaseCmd) RequiresAMTPassword() bool {
 	return true
+}
+
+// isPermanentHECIError returns true for errors that indicate HECI is structurally
+// absent and retrying will not help (non-vPro hardware or MEI driver not installed).
+func isPermanentHECIError(err error) bool {
+	msg := err.Error()
+
+	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
+		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
+		msg == utils.HECIDriverNotDetected.Error() // already-classified sentinel
 }

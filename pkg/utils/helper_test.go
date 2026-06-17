@@ -484,3 +484,25 @@ func TestDecodeAMT(t *testing.T) {
 		}
 	}
 }
+
+func TestIsKnownInvalidUUID(t *testing.T) {
+	tests := []struct {
+		name     string
+		uuid     string
+		expected bool
+	}{
+		{"nil UUID", "00000000-0000-0000-0000-000000000000", true},
+		{"all-ones UUID", "ffffffff-ffff-ffff-ffff-ffffffffffff", true},
+		{"corrupted firmware UUID", "03000200-0400-0500-0006-000700080009", true},
+		{"uppercase nil UUID", "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", true},
+		{"surrounding whitespace", "  00000000-0000-0000-0000-000000000000\n", true},
+		{"valid UUID", "1c113fd2-3325-4594-a272-54b2038beb07", false},
+		{"empty string", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, IsKnownInvalidUUID(tt.uuid))
+		})
+	}
+}

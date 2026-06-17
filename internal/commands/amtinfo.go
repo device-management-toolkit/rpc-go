@@ -93,6 +93,9 @@ var (
 			Foreground(lipgloss.Color("39"))
 )
 
+// test seam for SMBIOS UUID fallback in GetAMTInfo.
+var getSMBIOSSystemUUID = utils.GetSMBIOSSystemUUID
+
 func renderInfoHeader(title string) string {
 	return "\n" + infoIndent + infoHeaderStyle.Render(title) + "\n" + infoIndent +
 		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n"
@@ -262,10 +265,6 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	service.wsman = cmd.GetWSManClient()
 	service.heciAvailable = cmd.HECIAvailable
 
-	if cmd.Sync && !cmd.HECIAvailable {
-		return fmt.Errorf("--sync requires administrator privileges and MEI driver to gather device data")
-	}
-
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
 	if cmd.Sync {
@@ -414,6 +413,15 @@ type syncUPIDInfo struct {
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
 // The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices)
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
+	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
+	if result == nil || strings.TrimSpace(result.UUID) == "" {
+		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
+	}
+
+	if utils.IsKnownInvalidUUID(result.UUID) {
+		return fmt.Errorf("cannot sync: invalid device UUID sentinel value")
+	}
+
 	// Use the provided URL directly as the target endpoint
 	endpoint := urlArg
 
@@ -763,12 +771,22 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		result.Features = strings.TrimSpace(utils.DecodeAMTFeatures(result.AMT, result.SKU))
 	}
 
-	// Get UUID (requires HECI)
+	// Get UUID (requires HECI; falls back to SMBIOS for non-vPro devices)
 	if showAll || cmd.UUID {
 		if s.heciAvailable {
 			uuid, err := s.amtCommand.GetUUID()
 			if err != nil {
 				log.Error("Failed to get UUID: ", err)
+			} else {
+				result.UUID = uuid
+			}
+		}
+
+		// SMBIOS fallback when HECI is unavailable or failed
+		if result.UUID == "" {
+			uuid, err := getSMBIOSSystemUUID()
+			if err != nil {
+				log.Warn("SMBIOS UUID not available:", err)
 			} else {
 				result.UUID = uuid
 			}
