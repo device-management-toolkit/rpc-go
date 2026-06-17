@@ -17,6 +17,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	userConsentKVM = "kvm"
+	userConsentAll = "all"
+)
+
 // AMTFeaturesCmd represents AMT features configuration
 type AMTFeaturesCmd struct {
 	ConfigureBaseCmd
@@ -129,9 +134,9 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 		switch cmd.UserConsent {
 		case "none":
 			optInRequired = uint32(optin.OptInRequiredNone)
-		case "kvm":
+		case userConsentKVM:
 			optInRequired = uint32(optin.OptInRequiredKVM)
-		case "all":
+		case userConsentAll:
 			optInRequired = uint32(optin.OptInRequiredAll)
 		}
 
@@ -169,7 +174,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 	log.Info("SOL: ", cmd.SOL)
 	log.Info("IDER: ", cmd.IDER)
 
-	if cmd.GetControlMode() != 2 && cmd.UserConsent != "all" {
+	if cmd.GetControlMode() != 2 && cmd.UserConsent != userConsentAll {
 		log.Warn("User consent is read-only and set to ALL by default in CCM.")
 	} else {
 		log.Info("User Consent: ", cmd.UserConsent)

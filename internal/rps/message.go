@@ -75,6 +75,8 @@ const MethodPortSwitch = "port_switch"
 // MethodPortSwitchAck is sent by rpc-go to confirm it has reconnected on the TLS port
 const MethodPortSwitchAck = "port_switch_ack"
 
+const statusOK = "ok"
+
 // PortSwitchPayload is the JSON payload from RPS's port_switch message
 type PortSwitchPayload struct {
 	Port     string `json:"port"`
@@ -189,8 +191,8 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 		APIKey:          "key",
 		AppVersion:      utils.ProjectVersion,
 		ProtocolVersion: utils.ProtocolVersion,
-		Status:          "ok",
-		Message:         "ok",
+		Status:          statusOK,
+		Message:         statusOK,
 		TenantID:        req.TenantID,
 	}
 
@@ -243,8 +245,8 @@ func (p Payload) CreateMessageResponse(payload []byte, method string) Message {
 		APIKey:          "key",
 		AppVersion:      utils.ProjectVersion,
 		ProtocolVersion: utils.ProtocolVersion,
-		Status:          "ok",
-		Message:         "ok",
+		Status:          statusOK,
+		Message:         statusOK,
 		Payload:         base64.StdEncoding.EncodeToString(payload),
 	}
 }

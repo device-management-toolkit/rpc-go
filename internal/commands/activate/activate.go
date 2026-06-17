@@ -445,7 +445,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		Hostname:        hostname,
 		FriendlyName:    friendlyName,
 		Tags:            cfg.Tags,
-		Username:        "admin",
+		Username:        utils.AMTUserName,
 		Password:        amtPassword,
 		MEBXPassword:    mebxPassword,
 		UseTLS:          useTLS,
@@ -464,7 +464,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	}
 
 	if hasCIRA {
-		payload.MPSUsername = "admin"
+		payload.MPSUsername = utils.AMTUserName
 		payload.MPSPassword = mpsPassword
 	} else {
 		payload.MPSUsername = ""

@@ -44,7 +44,7 @@ func GetOSInfo() OSInfo {
 		} else {
 			info.Distro = strings.TrimSpace(hostInfo.Platform + " " + hostInfo.PlatformVersion)
 		}
-	case "windows":
+	case goosWindows:
 		// Combine platform + version for friendly name (e.g. "Microsoft Windows 11 Enterprise 24H2")
 		info.Distro = strings.TrimSpace(hostInfo.Platform + " " + hostInfo.PlatformVersion)
 	default:

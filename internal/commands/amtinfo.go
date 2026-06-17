@@ -42,9 +42,16 @@ import (
 const twoColumnMinWidth = 150
 
 const (
-	notFoundIP = "Not Found"
-	zeroIP     = "0.0.0.0"
-	zeroMAC    = "00:00:00:00:00:00"
+	notFoundIP         = "Not Found"
+	zeroIP             = "0.0.0.0"
+	zeroMAC            = "00:00:00:00:00:00"
+	statusEnabled      = "enabled"
+	statusConnected    = "connected"
+	statusUp           = "up"
+	statusNotConnected = "not connected"
+	statusActive       = "active"
+	statusDisabled     = "disabled"
+	proxyInfoFQDN      = "FQDN"
 )
 
 // Indent constant for consistent text output spacing.
@@ -107,10 +114,10 @@ func renderInfoRow(label, value string) string {
 
 func styledInfoValue(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "enabled", "connected", "up", "active",
+	case statusEnabled, statusConnected, statusUp, statusActive,
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
-	case "disabled", "not connected", "down",
+	case statusDisabled, statusNotConnected, "down",
 		"not activated", "unknown":
 		return infoRedStyle.Render(value)
 	case "in provisioning",
@@ -518,7 +525,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	// AMT enabled in BIOS: use OperationalState if available, otherwise infer from HECI availability
 	if result.OperationalState != "" {
-		enabled := result.OperationalState == "enabled"
+		enabled := result.OperationalState == statusEnabled
 		info.AMTEnabledInBIOS = &enabled
 	} else if s.heciAvailable {
 		enabled := true
@@ -848,9 +855,9 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 					opState, err := s.amtCommand.GetChangeEnabled()
 					if err == nil && opState.IsNewInterfaceVersion() {
 						if opState.IsAMTEnabled() {
-							result.OperationalState = "enabled"
+							result.OperationalState = statusEnabled
 						} else {
-							result.OperationalState = "disabled"
+							result.OperationalState = statusDisabled
 						}
 					}
 				} else if err == nil {
@@ -1721,7 +1728,7 @@ func buildUserCertsSection(result *InfoResult, cmd *AmtInfoCmd) string {
 // getOSIPAddress gets the OS IP address for a given MAC address
 func (s *InfoService) getOSIPAddress(macAddr string) string {
 	if macAddr == zeroMAC {
-		return "0.0.0.0"
+		return zeroIP
 	}
 
 	// Parse MAC address
@@ -1925,7 +1932,7 @@ func proxyInfoFormatString(format int) string {
 	case ipshttp.InfoFormatIPv6:
 		return "IPv6"
 	case ipshttp.InfoFormatFQDN:
-		return "FQDN"
+		return proxyInfoFQDN
 	default:
 		return "Unknown"
 	}

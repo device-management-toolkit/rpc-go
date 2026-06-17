@@ -69,6 +69,8 @@ const (
 	SubCommandDisableAMT          = "disableamt"
 	SubCommandCIRA                = "cira"
 
+	activationFailedMessage = "ActivationFailed"
+
 	// Return Codes
 	Success ReturnCode = 0
 )
@@ -119,7 +121,7 @@ var (
 var (
 	AMTAuthenticationFailed           = CustomError{Code: 100, Message: "AMTAuthenticationFailed"}
 	WSMANMessageError                 = CustomError{Code: 101, Message: "WSMANMessageError"}
-	ActivationFailed                  = CustomError{Code: 102, Message: "ActivationFailed"}
+	ActivationFailed                  = CustomError{Code: 102, Message: activationFailedMessage}
 	NetworkConfigurationFailed        = CustomError{Code: 103, Message: "NetworkConfigurationFailed"}
 	CIRAConfigurationFailed           = CustomError{Code: 104, Message: "CIRAConfigurationFailed"}
 	TLSConfigurationFailed            = CustomError{Code: 105, Message: "TLSConfigurationFailed"}
@@ -137,24 +139,24 @@ var (
 	SetMEBXPasswordFailed             = CustomError{Code: 118, Message: "SetMEBXPasswordFailed"}
 	ChangeAMTPasswordFailed           = CustomError{Code: 119, Message: "ChangeAMTPasswordFailed"}
 	UnableToConfigure                 = CustomError{Code: 120, Message: "UnableToConfigure"}
-	ActivationFailedDecode64          = CustomError{Code: 121, Message: "ActivationFailed", Details: "failed to decode the certificate from Base64 format"}
-	ActivationFailedWrongCertPass     = CustomError{Code: 122, Message: "ActivationFailed", Details: "provisioning cert password incorrect"}
-	ActivationFailedInvalidProvCert   = CustomError{Code: 123, Message: "ActivationFailed", Details: "invalid provisioning certificate"}
-	ActivationFailedNoCertFound       = CustomError{Code: 124, Message: "ActivationFailed", Details: "no certificates found"}
-	ActivationFailedNoPrivKeys        = CustomError{Code: 125, Message: "ActivationFailed", Details: "no private keys found"}
-	ActivationFailedNoRootCertFound   = CustomError{Code: 126, Message: "ActivationFailed", Details: "root certificate not found in the pfx"}
-	ActivationFailedGetCertHash       = CustomError{Code: 127, Message: "ActivationFailed", Details: "failed to get certificate hashes"}
-	ActivationFailedProvCertNoMatch   = CustomError{Code: 128, Message: "ActivationFailed", Details: "the root of the provisioning certificate does not match any of the trusted roots in AMT"}
-	ActivationFailedGeneralSettings   = CustomError{Code: 129, Message: "ActivationFailed", Details: "wsman message error, failed to get general settings"}
-	ActivationFailedSetupService      = CustomError{Code: 130, Message: "ActivationFailed", Details: "wsman message error, failed to get host based setup service response"}
-	ActivationFailedAddCert           = CustomError{Code: 131, Message: "ActivationFailed", Details: "wsman message error, failed to add certificate to AMT"}
-	ActivationFailedGenerateNonce     = CustomError{Code: 132, Message: "ActivationFailed", Details: "failed to generate nonce"}
-	ActivationFailedSignString        = CustomError{Code: 133, Message: "ActivationFailed", Details: "failed to create signed string"}
-	ActivationFailedGetControlMode    = CustomError{Code: 134, Message: "ActivationFailed", Details: "failed to get control mode"}
-	ActivationFailedControlMode       = CustomError{Code: 135, Message: "ActivationFailed", Details: "received invalid control mode"}
+	ActivationFailedDecode64          = CustomError{Code: 121, Message: activationFailedMessage, Details: "failed to decode the certificate from Base64 format"}
+	ActivationFailedWrongCertPass     = CustomError{Code: 122, Message: activationFailedMessage, Details: "provisioning cert password incorrect"}
+	ActivationFailedInvalidProvCert   = CustomError{Code: 123, Message: activationFailedMessage, Details: "invalid provisioning certificate"}
+	ActivationFailedNoCertFound       = CustomError{Code: 124, Message: activationFailedMessage, Details: "no certificates found"}
+	ActivationFailedNoPrivKeys        = CustomError{Code: 125, Message: activationFailedMessage, Details: "no private keys found"}
+	ActivationFailedNoRootCertFound   = CustomError{Code: 126, Message: activationFailedMessage, Details: "root certificate not found in the pfx"}
+	ActivationFailedGetCertHash       = CustomError{Code: 127, Message: activationFailedMessage, Details: "failed to get certificate hashes"}
+	ActivationFailedProvCertNoMatch   = CustomError{Code: 128, Message: activationFailedMessage, Details: "the root of the provisioning certificate does not match any of the trusted roots in AMT"}
+	ActivationFailedGeneralSettings   = CustomError{Code: 129, Message: activationFailedMessage, Details: "wsman message error, failed to get general settings"}
+	ActivationFailedSetupService      = CustomError{Code: 130, Message: activationFailedMessage, Details: "wsman message error, failed to get host based setup service response"}
+	ActivationFailedAddCert           = CustomError{Code: 131, Message: activationFailedMessage, Details: "wsman message error, failed to add certificate to AMT"}
+	ActivationFailedGenerateNonce     = CustomError{Code: 132, Message: activationFailedMessage, Details: "failed to generate nonce"}
+	ActivationFailedSignString        = CustomError{Code: 133, Message: activationFailedMessage, Details: "failed to create signed string"}
+	ActivationFailedGetControlMode    = CustomError{Code: 134, Message: activationFailedMessage, Details: "failed to get control mode"}
+	ActivationFailedControlMode       = CustomError{Code: 135, Message: activationFailedMessage, Details: "received invalid control mode"}
 	DuplicateKey                      = CustomError{Code: 136, Message: "DuplicateKey", Details: "Key pair already exists"}
 	WiredConfigurationFailed          = CustomError{Code: 137, Message: "WiredConfigurationFailed"}
-	ActivationFailedCertHash          = CustomError{Code: 138, Message: "ActivationFailed", Details: "leaf certificate hash too long"}
+	ActivationFailedCertHash          = CustomError{Code: 138, Message: activationFailedMessage, Details: "leaf certificate hash too long"}
 	UnsupportedAMTVersion             = CustomError{Code: 138, Message: "UnsupportedAMTVersion"}
 	LMSConnectionFailed               = CustomError{Code: 139, Message: "LMSConnectionFailed", Details: "Failed to connect to LMS. Please install LMS for activation."}
 )

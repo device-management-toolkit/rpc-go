@@ -13,6 +13,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	operationalStateDisabled = "Disabled"
+	operationalStateEnabled  = "Enabled"
+)
+
 // DisableAMTCmd represents the disable AMT command
 type DisableAMTCmd struct {
 	ConfigureBaseCmd
@@ -39,9 +44,9 @@ func (cmd *DisableAMTCmd) Run(ctx *commands.Context) error {
 	}
 
 	// Log diagnostic information
-	operationalStateLabel := "Disabled"
+	operationalStateLabel := operationalStateDisabled
 	if changeEnabled.IsAMTEnabled() {
-		operationalStateLabel = "Enabled"
+		operationalStateLabel = operationalStateEnabled
 	}
 
 	log.WithFields(log.Fields{
