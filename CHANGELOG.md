@@ -1,3 +1,10 @@
+# [3.0.0-beta.32](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.31...v3.0.0-beta.32) (2026-06-17)
+
+
+### Features
+
+* SMBIOS UUID fallback for non-vPro device sync ([#1356](https://github.com/device-management-toolkit/rpc-go/issues/1356)) ([7f692f7](https://github.com/device-management-toolkit/rpc-go/commit/7f692f74f8ee6777918611baeb596c067f801848)), closes [#1355](https://github.com/device-management-toolkit/rpc-go/issues/1355)
+
 # [3.0.0-beta.31](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.30...v3.0.0-beta.31) (2026-06-17)
 
 
