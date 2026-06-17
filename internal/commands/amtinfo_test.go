@@ -363,6 +363,71 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	assert.Equal(t, "Bearer custom-token", strings.TrimSpace(gotAuth))
 }
 
+func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+
+	var (
+		patchCount int
+		postCalled bool
+		postBody   map[string]interface{}
+	)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPatch:
+			assert.Equal(t, "/api/v1/devices", r.URL.Path)
+
+			patchCount++
+			if patchCount == 1 {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		case http.MethodPost:
+			postCalled = true
+
+			assert.Equal(t, "/api/v1/devices", r.URL.Path)
+
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+
+	err := cmd.Run(ctx)
+	assert.NoError(t, err)
+	assert.True(t, postCalled, "POST should have been called to create device")
+	assert.Equal(t, 2, patchCount, "PATCH should have been retried after POST")
+	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", postBody["guid"])
+	assert.NotEmpty(t, postBody["hostname"])
+}
+
 func TestNewInfoService(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -374,6 +439,29 @@ func TestNewInfoService(t *testing.T) {
 	assert.Equal(t, mockAMT, service.amtCommand)
 	assert.False(t, service.jsonOutput)
 	assert.Empty(t, service.password)
+}
+
+func TestNewInfoService_WithOptions(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	service := NewInfoService(
+		mockAMT,
+		WithJSONOutput(true),
+		WithPassword("testpassword"),
+		WithLocalTLSEnforced(true),
+		WithSkipAMTCertCheck(true),
+		WithHECIAvailable(false),
+	)
+
+	assert.NotNil(t, service)
+	assert.Equal(t, mockAMT, service.amtCommand)
+	assert.True(t, service.jsonOutput)
+	assert.Equal(t, "testpassword", service.password)
+	assert.True(t, service.localTLSEnforced)
+	assert.True(t, service.skipAMTCertCheck)
+	assert.False(t, service.heciAvailable)
 }
 
 func TestInfoService_GetAMTInfo(t *testing.T) {

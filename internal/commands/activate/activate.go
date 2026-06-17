@@ -362,6 +362,8 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	// rotate to the profile's AdminPassword without prompting.
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
+		cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
 			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
@@ -371,6 +373,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	log.Info("Profile fullflow completed successfully")
+	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
 
 	return nil
 }
@@ -624,6 +627,8 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	if err := orch.ExecuteProfile(); err != nil {
+		cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
 			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
@@ -633,6 +638,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	log.Info("Profile fullflow completed successfully")
+	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
 
 	return nil
 }
@@ -746,5 +752,22 @@ func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 		}
 	}
 
-	return localCmd.Run(ctx)
+	err = localCmd.Run(ctx)
+	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+
+	return err
+}
+
+// postActivationSync performs a best-effort refresh of deviceInfo after an activation attempt.
+// Any failures are logged but do not change the activation result.
+func (cmd *ActivateCmd) postActivationSync(ctx *commands.Context, consoleBaseURL, token, guid string) {
+	if consoleBaseURL == "" {
+		return
+	}
+
+	endpoint := commands.BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
+
+	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
+		log.Warnf("Post-activation sync failed: %v", err)
+	}
 }
