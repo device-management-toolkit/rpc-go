@@ -24,14 +24,16 @@ const (
 	goosWindows = "windows"
 )
 
-var readSMBIOSUUIDFile = os.ReadFile
-var currentGOOS = runtime.GOOS
-var runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+var (
+	readSMBIOSUUIDFile   = os.ReadFile
+	currentGOOS          = runtime.GOOS
+	runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	return exec.CommandContext(ctx, name, args...).Output()
-}
+		return exec.CommandContext(ctx, name, args...).Output()
+	}
+)
 
 // GetSMBIOSSystemUUID reads the system UUID from OS-exposed SMBIOS sources.
 // Returns the UUID as a lowercase RFC 4122 string.
@@ -60,6 +62,7 @@ func getWindowsUUID() (string, error) {
 
 	return normalizeUUID(out)
 }
+
 func normalizeUUID(raw []byte) (string, error) {
 	parsed, err := uuid.Parse(strings.TrimSpace(string(raw)))
 	if err != nil {
@@ -67,15 +70,9 @@ func normalizeUUID(raw []byte) (string, error) {
 	}
 
 	normalized := strings.ToLower(parsed.String())
-	if isSentinelSMBIOSUUID(normalized) {
+	if IsKnownInvalidUUID(normalized) {
 		return "", fmt.Errorf("invalid SMBIOS UUID sentinel value")
 	}
 
 	return normalized, nil
-}
-
-func isSentinelSMBIOSUUID(u string) bool {
-	return u == "00000000-0000-0000-0000-000000000000" ||
-		u == "ffffffff-ffff-ffff-ffff-ffffffffffff" ||
-		u == "03000200-0400-0500-0006-000700080009"
 }

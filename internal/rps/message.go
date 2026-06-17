@@ -88,24 +88,6 @@ func NewPayload() Payload {
 	}
 }
 
-// knownInvalidUUIDs contains UUIDs that should be rejected during activation.
-// These UUIDs indicate AMT firmware is in an invalid/corrupted state.
-var knownInvalidUUIDs = []string{
-	"00000000-0000-0000-0000-000000000000", // Nil UUID - indicates uninitialized/error state
-	"03000200-0400-0500-0006-000700080009", // AMT firmware in corrupted/invalid state
-}
-
-// isKnownInvalidUUID checks if the UUID is in the list of known invalid UUIDs
-func isKnownInvalidUUID(uuid string) bool {
-	for _, invalidUUID := range knownInvalidUUIDs {
-		if uuid == invalidUUID {
-			return true
-		}
-	}
-
-	return false
-}
-
 // createPayload gathers data from ME to assemble required information for sending to the server
 func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Duration) (MessagePayload, error) {
 	payload := MessagePayload{}
@@ -144,7 +126,7 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 	}
 
 	// Validate UUID is not a known invalid value
-	if isKnownInvalidUUID(payload.UUID) {
+	if utils.IsKnownInvalidUUID(payload.UUID) {
 		return payload, utils.InvalidUUID
 	}
 
@@ -221,7 +203,7 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	payload.HostnameInfo = req.HostnameInfo
 
 	if req.UUID != "" {
-		if isKnownInvalidUUID(req.UUID) {
+		if utils.IsKnownInvalidUUID(req.UUID) {
 			return message, utils.InvalidUUID
 		}
 

@@ -109,10 +109,3 @@ func TestGetSMBIOSSystemUUID(t *testing.T) {
 		assert.Contains(t, err.Error(), "not supported")
 	})
 }
-
-func TestIsSentinelSMBIOSUUID(t *testing.T) {
-	assert.True(t, isSentinelSMBIOSUUID("00000000-0000-0000-0000-000000000000"))
-	assert.True(t, isSentinelSMBIOSUUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
-	assert.True(t, isSentinelSMBIOSUUID("03000200-0400-0500-0006-000700080009"))
-	assert.False(t, isSentinelSMBIOSUUID("d83e613d-3b03-6bc0-36bd-48210b3594ec"))
-}

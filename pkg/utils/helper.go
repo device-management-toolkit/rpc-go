@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,21 @@ func ValidateUUID(uuidStr string) error {
 	}
 
 	return nil
+}
+
+// knownInvalidUUIDs are UUIDs that indicate an uninitialized, corrupted, or
+// otherwise unusable device identity. They must be rejected wherever a device
+// UUID is consumed (RPS activation, SMBIOS fallback, device sync).
+var knownInvalidUUIDs = []string{
+	"00000000-0000-0000-0000-000000000000", // Nil UUID — uninitialized/error state
+	"ffffffff-ffff-ffff-ffff-ffffffffffff", // All-ones — uninitialized SMBIOS/firmware
+	"03000200-0400-0500-0006-000700080009", // Known AMT firmware corrupted/invalid state
+}
+
+// IsKnownInvalidUUID reports whether u matches a known invalid/sentinel UUID.
+// Matching is case-insensitive and ignores surrounding whitespace.
+func IsKnownInvalidUUID(u string) bool {
+	return slices.Contains(knownInvalidUUIDs, strings.ToLower(strings.TrimSpace(u)))
 }
 
 func Pause(howManySeconds int) {

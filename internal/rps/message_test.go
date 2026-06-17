@@ -379,37 +379,6 @@ func TestCreateMessageRequestTLSTunnelFields(t *testing.T) {
 	assert.True(t, msgPayload.TLSTunnel)
 }
 
-func TestIsKnownInvalidUUID(t *testing.T) {
-	tests := []struct {
-		name      string
-		uuid      string
-		isInvalid bool
-	}{
-		{
-			name:      "valid UUID",
-			uuid:      "1c113fd2-3325-4594-a272-54b2038beb07",
-			isInvalid: false,
-		},
-		{
-			name:      "all zeros UUID - invalid",
-			uuid:      "00000000-0000-0000-0000-000000000000",
-			isInvalid: true,
-		},
-		{
-			name:      "known bad UUID pattern - invalid",
-			uuid:      "03000200-0400-0500-0006-000700080009",
-			isInvalid: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isKnownInvalidUUID(tt.uuid)
-			assert.Equal(t, tt.isInvalid, result, "UUID: %s isInvalid=%v", tt.uuid, tt.isInvalid)
-		})
-	}
-}
-
 type MockAMTInvalidUUID struct {
 	MockAMT
 }

@@ -362,6 +362,7 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	assert.NoError(t, err)
 	assert.Equal(t, "Bearer custom-token", strings.TrimSpace(gotAuth))
 }
+
 func TestNewInfoService(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
