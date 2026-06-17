@@ -55,12 +55,20 @@ func GetSMBIOSSystemUUID() (string, error) {
 }
 
 func getWindowsUUID() (string, error) {
-	out, err := runSMBIOSUUIDCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID")
-	if err != nil {
-		return "", fmt.Errorf("failed to query UUID on Windows: %w", err)
+	const psCmd = "(Get-CimInstance Win32_ComputerSystemProduct).UUID"
+
+	var lastErr error
+
+	for _, ps := range []string{"powershell", "powershell.exe", "pwsh", "pwsh.exe"} {
+		out, err := runSMBIOSUUIDCommand(ps, "-NoProfile", "-NonInteractive", "-Command", psCmd)
+		if err == nil {
+			return normalizeUUID(out)
+		}
+
+		lastErr = err
 	}
 
-	return normalizeUUID(out)
+	return "", fmt.Errorf("failed to query UUID on Windows: %w", lastErr)
 }
 
 func normalizeUUID(raw []byte) (string, error) {

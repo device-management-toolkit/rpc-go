@@ -84,7 +84,7 @@ func TestGetSMBIOSSystemUUID(t *testing.T) {
 		assert.Contains(t, err.Error(), "sentinel")
 	})
 
-	t.Run("windows fallback", func(t *testing.T) {
+	t.Run("windows powershell fallback", func(t *testing.T) {
 		currentGOOS = "windows"
 		readSMBIOSUUIDFile = func(_ string) ([]byte, error) {
 			return nil, errors.New("not available")
@@ -96,6 +96,30 @@ func TestGetSMBIOSSystemUUID(t *testing.T) {
 		u, err := GetSMBIOSSystemUUID()
 		require.NoError(t, err)
 		assert.Equal(t, "d83e613d-3b03-6bc0-36bd-48210b3594ec", u)
+	})
+
+	t.Run("windows pwsh fallback when powershell fails", func(t *testing.T) {
+		currentGOOS = "windows"
+		readSMBIOSUUIDFile = func(_ string) ([]byte, error) {
+			return nil, errors.New("not available")
+		}
+
+		callCount := 0
+
+		runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
+			callCount++
+
+			if name == "powershell" || name == "powershell.exe" {
+				return nil, errors.New("not found")
+			}
+
+			return []byte("D83E613D-3B03-6BC0-36BD-48210B3594EC\n"), nil
+		}
+
+		u, err := GetSMBIOSSystemUUID()
+		require.NoError(t, err)
+		assert.Equal(t, "d83e613d-3b03-6bc0-36bd-48210b3594ec", u)
+		assert.GreaterOrEqual(t, callCount, 3, "should have tried powershell variants before pwsh")
 	})
 
 	t.Run("unsupported OS", func(t *testing.T) {

@@ -1498,6 +1498,22 @@ func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
 }
 
+func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{}
+
+	for _, sentinel := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"ffffffff-ffff-ffff-ffff-ffffffffffff",
+		"03000200-0400-0500-0006-000700080009",
+	} {
+		result := &InfoResult{UUID: sentinel}
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid device UUID sentinel value")
+	}
+}
+
 func TestInfoService_GetAMTInfo_Proxy(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

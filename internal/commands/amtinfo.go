@@ -413,9 +413,13 @@ type syncUPIDInfo struct {
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
 // The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices)
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
-	// Without a UUID (neither HECI nor SMBIOS available), we cannot identify the device
-	if result == nil || result.UUID == "" {
+	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
+	if result == nil || strings.TrimSpace(result.UUID) == "" {
 		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
+	}
+
+	if utils.IsKnownInvalidUUID(result.UUID) {
+		return fmt.Errorf("cannot sync: invalid device UUID sentinel value")
 	}
 
 	// Use the provided URL directly as the target endpoint
