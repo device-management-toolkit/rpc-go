@@ -1,3 +1,10 @@
+# [3.0.0-beta.31](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.30...v3.0.0-beta.31) (2026-06-17)
+
+
+### Bug Fixes
+
+* fixed copilot review comments ([1356c48](https://github.com/device-management-toolkit/rpc-go/commit/1356c485c65fd45eccfa26244d62a0751143f9df))
+
 # [3.0.0-beta.30](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.29...v3.0.0-beta.30) (2026-06-15)
 
 
