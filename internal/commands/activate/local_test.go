@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"go.uber.org/mock/gomock"
 )
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
@@ -1088,6 +1091,82 @@ func TestLocalActivationService_commitCCMChanges(t *testing.T) {
 	}()
 
 	_ = service.commitCCMChanges()
+}
+
+func TestLocalActivationService_connectAdminAfterActivation(t *testing.T) {
+	// Shrink the backoff so the retry path doesn't sleep for real.
+	origBackoff := hbcBackoff
+	hbcBackoff = time.Millisecond
+
+	defer func() { hbcBackoff = origBackoff }()
+
+	settings := general.Response{}
+	settings.Body.GetResponse.DigestRealm = "Digest:TEST"
+
+	tests := []struct {
+		name      string
+		setupMock func(m *mock.MockWSMANer)
+		wantErr   bool
+	}{
+		{
+			name: "succeeds on first attempt",
+			setupMock: func(m *mock.MockWSMANer) {
+				m.EXPECT().SetupWsmanClient("admin", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+				m.EXPECT().GetGeneralSettings().Return(settings, nil)
+			},
+			wantErr: false,
+		},
+		{
+			name: "succeeds after the firmware settles",
+			setupMock: func(m *mock.MockWSMANer) {
+				m.EXPECT().SetupWsmanClient("admin", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+				gomock.InOrder(
+					m.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("EOF")),
+					m.EXPECT().GetGeneralSettings().Return(settings, nil),
+				)
+			},
+			wantErr: false,
+		},
+		{
+			name: "fails after exhausting attempts",
+			setupMock: func(m *mock.MockWSMANer) {
+				m.EXPECT().SetupWsmanClient("admin", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(hbcMaxAttempts)
+				m.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("EOF")).Times(hbcMaxAttempts)
+			},
+			wantErr: true,
+		},
+		{
+			name: "fails immediately on client setup error",
+			setupMock: func(m *mock.MockWSMANer) {
+				m.EXPECT().SetupWsmanClient("admin", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("setup failed"))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockWSMAN := mock.NewMockWSMANer(ctrl)
+			tt.setupMock(mockWSMAN)
+
+			service := &LocalActivationService{
+				wsman:  mockWSMAN,
+				config: LocalActivationConfig{AMTPassword: "password123"},
+			}
+
+			got, err := service.connectAdminAfterActivation(nil)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("connectAdminAfterActivation() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr && got.Body.GetResponse.DigestRealm != settings.Body.GetResponse.DigestRealm {
+				t.Errorf("connectAdminAfterActivation() DigestRealm = %q, want %q", got.Body.GetResponse.DigestRealm, settings.Body.GetResponse.DigestRealm)
+			}
+		})
+	}
 }
 
 // Test for getProvisioningCertObj function coverage

@@ -86,25 +86,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 
-		dialer := &cryptotls.Dialer{
-			Config: tlsConfig,
-		}
-
-		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
-		if err != nil {
-			logrus.Info("Failed to connect to LMS.  We're probably going to fail now. Sorry!")
-			logrus.Error(err)
-		} else {
-			logrus.Debug("Successfully connected to LMS.")
-
-			if tlsConn, ok := conn.(*cryptotls.Conn); ok {
-				state := tlsConn.ConnectionState()
-				cert := state.PeerCertificates[0]
-				logrus.Trace("Server certificate: ", cert)
-			}
-
-			defer conn.Close()
-		}
+		probeLMSTLS(ctx, tlsConfig)
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
@@ -126,6 +108,43 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	g.wsmanMessages = wsman.NewMessages(clientParams)
 
 	return nil
+}
+
+// probeLMSTLS dials the LMS TLS port in two stages (TCP, then handshake) so failures pinpoint the layer. Diagnostic only.
+func probeLMSTLS(ctx context.Context, tlsConfig *cryptotls.Config) {
+	addr := utils.LMSAddress + ":" + utils.LMSTLSPort
+
+	rawConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	if err != nil {
+		logrus.Infof("LMS probe: TCP connect to %s failed (AMT not listening / refused): %v", addr, err)
+
+		return
+	}
+
+	logrus.Debugf("LMS probe: TCP connected to %s, starting TLS handshake", addr)
+
+	tlsConn := cryptotls.Client(rawConn, tlsConfig)
+	defer tlsConn.Close()
+
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		logrus.Errorf("LMS probe: TLS handshake to %s failed (AMT reset/rejected during handshake): %v", addr, err)
+
+		return
+	}
+
+	state := tlsConn.ConnectionState()
+	logrus.Debugf(
+		"LMS probe: TLS handshake complete (version=%s cipher=%s)",
+		cryptotls.VersionName(state.Version), cryptotls.CipherSuiteName(state.CipherSuite),
+	)
+
+	if len(state.PeerCertificates) > 0 {
+		cert := state.PeerCertificates[0]
+		logrus.Tracef(
+			"Server certificate: Subject=%q Issuer=%q SerialNumber=%s NotBefore=%s NotAfter=%s DNSNames=%v",
+			cert.Subject, cert.Issuer, cert.SerialNumber, cert.NotBefore.Format(time.RFC3339), cert.NotAfter.Format(time.RFC3339), cert.DNSNames,
+		)
+	}
 }
 
 // Close closes any open local transport connections
