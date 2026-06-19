@@ -1,3 +1,10 @@
+# [3.0.0-beta.35](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.34...v3.0.0-beta.35) (2026-06-19)
+
+
+### Bug Fixes
+
+* Update fuzz tests to avoid panic supress with recoverPanic ([32b91da](https://github.com/device-management-toolkit/rpc-go/commit/32b91da5760aeb1e531f92c9c614ad22b16e2137))
+
 # [3.0.0-beta.34](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.33...v3.0.0-beta.34) (2026-06-19)
 
 
