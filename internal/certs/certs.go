@@ -49,6 +49,8 @@ type CompositeChain struct {
 	PfxPassword  string
 }
 
+const remoteProvisioningClientOU = "Remote Provisioning Client"
+
 func (c *Composite) StripPem() string {
 	stripped := strings.ReplaceAll(c.Pem, "-----BEGIN CERTIFICATE-----", "")
 	stripped = strings.ReplaceAll(stripped, "-----END CERTIFICATE-----", "")
@@ -86,7 +88,7 @@ func GetRootCATemplate() x509.Certificate {
 	// template.Issuer = template.Subject
 	sharedName := pkix.Name{
 		Organization:       []string{"vPro"},
-		OrganizationalUnit: []string{"Remote Provisioning Client"},
+		OrganizationalUnit: []string{remoteProvisioningClientOU},
 		CommonName:         "RPC Root CA Certificate",
 	}
 
@@ -112,7 +114,7 @@ func GetIntermediateCATemplate() x509.Certificate {
 		SerialNumber: big.NewInt(1500),
 		Subject: pkix.Name{
 			Organization:       []string{"Intel"},
-			OrganizationalUnit: []string{"Remote Provisioning Client"},
+			OrganizationalUnit: []string{remoteProvisioningClientOU},
 			CommonName:         "RPC Intermediate CA Certificate",
 			Country:            []string{"US"},
 		},
@@ -135,7 +137,7 @@ func GetLeafTemplate() x509.Certificate {
 		SerialNumber: big.NewInt(1500),
 		Subject: pkix.Name{
 			Organization:       []string{"Intel"},
-			OrganizationalUnit: []string{"Remote Provisioning Client"},
+			OrganizationalUnit: []string{remoteProvisioningClientOU},
 			CommonName:         "RPC Leaf Certificate",
 			Country:            []string{"US"},
 		},

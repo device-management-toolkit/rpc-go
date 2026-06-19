@@ -16,6 +16,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	odca2CSMEPPrefix = "ODCA 2 CSME P"
+	onDieCSMEPPrefix = "On Die CSME P"
+	odca2CSMEPrefix  = "ODCA 2 CSME"
+	onDieCSMEPrefix  = "On Die CSME"
+)
+
 // generates a TLS configuration based on the provided mode.
 func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
 	tlsConfig := &tls.Config{}
@@ -118,7 +125,7 @@ func VerifyLeafCertificate(cn *x509.Certificate, amtCertInfo *amt.SecureHBasedRe
 // validate CSME ROM ODCA certificate
 func VerifyROMODCACertificate(cn string, issuerOU []string) error {
 	allowedOUPrefixes := []string{
-		"ODCA 2 CSME P", "On Die CSME P", "ODCA 2 CSME", "On Die CSME",
+		odca2CSMEPPrefix, onDieCSMEPPrefix, odca2CSMEPrefix, onDieCSMEPrefix,
 	}
 
 	if !strings.Contains(cn, "ROM CA") && !strings.Contains(cn, "ROM DE") {

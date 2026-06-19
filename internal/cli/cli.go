@@ -25,7 +25,16 @@ import (
 	"golang.org/x/term"
 )
 
-const configFilePath = "config.yaml"
+const (
+	configFilePath     = "config.yaml"
+	commandAmtInfo     = "amtinfo"
+	commandVersion     = "version"
+	commandActivate    = "activate"
+	commandDeactivate  = "deactivate"
+	commandConfigure   = "configure"
+	commandDiagnostics = "diagnostics"
+	commandDiag        = "diag"
+)
 
 // Global flags that apply to all commands
 type Globals struct {
@@ -164,8 +173,8 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 
 // knownCommands lists the valid top-level command names for hasCommand detection.
 var knownCommands = map[string]bool{
-	"amtinfo": true, "version": true, "activate": true,
-	"deactivate": true, "configure": true, "diagnostics": true, "diag": true,
+	commandAmtInfo: true, commandVersion: true, commandActivate: true,
+	commandDeactivate: true, commandConfigure: true, commandDiagnostics: true, commandDiag: true,
 }
 
 // hasCommand checks if args contain a recognized command name.
@@ -201,7 +210,7 @@ func Execute(args []string) error {
 	// but let --help/-h pass through so Kong shows the full command list.
 	if !hasCommand(args) && !hasFlag(args, "--help", "-h") {
 		newArgs := make([]string, 0, len(args)+1)
-		newArgs = append(newArgs, args[0], "amtinfo")
+		newArgs = append(newArgs, args[0], commandAmtInfo)
 		newArgs = append(newArgs, args[1:]...)
 		args = newArgs
 	}

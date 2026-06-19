@@ -14,6 +14,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	jsonKeyProfile   = "profile"
+	jsonKeyRPSServer = "rps_server"
+)
+
 // RemoteActivateCmd handles remote AMT activation via RPS
 type RemoteActivateCmd struct {
 	// Required for remote activation
@@ -140,7 +145,7 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 	log.Debug("Preparing device information...")
 
 	deviceInfo := map[string]interface{}{
-		"profile": service.config.Profile,
+		jsonKeyProfile: service.config.Profile,
 	}
 	// Add optional fields if provided
 	if service.config.DNS != "" {
@@ -156,7 +161,7 @@ func (service *RemoteActivationService) prepareDeviceInfo() map[string]interface
 	}
 
 	if service.config.FriendlyName != "" {
-		deviceInfo["friendly_name"] = service.config.FriendlyName
+		deviceInfo[jsonKeyFriendly] = service.config.FriendlyName
 	}
 
 	return deviceInfo
@@ -194,15 +199,15 @@ func (service *RemoteActivationService) requestActivation(deviceInfo map[string]
 	}
 	// Create success result for our Kong CLI pattern
 	result := map[string]interface{}{
-		"status": "success",
+		jsonKeyStatus: jsonValueSuccess,
 
-		"message": "Device activated successfully via RPS",
+		jsonKeyMessage: "Device activated successfully via RPS",
 
-		"rps_server": service.config.URL,
+		jsonKeyRPSServer: service.config.URL,
 
-		"profile": service.config.Profile,
+		jsonKeyProfile: service.config.Profile,
 
-		"friendly_name": service.config.FriendlyName,
+		jsonKeyFriendly: service.config.FriendlyName,
 
 		"device_info": deviceInfo,
 	}

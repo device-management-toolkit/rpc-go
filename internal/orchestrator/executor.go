@@ -15,6 +15,8 @@ import (
 	"os/exec"
 )
 
+const rpcExecutableName = "rpc"
+
 // ExecError carries subprocess exit code + output; match on ExitCode, not Output substrings.
 type ExecError struct {
 	ExitCode int
@@ -50,11 +52,11 @@ func (e *CLIExecutor) Execute(args []string) error {
 	executable, err := os.Executable()
 	if err != nil {
 		// Fallback to "rpc" if we can't determine the executable
-		executable = "rpc"
+		executable = rpcExecutableName
 	}
 
 	// Replace the first "rpc" argument with the actual executable
-	if len(args) > 0 && args[0] == "rpc" {
+	if len(args) > 0 && args[0] == rpcExecutableName {
 		args = args[1:]
 	}
 

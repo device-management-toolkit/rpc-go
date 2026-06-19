@@ -21,6 +21,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const amtFeatureIQST = "iQST"
+
 const unknown = "unknown"
 
 var ErrUnsupportedCertAlgorithm = errors.New("unsupported certificate algorithm")
@@ -421,11 +423,11 @@ func parseAMTVersion(version string) (float64, error) {
 func decodeAMTFeaturesV2(skuNum int64) string {
 	switch skuNum {
 	case 0:
-		return "AMT + ASF + iQST"
+		return "AMT + ASF + " + amtFeatureIQST
 	case 1:
-		return "ASF + iQST"
+		return "ASF + " + amtFeatureIQST
 	case 2:
-		return "iQST"
+		return amtFeatureIQST
 	default:
 		return "Unknown"
 	}
@@ -436,7 +438,7 @@ func decodeAMTFeaturesV3to4(skuNum int64) string {
 	result := ""
 
 	if skuNum&0x02 > 0 {
-		result += "iQST "
+		result += amtFeatureIQST + " "
 	}
 
 	if skuNum&0x04 > 0 {
@@ -455,7 +457,7 @@ func decodeAMTFeaturesV5Plus(skuNum int64, amtVer float64) string {
 	result := ""
 
 	if skuNum&0x02 > 0 && amtVer < 7.0 {
-		result += "iQST "
+		result += amtFeatureIQST + " "
 	}
 
 	if skuNum&0x04 > 0 && amtVer < 6.0 {

@@ -87,12 +87,22 @@ const (
 	AMTControlModeACM = 2
 )
 
+const (
+	activationModeCCM = "CCM"
+	activationModeACM = "ACM"
+	jsonKeyStatus     = "status"
+	jsonKeyMessage    = "message"
+	jsonKeyFriendly   = "friendly_name"
+	jsonValueSuccess  = "success"
+	amtStatusSuccess  = "AMT_STATUS_SUCCESS"
+)
+
 func (m ActivationMode) String() string {
 	switch m {
 	case ModeCCM:
-		return "CCM"
+		return activationModeCCM
 	case ModeACM:
-		return "ACM"
+		return activationModeACM
 	default:
 		return "Unknown"
 	}
@@ -190,8 +200,8 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 
 	if ctx.JsonOutput {
 		result := map[string]interface{}{
-			"status":  "success",
-			"message": "AMT configuration stopped",
+			jsonKeyStatus:  jsonValueSuccess,
+			jsonKeyMessage: "AMT configuration stopped",
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -390,10 +400,10 @@ func (service *LocalActivationService) activateCCM() error {
 	// Output success result
 	if service.context.JsonOutput {
 		result := map[string]interface{}{
-			"status":        "success",
-			"mode":          "CCM",
-			"message":       "Device activated in Client Control Mode",
-			"friendly_name": service.config.FriendlyName,
+			jsonKeyStatus:   jsonValueSuccess,
+			"mode":          activationModeCCM,
+			jsonKeyMessage:  "Device activated in Client Control Mode",
+			jsonKeyFriendly: service.config.FriendlyName,
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -477,10 +487,10 @@ func (service *LocalActivationService) activateACM() error {
 	// Output success result
 	if service.context.JsonOutput {
 		result := map[string]interface{}{
-			"status":        "success",
-			"mode":          "ACM",
-			"message":       "Device activated in Admin Control Mode",
-			"friendly_name": service.config.FriendlyName,
+			jsonKeyStatus:   jsonValueSuccess,
+			"mode":          activationModeACM,
+			jsonKeyMessage:  "Device activated in Admin Control Mode",
+			jsonKeyFriendly: service.config.FriendlyName,
 		}
 
 		jsonBytes, err := json.MarshalIndent(result, "", "  ")
@@ -875,7 +885,7 @@ func (service *LocalActivationService) runStartHBCWithRetry(certsAndKeys CertsAn
 
 	for attempt := 1; attempt <= hbcMaxAttempts; attempt++ {
 		response, err = service.startSecureHostBasedConfiguration(certsAndKeys)
-		if err == nil && response.Status == "AMT_STATUS_SUCCESS" {
+		if err == nil && response.Status == amtStatusSuccess {
 			return response, nil
 		}
 
