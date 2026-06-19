@@ -99,6 +99,24 @@ func Test_NewLMEConnection(t *testing.T) {
 	assert.Equal(t, lmErrorChannel, lme.Session.ErrorBuffer)
 }
 
+func Test_apfInitHandler_allExpectedSeen_MatchingPairsOnly(t *testing.T) {
+	h := &apfInitHandler{seenPorts: map[uint32]bool{}}
+
+	assert.False(t, h.allExpectedSeen())
+
+	h.seenPorts[16992] = true
+	h.seenPorts[664] = true
+	assert.False(t, h.allExpectedSeen(), "mixed management/redirection pair must not be treated as ready")
+
+	h.seenPorts[623] = true
+	assert.True(t, h.allExpectedSeen(), "non-TLS pair should be ready")
+
+	h = &apfInitHandler{seenPorts: map[uint32]bool{}}
+	h.seenPorts[16993] = true
+	h.seenPorts[664] = true
+	assert.True(t, h.allExpectedSeen(), "TLS-enforced pair should be ready")
+}
+
 func TestLMEConnection_Initialize(t *testing.T) {
 	resetMock()
 
@@ -268,6 +286,7 @@ func newLMEWithQueuedHECI(handshakeConfirmed bool) (*LMEConnection, *queuedHECIM
 			Status:             make(chan bool, 1),
 			WaitGroup:          &sync.WaitGroup{},
 			HandshakeConfirmed: handshakeConfirmed,
+			RecipientChannel:   1,
 		},
 		ourChannel: 1,
 	}, mock
@@ -291,6 +310,51 @@ func Test_Listen_CloseExitsWhenHandshakeConfirmed(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Listen did not exit after CHANNEL_CLOSE with HandshakeConfirmed=true")
+	}
+
+	close(mock.queue)
+}
+
+// Test_Listen_StaleChannelCloseIgnoredWhenConfirmed verifies that a CHANNEL_CLOSE
+// for a channel other than our active one (e.g. a stale RecipientChannel 0 close
+// replayed by AMT after an MEI reinit) does NOT terminate Listen even when the
+// handshake is confirmed. Our channel is still live and about to deliver its
+// response; exiting here would drop it and force a needless re-handshake. An
+// OPEN_FAILURE is fed afterwards as an unambiguous exit signal to prove Listen
+// kept running past the stale close.
+func Test_Listen_StaleChannelCloseIgnoredWhenConfirmed(t *testing.T) {
+	lme, mock := newLMEWithQueuedHECI(true)
+
+	// ProcessChannelOpenFailure calls Done() on the WaitGroup, so pre-add to
+	// balance the counter (mirrors what Connect() does in production).
+	lme.Session.WaitGroup.Add(1)
+
+	done := make(chan struct{})
+
+	go func() {
+		lme.Listen()
+		close(done)
+	}()
+
+	// Stale CLOSE for channel 0 while our active channel is 1. Listen must NOT exit.
+	mock.queue <- apf.BuildChannelCloseBytes(0)
+
+	select {
+	case <-done:
+		t.Fatal("Listen exited on stale CHANNEL_CLOSE for a non-active channel")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// OPEN_FAILURE: 17 bytes big-endian — type(1) + recipient(4) + reason(4) + reserved(4) + reserved2(4).
+	openFailure := make([]byte, 17)
+
+	openFailure[0] = apf.APF_CHANNEL_OPEN_FAILURE
+	mock.queue <- openFailure
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Listen did not exit after OPEN_FAILURE following the ignored stale close")
 	}
 
 	close(mock.queue)

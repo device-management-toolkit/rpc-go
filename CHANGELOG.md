@@ -1,3 +1,17 @@
+# [3.0.0-beta.34](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.33...v3.0.0-beta.34) (2026-06-19)
+
+
+### Bug Fixes
+
+* copilot fix ([2d4fa93](https://github.com/device-management-toolkit/rpc-go/commit/2d4fa938c8f855bf1c199e1948fdabb6dce3ce8c))
+* fix review comments ([20ff868](https://github.com/device-management-toolkit/rpc-go/commit/20ff868268196e26fb821b9ae8e9144a0158d038))
+* **lme:** fall back to LME on TLS-enforced AMT when LMS is unavailable ([f1a87e3](https://github.com/device-management-toolkit/rpc-go/commit/f1a87e365fbfd6a0bfabb0d08fa0944ebe6a62cb))
+* **lme:** make AMT 18.x LME activation reliable through TLS port switch ([7a279b9](https://github.com/device-management-toolkit/rpc-go/commit/7a279b940ec1eea00c62a8e77bdbb29de71d8c26))
+* **lme:** stabilize persistent APF TLS tunnel and channel-close recovery ([379298e](https://github.com/device-management-toolkit/rpc-go/commit/379298ea722f57cf9b083c08fedd98826f062114))
+* **rps:** copilot fix, avoid immediate reset after payload+channel-close ([fbcf8e0](https://github.com/device-management-toolkit/rpc-go/commit/fbcf8e0c5417936e7e610f532499122d4a5a5773))
+* **rps:** copilot fix, send APF close sentinel with bounded wait ([c369418](https://github.com/device-management-toolkit/rpc-go/commit/c36941812be795e206e1d673a9ae1366b1987a41))
+* **rps:** keep LME HECI handle open between requests ([b127efe](https://github.com/device-management-toolkit/rpc-go/commit/b127efe3252c7983723ab7c69f1e7a307a3b4d5c))
+
 # [3.0.0-beta.33](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.32...v3.0.0-beta.33) (2026-06-18)
 
 
