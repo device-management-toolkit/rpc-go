@@ -37,11 +37,26 @@ func setupMockAMT(ctrl *gomock.Controller) *mock.MockInterface {
 	return mockAMTCommand
 }
 
-// recoverPanic recovers from panics during fuzzing and logs them
-func recoverPanic(t *testing.T, input string) {
+// recoverAndRepanic recovers from a panic, logs the input context, and re-panics so the fuzzer detects it.
+func recoverAndRepanic(t *testing.T, input string) {
 	if r := recover(); r != nil {
 		t.Logf("Parse panicked with input %q: %v", input, r)
+		panic(r)
 	}
+}
+
+func containsHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--help" {
+			return true
+		}
+
+		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && strings.Contains(arg[1:], "h") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // splitFuzzFlags splits a command-like flag string and preserves quoted segments.
@@ -188,12 +203,17 @@ func FuzzDeactivate(f *testing.F) {
 
 		// Build command line arguments
 		args := []string{"rpc", "deactivate"}
+
 		if trimmed := strings.TrimSpace(flags); trimmed != "" {
-			args = append(args, strings.Fields(flags)...)
+			parsedFlags := strings.Fields(flags)
+			if containsHelpFlag(parsedFlags) {
+				t.Skip("Help flags intentionally call os.Exit")
+			}
+
+			args = append(args, parsedFlags...)
 		}
 
-		// The Parse function should not panic with any input
-		defer recoverPanic(t, flags)
+		defer recoverAndRepanic(t, flags)
 
 		// Call Parse - it may return an error for invalid inputs, but should not panic
 		_, _, err := Parse(args, mockAMTCommand)
@@ -243,7 +263,8 @@ func FuzzDeactivateURL(f *testing.F) {
 		mockAMTCommand := setupMockAMT(ctrl)
 
 		args := []string{"rpc", "deactivate", "--url", url}
-		defer recoverPanic(t, url)
+
+		defer recoverAndRepanic(t, url)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -286,7 +307,8 @@ func FuzzDeactivatePassword(f *testing.F) {
 
 		// Test with local mode
 		args := []string{"rpc", "deactivate", "--local", "--password", password}
-		defer recoverPanic(t, password)
+
+		defer recoverAndRepanic(t, password)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -344,7 +366,7 @@ func FuzzDeactivateFlagCombinations(f *testing.F) {
 			args = append(args, "--verbose")
 		}
 
-		defer recoverPanic(t, strings.Join(args, " "))
+		defer recoverAndRepanic(t, strings.Join(args, " "))
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -431,11 +453,17 @@ func FuzzActivate(f *testing.F) {
 		mockAMTCommand := setupMockAMT(ctrl)
 
 		args := []string{"rpc", "activate"}
+
 		if trimmed := strings.TrimSpace(flags); trimmed != "" {
-			args = append(args, splitFuzzFlags(flags)...)
+			parsedFlags := splitFuzzFlags(flags)
+			if containsHelpFlag(parsedFlags) {
+				t.Skip("Help flags intentionally call os.Exit")
+			}
+
+			args = append(args, parsedFlags...)
 		}
 
-		defer recoverPanic(t, flags)
+		defer recoverAndRepanic(t, flags)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -477,7 +505,7 @@ func FuzzActivateURL(f *testing.F) {
 		mockAMTCommand := setupMockAMT(ctrl)
 
 		args := []string{"rpc", "activate", "--url", url, "--profile", "default"}
-		defer recoverPanic(t, url)
+		defer recoverAndRepanic(t, url)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -514,7 +542,7 @@ func FuzzActivateProfile(f *testing.F) {
 		mockAMTCommand := setupMockAMT(ctrl)
 
 		args := []string{"rpc", "activate", "--profile", profile}
-		defer recoverPanic(t, profile)
+		defer recoverAndRepanic(t, profile)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -558,7 +586,7 @@ func FuzzActivatePassword(f *testing.F) {
 
 		// Local CCM activation is the primary path that consumes --password.
 		args := []string{"rpc", "activate", "--local", "--ccm", "--password", password}
-		defer recoverPanic(t, password)
+		defer recoverAndRepanic(t, password)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -657,7 +685,7 @@ func FuzzActivateFlagCombinations(f *testing.F) {
 			args = append(args, "--verbose")
 		}
 
-		defer recoverPanic(t, strings.Join(args, " "))
+		defer recoverAndRepanic(t, strings.Join(args, " "))
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
