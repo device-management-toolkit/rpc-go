@@ -180,8 +180,7 @@ func logLMEError(err error) {
 
 // Send writes data to LMS TCP Socket
 func (lme *LMEConnection) Send(data []byte) error {
-	log.Debug("sending message to LME")
-	log.Trace(string(data))
+	log.Debugf("sending message to LME, LME payload bytes=%d", len(data))
 
 	// Use the proper APF serialization function instead of manual binary.Write
 	channelDataBytes := apf.BuildChannelDataBytes(lme.Session.SenderChannel, data)

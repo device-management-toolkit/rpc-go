@@ -1,3 +1,10 @@
+# [3.0.0-beta.33](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.32...v3.0.0-beta.33) (2026-06-18)
+
+
+### Bug Fixes
+
+* remove cleartext HTTP from localTransport.go and  engine.go ([19cdbf6](https://github.com/device-management-toolkit/rpc-go/commit/19cdbf6e333068de3048b58f75fed301321fd4fd))
+
 # [3.0.0-beta.32](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.31...v3.0.0-beta.32) (2026-06-17)
 
 

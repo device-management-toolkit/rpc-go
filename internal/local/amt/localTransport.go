@@ -177,8 +177,7 @@ Loop:
 		select {
 		case dataFromLM := <-l.data:
 			if len(dataFromLM) > 0 {
-				logrus.Debug("received data from LME")
-				logrus.Trace(string(dataFromLM))
+				logrus.WithField("payload_bytes", len(dataFromLM)).Debug("received data from LME")
 				responseReader = bufio.NewReader(bytes.NewReader(dataFromLM))
 
 				break Loop
