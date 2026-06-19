@@ -183,6 +183,8 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
+	// Discovered field is not sent in PATCH updates (only in POST during creation)
+	assert.Nil(t, gotBody.DeviceInfo.Discovered)
 	// LMSVersion depends on whether LMS is running on the test machine;
 	// only assert if LMSInstalled is true in the payload.
 	if gotBody.DeviceInfo.LMSInstalled {
@@ -395,6 +397,15 @@ func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
 		case http.MethodPatch:
 			assert.Equal(t, "/api/v1/devices", r.URL.Path)
 
+			var patchBody syncPayload
+
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+
+			// Discovered should NOT be in PATCH bodies (only in POST)
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should not be sent in PATCH updates")
+
 			patchCount++
 			if patchCount == 1 {
 				w.WriteHeader(http.StatusNotFound)
@@ -424,8 +435,60 @@ func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, postCalled, "POST should have been called to create device")
 	assert.Equal(t, 2, patchCount, "PATCH should have been retried after POST")
+	// Verify discovered=true was sent in POST body under deviceInfo
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", postBody["guid"])
 	assert.NotEmpty(t, postBody["hostname"])
+	deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+	require.True(t, ok, "deviceInfo should be present in POST body")
+	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
+	assert.True(t, deviceInfo["discovered"].(bool), "discovered should be true for auto-registration")
+}
+
+func TestInfoService_SyncDeviceInfo_404_PostFallback_ExplicitlyProvisioned(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{SkipCertCheck: true}
+	result := &InfoResult{UUID: "12345678-1234-1234-1234-123456789ABC"}
+	explicitlyProvisioned := false
+
+	var (
+		patchCount int
+		postBody   map[string]interface{}
+	)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPatch:
+			defer r.Body.Close()
+
+			var patchBody syncPayload
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should not be sent in PATCH updates")
+
+			patchCount++
+			if patchCount == 1 {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		case http.MethodPost:
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &explicitlyProvisioned)
+	require.NoError(t, err)
+	assert.Equal(t, 2, patchCount)
+
+	deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+	require.True(t, ok, "deviceInfo should be present in POST body")
+	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
+	assert.False(t, deviceInfo["discovered"].(bool), "discovered should be false for explicitly provisioned devices")
 }
 
 func TestNewInfoService(t *testing.T) {
@@ -1572,7 +1635,7 @@ func TestInfoService_SyncDeviceInfo_EmptyUUID_ReturnsError(t *testing.T) {
 	ctx := &Context{}
 	result := &InfoResult{}
 
-	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
 }
@@ -1581,7 +1644,7 @@ func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
 	service := NewInfoService(nil)
 	ctx := &Context{}
 
-	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil)
+	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
 }
@@ -1596,7 +1659,7 @@ func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
 		"03000200-0400-0500-0006-000700080009",
 	} {
 		result := &InfoResult{UUID: sentinel}
-		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid device UUID sentinel value")
 	}

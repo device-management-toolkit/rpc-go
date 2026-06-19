@@ -51,6 +51,7 @@ const (
 	statusNotConnected = "not connected"
 	statusActive       = "active"
 	statusDisabled     = "disabled"
+	statusUnknown      = "unknown"
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
 )
@@ -119,7 +120,7 @@ func styledInfoValue(value string) string {
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
 	case statusDisabled, statusNotConnected, "down",
-		"not activated", "unknown":
+		"not activated", statusUnknown:
 		return infoRedStyle.Render(value)
 	case "in provisioning",
 		"client control mode":
@@ -289,7 +290,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	// If requested, sync device info to remote server
 	if cmd.Sync {
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags); err != nil {
+		discovered := true
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
 			return err
 		}
 	}
@@ -444,6 +446,7 @@ type syncDeviceInfo struct {
 	FWVersion            string        `json:"fwVersion"`
 	FWBuild              string        `json:"fwBuild"`
 	FWSku                string        `json:"fwSku"`
+	Discovered           *bool         `json:"discovered,omitempty"`
 	CurrentMode          string        `json:"currentMode"`
 	Features             string        `json:"features"`
 	IPAddress            string        `json:"ipAddress"`
@@ -472,9 +475,16 @@ type syncUPIDInfo struct {
 	OEMPlatformIdType string `json:"oemPlatformIdType,omitempty"`
 }
 
-// SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
-// The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices)
-func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
+// SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload.
+// The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices).
+//
+// The discovered parameter indicates the source of the device record:
+//   - discovered=true: device was auto-discovered via inventory sync (e.g., `amtinfo --sync`)
+//   - discovered=false: device was explicitly provisioned via activation workflow
+//   - discovered=nil: if 404 occurs during sync, defaults to true for auto-registration
+//
+// This flag is set only once during device creation and does not change thereafter.
+func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
 		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
@@ -490,9 +500,10 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	payload := syncPayload{
 		GUID: result.UUID,
 		DeviceInfo: syncDeviceInfo{
-			FWVersion:    result.AMT,
-			FWBuild:      result.BuildNumber,
-			FWSku:        result.SKU,
+			FWVersion: result.AMT,
+			FWBuild:   result.BuildNumber,
+			FWSku:     result.SKU,
+			// Discovered is NOT set here - only sent during device creation, never in updates
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
 			IPAddress:    bestIPAddress(result),
@@ -526,10 +537,19 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken); err != nil {
+		// 404 fallback: auto-register the device.
+		// Discovered flag is set only during device creation (POST), never in updates (PATCH).
+		// If not explicitly provided, default to true for auto-discovered devices.
+		if discovered == nil {
+			autoDiscovered := true
+			discovered = &autoDiscovered
+		}
+
+		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered); err != nil {
 			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
 		}
 
+		// Retry PATCH without discovered field (updates don't change discovered)
 		return s.doPatchRequest(httpClient, endpoint, body, authToken)
 	}
 	defer resp.Body.Close()
@@ -629,15 +649,29 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 }
 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string) error {
+// The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool) error {
 	hostname := s.getHostname(result)
 
-	createPayload := struct {
-		GUID     string `json:"guid"`
-		Hostname string `json:"hostname"`
-	}{
+	type deviceInfoCreate struct {
+		Discovered *bool `json:"discovered,omitempty"`
+	}
+
+	type createPayloadType struct {
+		GUID       string            `json:"guid"`
+		Hostname   string            `json:"hostname"`
+		DeviceInfo *deviceInfoCreate `json:"deviceInfo,omitempty"`
+	}
+
+	createPayload := createPayloadType{
 		GUID:     result.UUID,
 		Hostname: hostname,
+	}
+
+	if discovered != nil {
+		createPayload.DeviceInfo = &deviceInfoCreate{
+			Discovered: discovered,
+		}
 	}
 
 	body, err := json.Marshal(createPayload)
@@ -727,7 +761,10 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		AuthEndpoint: ctx.AuthEndpoint,
 	}
 
-	return service.SyncDeviceInfo(ctx, result, endpoint, auth)
+	// Activation/deactivation syncs mark devices as explicitly provisioned (not discovered)
+	explicitlyProvisioned := false
+
+	return service.SyncDeviceInfo(ctx, result, endpoint, auth, &explicitlyProvisioned)
 }
 
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.

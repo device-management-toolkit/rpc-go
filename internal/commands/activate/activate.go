@@ -443,6 +443,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		lmsVersion = utils.GetLMSVersion()
 	}
 
+	discovered := false
+
 	payload := device.DevicePayload{
 		GUID:            guid,
 		Hostname:        hostname,
@@ -454,6 +456,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
 		DeviceInfo: &device.DeviceInfo{
+			Discovered:           &discovered,
 			LMSInstalled:         &isLMSAvailable,
 			LMSVersion:           lmsVersion,
 			OSName:               osInfo.Name,
@@ -483,6 +486,9 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	var statusErr *device.StatusError
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
 		log.Debugf("Device already exists in console, updating device credentials")
+
+		// Clear discovered field for PATCH updates (only sent during POST)
+		payload.DeviceInfo.Discovered = nil
 
 		if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint); updateErr != nil {
 			return fmt.Errorf("update also failed: %v", updateErr)
