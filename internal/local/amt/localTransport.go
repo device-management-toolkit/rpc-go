@@ -38,7 +38,6 @@ type LocalTransport struct {
 	lme       *lm.LMEConnection // underlying LME session; TLS path uses it directly
 	data      chan []byte
 	errors    chan error
-	status    chan bool
 	tlsConfig *cryptotls.Config
 
 	lmeListenMu   sync.Mutex

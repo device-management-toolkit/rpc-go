@@ -98,8 +98,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
 		if err != nil {
-			logrus.Debug("LMS TLS port not active, using LME-over-HECI with local TLS termination.")
-			logrus.Tracef("LMS TLS dial error: %v", err)
+			logrus.Debugf("LMS TLS port not active, using LME-over-HECI with local TLS termination. LMS TLS dial error: %v", err)
 
 			g.localTransport = NewLocalTransportTLS(tlsConfig)
 			clientParams.Transport = g.localTransport
@@ -111,6 +110,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 				if len(state.PeerCertificates) > 0 {
 					cert := state.PeerCertificates[0]
 					logrus.Trace("Server certificate: ", cert)
+				} else {
+					logrus.Warn("No peer certificates received from LMS TLS connection")
 				}
 			}
 
