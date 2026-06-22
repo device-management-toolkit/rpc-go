@@ -14,6 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/remoteaccess"
+	wsmantls "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/common"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +43,17 @@ func stubDial(t *testing.T, reachable map[string]bool) {
 	}
 
 	t.Cleanup(func() { statusDialTCP = original })
+}
+
+func stubMonitor(t *testing.T, connected *bool) {
+	t.Helper()
+
+	original := statusDetectMonitorConnected
+	statusDetectMonitorConnected = func() *bool {
+		return connected
+	}
+
+	t.Cleanup(func() { statusDetectMonitorConnected = original })
 }
 
 func captureStdout(t *testing.T, fn func()) string {
@@ -86,6 +104,10 @@ func TestStatusCmd_Gather_Ready(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	stubDial(t, map[string]bool{
 		"localhost:16992":         true,
@@ -105,8 +127,8 @@ func TestStatusCmd_Gather_Ready(t *testing.T) {
 	assert.True(t, *result.HostReachable)
 	assert.True(t, result.ReadyToProvision, "at least one NIC up + LMS + MEI + host should be ready")
 
-	// MEI, control mode, LMS, wired, wireless, host
-	assert.Len(t, checks, 6)
+	// MEI, BIOS, control mode, DNS suffix, device type, LMS, wired, wireless, host
+	assert.Len(t, checks, 9)
 }
 
 func TestStatusCmd_Gather_NoLMS_StillReady(t *testing.T) {
@@ -118,6 +140,10 @@ func TestStatusCmd_Gather_NoLMS_StillReady(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	// Nothing reachable -> LMS not installed.
 	stubDial(t, map[string]bool{})
@@ -149,6 +175,10 @@ func TestStatusCmd_Gather_NotReady_NoNetwork(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	stubDial(t, map[string]bool{"localhost:16992": true})
 
@@ -172,6 +202,10 @@ func TestStatusCmd_Gather_HostUnreachable_ProvisionableNotManaged(t *testing.T) 
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	// LMS reachable, host not.
 	stubDial(t, map[string]bool{"localhost:16992": true})
@@ -204,6 +238,11 @@ func TestStatusCmd_Run_TextProvisionableNotManaged(t *testing.T) {
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
 	stubDial(t, map[string]bool{"localhost:16992": true})
 
 	cmd := &StatusCmd{Host: "unreachable.example.com:8443"}
@@ -228,11 +267,12 @@ func TestStatusCmd_Gather_NoMEI(t *testing.T) {
 
 	assert.False(t, result.MEIDriverPresent)
 	assert.False(t, result.ReadyToProvision)
-	// MEI, control mode, LMS, wired, wireless (no host)
-	assert.Len(t, checks, 5)
+	// MEI, BIOS, control mode, DNS suffix, device type, LMS, wired, wireless (no host)
+	assert.Len(t, checks, 8)
 
 	for _, c := range checks {
-		if c.label == "Wired network link" || c.label == "Wireless network link" {
+		if c.label == "Wired network link" || c.label == "Wireless network link" ||
+			c.label == "DNS suffix (AMT vs OS)" || c.label == "AMT device type" {
 			assert.Equal(t, checkSkip, c.state)
 		}
 	}
@@ -247,6 +287,10 @@ func TestStatusCmd_Run_JSON(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	stubDial(t, map[string]bool{"localhost:16992": true})
 
@@ -266,6 +310,41 @@ func TestStatusCmd_Run_JSON(t *testing.T) {
 	assert.True(t, result.ReadyToProvision)
 }
 
+func TestStatusCmd_Run_JSON_IncludesADRContract(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).
+		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).
+		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
+	stubDial(t, map[string]bool{"localhost:16992": true})
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	out := captureStdout(t, func() {
+		err := cmd.Run(&Context{AMTCommand: mockAMT, JsonOutput: true})
+		assert.NoError(t, err)
+	})
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &payload))
+	assert.Equal(t, "status", payload["command"])
+	assert.Equal(t, "pre_activation", payload["selected_check_set"])
+	assert.Equal(t, "pre_provisioning", payload["detected_state"])
+	assert.Equal(t, "ready", payload["overall_result"])
+	checks, ok := payload["checks"].([]any)
+	require.True(t, ok)
+	assert.NotEmpty(t, checks)
+}
+
 func TestStatusCmd_Run_TextReady(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -275,6 +354,11 @@ func TestStatusCmd_Run_TextReady(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	stubDial(t, map[string]bool{"localhost:16992": true})
 
@@ -299,6 +383,10 @@ func TestStatusCmd_Run_TextReadyNoLMS(t *testing.T) {
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.local", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
 
 	// LMS not reachable, but the device is otherwise ready.
 	stubDial(t, map[string]bool{})
@@ -320,12 +408,16 @@ func TestStatusCmd_Gather_AlreadyActivated(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
-	mockAMT.EXPECT().GetLANInterfaceSettings(false).
-		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
-	mockAMT.EXPECT().GetLANInterfaceSettings(true).
-		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "outside enterprise (CIRA)",
+		RemoteStatus:  "connected",
+		MPSHostname:   "mps.example.com",
+	}, nil)
 
 	stubDial(t, map[string]bool{"localhost:16992": true})
+	stubMonitor(t, nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
@@ -335,6 +427,9 @@ func TestStatusCmd_Gather_AlreadyActivated(t *testing.T) {
 
 	assert.True(t, result.AlreadyActivated)
 	assert.Equal(t, "admin control mode", result.ControlMode)
+	assert.Equal(t, "post_activation", result.SelectedCheckSet)
+	assert.True(t, result.PartialEvaluation)
+	assert.Contains(t, result.PartialReason, "WSMAN")
 	assert.False(t, result.ReadyToProvision, "an activated device is not a provisioning candidate")
 }
 
@@ -343,12 +438,16 @@ func TestStatusCmd_Run_TextAlreadyActivated(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
-	mockAMT.EXPECT().GetLANInterfaceSettings(false).
-		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
-	mockAMT.EXPECT().GetLANInterfaceSettings(true).
-		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "outside enterprise (CIRA)",
+		RemoteStatus:  "connected",
+		MPSHostname:   "mps.example.com",
+	}, nil)
 
 	stubDial(t, map[string]bool{"localhost:16992": true})
+	stubMonitor(t, nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
@@ -359,8 +458,121 @@ func TestStatusCmd_Run_TextAlreadyActivated(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	assert.Contains(t, out, verdictAlreadyActive)
+	assert.Contains(t, out, "AMT Manageability Health")
+	assert.Contains(t, out, "Selected checks")
 	assert.NotContains(t, out, verdictReady)
+	assert.Contains(t, out, "Local WSMAN session")
+	assert.NotContains(t, out, "already activated (client control mode)")
+	assert.Contains(t, out, "Evaluation: partial")
+	assert.Contains(t, out, verdictPostPartial)
+}
+
+func TestStatusCmd_Run_JSON_PostActivationPartialWithoutPassword(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "outside enterprise (CIRA)",
+		RemoteStatus:  "connected",
+		MPSHostname:   "mps.example.com",
+	}, nil)
+
+	stubDial(t, map[string]bool{"localhost:16992": true})
+	stubMonitor(t, nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+	cmd.ControlMode = ControlModeCCM
+
+	out := captureStdout(t, func() {
+		err := cmd.Run(&Context{AMTCommand: mockAMT, JsonOutput: true})
+		assert.NoError(t, err)
+	})
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &payload))
+	assert.Equal(t, "partial", payload["overall_result"])
+	assert.Equal(t, true, payload["partialEvaluation"])
+	assert.NotEmpty(t, payload["partialReason"])
+}
+
+func TestStatusCmd_Gather_PostActivationManageableWithWSMAN(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
+		NetworkStatus: "direct connect",
+		RemoteStatus:  "connected",
+	}, nil)
+
+	redirectionResponse := redirection.Response{
+		Body: redirection.Body{
+			GetAndPutResponse: redirection.RedirectionResponse{
+				EnabledState:    2,
+				ListenerEnabled: true,
+			},
+		},
+	}
+
+	mockWSMAN.EXPECT().GetRemoteAccessPolicies().Return([]remoteaccess.RemoteAccessPolicyAppliesToMPSResponse{}, nil)
+	mockWSMAN.EXPECT().GetMPSSAP().Return([]managementpresence.ManagementRemoteResponse{}, nil)
+	mockWSMAN.EXPECT().GetEnvironmentDetectionSettings().Return(environmentdetection.EnvironmentDetectionSettingDataResponse{
+		DetectionStrings: []string{"corp.local"},
+	}, nil)
+	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(wsmantls.Response{
+		Body: wsmantls.Body{EnumerateResponse: common.EnumerateResponse{EnumerationContext: "tls-context"}},
+	}, nil)
+	mockWSMAN.EXPECT().PullTLSSettingData("tls-context").Return(wsmantls.Response{
+		Body: wsmantls.Body{PullResponse: wsmantls.PullResponse{SettingDataItems: []wsmantls.SettingDataResponse{{
+			InstanceID:                 "Intel(r) AMT 802.3 TLS Settings",
+			Enabled:                    true,
+			AcceptNonSecureConnections: false,
+			MutualAuthentication:       false,
+		}}}},
+	}, nil)
+	mockWSMAN.EXPECT().GetPublicKeyCerts().Return([]publickey.RefinedPublicKeyCertificateResponse{{
+		TrustedRootCertificate: true,
+	}}, nil)
+	mockWSMAN.EXPECT().GetRedirectionService().Return(redirectionResponse, nil).Times(1)
+
+	stubMonitor(t, boolPtr(true))
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+	cmd.ControlMode = ControlModeCCM
+	cmd.WSMan = mockWSMAN
+
+	result, checks := cmd.gather(&Context{AMTCommand: mockAMT})
+
+	assert.Equal(t, "post_activation", result.SelectedCheckSet)
+	assert.True(t, result.ManageableInProduction)
+	require.NotNil(t, result.WSMANAvailable)
+	assert.True(t, *result.WSMANAvailable)
+	assert.Equal(t, "Server", result.TLSMode)
+	assert.Equal(t, "all", result.UserConsent)
+
+	labels := make([]string, 0, len(checks))
+	for _, c := range checks {
+		labels = append(labels, c.label)
+	}
+
+	assert.Contains(t, labels, "AMT activated state")
+	assert.NotContains(t, labels, "Control mode")
+	assert.Contains(t, labels, "TLS configuration / trust inventory")
+	assert.Contains(t, labels, "Redirection / consent baseline")
+	assert.Contains(t, labels, "Management endpoint reachability")
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 func TestVerdictColor(t *testing.T) {
@@ -401,4 +613,212 @@ func TestVerdictColor(t *testing.T) {
 func TestStatusCmd_RequiresAMTPassword(t *testing.T) {
 	cmd := &StatusCmd{}
 	assert.False(t, cmd.RequiresAMTPassword())
+}
+
+// ---------------------------------------------------------------------------
+// dnsSuffixCheck tests
+// ---------------------------------------------------------------------------
+
+func TestStatusCmd_DNSSuffixCheck_NoHECI(t *testing.T) {
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = false
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{}, &result)
+
+	assert.Equal(t, checkSkip, c.state)
+	assert.False(t, result.DNSSuffixMatch)
+}
+
+func TestStatusCmd_DNSSuffixCheck_Match(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("CORP.EXAMPLE.COM", nil) // case-insensitive
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkPass, c.state)
+	assert.True(t, result.DNSSuffixMatch)
+	assert.Contains(t, c.detail, "corp.example.com")
+}
+
+func TestStatusCmd_DNSSuffixCheck_Mismatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkFail, c.state)
+	assert.False(t, result.DNSSuffixMatch)
+	assert.Contains(t, c.detail, "amt.example.com")
+	assert.Contains(t, c.detail, "os.example.com")
+}
+
+func TestStatusCmd_DNSSuffixCheck_AMTSuffixError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetDNSSuffix().Return("", errors.New("heci read error"))
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.False(t, result.DNSSuffixMatch)
+}
+
+func TestStatusCmd_DNSSuffixCheck_AMTSuffixEmpty(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.Contains(t, c.detail, "not configured")
+}
+
+func TestStatusCmd_DNSSuffixCheck_OSSuffixUnknown(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetDNSSuffix().Return("corp.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil) // empty — not joined to domain
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.False(t, result.DNSSuffixMatch)
+	assert.Contains(t, c.detail, "corp.example.com")
+}
+
+// ---------------------------------------------------------------------------
+// deviceTypeCheck tests
+// ---------------------------------------------------------------------------
+
+func TestStatusCmd_DeviceTypeCheck_NoHECI(t *testing.T) {
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = false
+
+	var result StatusResult
+
+	c := cmd.deviceTypeCheck(&Context{}, &result)
+
+	assert.Equal(t, checkSkip, c.state)
+	assert.Empty(t, result.DeviceType)
+}
+
+func TestStatusCmd_DeviceTypeCheck_VPro(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	// SKU 0x8 sets bit 3 → "AMT Pro" for AMT v5+
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkPass, c.state)
+	assert.Contains(t, result.DeviceType, "AMT Pro")
+	assert.Contains(t, c.detail, "vPro")
+}
+
+func TestStatusCmd_DeviceTypeCheck_ISM(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	// SKU 0x10 sets bit 4 → "Intel Standard Manageability" for AMT v5+
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("16", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.Contains(t, result.DeviceType, "Intel Standard Manageability")
+	assert.Contains(t, c.detail, "ISM")
+}
+
+func TestStatusCmd_DeviceTypeCheck_SKUError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("", errors.New("heci error"))
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.Empty(t, result.DeviceType)
+}
+
+func TestStatusCmd_DeviceTypeCheck_VersionError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("", errors.New("heci error"))
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result StatusResult
+
+	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	assert.Equal(t, checkWarn, c.state)
+	assert.Empty(t, result.DeviceType)
 }
