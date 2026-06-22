@@ -417,9 +417,11 @@ func (cmd *ActivateCmd) clearMPSPasswordFromConsole(ctx *commands.Context, conso
 func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword string, hasCIRA bool, cfg *config.Configuration) error {
 	hostname := cmd.Hostname
 	if hostname == "" {
-		if hasCIRA {
-			hostname, _ = os.Hostname()
-		} else {
+		// Always prefer OS hostname for consistency with amtinfo --sync behavior.
+		// IP address is already captured in DeviceInfo.IPAddress and DeviceInfo.OSIPAddress.
+		hostname, _ = os.Hostname()
+		if hostname == "" {
+			// Fallback to IP only if hostname is unavailable
 			hostname = getLocalIP()
 		}
 	}

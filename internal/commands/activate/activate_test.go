@@ -634,6 +634,31 @@ func TestAddDeviceToConsole_FriendlyNameFallsBackToOSHostname(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestAddDeviceToConsole_HostnameDefaultsToOSHostname(t *testing.T) {
+	expectedHostname, _ := os.Hostname()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		// Both with CIRA and without CIRA should use OS hostname (not IP)
+		assert.Equal(t, expectedHostname, p.Hostname, "hostname should be OS hostname, not IP")
+		assert.Equal(t, expectedHostname, p.FriendlyName)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{} // No Hostname or FriendlyName set
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	// Test without CIRA (the case that was using IP address before)
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+}
+
 func TestResolveTLSFlags_ProfileTLSEnabled(t *testing.T) {
 	cmd := &ActivateCmd{}
 	cfg := &config.Configuration{}

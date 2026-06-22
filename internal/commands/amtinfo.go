@@ -45,13 +45,13 @@ const (
 	notFoundIP         = "Not Found"
 	zeroIP             = "0.0.0.0"
 	zeroMAC            = "00:00:00:00:00:00"
+	statusUnknown      = "unknown"
 	statusEnabled      = "enabled"
 	statusConnected    = "connected"
 	statusUp           = "up"
 	statusNotConnected = "not connected"
 	statusActive       = "active"
 	statusDisabled     = "disabled"
-	statusUnknown      = "unknown"
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
 )
@@ -527,15 +527,21 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
+	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
+
 	// Try PATCH request
 	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken)
 	if err != nil {
+		log.Debugf("PATCH request failed: %v", err)
+
 		return err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
+
+		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
 
 		// 404 fallback: auto-register the device.
 		// Discovered flag is set only during device creation (POST), never in updates (PATCH).
@@ -546,19 +552,35 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		}
 
 		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered); err != nil {
+			log.Debugf("device registration (POST) failed: %v", err)
+
 			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
 		}
 
+		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
+
 		// Retry PATCH without discovered field (updates don't change discovered)
-		return s.doPatchRequest(httpClient, endpoint, body, authToken)
+		if err := s.doPatchRequest(httpClient, endpoint, body, authToken); err != nil {
+			log.Debugf("retry PATCH after registration failed: %v", err)
+
+			return err
+		}
+
+		log.Debugf("device %s synced successfully after registration", result.UUID)
+
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
 
+		log.Debugf("PATCH request failed with status %s", resp.Status)
+
 		return fmt.Errorf("sync failed with status %s", resp.Status)
 	}
+
+	log.Debugf("device %s synced successfully (PATCH)", result.UUID)
 
 	return nil
 }
@@ -633,8 +655,12 @@ func isHTTPSuccess(statusCode int) bool {
 
 // doPatchRequest performs a PATCH request with the given body and auth token
 func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken string) error {
+	log.Debugf("updating device info (PATCH) to %s", endpoint)
+
 	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken)
 	if err != nil {
+		log.Debugf("PATCH request failed: %v", err)
+
 		return err
 	}
 	defer resp.Body.Close()
@@ -642,8 +668,12 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 	if !isHTTPSuccess(resp.StatusCode) {
 		_, _ = io.Copy(io.Discard, resp.Body)
 
+		log.Debugf("PATCH failed with status %s", resp.Status)
+
 		return fmt.Errorf("sync failed with status %s", resp.Status)
 	}
+
+	log.Debugf("device info updated successfully (HTTP %d)", resp.StatusCode)
 
 	return nil
 }
@@ -679,13 +709,18 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 		return fmt.Errorf("failed to marshal create payload: %w", err)
 	}
 
+	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
+
 	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken)
 	if err != nil {
+		log.Debugf("device registration (POST) request failed: %v", err)
+
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusConflict {
+		log.Debugf("device %s already exists (HTTP 409), will proceed with update", result.UUID)
 		// Device was created concurrently; proceed with retry PATCH.
 		return nil
 	}
@@ -693,8 +728,12 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, resp.Body)
 
+		log.Debugf("device registration failed with status %s", resp.Status)
+
 		return fmt.Errorf("device creation failed with status %s", resp.Status)
 	}
+
+	log.Debugf("device %s registered successfully (HTTP %d)", result.UUID, resp.StatusCode)
 
 	return nil
 }
@@ -713,7 +752,7 @@ func (s *InfoService) getHostname(result *InfoResult) string {
 		}
 	}
 
-	return "unknown"
+	return statusUnknown
 }
 
 // BuildDevicesEndpoint constructs the devices API endpoint URL
@@ -851,7 +890,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	info.EthernetAdapterCount = utils.GetEthernetAdapterCount()
 	info.MonitorConnected = utils.DetectMonitorConnected()
 
-	monitorConnected := "unknown"
+	monitorConnected := statusUnknown
 	if info.MonitorConnected != nil {
 		monitorConnected = strconv.FormatBool(*info.MonitorConnected)
 	}
