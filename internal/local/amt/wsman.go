@@ -19,6 +19,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -301,6 +302,10 @@ func (g *GoWSMANMessages) Close() error {
 
 func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {
 	return g.wsmanMessages.AMT.GeneralSettings.Get()
+}
+
+func (g *GoWSMANMessages) GetBootSettingData() (boot.Response, error) {
+	return g.wsmanMessages.AMT.BootSettingData.Get()
 }
 
 func (g *GoWSMANMessages) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
