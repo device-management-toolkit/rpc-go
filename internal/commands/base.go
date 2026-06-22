@@ -23,6 +23,12 @@ import (
 // It is used in AMTBaseCmd.AfterApply where the CLI context isn't directly accessible.
 var DefaultSkipAMTCertCheck bool
 
+// newWSMANClient creates a WSMAN client. It is a package var so tests can stub
+// client creation when they need to force setup failures.
+var newWSMANClient = func(lmsAddress string) interfaces.WSMANer {
+	return localamt.NewGoWSMANMessages(lmsAddress)
+}
+
 // amtCapableArch reports whether the CPU architecture can host Intel AMT/MEI.
 // AMT is an Intel x86 platform feature; ARM and other architectures never have
 // it, so the HECI/MEI probe can be short-circuited on those builds.
@@ -48,6 +54,7 @@ type AMTBaseCmd struct {
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
 	HECIAvailable    bool               `kong:"-"` // Whether HECI/MEI driver is accessible
+	HECIError        string             `kong:"-"` // Last HECI/control-mode probe error, if any
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
@@ -106,7 +113,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 		return nil
 	}
 
-	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
+	cmd.WSMan = newWSMANClient(utils.LMSAddress)
 
 	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck, nil)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
@@ -126,6 +133,8 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	log.Trace("Running AfterApply for AMTBaseCmd")
+
+	cmd.HECIError = ""
 
 	// Ensure we close the MEI device connection after getting control mode and TLS status
 	defer amtCommand.Close()
@@ -157,14 +166,34 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		backoff     = 4 * time.Second
 	)
 
-	// HECI requires admin — fail fast when not elevated instead of retrying.
+	// Best-effort probe for non-elevated runs: if the device is a non-vPro Intel
+	// ME platform, a permanent HECI error is a valid "not AMT-capable" signal and
+	// should not trigger an elevation prompt.
 	if !utils.IsElevated() {
 		if cmd.SkipWSMANSetup {
-			// amtinfo: degrade gracefully, show OS-level data only
+			if _, err := amtCommand.GetControlMode(); err != nil {
+				cmd.HECIError = err.Error()
+				log.Debugf("best-effort HECI probe while unprivileged: %v", err)
+			}
+
+			// amtinfo: degrade gracefully, show OS-level data only.
+			// Preserve the probe result so callers can tell whether elevation would help.
 			cmd.ControlMode = -1
 			cmd.afterApplied = true
 
 			return nil
+		}
+
+		if _, err := amtCommand.GetControlMode(); err != nil {
+			cmd.HECIError = err.Error()
+			if isPermanentHECIError(err) {
+				log.Debugf("non-vPro / non-AMT HECI probe while unprivileged: %v", err)
+
+				cmd.ControlMode = -1
+				cmd.afterApplied = true
+
+				return nil
+			}
 		}
 
 		return utils.IncorrectPermissions
@@ -173,8 +202,12 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		controlMode, err = amtCommand.GetControlMode()
 		if err == nil {
+			cmd.HECIError = ""
+
 			break
 		}
+
+		cmd.HECIError = err.Error()
 
 		// Permanent hardware-absence errors — no point retrying (e.g. non-vPro device)
 		if isPermanentHECIError(err) {
@@ -250,9 +283,21 @@ func (cmd *AMTBaseCmd) RequiresAMTPassword() bool {
 // isPermanentHECIError returns true for errors that indicate HECI is structurally
 // absent and retrying will not help (non-vPro hardware or MEI driver not installed).
 func isPermanentHECIError(err error) bool {
-	msg := err.Error()
+	if err == nil {
+		return false
+	}
+
+	return isPermanentHECIErrorText(err.Error())
+}
+
+func isPermanentHECIErrorText(msg string) bool {
+	if msg == "" {
+		return false
+	}
 
 	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
+		strings.Contains(msg, "inappropriate ioctl") || // broader ioctl mismatch
 		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
-		msg == utils.HECIDriverNotDetected.Error() // already-classified sentinel
+		strings.Contains(msg, "not found") || // missing HECI/MEI device path
+		strings.Contains(msg, utils.HECIDriverNotDetected.Error()) // already-classified sentinel
 }

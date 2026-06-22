@@ -63,7 +63,7 @@ type CLI struct {
 	commands.ServerAuthFlags
 
 	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
-	Status      commands.StatusCmd         `cmd:"status" aliases:"health,doctor" help:"Check whether the device is ready to be provisioned"`
+	Status      commands.StatusCmd         `cmd:"status" aliases:"health,doctor" help:"Check provisioning readiness or post-activation manageability health"`
 	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
