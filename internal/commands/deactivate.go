@@ -31,7 +31,7 @@ func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 
 	if cmd.LocalTLSEnforced {
 		controlMode := cmd.GetControlMode()
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck, nil)
 	}
 
 	return tlsConfig
