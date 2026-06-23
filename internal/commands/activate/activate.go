@@ -880,15 +880,20 @@ func (cmd *ActivateCmd) updateConsoleTLSSettings(ctx *commands.Context, consoleB
 	hostname := cmd.Hostname
 	if strings.TrimSpace(hostname) == "" {
 		hostname = getLocalIP()
+		if hostname == "" {
+			return fmt.Errorf("failed to determine hostname: no hostname provided and local IP detection failed")
+		}
 	}
 
-	payload := device.DevicePayload{
+	return device.UpdateDeviceTLSSettings(device.TLSSettingsUpdate{
+		ConsoleBaseURL:  consoleBaseURL,
+		Token:           token,
 		GUID:            guid,
 		Hostname:        hostname,
 		Username:        utils.AMTUserName,
 		UseTLS:          useTLS,
 		AllowSelfSigned: allowSelfSigned,
-	}
-
-	return device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
+		SkipCertCheck:   ctx.SkipCertCheck,
+		DevicesEndpoint: ctx.DevicesEndpoint,
+	})
 }

@@ -764,7 +764,7 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 		endpoint = strings.TrimRight(consoleBaseURL, "/") + "/api/v1/devices"
 	}
 
-	return endpoint
+	return strings.TrimRight(endpoint, "/")
 }
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync

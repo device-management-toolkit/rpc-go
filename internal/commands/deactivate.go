@@ -254,10 +254,10 @@ func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, tok
 // authenticateWithConsole obtains a bearer token from the console using the provided credentials.
 func (cmd *DeactivateCmd) authenticateWithConsole(ctx *Context, consoleBaseURL string) (string, error) {
 	// Direct token provided — use it
-	if ctx.AuthToken != "" {
+	if token := strings.TrimSpace(ctx.AuthToken); token != "" {
 		log.Debug("Using provided authentication token")
 
-		return ctx.AuthToken, nil
+		return token, nil
 	}
 
 	// Username/password — exchange for a token
