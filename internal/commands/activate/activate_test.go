@@ -615,17 +615,17 @@ func TestAddDeviceToConsole_FriendlyNameFallsBackToOSHostname(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestAddDeviceToConsole_HostnameDefaultsToOSHostname(t *testing.T) {
-	expectedHostname, _ := os.Hostname()
+func TestAddDeviceToConsole_HostnameDefaultsToLocalIPWithoutCIRA(t *testing.T) {
+	expectedFriendlyName, _ := os.Hostname()
+	expectedHostname := getLocalIP()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 
 		var p device.DevicePayload
 		require.NoError(t, json.Unmarshal(body, &p))
-		// Both with CIRA and without CIRA should use OS hostname (not IP)
-		assert.Equal(t, expectedHostname, p.Hostname, "hostname should be OS hostname, not IP")
-		assert.Equal(t, expectedHostname, p.FriendlyName)
+		assert.Equal(t, expectedHostname, p.Hostname)
+		assert.Equal(t, expectedFriendlyName, p.FriendlyName)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -635,7 +635,7 @@ func TestAddDeviceToConsole_HostnameDefaultsToOSHostname(t *testing.T) {
 	ctx := &commands.Context{}
 	cfg := &config.Configuration{}
 
-	// Test without CIRA (the case that was using IP address before)
+	// Without CIRA, default hostname should be local IP.
 	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
 	assert.NoError(t, err)
 }
@@ -977,31 +977,40 @@ func TestPostActivationSync_SendsPatch(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("device-uuid-from-amt", nil)
-	mockAMT.EXPECT().GetControlMode().Return(2, nil)
+	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
 
-	called := 0
+	deviceInfoPatchCalled := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called++
-
 		assert.Equal(t, http.MethodPatch, r.Method)
 		assert.Equal(t, "/api/v1/devices", r.URL.Path)
 		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
 
-		var payload struct {
-			GUID       string `json:"guid"`
-			DeviceInfo struct {
-				CurrentMode string `json:"currentMode"`
-				IPAddress   string `json:"ipAddress"`
-			} `json:"deviceInfo"`
+		// Read body to determine which PATCH this is
+		var payload map[string]interface{}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.Equal(t, "guid-from-activation", payload["guid"])
+
+		// First PATCH: deviceInfo sync
+		if deviceInfo, ok := payload["deviceInfo"].(map[string]interface{}); ok {
+			deviceInfoPatchCalled++
+
+			assert.Equal(t, "admin control mode", strings.ToLower(deviceInfo["currentMode"].(string)))
+			assert.Equal(t, "10.49.76.154", deviceInfo["ipAddress"].(string))
 		}
 
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
-		assert.Equal(t, "guid-from-activation", payload.GUID)
-		assert.Equal(t, "admin control mode", strings.ToLower(payload.DeviceInfo.CurrentMode))
-		assert.Equal(t, "10.49.76.154", payload.DeviceInfo.IPAddress)
+		// TLS PATCH must include hostname so it cannot be cleared by zero-value payload fields.
+		if _, hasUseTLS := payload["useTLS"]; hasUseTLS {
+			h, ok := payload["hostname"].(string)
+			require.True(t, ok)
+			assert.NotEmpty(t, strings.TrimSpace(h))
+
+			u, ok := payload["username"].(string)
+			require.True(t, ok)
+			assert.Equal(t, utils.AMTUserName, u)
+		}
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1011,7 +1020,7 @@ func TestPostActivationSync_SendsPatch(t *testing.T) {
 	cmd := &ActivateCmd{AMTBaseCmd: commands.AMTBaseCmd{HECIAvailable: true}}
 
 	cmd.postActivationSync(ctx, server.URL, "token-123", "guid-from-activation")
-	assert.Equal(t, 1, called)
+	assert.Equal(t, 1, deviceInfoPatchCalled, "deviceInfo PATCH should be called once")
 }
 
 func TestPostActivationSync_NoConsoleURL_NoOp(t *testing.T) {
@@ -1042,7 +1051,7 @@ func TestRunLocalActivation_Failure_StillAttemptsPostActivationSync(t *testing.T
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
-	mockAMT.EXPECT().GetControlMode().Return(1, nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
 
@@ -1075,5 +1084,5 @@ func TestRunLocalActivation_Failure_StillAttemptsPostActivationSync(t *testing.T
 	err := cmd.runLocalActivation(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "activation failed")
-	assert.Equal(t, 1, patchCalled, "expected best-effort post-activation sync on failure")
+	assert.GreaterOrEqual(t, patchCalled, 1, "expected best-effort post-activation sync on failure")
 }

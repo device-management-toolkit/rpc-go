@@ -360,10 +360,17 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	// Pass through the current AMT password (if provided) so orchestrator can
 	// rotate to the profile's AdminPassword without prompting.
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-	if err := orch.ExecuteProfile(); err != nil {
-		cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+	// Also store in ctx so postActivationSync can use it for WSMAN TLS probing.
+	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
+		ctx.AMTPassword = amtPassword
+	}
 
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+
+	// Sync deviceInfo after activation completes (success or failure)
+	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+
+	if err := orch.ExecuteProfile(); err != nil {
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
 			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
@@ -373,7 +380,6 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	log.Info("Profile fullflow completed successfully")
-	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
 
 	return nil
 }
@@ -415,17 +421,13 @@ func (cmd *ActivateCmd) clearMPSPasswordFromConsole(ctx *commands.Context, conso
 
 // addDeviceToConsole registers or updates the device in the console before activation.
 func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL, token, guid, amtPassword, mebxPassword, mpsPassword string, hasCIRA bool, cfg *config.Configuration) error {
+	// Console requires hostname to be an IP address for connectivity
 	hostname := cmd.Hostname
 	if hostname == "" {
-		// Always prefer OS hostname for consistency with amtinfo --sync behavior.
-		// IP address is already captured in DeviceInfo.IPAddress and DeviceInfo.OSIPAddress.
-		hostname, _ = os.Hostname()
-		if hostname == "" {
-			// Fallback to IP only if hostname is unavailable
-			hostname = getLocalIP()
-		}
+		hostname = getLocalIP()
 	}
 
+	// FriendlyName is the human-readable device name (OS hostname)
 	friendlyName := cmd.FriendlyName
 	if friendlyName == "" {
 		friendlyName, _ = os.Hostname()
@@ -627,10 +629,17 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 		}
 	}
 
-	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-	if err := orch.ExecuteProfile(); err != nil {
-		cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+	// Store resolved AMT password in ctx so postActivationSync WSMAN TLS probe works.
+	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
+		ctx.AMTPassword = amtPassword
+	}
 
+	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+
+	// Sync deviceInfo after activation completes (success or failure)
+	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
+
+	if err := orch.ExecuteProfile(); err != nil {
 		// When CIRA configuration fails, clear the MPS password from the console
 		if errors.Is(err, orchestrator.ErrCIRAConfiguration) && mpsPassword != "" {
 			cmd.clearMPSPasswordFromConsole(ctx, consoleBaseURL, token, guid)
@@ -640,7 +649,6 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	log.Info("Profile fullflow completed successfully")
-	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
 
 	return nil
 }
@@ -749,27 +757,138 @@ func (cmd *ActivateCmd) runLocalActivation(ctx *commands.Context) error {
 
 	if consoleBaseURL != "" {
 		cfg := &config.Configuration{}
+
+		// For already-activated devices (not in pre-provisioning), query current TLS state
+		// before registration so Console has correct connection settings.
+		if cmd.ControlMode != AMTControlModePreProvisioning {
+			log.Debug("Device already activated, checking current TLS settings before registration")
+
+			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+				log.Warnf("Could not obtain AMT password for TLS check; device TLS settings will default to off: %v", err)
+			} else if err := cmd.EnsureWSMAN(ctx); err != nil {
+				log.Warnf("WSMAN setup failed for TLS check; device TLS settings will default to off: %v", err)
+			}
+		}
+
 		if err := cmd.addDeviceToConsole(ctx, consoleBaseURL, token, guid, ctx.AMTPassword, "", "", false, cfg); err != nil {
 			return fmt.Errorf("failed to add device to console: %w", err)
+		}
+
+		// Close WSMAN before activation to avoid handle conflicts
+		if cmd.WSMan != nil {
+			cmd.WSMan.Close()
+			cmd.WSMan = nil
 		}
 	}
 
 	err = localCmd.Run(ctx)
+
+	// Sync deviceInfo and TLS settings after activation completes
 	cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
 
 	return err
 }
 
-// postActivationSync performs a best-effort refresh of deviceInfo after an activation attempt.
+// postActivationSync performs a best-effort refresh of deviceInfo and TLS settings after activation.
+// For ACM activation, TLS is configured during activation, so we update Console with the new TLS state.
 // Any failures are logged but do not change the activation result.
 func (cmd *ActivateCmd) postActivationSync(ctx *commands.Context, consoleBaseURL, token, guid string) {
 	if consoleBaseURL == "" {
 		return
 	}
 
+	log.Debug("Post-activation sync: updating device info and TLS settings")
+
 	endpoint := commands.BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
 
+	// Sync deviceInfo fields (FW version, OS info, discovery data)
 	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
-		log.Warnf("Post-activation sync failed: %v", err)
+		log.Warnf("Post-activation deviceInfo sync failed: %v", err)
 	}
+
+	// Update TLS connection settings which may have changed during activation
+	if err := cmd.updateTLSSettingsAfterActivation(ctx, consoleBaseURL, token, guid); err != nil {
+		log.Warnf("Post-activation TLS settings update failed: %v", err)
+	}
+}
+
+// updateTLSSettingsAfterActivation queries the current TLS state and updates Console device record.
+// This is critical for ACM activation where TLS gets configured during the activation process.
+func (cmd *ActivateCmd) updateTLSSettingsAfterActivation(ctx *commands.Context, consoleBaseURL, token, guid string) error {
+	log.Debug("Querying current TLS settings for post-activation update")
+
+	forceTLSForACM := cmd.shouldForceTLSFallback(ctx)
+
+	// Reinitialize WSMAN to query post-activation TLS state
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+		cmd.WSMan = nil
+	}
+
+	if err := cmd.EnsureWSMAN(ctx); err != nil {
+		// WSMAN not available. For ACM activations, force TLS on as a safe fallback
+		// because ACM provisioning enables TLS and Console operations depend on it.
+		if !forceTLSForACM {
+			log.Debugf("Skipping TLS settings update: WSMAN not available: %v", err)
+
+			return nil
+		}
+
+		log.Warnf("WSMAN unavailable after ACM activation; forcing TLS settings update: %v", err)
+
+		return cmd.updateConsoleTLSSettings(ctx, consoleBaseURL, token, guid, true, true)
+	}
+
+	// Query current TLS settings from AMT firmware
+	cfg := &config.Configuration{} // Empty config - we're checking actual AMT state
+
+	useTLS, allowSelfSigned := cmd.resolveTLSFlags(cfg)
+	if forceTLSForACM && !useTLS {
+		log.Warn("ACM activation completed but TLS probe reported disabled; forcing TLS settings for Console")
+
+		useTLS = true
+		allowSelfSigned = true
+	}
+
+	log.Debugf("Post-activation TLS state: useTLS=%v allowSelfSigned=%v", useTLS, allowSelfSigned)
+
+	return cmd.updateConsoleTLSSettings(ctx, consoleBaseURL, token, guid, useTLS, allowSelfSigned)
+}
+
+// shouldForceTLSFallback determines whether post-activation TLS must be forced for Console.
+// This is true for explicit ACM activations and profile flows that end in ACM.
+func (cmd *ActivateCmd) shouldForceTLSFallback(ctx *commands.Context) bool {
+	if cmd.ACM || cmd.ControlMode == AMTControlModeACM {
+		return true
+	}
+
+	if ctx == nil || ctx.AMTCommand == nil {
+		return false
+	}
+
+	mode, err := ctx.AMTCommand.GetControlMode()
+	if err != nil {
+		log.Debugf("Unable to determine control mode for TLS fallback: %v", err)
+
+		return false
+	}
+
+	return mode == AMTControlModeACM
+}
+
+func (cmd *ActivateCmd) updateConsoleTLSSettings(ctx *commands.Context, consoleBaseURL, token, guid string, useTLS, allowSelfSigned bool) error {
+	hostname := cmd.Hostname
+	if strings.TrimSpace(hostname) == "" {
+		hostname = getLocalIP()
+	}
+
+	payload := device.DevicePayload{
+		GUID:            guid,
+		Hostname:        hostname,
+		Username:        utils.AMTUserName,
+		UseTLS:          useTLS,
+		AllowSelfSigned: allowSelfSigned,
+	}
+
+	return device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
 }
