@@ -1,3 +1,10 @@
+# [3.0.0-beta.37](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.36...v3.0.0-beta.37) (2026-06-24)
+
+
+### Features
+
+* Enabled ODCA verification for rpc-go activation ([cab9e79](https://github.com/device-management-toolkit/rpc-go/commit/cab9e7979f80b4ba42425a1514148a44f8b0bb88))
+
 # [3.0.0-beta.36](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.35...v3.0.0-beta.36) (2026-06-24)
 
 # [3.0.0-beta.35](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.34...v3.0.0-beta.35) (2026-06-19)
