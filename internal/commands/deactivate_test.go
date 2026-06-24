@@ -725,11 +725,12 @@ func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 	assert.Equal(t, 1, called, "expected exactly one DELETE request")
 }
 
-func TestSetupTLSConfig(t *testing.T) {
-	t.Run("TLS config with LocalTLSEnforced false", func(t *testing.T) {
+func TestDeactivateCmd_setupTLSConfig_ControlModePaths(t *testing.T) {
+	t.Run("TLS config in ACM with verification enabled", func(t *testing.T) {
 		cmd := &DeactivateCmd{}
 		cmd.LocalTLSEnforced = true
-		ctx := &Context{ControlMode: ControlModeACM}
+		cmd.ControlMode = ControlModeACM
+		ctx := &Context{SkipAMTCertCheck: false}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
@@ -737,17 +738,18 @@ func TestSetupTLSConfig(t *testing.T) {
 		assert.False(t, tlsConfig.InsecureSkipVerify)
 	})
 
-	t.Run("TLS config with LocalTLSEnforced true", func(t *testing.T) {
+	t.Run("TLS config in pre-provisioning uses custom verifier", func(t *testing.T) {
 		cmd := &DeactivateCmd{}
 		cmd.LocalTLSEnforced = true
+		cmd.ControlMode = 0
 		ctx := &Context{
-			SkipCertCheck: true,
-			ControlMode:   ControlModeACM,
+			SkipAMTCertCheck: false,
 		}
 
 		tlsConfig := cmd.setupTLSConfig(ctx)
 
 		assert.NotNil(t, tlsConfig)
-		// The actual config setup depends on the config.GetTLSConfig implementation
+		assert.True(t, tlsConfig.InsecureSkipVerify)
+		assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
 	})
 }

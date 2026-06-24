@@ -165,6 +165,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 		}
 
 		client.localManagement = lme
+
 		client.isLME = true
 		if err := client.localManagement.Initialize(); err != nil {
 			return Executor{}, fmt.Errorf("failed to initialize LME connection: %w", err)
