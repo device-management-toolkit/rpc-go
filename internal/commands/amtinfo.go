@@ -439,6 +439,7 @@ func WithHECIAvailable(available bool) InfoServiceOption {
 // syncPayload mirrors the expected JSON body for the PATCH request
 type syncPayload struct {
 	GUID       string         `json:"guid"`
+	Hostname   string         `json:"hostname"`
 	DeviceInfo syncDeviceInfo `json:"deviceInfo"`
 }
 
@@ -478,6 +479,9 @@ type syncUPIDInfo struct {
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload.
 // The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices).
 //
+// Note: Sync uses HTTP REST API (not WebSocket) for one-way device info updates to Console.
+// WebSocket (ws/wss) is only used for legacy RPS activation flows (see internal/rps package).
+//
 // The discovered parameter indicates the source of the device record:
 //   - discovered=true: device was auto-discovered via inventory sync (e.g., `amtinfo --sync`)
 //   - discovered=false: device was explicitly provisioned via activation workflow
@@ -498,7 +502,8 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	endpoint := urlArg
 
 	payload := syncPayload{
-		GUID: result.UUID,
+		GUID:     result.UUID,
+		Hostname: s.getCreateHostname(result),
 		DeviceInfo: syncDeviceInfo{
 			FWVersion: result.AMT,
 			FWBuild:   result.BuildNumber,
@@ -681,32 +686,9 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
 // The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
 func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool) error {
-	hostname := s.getHostname(result)
-
-	type deviceInfoCreate struct {
-		Discovered *bool `json:"discovered,omitempty"`
-	}
-
-	type createPayloadType struct {
-		GUID       string            `json:"guid"`
-		Hostname   string            `json:"hostname"`
-		DeviceInfo *deviceInfoCreate `json:"deviceInfo,omitempty"`
-	}
-
-	createPayload := createPayloadType{
-		GUID:     result.UUID,
-		Hostname: hostname,
-	}
-
-	if discovered != nil {
-		createPayload.DeviceInfo = &deviceInfoCreate{
-			Discovered: discovered,
-		}
-	}
-
-	body, err := json.Marshal(createPayload)
+	body, hostname, err := s.buildDeviceCreatePayload(result, discovered)
 	if err != nil {
-		return fmt.Errorf("failed to marshal create payload: %w", err)
+		return err
 	}
 
 	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
@@ -719,8 +701,42 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 	}
 	defer resp.Body.Close()
 
+	return s.handleDeviceCreateResponse(resp, result.UUID)
+}
+
+// buildDeviceCreatePayload constructs the minimal JSON payload for device registration.
+func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *bool) ([]byte, string, error) {
+	hostname := s.getCreateHostname(result)
+
+	type deviceInfoCreate struct {
+		Discovered *bool `json:"discovered,omitempty"`
+	}
+
+	createPayload := struct {
+		GUID       string            `json:"guid"`
+		Hostname   string            `json:"hostname"`
+		DeviceInfo *deviceInfoCreate `json:"deviceInfo,omitempty"`
+	}{
+		GUID:     result.UUID,
+		Hostname: hostname,
+	}
+
+	if discovered != nil {
+		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
+	}
+
+	body, err := json.Marshal(createPayload)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to marshal create payload: %w", err)
+	}
+
+	return body, hostname, nil
+}
+
+// handleDeviceCreateResponse interprets the HTTP response from device creation POST.
+func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) error {
 	if resp.StatusCode == http.StatusConflict {
-		log.Debugf("device %s already exists (HTTP 409), will proceed with update", result.UUID)
+		log.Debugf("device %s already exists (HTTP 409), will proceed with update", guid)
 		// Device was created concurrently; proceed with retry PATCH.
 		return nil
 	}
@@ -733,12 +749,28 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 		return fmt.Errorf("device creation failed with status %s", resp.Status)
 	}
 
-	log.Debugf("device %s registered successfully (HTTP %d)", result.UUID, resp.StatusCode)
+	log.Debugf("device %s registered successfully (HTTP %d)", guid, resp.StatusCode)
 
 	return nil
 }
 
-// getHostname returns a hostname for device registration, falling back to OS hostname then "unknown"
+// getCreateHostname returns a hostname for device registration.
+// Prefer AMT/OS IP from adapters, then OS-level IP (from utils), then OS hostname.
+// This ensures non-vPro systems (where AMT LAN IP is 0.0.0.0) still get an IP rather than a bare hostname.
+func (s *InfoService) getCreateHostname(result *InfoResult) string {
+	if ip := bestIPAddress(result); ip != "" && ip != zeroIP && ip != notFoundIP {
+		return ip
+	}
+
+	// For non-vPro or non-activated systems, fall back to the OS-level IP address.
+	if ip := strings.TrimSpace(utils.GetOSIPAddress()); ip != "" && ip != zeroIP && ip != notFoundIP {
+		return ip
+	}
+
+	return s.getHostname(result)
+}
+
+// getHostname returns a hostname for device registration, falling back to OS hostname then "unknown".
 func (s *InfoService) getHostname(result *InfoResult) string {
 	hostname := strings.TrimSpace(result.HostnameOS)
 	if hostname != "" {
@@ -762,11 +794,13 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 		endpoint = strings.TrimRight(consoleBaseURL, "/") + "/api/v1/devices"
 	}
 
-	return endpoint
+	return strings.TrimRight(endpoint, "/")
 }
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
 func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string) error {
+	log.Debug("Starting device info collection for sync")
+
 	infoCmd := &AmtInfoCmd{
 		AMTBaseCmd: AMTBaseCmd{HECIAvailable: baseCmd.HECIAvailable},
 		Ver:        true,
@@ -777,6 +811,8 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		Lan:        true,
 	}
 
+	log.Debug("Initializing info service for sync")
+
 	service := NewInfoService(
 		ctx.AMTCommand,
 		WithLocalTLSEnforced(baseCmd.LocalTLSEnforced),
@@ -784,10 +820,14 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		WithHECIAvailable(baseCmd.HECIAvailable),
 	)
 
+	log.Debug("Collecting AMT device information")
+
 	result, err := service.GetAMTInfo(infoCmd)
 	if err != nil {
 		return fmt.Errorf("sync data collection failed: %w", err)
 	}
+
+	log.Debug("AMT device information collected successfully")
 
 	if guid != "" {
 		result.UUID = guid
@@ -808,6 +848,8 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.
 func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *InfoResult) {
+	log.Debug("Starting discovery fields population")
+
 	// UPID
 	if result.UPID != nil {
 		info.UPID = &syncUPIDInfo{
@@ -815,6 +857,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 			OEMId:             formatHex(result.UPID.OEMPlatformID),
 			OEMPlatformIdType: interpretPlatformIDType(result.UPID.PlatformIdType),
 		}
+
+		log.Debug("Collected UPID information")
 	}
 
 	// AMT enabled in BIOS: use OperationalState if available, otherwise infer from HECI availability
@@ -827,6 +871,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	}
 
 	// ME Interface (driver) version
+	log.Debug("Collecting ME interface version")
+
 	info.MEInterfaceVersion = utils.GetMEIDriverVersion()
 	log.Debugf("Collected ME interface version: %q", info.MEInterfaceVersion)
 
@@ -837,6 +883,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	// Certificate hashes (extract hash strings)
 	if result.CertificateHashes != nil {
+		log.Debug("Extracting certificate hashes")
+
 		hashes := make([]string, 0, len(result.CertificateHashes))
 
 		for _, entry := range result.CertificateHashes {
@@ -847,30 +895,49 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 		if len(hashes) > 0 {
 			info.CertHashes = hashes
+			log.Debugf("Collected %d certificate hashes", len(hashes))
 		}
 	}
 
 	// LMS version — only attempt if LMS is detected as installed
 	if info.LMSInstalled {
+		log.Debug("Collecting LMS version")
+
 		if s.heciAvailable {
 			if lmsVer, err := s.amtCommand.GetVersionDataFromME("LMS", 30*time.Second); err == nil && lmsVer != "" {
 				info.LMSVersion = lmsVer
+				log.Debugf("LMS version from HECI: %q", lmsVer)
 			}
 		}
 
 		if info.LMSVersion == "" {
+			log.Debug("Querying LMS version from package manager")
+
 			info.LMSVersion = utils.GetLMSVersion()
+			if info.LMSVersion != "" {
+				log.Debugf("LMS version from package manager: %q", info.LMSVersion)
+			}
 		}
 	}
 
 	// TLS mode (requires WSMan)
 	if s.wsman != nil {
+		log.Debug("Querying TLS mode from WSMAN")
+
 		info.TLSMode = s.getTLSModeFromWSMAN()
+		if info.TLSMode != "" {
+			log.Debugf("TLS mode: %q", info.TLSMode)
+		}
 	}
 
 	// IEEE 802.1x (requires WSMan)
 	if s.wsman != nil {
+		log.Debug("Querying IEEE 802.1x settings from WSMAN")
+
 		info.IEEE8021xEnabled = s.getIEEE8021xEnabled()
+		if info.IEEE8021xEnabled != nil {
+			log.Debugf("IEEE 802.1x enabled: %v", *info.IEEE8021xEnabled)
+		}
 	}
 
 	// OS-level info

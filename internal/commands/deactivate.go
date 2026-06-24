@@ -254,13 +254,24 @@ func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, tok
 // authenticateWithConsole obtains a bearer token from the console using the provided credentials.
 func (cmd *DeactivateCmd) authenticateWithConsole(ctx *Context, consoleBaseURL string) (string, error) {
 	// Direct token provided — use it
-	if ctx.AuthToken != "" {
-		return ctx.AuthToken, nil
+	if token := strings.TrimSpace(ctx.AuthToken); token != "" {
+		log.Debug("Using provided authentication token")
+
+		return token, nil
 	}
 
 	// Username/password — exchange for a token
 	if ctx.AuthUsername != "" && ctx.AuthPassword != "" {
-		return profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+		log.Debugf("Exchanging credentials for authentication token")
+
+		token, err := profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+		if err != nil {
+			return "", err
+		}
+
+		log.Debug("Authentication successful, token received")
+
+		return token, nil
 	}
 
 	return "", fmt.Errorf("authentication required: provide --auth-token or --auth-username and --auth-password")

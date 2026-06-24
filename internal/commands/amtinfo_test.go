@@ -180,6 +180,7 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "/api/v1/devices", gotPath)
 	assert.Equal(t, "application/json", gotContentType)
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Equal(t, "192.168.1.100", gotBody.Hostname)
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
@@ -437,7 +438,7 @@ func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
 	assert.Equal(t, 2, patchCount, "PATCH should have been retried after POST")
 	// Verify discovered=true was sent in POST body under deviceInfo
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", postBody["guid"])
-	assert.NotEmpty(t, postBody["hostname"])
+	assert.Equal(t, "192.168.1.100", postBody["hostname"])
 	deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
 	require.True(t, ok, "deviceInfo should be present in POST body")
 	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
