@@ -490,7 +490,7 @@ func extractXMLOutput(data any) string {
 }
 
 func (cmd *WSManGetCmd) newWSMANMessages(ctx *commands.Context) (wsman.Messages, error) {
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, ctx.SkipAMTCertCheck)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, ctx.SkipAMTCertCheck, nil)
 
 	clientParams := client.Parameters{
 		Target:         utils.LMSAddress,

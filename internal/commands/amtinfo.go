@@ -2167,7 +2167,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck, nil)
 	} else {
 		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
 	}
