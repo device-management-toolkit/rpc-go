@@ -45,7 +45,7 @@ jobs:
           username: ${{ secrets.INTC_DOCKER_USERNAME }}
           password: ${{ secrets.INTC_DOCKER_PASSWORD }}
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v5.3.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.3.0
         with:
           go-version: 'stable'
           check-latest: true
