@@ -690,6 +690,82 @@ func TestDeleteDeviceFromConsole_CustomDevicesEndpoint(t *testing.T) {
 	assert.Equal(t, 1, called, "expected exactly one DELETE request")
 }
 
+func TestDeleteDeviceFromConsole_WithTokenAndDevicesEndpointOnly(t *testing.T) {
+	called := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+
+		assert.Equal(t, "/api/v1/devices/test-guid", r.URL.Path)
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cmd := &DeactivateCmd{}
+	ctx := &Context{}
+	ctx.AuthToken = "my-token"
+	ctx.DevicesEndpoint = server.URL + "/api/v1/devices"
+
+	err := cmd.deleteDeviceFromConsole(ctx, "test-guid")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, called, "expected exactly one DELETE request")
+}
+
+func TestExecuteHttpConsoleDeactivate_PostDeactivationSync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	unprovisioned := false
+
+	mockWSMAN.EXPECT().Unprovision(1).DoAndReturn(func(int) (setupandconfiguration.Response, error) {
+		unprovisioned = true
+
+		return setupandconfiguration.Response{}, nil
+	})
+
+	var patchCount, deleteCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/devices":
+			assert.True(t, unprovisioned, "PATCH sync should happen after deactivation")
+
+			patchCount++
+
+			assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/devices/test-guid":
+			deleteCount++
+
+			assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cmd := &DeactivateCmd{URL: server.URL}
+	cmd.ControlMode = ControlModeACM
+	cmd.WSMan = mockWSMAN
+
+	ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+	ctx.AuthToken = "my-token"
+
+	err := cmd.executeHttpConsoleDeactivate(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, patchCount, "expected one post-deactivation PATCH sync")
+	assert.Equal(t, 1, deleteCount, "expected one device DELETE")
+}
+
 func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -698,17 +774,26 @@ func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
 
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
 	mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, nil)
 
-	called := 0
+	var patchCount, deleteCount int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called++
+		switch {
+		case r.Method == http.MethodPatch && r.URL.Path == "/custom/v2/devices":
+			patchCount++
 
-		assert.Equal(t, "/custom/v2/devices/test-guid", r.URL.Path)
-		assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodDelete && r.URL.Path == "/custom/v2/devices/test-guid":
+			deleteCount++
 
-		w.WriteHeader(http.StatusOK)
+			assert.Equal(t, "Bearer my-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer server.Close()
 
@@ -722,7 +807,8 @@ func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 
 	err := cmd.executeHttpConsoleDeactivate(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, called, "expected exactly one DELETE request")
+	assert.Equal(t, 1, patchCount, "expected one post-deactivation PATCH sync on custom endpoint")
+	assert.Equal(t, 1, deleteCount, "expected one device DELETE on custom endpoint")
 }
 
 func TestDeactivateCmd_setupTLSConfig_ControlModePaths(t *testing.T) {
