@@ -5,14 +5,19 @@
 package certs
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -23,21 +28,30 @@ const (
 	onDieCSMEPrefix  = "On Die CSME"
 )
 
+const (
+	hashAlgorithmSHA256 = "SHA256"
+	hashAlgorithmSHA384 = "SHA384"
+)
+
 // generates a TLS configuration based on the provided mode.
-func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool) *tls.Config {
+func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertCheck bool, upidInfo *upid.UPID) *tls.Config {
 	tlsConfig := &tls.Config{}
 
-	tlsConfig.InsecureSkipVerify = skipAMTCertCheck
-
 	if *mode == 0 { // pre-provisioning mode
+		// Use custom ODCA verification for pre-provisioning TLS.
+		// We must bypass the default verifier so AMT's activation certificate chain
+		// can be validated against the embedded ODCA trust store (without relying on
+		// host OS roots / strict EKU checks).
+		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if skipAMTCertCheck {
 				return nil
 			}
 
-			return VerifyCertificates(rawCerts, mode, amtCertInfo)
+			return VerifyCertificates(rawCerts, mode, amtCertInfo, upidInfo)
 		}
 	} else {
+		tlsConfig.InsecureSkipVerify = skipAMTCertCheck
 		// default tls config if device is in ACM or CCM
 		log.Trace("Setting default TLS Config for ACM/CCM mode")
 	}
@@ -45,7 +59,7 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertC
 	return tlsConfig
 }
 
-func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBasedResponse) error {
+func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBasedResponse, upidInfo *upid.UPID) error {
 	numCerts := len(rawCerts)
 
 	const (
@@ -55,7 +69,10 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 		leafLevel             = 0
 	)
 
-	var parsedCerts []*x509.Certificate
+	var (
+		parsedCerts []*x509.Certificate
+		romODCACert *x509.Certificate
+	)
 
 	switch numCerts {
 	case 4:
@@ -69,7 +86,7 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 				return err
 			}
 
-			log.Infof("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
+			log.Debugf("Cert[%d]: Subject=%s, Issuer=%s, EKU=%v", i, cert.Subject, cert.Issuer, cert.ExtKeyUsage)
 
 			parsedCerts = append(parsedCerts, cert)
 
@@ -79,11 +96,23 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 					return err
 				}
 			case odcaCertLevel:
+				romODCACert = cert
 				if err := VerifyROMODCACertificate(cert.Subject.CommonName, cert.Issuer.OrganizationalUnit); err != nil {
 					return err
 				}
-			} // TODO: verify CRL for each cert
+			}
 		}
+
+		if upidInfo != nil {
+			if romODCACert == nil {
+				return errors.New("failed to identify ROM ODCA certificate for UPID binding verification")
+			}
+
+			if err := VerifyUPIDBinding(romODCACert, upidInfo); err != nil {
+				return err
+			}
+		}
+
 		// verify the full chain
 		if err := VerifyFullChain(parsedCerts); err != nil {
 			return err
@@ -97,6 +126,27 @@ func VerifyCertificates(rawCerts [][]byte, mode *int, amtCertInfo *amt.SecureHBa
 	return errors.New("unexpected number of certificates received from AMT: " + strconv.Itoa(numCerts))
 }
 
+func VerifyUPIDBinding(romODCACert *x509.Certificate, upidInfo *upid.UPID) error {
+	// Per AMT secure host-based verification, UPID HWSerialNum binds to the
+	// first 20 bytes of the SHA-256 hash of the ROM ODCA certificate.
+	const upidBindingPrefixLen = 20
+
+	if romODCACert == nil {
+		return errors.New("ROM ODCA certificate is required for UPID verification")
+	}
+
+	if upidInfo == nil || len(upidInfo.HWSerialNum) < upidBindingPrefixLen {
+		return errors.New("UPID data is unavailable or invalid")
+	}
+
+	romHash := sha256.Sum256(romODCACert.Raw)
+	if !bytes.Equal(romHash[:upidBindingPrefixLen], upidInfo.HWSerialNum[:upidBindingPrefixLen]) {
+		return errors.New("UPID CSME HW ID does not match ROM ODCA certificate hash")
+	}
+
+	return nil
+}
+
 // validate the leaf certificate
 func VerifyLeafCertificate(cn *x509.Certificate, amtCertInfo *amt.SecureHBasedResponse) error {
 	allowedLeafCNs := []string{
@@ -104,10 +154,23 @@ func VerifyLeafCertificate(cn *x509.Certificate, amtCertInfo *amt.SecureHBasedRe
 	}
 
 	if amtCertInfo != nil {
-		hash := sha256.Sum256(cn.Raw)
-		// todo: set length based on algorithm
-		if string(hash[:32]) != amtCertInfo.AMTCertHash[:32] {
-			return errors.New("hashes don't match")
+		normalizedAlgo := strings.ToUpper(strings.TrimSpace(amtCertInfo.HashAlgorithm))
+		if normalizedAlgo == "" {
+			normalizedAlgo = hashAlgorithmSHA256
+		}
+
+		expectedHash, err := decodeAMTCertHash(amtCertInfo.AMTCertHash, normalizedAlgo)
+		if err != nil {
+			return err
+		}
+
+		actualHash, err := computeLeafHash(cn.Raw, normalizedAlgo)
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(actualHash, expectedHash) {
+			return fmt.Errorf("leaf certificate hash mismatch (algorithm=%s)", normalizedAlgo)
 		}
 	}
 
@@ -122,6 +185,59 @@ func VerifyLeafCertificate(cn *x509.Certificate, amtCertInfo *amt.SecureHBasedRe
 	return errors.New("leaf certificate CN is not allowed")
 }
 
+func computeLeafHash(certRaw []byte, hashAlgorithm string) ([]byte, error) {
+	switch strings.ToUpper(strings.TrimSpace(hashAlgorithm)) {
+	case "", hashAlgorithmSHA256:
+		hash := sha256.Sum256(certRaw)
+
+		return hash[:], nil
+	case hashAlgorithmSHA384:
+		hash := sha512.Sum384(certRaw)
+
+		return hash[:], nil
+	default:
+		return nil, fmt.Errorf("unsupported AMT hash algorithm: %s", hashAlgorithm)
+	}
+}
+
+func decodeAMTCertHash(rawHash string, hashAlgorithm string) ([]byte, error) {
+	wireHash := []byte(rawHash)
+
+	hashLen, err := hashLengthForAlgorithm(hashAlgorithm)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(wireHash) < hashLen {
+		return nil, errors.New("AMT certificate hash is shorter than expected")
+	}
+
+	// Newer firmware can return ASCII hex (64 chars for SHA-256), while other
+	// paths can expose raw bytes from the fixed-size PTHI array.
+	trimmed := strings.TrimSpace(strings.TrimRight(rawHash, "\x00"))
+	if len(trimmed) == hashLen*2 {
+		decoded, decErr := hex.DecodeString(trimmed)
+		if decErr != nil {
+			return nil, fmt.Errorf("failed to decode AMT certificate hash as hex: %w", decErr)
+		}
+
+		return decoded, nil
+	}
+
+	return wireHash[:hashLen], nil
+}
+
+func hashLengthForAlgorithm(hashAlgorithm string) (int, error) {
+	switch strings.ToUpper(strings.TrimSpace(hashAlgorithm)) {
+	case "", hashAlgorithmSHA256:
+		return sha256.Size, nil
+	case hashAlgorithmSHA384:
+		return sha512.Size384, nil
+	default:
+		return 0, fmt.Errorf("unsupported AMT hash algorithm: %s", hashAlgorithm)
+	}
+}
+
 // validate CSME ROM ODCA certificate
 func VerifyROMODCACertificate(cn string, issuerOU []string) error {
 	allowedOUPrefixes := []string{
@@ -134,7 +250,7 @@ func VerifyROMODCACertificate(cn string, issuerOU []string) error {
 		return errors.New("invalid ROM ODCA Certificate")
 	}
 
-	// check that OU of odcaCertLevel must have a prefix equal to either ODCA 2 CSME P or On Die CSME P
+	// check that OU of odcaCertLevel must have one of the allowed ODCA prefixes
 	for _, ou := range issuerOU {
 		for _, prefix := range allowedOUPrefixes {
 			if strings.HasPrefix(ou, prefix) {

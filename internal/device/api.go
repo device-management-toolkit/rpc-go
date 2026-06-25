@@ -39,11 +39,12 @@ const (
 // resolveDevicesEndpoint returns the full devices API base URL.
 // If devicesEndpoint is non-empty, it is used directly; otherwise consoleBaseURL + DefaultDevicesPath.
 func resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint string) string {
-	if devicesEndpoint != "" {
-		return strings.TrimRight(devicesEndpoint, "/")
+	endpoint := strings.TrimSpace(devicesEndpoint)
+	if endpoint != "" {
+		return strings.TrimRight(endpoint, "/")
 	}
 
-	return strings.TrimRight(consoleBaseURL, "/") + DefaultDevicesPath
+	return strings.TrimRight(strings.TrimSpace(consoleBaseURL), "/") + DefaultDevicesPath
 }
 
 // StatusError represents a non-2xx HTTP response.
@@ -107,6 +108,25 @@ func doJSONRequest(method, requestURL, token string, body []byte, skipCertCheck 
 	return nil
 }
 
+func sendDeviceJSONRequest(method, endpoint, token string, payload interface{}, skipCertCheck bool, errContext string) error {
+	var body []byte
+
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("%s: marshal failed: %w", errContext, err)
+		}
+
+		body = encoded
+	}
+
+	if err := doJSONRequest(method, endpoint, token, body, skipCertCheck); err != nil {
+		return fmt.Errorf("%s: %w", errContext, err)
+	}
+
+	return nil
+}
+
 // DevicePayload is the JSON body sent to /api/v1/devices.
 type DevicePayload struct {
 	GUID            string      `json:"guid"`
@@ -123,11 +143,33 @@ type DevicePayload struct {
 	DeviceInfo      *DeviceInfo `json:"deviceInfo,omitempty"`
 }
 
+type deviceTLSPatchPayload struct {
+	GUID            string `json:"guid"`
+	Hostname        string `json:"hostname"`
+	Username        string `json:"username"`
+	UseTLS          bool   `json:"useTLS"`
+	AllowSelfSigned bool   `json:"allowSelfSigned"`
+}
+
+// TLSSettingsUpdate encapsulates parameters for updating device TLS settings.
+type TLSSettingsUpdate struct {
+	ConsoleBaseURL  string
+	Token           string
+	GUID            string
+	Hostname        string
+	Username        string
+	UseTLS          bool
+	AllowSelfSigned bool
+	SkipCertCheck   bool
+	DevicesEndpoint string
+}
+
 // DeviceInfo carries device metadata sent to the console.
 type DeviceInfo struct {
 	FWVersion            string    `json:"fwVersion,omitempty"`
 	FWBuild              string    `json:"fwBuild,omitempty"`
 	FWSku                string    `json:"fwSku,omitempty"`
+	Discovered           *bool     `json:"discovered,omitempty"`
 	CurrentMode          string    `json:"currentMode,omitempty"`
 	Features             string    `json:"features,omitempty"`
 	IPAddress            string    `json:"ipAddress,omitempty"`
@@ -161,15 +203,10 @@ type UPIDInfo struct {
 func AddDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool, devicesEndpoint string) error {
 	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
 
-	body, err := json.Marshal(d)
-	if err != nil {
-		return fmt.Errorf("failed to marshal device payload: %w", err)
-	}
-
 	log.Debugf("Adding device to console: POST %s", endpoint)
 
-	if err := doJSONRequest(http.MethodPost, endpoint, token, body, skipCertCheck); err != nil {
-		return fmt.Errorf("add device failed: %w", err)
+	if err := sendDeviceJSONRequest(http.MethodPost, endpoint, token, d, skipCertCheck, "add device failed"); err != nil {
+		return err
 	}
 
 	log.Infof("Device %s added to console successfully", d.GUID)
@@ -181,18 +218,50 @@ func AddDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool
 func UpdateDevice(consoleBaseURL, token string, d DevicePayload, skipCertCheck bool, devicesEndpoint string) error {
 	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
 
-	body, err := json.Marshal(d)
-	if err != nil {
-		return fmt.Errorf("failed to marshal device payload: %w", err)
-	}
-
 	log.Debugf("Updating device in console: PATCH %s", endpoint)
 
-	if err := doJSONRequest(http.MethodPatch, endpoint, token, body, skipCertCheck); err != nil {
-		return fmt.Errorf("update device failed: %w", err)
+	if err := sendDeviceJSONRequest(http.MethodPatch, endpoint, token, d, skipCertCheck, "update device failed"); err != nil {
+		return err
 	}
 
 	log.Infof("Device %s updated in console successfully", d.GUID)
+
+	return nil
+}
+
+// UpdateDeviceTLSSettings updates only TLS-related fields via PATCH to avoid
+// unintentionally clearing unrelated device fields.
+func UpdateDeviceTLSSettings(settings TLSSettingsUpdate) error {
+	// Validate required fields
+	if settings.GUID == "" {
+		return fmt.Errorf("GUID is required for TLS settings update")
+	}
+
+	if settings.Hostname == "" {
+		return fmt.Errorf("hostname is required for TLS settings update")
+	}
+
+	if settings.Username == "" {
+		return fmt.Errorf("username is required for TLS settings update")
+	}
+
+	endpoint := resolveDevicesEndpoint(settings.ConsoleBaseURL, settings.DevicesEndpoint)
+
+	payload := deviceTLSPatchPayload{
+		GUID:            settings.GUID,
+		Hostname:        settings.Hostname,
+		Username:        settings.Username,
+		UseTLS:          settings.UseTLS,
+		AllowSelfSigned: settings.AllowSelfSigned,
+	}
+
+	log.Debugf("Updating device TLS settings in console: PATCH %s", endpoint)
+
+	if err := sendDeviceJSONRequest(http.MethodPatch, endpoint, settings.Token, payload, settings.SkipCertCheck, "update device TLS settings failed"); err != nil {
+		return err
+	}
+
+	log.Infof("Device %s TLS settings updated in console successfully", settings.GUID)
 
 	return nil
 }
@@ -204,13 +273,9 @@ func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bo
 	log.Debugf("Clearing MPS password from device: PATCH %s", endpoint)
 
 	// Map avoids omitempty so the empty string is sent explicitly.
-	body, err := json.Marshal(map[string]string{"guid": guid, "mpspassword": ""})
-	if err != nil {
-		return fmt.Errorf("failed to marshal clear-password payload: %w", err)
-	}
-
-	if err := doJSONRequest(http.MethodPatch, endpoint, token, body, skipCertCheck); err != nil {
-		return fmt.Errorf("clear MPS password failed: %w", err)
+	payload := map[string]string{"guid": guid, "mpspassword": ""}
+	if err := sendDeviceJSONRequest(http.MethodPatch, endpoint, token, payload, skipCertCheck, "clear MPS password failed"); err != nil {
+		return err
 	}
 
 	log.Infof("MPS password cleared from device %s", guid)
@@ -224,8 +289,8 @@ func DeleteDevice(consoleBaseURL, token, guid string, skipCertCheck bool, device
 
 	log.Debugf("Deleting device from console: DELETE %s", endpoint)
 
-	if err := doJSONRequest(http.MethodDelete, endpoint, token, nil, skipCertCheck); err != nil {
-		return fmt.Errorf("delete device failed: %w", err)
+	if err := sendDeviceJSONRequest(http.MethodDelete, endpoint, token, nil, skipCertCheck, "delete device failed"); err != nil {
+		return err
 	}
 
 	log.Infof("Device %s deleted from console successfully", guid)

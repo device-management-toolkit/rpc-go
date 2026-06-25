@@ -45,6 +45,7 @@ const (
 	notFoundIP         = "Not Found"
 	zeroIP             = "0.0.0.0"
 	zeroMAC            = "00:00:00:00:00:00"
+	statusUnknown      = "unknown"
 	statusEnabled      = "enabled"
 	statusConnected    = "connected"
 	statusUp           = "up"
@@ -52,6 +53,7 @@ const (
 	statusActive       = "active"
 	statusDisabled     = "disabled"
 	proxyInfoFQDN      = "FQDN"
+	httpRequestTimeout = 10 * time.Second
 )
 
 // Indent constant for consistent text output spacing.
@@ -118,7 +120,7 @@ func styledInfoValue(value string) string {
 		"post-provisioning", "admin control mode":
 		return infoGreenStyle.Render(value)
 	case statusDisabled, statusNotConnected, "down",
-		"not activated", "unknown":
+		"not activated", statusUnknown:
 		return infoRedStyle.Render(value)
 	case "in provisioning",
 		"client control mode":
@@ -263,14 +265,15 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
-	service := NewInfoService(ctx.AMTCommand)
-	service.jsonOutput = ctx.JsonOutput
-	service.password = ctx.AMTPassword
-	service.localTLSEnforced = cmd.LocalTLSEnforced
-	// Use AMT-specific skip flag for WSMAN/TLS to firmware
-	service.skipAMTCertCheck = ctx.SkipAMTCertCheck
-	service.wsman = cmd.GetWSManClient()
-	service.heciAvailable = cmd.HECIAvailable
+	service := NewInfoService(
+		ctx.AMTCommand,
+		WithJSONOutput(ctx.JsonOutput),
+		WithPassword(ctx.AMTPassword),
+		WithLocalTLSEnforced(cmd.LocalTLSEnforced),
+		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
+		WithWSMANClient(cmd.GetWSManClient()),
+		WithHECIAvailable(cmd.HECIAvailable),
+	)
 
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
@@ -287,7 +290,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	// If requested, sync device info to remote server
 	if cmd.Sync {
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags); err != nil {
+		discovered := true
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
 			return err
 		}
 	}
@@ -365,10 +369,13 @@ type InfoService struct {
 	heciAvailable    bool
 }
 
+// InfoServiceOption mutates InfoService construction parameters.
+type InfoServiceOption func(*InfoService)
+
 // NewInfoService creates a new InfoService with the given AMT command.
 // heciAvailable defaults to true for backward compatibility with existing callers.
-func NewInfoService(amtCommand amt.Interface) *InfoService {
-	return &InfoService{
+func NewInfoService(amtCommand amt.Interface, opts ...InfoServiceOption) *InfoService {
+	service := &InfoService{
 		amtCommand:       amtCommand,
 		jsonOutput:       false,
 		password:         "",
@@ -377,11 +384,62 @@ func NewInfoService(amtCommand amt.Interface) *InfoService {
 		wsman:            nil,
 		heciAvailable:    true,
 	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(service)
+		}
+	}
+
+	return service
+}
+
+// WithJSONOutput configures JSON output mode for InfoService.
+func WithJSONOutput(enabled bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.jsonOutput = enabled
+	}
+}
+
+// WithPassword configures the AMT password used by InfoService.
+func WithPassword(password string) InfoServiceOption {
+	return func(s *InfoService) {
+		s.password = password
+	}
+}
+
+// WithLocalTLSEnforced configures local TLS enforcement for LMS detection.
+func WithLocalTLSEnforced(enabled bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.localTLSEnforced = enabled
+	}
+}
+
+// WithSkipAMTCertCheck configures AMT certificate verification behavior.
+func WithSkipAMTCertCheck(skip bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.skipAMTCertCheck = skip
+	}
+}
+
+// WithWSMANClient configures an existing WSMAN client for InfoService.
+func WithWSMANClient(wsman interfaces.WSMANer) InfoServiceOption {
+	return func(s *InfoService) {
+		s.wsman = wsman
+	}
+}
+
+// WithHECIAvailable configures whether HECI-dependent reads should run.
+func WithHECIAvailable(available bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.heciAvailable = available
+	}
 }
 
 // syncPayload mirrors the expected JSON body for the PATCH request
 type syncPayload struct {
 	GUID       string         `json:"guid"`
+	Hostname   string         `json:"hostname"`
 	DeviceInfo syncDeviceInfo `json:"deviceInfo"`
 }
 
@@ -389,6 +447,7 @@ type syncDeviceInfo struct {
 	FWVersion            string        `json:"fwVersion"`
 	FWBuild              string        `json:"fwBuild"`
 	FWSku                string        `json:"fwSku"`
+	Discovered           *bool         `json:"discovered,omitempty"`
 	CurrentMode          string        `json:"currentMode"`
 	Features             string        `json:"features"`
 	IPAddress            string        `json:"ipAddress"`
@@ -417,9 +476,19 @@ type syncUPIDInfo struct {
 	OEMPlatformIdType string `json:"oemPlatformIdType,omitempty"`
 }
 
-// SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload
-// The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices)
-func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
+// SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload.
+// The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices).
+//
+// Note: Sync uses HTTP REST API (not WebSocket) for one-way device info updates to Console.
+// WebSocket (ws/wss) is only used for legacy RPS activation flows (see internal/rps package).
+//
+// The discovered parameter indicates the source of the device record:
+//   - discovered=true: device was auto-discovered via inventory sync (e.g., `amtinfo --sync`)
+//   - discovered=false: device was explicitly provisioned via activation workflow
+//   - discovered=nil: if 404 occurs during sync, defaults to true for auto-registration
+//
+// This flag is set only once during device creation and does not change thereafter.
+func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
 		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
@@ -433,11 +502,13 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	endpoint := urlArg
 
 	payload := syncPayload{
-		GUID: result.UUID,
+		GUID:     result.UUID,
+		Hostname: s.getCreateHostname(result),
 		DeviceInfo: syncDeviceInfo{
-			FWVersion:    result.AMT,
-			FWBuild:      result.BuildNumber,
-			FWSku:        result.SKU,
+			FWVersion: result.AMT,
+			FWBuild:   result.BuildNumber,
+			FWSku:     result.SKU,
+			// Discovered is NOT set here - only sent during device creation, never in updates
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
 			IPAddress:    bestIPAddress(result),
@@ -454,66 +525,330 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		return fmt.Errorf("failed to marshal sync payload: %w", err)
 	}
 
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	// Respect skip-cert-check for HTTPS endpoints
-	if strings.HasPrefix(strings.ToLower(endpoint), "https://") && ctx.SkipCertCheck {
-		httpClient.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: ctx.SkipCertCheck}}
-	}
+	httpClient := s.newHTTPClient(ctx.SkipCertCheck, endpoint)
 
-	// Create a request with context to comply with lint noctx rule and allow cancellation., not to be confused with context of kong cli commands
-	reqCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPatch, endpoint, bytes.NewReader(body))
+	authToken, err := s.getAuthToken(endpoint, auth, ctx.SkipCertCheck)
 	if err != nil {
-		return fmt.Errorf("failed to create PATCH request: %w", err)
+		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	// Apply Authorization header. If username/password are provided without a token, exchange for a token first.
-	if auth != nil {
-		token := strings.TrimSpace(auth.AuthToken)
-		if token == "" && auth.AuthUsername != "" && auth.AuthPassword != "" {
-			// Derive the base (scheme://host) from the target endpoint for default auth endpoints
-			parsed, perr := neturl.Parse(endpoint)
-			if perr != nil {
-				return fmt.Errorf("invalid endpoint url: %w", perr)
-			}
+	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
 
-			base := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+	// Try PATCH request
+	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken)
+	if err != nil {
+		log.Debugf("PATCH request failed: %v", err)
 
-			t, aerr := profile.Authenticate(base, auth.AuthUsername, auth.AuthPassword, auth.AuthEndpoint, ctx.SkipCertCheck, 10*time.Second)
-			if aerr != nil {
-				return fmt.Errorf("authentication failed: %w", aerr)
-			}
+		return err
+	}
 
-			token = t
+	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+
+		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
+
+		// 404 fallback: auto-register the device.
+		// Discovered flag is set only during device creation (POST), never in updates (PATCH).
+		// If not explicitly provided, default to true for auto-discovered devices.
+		if discovered == nil {
+			autoDiscovered := true
+			discovered = &autoDiscovered
 		}
 
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-	}
+		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered); err != nil {
+			log.Debugf("device registration (POST) failed: %v", err)
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("sync request failed: %w", err)
+			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
+		}
+
+		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
+
+		// Retry PATCH without discovered field (updates don't change discovered)
+		if err := s.doPatchRequest(httpClient, endpoint, body, authToken); err != nil {
+			log.Debugf("retry PATCH after registration failed: %v", err)
+
+			return err
+		}
+
+		log.Debugf("device %s synced successfully after registration", result.UUID)
+
+		return nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("device not found; activate the device before syncing device info")
-	}
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+
+		log.Debugf("PATCH request failed with status %s", resp.Status)
+
 		return fmt.Errorf("sync failed with status %s", resp.Status)
 	}
+
+	log.Debugf("device %s synced successfully (PATCH)", result.UUID)
 
 	return nil
 }
 
+// newHTTPClient creates an HTTP client with appropriate TLS configuration
+func (s *InfoService) newHTTPClient(skipCertCheck bool, endpoint string) *http.Client {
+	client := &http.Client{Timeout: httpRequestTimeout}
+
+	if strings.HasPrefix(strings.ToLower(endpoint), "https://") && skipCertCheck {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipCertCheck},
+		}
+	}
+
+	return client
+}
+
+// getAuthToken retrieves or generates an authentication token
+func (s *InfoService) getAuthToken(endpoint string, auth *ServerAuthFlags, skipCertCheck bool) (string, error) {
+	if auth == nil {
+		return "", nil
+	}
+
+	token := strings.TrimSpace(auth.AuthToken)
+	if token != "" || auth.AuthUsername == "" || auth.AuthPassword == "" {
+		return token, nil
+	}
+
+	parsed, err := neturl.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint url: %w", err)
+	}
+
+	base := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	token, err = profile.Authenticate(base, auth.AuthUsername, auth.AuthPassword, auth.AuthEndpoint, skipCertCheck, httpRequestTimeout)
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+// doHTTPRequest performs an HTTP request and returns the response
+func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string, body []byte, authToken string) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create %s request: %w", method, err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// isHTTPSuccess checks if the response status code indicates success (2xx)
+func isHTTPSuccess(statusCode int) bool {
+	return statusCode >= 200 && statusCode < 300
+}
+
+// doPatchRequest performs a PATCH request with the given body and auth token
+func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken string) error {
+	log.Debugf("updating device info (PATCH) to %s", endpoint)
+
+	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken)
+	if err != nil {
+		log.Debugf("PATCH request failed: %v", err)
+
+		return err
+	}
+	defer resp.Body.Close()
+
+	if !isHTTPSuccess(resp.StatusCode) {
+		_, _ = io.Copy(io.Discard, resp.Body)
+
+		log.Debugf("PATCH failed with status %s", resp.Status)
+
+		return fmt.Errorf("sync failed with status %s", resp.Status)
+	}
+
+	log.Debugf("device info updated successfully (HTTP %d)", resp.StatusCode)
+
+	return nil
+}
+
+// createDevice sends a minimal POST to register the device before retrying PATCH sync.
+// The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool) error {
+	body, hostname, err := s.buildDeviceCreatePayload(result, discovered)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
+
+	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken)
+	if err != nil {
+		log.Debugf("device registration (POST) request failed: %v", err)
+
+		return err
+	}
+	defer resp.Body.Close()
+
+	return s.handleDeviceCreateResponse(resp, result.UUID)
+}
+
+// buildDeviceCreatePayload constructs the minimal JSON payload for device registration.
+func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *bool) ([]byte, string, error) {
+	hostname := s.getCreateHostname(result)
+
+	type deviceInfoCreate struct {
+		Discovered *bool `json:"discovered,omitempty"`
+	}
+
+	createPayload := struct {
+		GUID       string            `json:"guid"`
+		Hostname   string            `json:"hostname"`
+		DeviceInfo *deviceInfoCreate `json:"deviceInfo,omitempty"`
+	}{
+		GUID:     result.UUID,
+		Hostname: hostname,
+	}
+
+	if discovered != nil {
+		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
+	}
+	body, err := json.Marshal(createPayload)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to marshal create payload: %w", err)
+	}
+
+	return body, hostname, nil
+}
+
+// handleDeviceCreateResponse interprets the HTTP response from device creation POST.
+func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) error {
+	if resp.StatusCode == http.StatusConflict {
+		log.Debugf("device %s already exists (HTTP 409), will proceed with update", guid)
+		// Device was created concurrently; proceed with retry PATCH.
+		return nil
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+
+		log.Debugf("device registration failed with status %s", resp.Status)
+
+		return fmt.Errorf("device creation failed with status %s", resp.Status)
+	}
+
+	log.Debugf("device %s registered successfully (HTTP %d)", guid, resp.StatusCode)
+
+	return nil
+}
+
+// getCreateHostname returns a hostname for device registration.
+// Prefer AMT/OS IP from adapters, then OS-level IP (from utils), then OS hostname.
+// This ensures non-vPro systems (where AMT LAN IP is 0.0.0.0) still get an IP rather than a bare hostname.
+func (s *InfoService) getCreateHostname(result *InfoResult) string {
+	if ip := bestIPAddress(result); ip != "" && ip != zeroIP && ip != notFoundIP {
+		return ip
+	}
+
+	// For non-vPro or non-activated systems, fall back to the OS-level IP address.
+	if ip := strings.TrimSpace(utils.GetOSIPAddress()); ip != "" && ip != zeroIP && ip != notFoundIP {
+		return ip
+	}
+
+	return s.getHostname(result)
+}
+
+// getHostname returns a hostname for device registration, falling back to OS hostname then "unknown".
+func (s *InfoService) getHostname(result *InfoResult) string {
+	hostname := strings.TrimSpace(result.HostnameOS)
+	if hostname != "" {
+		return hostname
+	}
+
+	if h, err := os.Hostname(); err == nil {
+		hostname = strings.TrimSpace(h)
+		if hostname != "" {
+			return hostname
+		}
+	}
+
+	return statusUnknown
+}
+
+// BuildDevicesEndpoint constructs the devices API endpoint URL
+func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
+	endpoint := strings.TrimSpace(devicesEndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimRight(consoleBaseURL, "/") + "/api/v1/devices"
+	}
+
+	return strings.TrimRight(endpoint, "/")
+}
+
+// SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
+func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string) error {
+	log.Debug("Starting device info collection for sync")
+
+	infoCmd := &AmtInfoCmd{
+		AMTBaseCmd: AMTBaseCmd{HECIAvailable: baseCmd.HECIAvailable},
+		Ver:        true,
+		Bld:        true,
+		Sku:        true,
+		UUID:       true,
+		Mode:       true,
+		Lan:        true,
+	}
+
+	log.Debug("Initializing info service for sync")
+
+	service := NewInfoService(
+		ctx.AMTCommand,
+		WithLocalTLSEnforced(baseCmd.LocalTLSEnforced),
+		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
+		WithHECIAvailable(baseCmd.HECIAvailable),
+	)
+
+	log.Debug("Collecting AMT device information")
+
+	result, err := service.GetAMTInfo(infoCmd)
+	if err != nil {
+		return fmt.Errorf("sync data collection failed: %w", err)
+	}
+
+	log.Debug("AMT device information collected successfully")
+
+	if guid != "" {
+		result.UUID = guid
+	}
+
+	auth := &ServerAuthFlags{
+		AuthToken:    token,
+		AuthUsername: ctx.AuthUsername,
+		AuthPassword: ctx.AuthPassword,
+		AuthEndpoint: ctx.AuthEndpoint,
+	}
+
+	// Activation/deactivation syncs mark devices as explicitly provisioned (not discovered)
+	explicitlyProvisioned := false
+
+	return service.SyncDeviceInfo(ctx, result, endpoint, auth, &explicitlyProvisioned)
+}
+
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.
 func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *InfoResult) {
+	log.Debug("Starting discovery fields population")
+
 	// UPID
 	if result.UPID != nil {
 		info.UPID = &syncUPIDInfo{
@@ -521,6 +856,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 			OEMId:             formatHex(result.UPID.OEMPlatformID),
 			OEMPlatformIdType: interpretPlatformIDType(result.UPID.PlatformIdType),
 		}
+
+		log.Debug("Collected UPID information")
 	}
 
 	// AMT enabled in BIOS: use OperationalState if available, otherwise infer from HECI availability
@@ -533,6 +870,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	}
 
 	// ME Interface (driver) version
+	log.Debug("Collecting ME interface version")
+
 	info.MEInterfaceVersion = utils.GetMEIDriverVersion()
 	log.Debugf("Collected ME interface version: %q", info.MEInterfaceVersion)
 
@@ -543,6 +882,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	// Certificate hashes (extract hash strings)
 	if result.CertificateHashes != nil {
+		log.Debug("Extracting certificate hashes")
+
 		hashes := make([]string, 0, len(result.CertificateHashes))
 
 		for _, entry := range result.CertificateHashes {
@@ -553,30 +894,49 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 		if len(hashes) > 0 {
 			info.CertHashes = hashes
+			log.Debugf("Collected %d certificate hashes", len(hashes))
 		}
 	}
 
 	// LMS version — only attempt if LMS is detected as installed
 	if info.LMSInstalled {
+		log.Debug("Collecting LMS version")
+
 		if s.heciAvailable {
 			if lmsVer, err := s.amtCommand.GetVersionDataFromME("LMS", 30*time.Second); err == nil && lmsVer != "" {
 				info.LMSVersion = lmsVer
+				log.Debugf("LMS version from HECI: %q", lmsVer)
 			}
 		}
 
 		if info.LMSVersion == "" {
+			log.Debug("Querying LMS version from package manager")
+
 			info.LMSVersion = utils.GetLMSVersion()
+			if info.LMSVersion != "" {
+				log.Debugf("LMS version from package manager: %q", info.LMSVersion)
+			}
 		}
 	}
 
 	// TLS mode (requires WSMan)
 	if s.wsman != nil {
+		log.Debug("Querying TLS mode from WSMAN")
+
 		info.TLSMode = s.getTLSModeFromWSMAN()
+		if info.TLSMode != "" {
+			log.Debugf("TLS mode: %q", info.TLSMode)
+		}
 	}
 
 	// IEEE 802.1x (requires WSMan)
 	if s.wsman != nil {
+		log.Debug("Querying IEEE 802.1x settings from WSMAN")
+
 		info.IEEE8021xEnabled = s.getIEEE8021xEnabled()
+		if info.IEEE8021xEnabled != nil {
+			log.Debugf("IEEE 802.1x enabled: %v", *info.IEEE8021xEnabled)
+		}
 	}
 
 	// OS-level info
@@ -596,7 +956,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	info.EthernetAdapterCount = utils.GetEthernetAdapterCount()
 	info.MonitorConnected = utils.DetectMonitorConnected()
 
-	monitorConnected := "unknown"
+	monitorConnected := statusUnknown
 	if info.MonitorConnected != nil {
 		monitorConnected = strconv.FormatBool(*info.MonitorConnected)
 	}
@@ -1839,7 +2199,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck, nil)
 	} else {
 		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
 	}

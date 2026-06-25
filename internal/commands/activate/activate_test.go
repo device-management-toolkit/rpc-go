@@ -22,6 +22,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -510,6 +511,9 @@ func TestAddDeviceToConsole_Success(t *testing.T) {
 		assert.Equal(t, "test-host", p.Hostname)
 		assert.Equal(t, "my-device", p.FriendlyName)
 		assert.Equal(t, "amt-pass", p.Password)
+		require.NotNil(t, p.DeviceInfo)
+		require.NotNil(t, p.DeviceInfo.Discovered)
+		assert.False(t, *p.DeviceInfo.Discovered)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -530,12 +534,28 @@ func TestAddDeviceToConsole_FallbackToPatch(t *testing.T) {
 		callCount++
 
 		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+
+			var p device.DevicePayload
+			require.NoError(t, json.Unmarshal(body, &p))
+			require.NotNil(t, p.DeviceInfo)
+			require.NotNil(t, p.DeviceInfo.Discovered)
+			assert.False(t, *p.DeviceInfo.Discovered)
+
 			w.WriteHeader(http.StatusConflict)
 
 			return
 		}
 
 		assert.Equal(t, http.MethodPatch, r.Method)
+
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		require.NotNil(t, p.DeviceInfo)
+		assert.Nil(t, p.DeviceInfo.Discovered)
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -610,6 +630,31 @@ func TestAddDeviceToConsole_FriendlyNameFallsBackToOSHostname(t *testing.T) {
 	ctx := &commands.Context{}
 	cfg := &config.Configuration{}
 
+	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
+	assert.NoError(t, err)
+}
+
+func TestAddDeviceToConsole_HostnameDefaultsToLocalIPWithoutCIRA(t *testing.T) {
+	expectedFriendlyName, _ := os.Hostname()
+	expectedHostname := getLocalIP()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		assert.Equal(t, expectedHostname, p.Hostname)
+		assert.Equal(t, expectedFriendlyName, p.FriendlyName)
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	cmd := &ActivateCmd{} // No Hostname or FriendlyName set
+	ctx := &commands.Context{}
+	cfg := &config.Configuration{}
+
+	// Without CIRA, default hostname should be local IP.
 	err := cmd.addDeviceToConsole(ctx, server.URL, "token", "guid", "pass", "", "", false, cfg)
 	assert.NoError(t, err)
 }
@@ -940,4 +985,123 @@ func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
 	_ = cmd.Run(ctx)
 
 	assert.False(t, spy.Called, "password prompt should not be triggered when profile file is provided")
+}
+
+func TestPostActivationSync_SendsPatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("device-uuid-from-amt", nil)
+	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+
+	deviceInfoPatchCalled := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+
+		// Read body to determine which PATCH this is
+		var payload map[string]interface{}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.Equal(t, "guid-from-activation", payload["guid"])
+
+		// First PATCH: deviceInfo sync
+		if deviceInfo, ok := payload["deviceInfo"].(map[string]interface{}); ok {
+			deviceInfoPatchCalled++
+
+			assert.Equal(t, "admin control mode", strings.ToLower(deviceInfo["currentMode"].(string)))
+			assert.Equal(t, "10.49.76.154", deviceInfo["ipAddress"].(string))
+		}
+
+		// TLS PATCH must include hostname so it cannot be cleared by zero-value payload fields.
+		if _, hasUseTLS := payload["useTLS"]; hasUseTLS {
+			h, ok := payload["hostname"].(string)
+			require.True(t, ok)
+			assert.NotEmpty(t, strings.TrimSpace(h))
+
+			u, ok := payload["username"].(string)
+			require.True(t, ok)
+			assert.Equal(t, utils.AMTUserName, u)
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := &commands.Context{AMTCommand: mockAMT}
+	cmd := &ActivateCmd{AMTBaseCmd: commands.AMTBaseCmd{HECIAvailable: true}}
+
+	cmd.postActivationSync(ctx, server.URL, "token-123", "guid-from-activation")
+	assert.Equal(t, 1, deviceInfoPatchCalled, "deviceInfo PATCH should be called once")
+}
+
+func TestPostActivationSync_NoConsoleURL_NoOp(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	ctx := &commands.Context{AMTCommand: mockAMT}
+	cmd := &ActivateCmd{AMTBaseCmd: commands.AMTBaseCmd{HECIAvailable: true}}
+
+	cmd.postActivationSync(ctx, "", "", "")
+}
+
+func TestRunLocalActivation_Failure_StillAttemptsPostActivationSync(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+
+	// resolveConsoleAuth path
+	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+
+	// localCmd.Run failure path
+	mockAMT.EXPECT().StopConfiguration().Return(amt.StopConfigurationResponse{}, errors.New("activation failed"))
+
+	// best-effort postActivationSync data collection
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+
+	patchCalled := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+		case http.MethodPatch:
+			patchCalled++
+
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+
+	ctx := &commands.Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+	ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+	ctx.AuthToken = "token-123"
+	ctx.DevicesEndpoint = server.URL + "/api/v1/devices"
+
+	cmd := &ActivateCmd{
+		AMTBaseCmd: commands.AMTBaseCmd{HECIAvailable: true},
+		StopConfig: true,
+	}
+
+	err := cmd.runLocalActivation(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "activation failed")
+	assert.GreaterOrEqual(t, patchCalled, 1, "expected best-effort post-activation sync on failure")
 }

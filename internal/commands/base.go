@@ -108,7 +108,7 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 
 	cmd.WSMan = localamt.NewGoWSMANMessages(utils.LMSAddress)
 
-	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck)
+	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, DefaultSkipAMTCertCheck, nil)
 	if err := cmd.WSMan.SetupWsmanClient("admin", ctx.AMTPassword, cmd.LocalTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
@@ -212,6 +212,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 
 	cmd.ControlMode = controlMode
 	cmd.HECIAvailable = true
+	log.Tracef("AMTBaseCmd detected control mode: %d", cmd.ControlMode)
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
 	resp, _ := amtCommand.GetChangeEnabled()
@@ -219,7 +220,11 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 		cmd.LocalTLSEnforced = true
 
 		log.Info("TLS is enforced on local ports")
+	} else {
+		log.Trace("TLS is not enforced on local ports")
 	}
+
+	log.Tracef("AMTBaseCmd setup complete: controlMode=%d localTLSEnforced=%t", cmd.ControlMode, cmd.LocalTLSEnforced)
 
 	cmd.afterApplied = true
 

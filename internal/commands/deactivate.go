@@ -31,7 +31,7 @@ func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 
 	if cmd.LocalTLSEnforced {
 		controlMode := cmd.GetControlMode()
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, ctx.SkipAMTCertCheck, nil)
 	}
 
 	return tlsConfig
@@ -116,12 +116,44 @@ func (cmd *DeactivateCmd) Run(ctx *Context) error {
 	if cmd.Local {
 		// Resolve GUID before deactivation — AMT won't respond after unprovision.
 		guid, guidErr := cmd.resolveGUID(ctx)
-		if guidErr != nil && isHTTPURL(ctx.AuthEndpoint) {
+		if guidErr != nil && (isHTTPURL(ctx.AuthEndpoint) || (strings.TrimSpace(ctx.AuthToken) != "" && isHTTPURL(ctx.DevicesEndpoint))) {
 			log.Warnf("Could not resolve device GUID for console cleanup: %v", guidErr)
 		}
 
-		if err := cmd.executeLocalDeactivate(ctx); err != nil {
-			return err
+		deactivateErr := cmd.executeLocalDeactivate(ctx)
+
+		if guid != "" {
+			// Prefer auth-endpoint to derive the console base URL.
+			// Fall back to devices-endpoint when a direct auth token is provided.
+			baseSource := ""
+			if isHTTPURL(ctx.AuthEndpoint) {
+				baseSource = ctx.AuthEndpoint
+			} else if strings.TrimSpace(ctx.AuthToken) != "" && isHTTPURL(ctx.DevicesEndpoint) {
+				baseSource = ctx.DevicesEndpoint
+			}
+
+			if baseSource != "" {
+				consoleBaseURL, baseErr := parseBaseURL(baseSource)
+				if baseErr != nil {
+					log.Warnf("Skipping post-deactivation sync: invalid console URL: %v", baseErr)
+				} else {
+					token, tokenErr := cmd.authenticateWithConsole(ctx, consoleBaseURL)
+					if tokenErr != nil {
+						log.Warnf("Skipping post-deactivation sync: console authentication failed: %v", tokenErr)
+					} else {
+						// Cache exchanged tokens so follow-up cleanup does not re-authenticate.
+						if strings.TrimSpace(ctx.AuthToken) == "" {
+							ctx.AuthToken = token
+						}
+
+						cmd.postDeactivationSync(ctx, consoleBaseURL, token, guid)
+					}
+				}
+			}
+		}
+
+		if deactivateErr != nil {
+			return deactivateErr
 		}
 
 		return cmd.deleteDeviceFromConsole(ctx, guid)
@@ -181,8 +213,14 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 	}
 
 	// Perform local deactivation
-	if err := cmd.executeLocalDeactivate(ctx); err != nil {
-		return err
+	deactivateErr := cmd.executeLocalDeactivate(ctx)
+
+	if guid != "" {
+		cmd.postDeactivationSync(ctx, consoleBaseURL, token, guid)
+	}
+
+	if deactivateErr != nil {
+		return deactivateErr
 	}
 
 	// Console cleanup — skip if GUID is not available.
@@ -199,16 +237,41 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 	return nil
 }
 
+// postDeactivationSync syncs device info after deactivation and before device deletion.
+// This allows SyncDeviceInfo's 404 auto-register fallback to run for devices missing in console.
+func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, token, guid string) {
+	if strings.TrimSpace(consoleBaseURL) == "" || strings.TrimSpace(guid) == "" {
+		return
+	}
+
+	endpoint := BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
+
+	if err := SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
+		log.Warnf("Post-deactivation sync failed: %v", err)
+	}
+}
+
 // authenticateWithConsole obtains a bearer token from the console using the provided credentials.
 func (cmd *DeactivateCmd) authenticateWithConsole(ctx *Context, consoleBaseURL string) (string, error) {
 	// Direct token provided — use it
-	if ctx.AuthToken != "" {
-		return ctx.AuthToken, nil
+	if token := strings.TrimSpace(ctx.AuthToken); token != "" {
+		log.Debug("Using provided authentication token")
+
+		return token, nil
 	}
 
 	// Username/password — exchange for a token
 	if ctx.AuthUsername != "" && ctx.AuthPassword != "" {
-		return profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+		log.Debugf("Exchanging credentials for authentication token")
+
+		token, err := profile.Authenticate(consoleBaseURL, ctx.AuthUsername, ctx.AuthPassword, ctx.AuthEndpoint, ctx.SkipCertCheck, 0)
+		if err != nil {
+			return "", err
+		}
+
+		log.Debug("Authentication successful, token received")
+
+		return token, nil
 	}
 
 	return "", fmt.Errorf("authentication required: provide --auth-token or --auth-username and --auth-password")
@@ -235,24 +298,37 @@ func (cmd *DeactivateCmd) resolveGUID(ctx *Context) (string, error) {
 // deleteDeviceFromConsole deletes the device from the console using AuthEndpoint.
 // guid must be resolved before deactivation since AMT is unavailable afterwards.
 func (cmd *DeactivateCmd) deleteDeviceFromConsole(ctx *Context, guid string) error {
-	if !isHTTPURL(ctx.AuthEndpoint) {
-		return nil
-	}
-
 	if guid == "" {
 		log.Warn("Skipping console device deletion: device GUID is not available")
 
 		return nil
 	}
 
-	consoleBaseURL, err := parseBaseURL(ctx.AuthEndpoint)
-	if err != nil {
-		return fmt.Errorf("invalid auth endpoint URL: %w", err)
+	baseSource := ""
+	if isHTTPURL(ctx.AuthEndpoint) {
+		baseSource = ctx.AuthEndpoint
+	} else if strings.TrimSpace(ctx.AuthToken) != "" && isHTTPURL(ctx.DevicesEndpoint) {
+		// Token-only cleanup can use devices-endpoint as the URL source.
+		baseSource = ctx.DevicesEndpoint
 	}
 
-	token, err := cmd.authenticateWithConsole(ctx, consoleBaseURL)
+	if baseSource == "" {
+		return nil
+	}
+
+	consoleBaseURL, err := parseBaseURL(baseSource)
 	if err != nil {
-		return fmt.Errorf("console authentication failed: %w", err)
+		return fmt.Errorf("invalid console URL: %w", err)
+	}
+
+	token := strings.TrimSpace(ctx.AuthToken)
+	if token == "" {
+		token, err = cmd.authenticateWithConsole(ctx, consoleBaseURL)
+		if err != nil {
+			return fmt.Errorf("console authentication failed: %w", err)
+		}
+
+		ctx.AuthToken = token
 	}
 
 	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
