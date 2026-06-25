@@ -290,7 +290,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	// If requested, sync device info to remote server
 	if cmd.Sync {
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags); err != nil {
+		discovered := true
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
 			return err
 		}
 	}
@@ -446,6 +447,7 @@ type syncDeviceInfo struct {
 	FWVersion            string        `json:"fwVersion"`
 	FWBuild              string        `json:"fwBuild"`
 	FWSku                string        `json:"fwSku"`
+	Discovered           *bool         `json:"discovered,omitempty"`
 	CurrentMode          string        `json:"currentMode"`
 	Features             string        `json:"features"`
 	IPAddress            string        `json:"ipAddress"`
@@ -476,9 +478,17 @@ type syncUPIDInfo struct {
 
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload.
 // The urlArg is expected to be a full URL to the devices endpoint (e.g., https://mps.example.com/api/v1/devices).
+//
 // Note: Sync uses HTTP REST API (not WebSocket) for one-way device info updates to Console.
 // WebSocket (ws/wss) is only used for legacy RPS activation flows (see internal/rps package).
-func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags) error {
+//
+// The discovered parameter indicates the source of the device record:
+//   - discovered=true: device was auto-discovered via inventory sync (e.g., `amtinfo --sync`)
+//   - discovered=false: device was explicitly provisioned via activation workflow
+//   - discovered=nil: if 404 occurs during sync, defaults to true for auto-registration
+//
+// This flag is set only once during device creation and does not change thereafter.
+func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
 		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
@@ -495,9 +505,10 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		GUID:     result.UUID,
 		Hostname: s.getCreateHostname(result),
 		DeviceInfo: syncDeviceInfo{
-			FWVersion:    result.AMT,
-			FWBuild:      result.BuildNumber,
-			FWSku:        result.SKU,
+			FWVersion: result.AMT,
+			FWBuild:   result.BuildNumber,
+			FWSku:     result.SKU,
+			// Discovered is NOT set here - only sent during device creation, never in updates
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
 			IPAddress:    bestIPAddress(result),
@@ -537,7 +548,15 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken); err != nil {
+		// 404 fallback: auto-register the device.
+		// Discovered flag is set only during device creation (POST), never in updates (PATCH).
+		// If not explicitly provided, default to true for auto-discovered devices.
+		if discovered == nil {
+			autoDiscovered := true
+			discovered = &autoDiscovered
+		}
+
+		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered); err != nil {
 			log.Debugf("device registration (POST) failed: %v", err)
 
 			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
@@ -545,6 +564,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
 
+		// Retry PATCH without discovered field (updates don't change discovered)
 		if err := s.doPatchRequest(httpClient, endpoint, body, authToken); err != nil {
 			log.Debugf("retry PATCH after registration failed: %v", err)
 
@@ -664,8 +684,9 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 }
 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string) error {
-	body, hostname, err := s.buildDeviceCreatePayload(result)
+// The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool) error {
+	body, hostname, err := s.buildDeviceCreatePayload(result, discovered)
 	if err != nil {
 		return err
 	}
@@ -684,17 +705,25 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 }
 
 // buildDeviceCreatePayload constructs the minimal JSON payload for device registration.
-func (s *InfoService) buildDeviceCreatePayload(result *InfoResult) ([]byte, string, error) {
+func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *bool) ([]byte, string, error) {
 	hostname := s.getCreateHostname(result)
 
+	type deviceInfoCreate struct {
+		Discovered *bool `json:"discovered,omitempty"`
+	}
+
 	createPayload := struct {
-		GUID     string `json:"guid"`
-		Hostname string `json:"hostname"`
+		GUID       string            `json:"guid"`
+		Hostname   string            `json:"hostname"`
+		DeviceInfo *deviceInfoCreate `json:"deviceInfo,omitempty"`
 	}{
 		GUID:     result.UUID,
 		Hostname: hostname,
 	}
 
+	if discovered != nil {
+		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
+	}
 	body, err := json.Marshal(createPayload)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal create payload: %w", err)
@@ -810,7 +839,10 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		AuthEndpoint: ctx.AuthEndpoint,
 	}
 
-	return service.SyncDeviceInfo(ctx, result, endpoint, auth)
+	// Activation/deactivation syncs mark devices as explicitly provisioned (not discovered)
+	explicitlyProvisioned := false
+
+	return service.SyncDeviceInfo(ctx, result, endpoint, auth, &explicitlyProvisioned)
 }
 
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.

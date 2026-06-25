@@ -511,6 +511,9 @@ func TestAddDeviceToConsole_Success(t *testing.T) {
 		assert.Equal(t, "test-host", p.Hostname)
 		assert.Equal(t, "my-device", p.FriendlyName)
 		assert.Equal(t, "amt-pass", p.Password)
+		require.NotNil(t, p.DeviceInfo)
+		require.NotNil(t, p.DeviceInfo.Discovered)
+		assert.False(t, *p.DeviceInfo.Discovered)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -531,12 +534,28 @@ func TestAddDeviceToConsole_FallbackToPatch(t *testing.T) {
 		callCount++
 
 		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+
+			var p device.DevicePayload
+			require.NoError(t, json.Unmarshal(body, &p))
+			require.NotNil(t, p.DeviceInfo)
+			require.NotNil(t, p.DeviceInfo.Discovered)
+			assert.False(t, *p.DeviceInfo.Discovered)
+
 			w.WriteHeader(http.StatusConflict)
 
 			return
 		}
 
 		assert.Equal(t, http.MethodPatch, r.Method)
+
+		body, _ := io.ReadAll(r.Body)
+
+		var p device.DevicePayload
+		require.NoError(t, json.Unmarshal(body, &p))
+		require.NotNil(t, p.DeviceInfo)
+		assert.Nil(t, p.DeviceInfo.Discovered)
+
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
