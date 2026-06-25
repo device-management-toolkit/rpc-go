@@ -724,7 +724,6 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 	if discovered != nil {
 		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
 	}
-
 	body, err := json.Marshal(createPayload)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal create payload: %w", err)
@@ -2200,7 +2199,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, s.skipAMTCertCheck, nil)
 	} else {
 		tlsConfig = &tls.Config{InsecureSkipVerify: s.skipAMTCertCheck}
 	}

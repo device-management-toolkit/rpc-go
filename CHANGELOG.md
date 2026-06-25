@@ -1,3 +1,19 @@
+# [3.0.0-beta.38](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.37...v3.0.0-beta.38) (2026-06-25)
+
+
+### Features
+
+* auto-register device on 404 and sync on activation lifecycle ([#1369](https://github.com/device-management-toolkit/rpc-go/issues/1369)) ([8909e5d](https://github.com/device-management-toolkit/rpc-go/commit/8909e5dbbba24be5872e742ffec216d90a3bcd0a))
+
+# [3.0.0-beta.37](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.36...v3.0.0-beta.37) (2026-06-24)
+
+
+### Features
+
+* Enabled ODCA verification for rpc-go activation ([cab9e79](https://github.com/device-management-toolkit/rpc-go/commit/cab9e7979f80b4ba42425a1514148a44f8b0bb88))
+
+# [3.0.0-beta.36](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.35...v3.0.0-beta.36) (2026-06-24)
+
 # [3.0.0-beta.35](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.34...v3.0.0-beta.35) (2026-06-19)
 
 

@@ -5,8 +5,13 @@
 package activate
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -15,6 +20,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	pkcs12 "software.sslmate.com/src/go-pkcs12"
 )
 
 func TestLocalActivateCmd_Validate(t *testing.T) {
@@ -221,6 +227,9 @@ type MockAMTCommand struct {
 	hbcResponses    []amt.SecureHBasedResponse
 	hbcErrors       []error
 	hbcCalls        int
+	upidValue       *upid.UPID
+	upidErr         error
+	upidCalls       int
 }
 type MockChangeEnabled struct {
 	amtEnabled bool
@@ -357,7 +366,85 @@ func (m *MockAMTCommand) StartConfigurationHBased(params amt.SecureHBasedParamet
 }
 
 func (m *MockAMTCommand) GetUPID() (*upid.UPID, error) {
-	return nil, nil
+	m.upidCalls++
+
+	if m.upidErr != nil {
+		return nil, m.upidErr
+	}
+
+	return m.upidValue, nil
+}
+
+func generateTestPFXBase64(t *testing.T, password string) string {
+	t.Helper()
+
+	rootKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("failed to generate serial number: %v", err)
+	}
+
+	rootTemplate := &x509.Certificate{
+		SerialNumber:          serialNumber,
+		Subject:               pkix.Name{CommonName: "Test Root CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, &rootKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+
+	rootCert, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatalf("failed to parse certificate: %v", err)
+	}
+
+	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate leaf key: %v", err)
+	}
+
+	leafSerialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("failed to generate leaf serial number: %v", err)
+	}
+
+	leafTemplate := &x509.Certificate{
+		SerialNumber:          leafSerialNumber,
+		Subject:               pkix.Name{CommonName: "Test Provisioning Leaf"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+	}
+
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, rootCert, &leafKey.PublicKey, rootKey)
+	if err != nil {
+		t.Fatalf("failed to create leaf certificate: %v", err)
+	}
+
+	leafCert, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("failed to parse leaf certificate: %v", err)
+	}
+
+	pfx, err := pkcs12.Legacy.Encode(leafKey, leafCert, []*x509.Certificate{rootCert}, password)
+	if err != nil {
+		t.Fatalf("failed to encode pfx: %v", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(pfx)
 }
 
 func (m *MockAMTCommand) GetFlog() ([]byte, error) {
@@ -1022,6 +1109,65 @@ func TestLocalActivationService_setupACMTLSConfig(t *testing.T) {
 			_, err := service.setupACMTLSConfig()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("setupACMTLSConfig() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLocalActivationService_setupACMTLSConfig_SkipCertCheckSkipsUPIDFetch(t *testing.T) {
+	password := "cert-password"
+	validPFX := generateTestPFXBase64(t, password)
+
+	tests := []struct {
+		name              string
+		skipAMTCertCheck  bool
+		expectedUPIDCalls int
+	}{
+		{
+			name:              "fetches UPID when cert check enabled",
+			skipAMTCertCheck:  false,
+			expectedUPIDCalls: 1,
+		},
+		{
+			name:              "skips UPID fetch when cert check disabled",
+			skipAMTCertCheck:  true,
+			expectedUPIDCalls: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockAMT := &MockAMTCommand{
+				hbcResponses: []amt.SecureHBasedResponse{{
+					Status: "AMT_STATUS_SUCCESS",
+				}},
+				upidValue: &upid.UPID{},
+			}
+
+			service := &LocalActivationService{
+				amtCommand: mockAMT,
+				config: LocalActivationConfig{
+					ControlMode:         0,
+					ProvisioningCert:    validPFX,
+					ProvisioningCertPwd: password,
+				},
+				context: &commands.Context{
+					SkipAMTCertCheck: tt.skipAMTCertCheck,
+				},
+				localTLSEnforced: true,
+			}
+
+			tlsConfig, err := service.setupACMTLSConfig()
+			if err != nil {
+				t.Fatalf("setupACMTLSConfig() unexpected error: %v", err)
+			}
+
+			if tlsConfig == nil {
+				t.Fatal("setupACMTLSConfig() returned nil tls config")
+			}
+
+			if mockAMT.upidCalls != tt.expectedUPIDCalls {
+				t.Fatalf("GetUPID() calls = %d, expected %d", mockAMT.upidCalls, tt.expectedUPIDCalls)
 			}
 		})
 	}
