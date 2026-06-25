@@ -1,3 +1,10 @@
+# [3.0.0-beta.39](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.38...v3.0.0-beta.39) (2026-06-25)
+
+
+### Features
+
+* include discovered flag in device sync payloads ([#1397](https://github.com/device-management-toolkit/rpc-go/issues/1397)) ([cf35329](https://github.com/device-management-toolkit/rpc-go/commit/cf353295882a0483ee6eecbce1957e4e38c8655e))
+
 # [3.0.0-beta.38](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.37...v3.0.0-beta.38) (2026-06-25)
 
 
