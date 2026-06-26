@@ -691,3 +691,143 @@ func FuzzActivateFlagCombinations(f *testing.F) {
 		_ = err
 	})
 }
+
+// FuzzVersion tests the version command with various flag combinations and inputs.
+func FuzzVersion(f *testing.F) {
+	seeds := []string{
+		"",
+		"--json",
+		"-j",
+		"--verbose",
+		"-v",
+		"--table",
+		"-t",
+		"--no-color",
+		"--log-level debug",
+		"--log-level trace",
+		"--log-level info --json",
+		"--json --no-color",
+		"--verbose --json",
+		"--skip-cert-check",
+		"--skip-amt-cert-check",
+		"--tenantid tenant-1",
+		"--lmsaddress localhost --lmsport 16992",
+		"--password Passw0rd!",
+		"--log-level invalid",
+		"--unknown-flag",
+		"--json --table --verbose --no-color",
+		"--tenantid \"tenant with spaces\"",
+		"--password \"pass with spaces\"",
+		"--log-level " + strings.Repeat("a", 200),
+		"--tenantid " + strings.Repeat("x", 500),
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, flags string) {
+		if len(flags) > 10000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "version"}
+
+		if trimmed := strings.TrimSpace(flags); trimmed != "" {
+			parsedFlags := splitFuzzFlags(flags)
+			if containsHelpFlag(parsedFlags) {
+				t.Skip("Help flags intentionally call os.Exit")
+			}
+
+			args = append(args, parsedFlags...)
+		}
+
+		defer recoverAndRepanic(t, flags)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzVersionFlagCombinations tests random combinations of global flags against the version command.
+func FuzzVersionFlagCombinations(f *testing.F) {
+	f.Fuzz(func(t *testing.T,
+		jsonOutput bool,
+		tableOutput bool,
+		noColor bool,
+		verbose bool,
+		skipCertCheck bool,
+		skipAMTCertCheck bool,
+		logLevel string,
+		tenantID string,
+		lmsAddress string,
+		lmsPort string,
+		password string,
+	) {
+		if len(logLevel) > 1000 || len(tenantID) > 1000 || len(lmsAddress) > 1000 ||
+			len(lmsPort) > 1000 || len(password) > 1000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "version"}
+
+		if jsonOutput {
+			args = append(args, "--json")
+		}
+
+		if tableOutput {
+			args = append(args, "--table")
+		}
+
+		if noColor {
+			args = append(args, "--no-color")
+		}
+
+		if verbose {
+			args = append(args, "--verbose")
+		}
+
+		if skipCertCheck {
+			args = append(args, "--skip-cert-check")
+		}
+
+		if skipAMTCertCheck {
+			args = append(args, "--skip-amt-cert-check")
+		}
+
+		if logLevel != "" {
+			args = append(args, "--log-level", logLevel)
+		}
+
+		if tenantID != "" {
+			args = append(args, "--tenantid", tenantID)
+		}
+
+		if lmsAddress != "" {
+			args = append(args, "--lmsaddress", lmsAddress)
+		}
+
+		if lmsPort != "" {
+			args = append(args, "--lmsport", lmsPort)
+		}
+
+		if password != "" {
+			args = append(args, "--password", password)
+		}
+
+		defer recoverAndRepanic(t, strings.Join(args, " "))
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
