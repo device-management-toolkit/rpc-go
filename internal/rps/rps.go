@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 
@@ -243,10 +244,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 			log.Error(err)
 			log.Info(activation.Message)
 		} else {
-			log.Info("Status: " + statusMessage.Status)
-			log.Info("Network: " + statusMessage.Network)
-			log.Info("CIRA: " + statusMessage.CIRAConnection)
-			log.Info("TLS: " + statusMessage.TLSConfiguration)
+			logStatusMessage(statusMessage)
 		}
 
 		return nil
@@ -269,6 +267,90 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 	log.Trace("PAYLOAD:" + string(msgPayload))
 
 	return msgPayload
+}
+
+// logStatusMessage reports the activation result. When RPS provides the structured
+// per-component breakdown (rps#2665) it is rendered as an aligned summary with a status
+// glyph per component; otherwise the legacy flat status fields are logged for
+// compatibility with older RPS releases.
+func logStatusMessage(statusMessage StatusMessage) {
+	c := statusMessage.Components
+	if c == nil {
+		// Older RPS without the structured breakdown: log the legacy flat fields.
+		log.Info("Status: " + statusMessage.Status)
+		log.Info("Network: " + statusMessage.Network)
+		log.Info("CIRA: " + statusMessage.CIRAConnection)
+		log.Info("TLS: " + statusMessage.TLSConfiguration)
+
+		return
+	}
+
+	log.Info("Provisioning and Configuration Result : ")
+
+	// Every component surfaces its own mode inline (e.g. Activation shows [ACM]).
+	components := []struct {
+		label    string
+		result   *ComponentResult
+		showMode bool
+	}{
+		{"Activation", c.Activation, true},
+		{"Wired Network", c.WiredNetwork, true},
+		{"Wireless Network", c.WirelessNetwork, true},
+		{"TLS", c.TLS, true},
+		{"CIRA Proxy", c.CIRAProxy, true},
+		{"CIRA Connection", c.CIRAConnection, true},
+	}
+
+	// Align labels to the widest reportable component so the rows line up.
+	width := 0
+
+	for _, comp := range components {
+		if reportableComponent(comp.result) && len(comp.label) > width {
+			width = len(comp.label)
+		}
+	}
+
+	for _, comp := range components {
+		logComponentResult(comp.label, comp.result, comp.showMode, width)
+	}
+}
+
+// reportableComponent reports whether a component belongs in the summary. RPS sends a
+// NotApplicable entry for every component that was not part of the configuration (and omits
+// components it never reported); both are dropped so the summary shows only the steps that ran.
+func reportableComponent(result *ComponentResult) bool {
+	return result != nil && result.Result != ComponentResultNotApplicable
+}
+
+// logComponentResult logs a single aligned component row, skipping components that are not
+// reportable (unreported or NotApplicable). Failures are logged at error level so they stay visible.
+func logComponentResult(label string, result *ComponentResult, showMode bool, width int) {
+	if !reportableComponent(result) {
+		return
+	}
+
+	// Row: two-space indent, then the padded "label:" so detail columns line up.
+	line := fmt.Sprintf("  %-*s", width+1, label+":")
+
+	// Append the mode inline as [Mode] (e.g. [ACM]) when the component carries one.
+	detail := result.Details
+	if showMode && result.Mode != "" {
+		if detail != "" {
+			detail += " "
+		}
+
+		detail += "[" + result.Mode + "]"
+	}
+
+	if detail != "" {
+		line += " " + detail
+	}
+
+	if result.Result == ComponentResultFailure {
+		log.Error(line)
+	} else {
+		log.Info(line)
+	}
 }
 
 func (amt *AMTActivationServer) GenerateHeartbeatResponse(activation Message) ([]byte, error) {

@@ -5,6 +5,7 @@
 package rps
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -272,6 +273,87 @@ func TestProcessMessageProgressJSONOutputLogged(t *testing.T) {
 	entry := logHook.LastEntry()
 	assert.NotNil(t, entry)
 	assert.Equal(t, "Configuring network settings", entry.Message)
+}
+
+func TestProcessMessageStructuredSuccess(t *testing.T) {
+	// RPS rps#2665 structured per-component result rides alongside the legacy flat fields.
+	activation := `{
+        "method": "success",
+        "message": "{\"Status\":\"Admin control mode.\",\"Components\":{\"Activation\":{\"Result\":\"Success\",\"Mode\":\"Admin control mode.\"},\"WirelessNetwork\":{\"Result\":\"Failure\",\"Details\":\"Failed to add 1\"}}}"
+    }`
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	assert.Nil(t, decodedMessage)
+}
+
+// captureLogOutput runs fn with logrus output redirected to a buffer and returns it.
+func captureLogOutput(fn func()) string {
+	var buf bytes.Buffer
+
+	orig := logrus.StandardLogger().Out
+
+	logrus.SetOutput(&buf)
+
+	defer logrus.SetOutput(orig)
+
+	fn()
+
+	return buf.String()
+}
+
+func TestLogStatusMessageStructured(t *testing.T) {
+	// Structured Components present: Success at info level, Failure at error level.
+	statusMessage := StatusMessage{
+		Status: "Admin control mode.",
+		Components: &ComponentResults{
+			Activation:      &ComponentResult{Result: ComponentResultSuccess, Mode: "Admin control mode."},
+			WirelessNetwork: &ComponentResult{Result: ComponentResultFailure, Details: "Failed to add 1"},
+			CIRAProxy:       &ComponentResult{Result: ComponentResultNotApplicable, Details: "CIRA proxy not part of this configuration"},
+		},
+	}
+
+	out := captureLogOutput(func() { logStatusMessage(statusMessage) })
+	assert.Contains(t, out, "level=info")
+	assert.Contains(t, out, "Activation:")
+	assert.Contains(t, out, "level=error")
+	assert.Contains(t, out, "Wireless Network:")
+	assert.Contains(t, out, "Failed to add 1")
+	// NotApplicable components are dropped from the summary.
+	assert.NotContains(t, out, "CIRA Proxy")
+	assert.NotContains(t, out, "CIRA proxy not part of this configuration")
+}
+
+func TestLogStatusMessageStructuredSurfacesHeaderAndMode(t *testing.T) {
+	// The structured branch logs the static header, and each component line must
+	// surface Mode inline when present (Activation shows [ACM]).
+	statusMessage := StatusMessage{
+		Status: "already enabled in admin mode.",
+		Components: &ComponentResults{
+			Activation:      &ComponentResult{Result: ComponentResultSuccess, Mode: "ACM", Details: "Already enabled in admin mode"},
+			WirelessNetwork: &ComponentResult{Result: ComponentResultSuccess, Mode: "LocalProfileSync", Details: "Local Profile Sync Configured"},
+		},
+	}
+
+	out := captureLogOutput(func() { logStatusMessage(statusMessage) })
+	assert.Contains(t, out, "Provisioning and Configuration Result : ")
+	assert.Contains(t, out, "Activation:")
+	assert.Contains(t, out, "Already enabled in admin mode")
+	assert.Contains(t, out, "[ACM]")
+	assert.Contains(t, out, "Wireless Network:")
+	assert.Contains(t, out, "[LocalProfileSync]")
+}
+
+func TestLogStatusMessageLegacyFallback(t *testing.T) {
+	// No Components: falls back to legacy flat-field logging.
+	statusMessage := StatusMessage{
+		Status:           "Admin control mode.",
+		Network:          "configured",
+		CIRAConnection:   "configured",
+		TLSConfiguration: "configured",
+	}
+
+	assert.NotPanics(t, func() { logStatusMessage(statusMessage) })
 }
 
 func TestProcessMessageUnformattedSuccess(t *testing.T) {
