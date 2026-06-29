@@ -59,6 +59,9 @@ jobs:
           go test -run=^$ -fuzz=^FuzzAmtInfo$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzAmtInfoURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzAmtInfoFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigure$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigureSubcommand$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigureFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
 
       - name: Upload fuzz failure artifacts
         if: failure()
@@ -120,6 +123,9 @@ jobs:
           go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfo$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfoURL$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfoFlagCombinations$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigure$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigureSubcommand$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigureFlagCombinations$ -fuzztime=1x
 
       - name: Report regression test results
         if: failure()

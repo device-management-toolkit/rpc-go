@@ -930,6 +930,126 @@ func FuzzAmtInfo(f *testing.F) {
 	})
 }
 
+// FuzzConfigure tests the configure command with various subcommands and flag combinations.
+func FuzzConfigure(f *testing.F) {
+	// Seed corpus with valid configure subcommands and patterns
+	seeds := []string{
+		// Subcommands
+		"mebx",
+		"mebx --mebxpassword admin",
+		"amtpassword",
+		"amtpassword --password oldpass --newamtpassword newpass",
+		"amtfeatures",
+		"amtfeatures --kvm",
+		"amtfeatures --sol",
+		"amtfeatures --ider",
+		"enable-op-state",
+		"disable-op-state",
+		"cira",
+		"cira --mpsaddress mps.example.com --mpscert dummy",
+		"syncclock",
+		"wifisync",
+		"wireless",
+		"wired",
+		"tls",
+		"proxy",
+		"synchostname",
+
+		// Combined with global flags
+		"--json mebx",
+		"--table mebx",
+		"--verbose mebx",
+		"--log-level debug mebx",
+		"--skip-cert-check cira --mpsaddress mps.example.com --mpscert dummy",
+		"--skip-amt-cert-check mebx",
+
+		// Invalid combinations (should fail validation)
+		"unknown-subcommand",
+		"mebx --unknown-flag",
+		"--password admin mebx",
+
+		// Edge cases
+		"mebx --mebxpassword " + strings.Repeat("a", 500),
+		"cira --mpsaddress " + strings.Repeat("a", 200) + ".com --mpscert dummy",
+		"--log-level invalid mebx",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, flags string) {
+		if len(flags) > 10000 {
+			t.Skip("Input too long")
+		}
+
+		trimmed := strings.TrimSpace(flags)
+		if trimmed == "" {
+			t.Skip("Configure requires a subcommand")
+		}
+
+		// Prevent interactive prompts for password-required configure subcommands.
+		t.Setenv("MEBX_PASSWORD", "dummy")
+		t.Setenv("RPC_NEWAMTPASSWORD", "dummy")
+		t.Setenv("MPS_ADDRESS", "mps.example.com")
+		t.Setenv("MPS_CERT", "dummy")
+		t.Setenv("MPS_PASSWORD", "dummy")
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "configure"}
+
+		parsedFlags := splitFuzzFlags(flags)
+		if containsHelpFlag(parsedFlags) {
+			t.Skip("Help flags intentionally call os.Exit")
+		}
+
+		// Ensure at least one known configure subcommand is present so we exercise command parsing.
+		hasValidSubcommand := false
+
+		for _, arg := range parsedFlags {
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+
+			switch arg {
+			case "mebx", "setmebx",
+				"amtpassword", "changeamtpassword",
+				"amtfeatures", "setamtfeatures",
+				"enable-op-state", "enable-operational-state",
+				"disable-op-state", "disable-operational-state",
+				"cira",
+				"syncclock", "synctime",
+				"wifisync", "wireless", "wifi", "addwifisettings",
+				"wired", "ethernet", "addethernetsettings",
+				"tls", "configuretls",
+				"proxy", "httpproxy",
+				"synchostname", "sethostname":
+				hasValidSubcommand = true
+			}
+
+			if hasValidSubcommand {
+				break
+			}
+		}
+
+		if !hasValidSubcommand {
+			// If no valid subcommand found, add default one to ensure valid command structure
+			args = append(args, "mebx")
+		}
+
+		args = append(args, parsedFlags...)
+
+		defer recoverAndRepanic(t, flags)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
 // FuzzAmtInfoURL tests URL parsing/validation for amtinfo sync mode.
 func FuzzAmtInfoURL(f *testing.F) {
 	seeds := []string{
@@ -963,6 +1083,74 @@ func FuzzAmtInfoURL(f *testing.F) {
 		args := []string{"rpc", "amtinfo", "--sync", "--url", url}
 
 		defer recoverAndRepanic(t, url)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzConfigureSubcommand tests configure subcommand parsing with various inputs.
+func FuzzConfigureSubcommand(f *testing.F) {
+	seeds := []string{
+		"mebx",
+		"amtpassword",
+		"amtfeatures",
+		"enable-op-state",
+		"disable-op-state",
+		"cira",
+		"syncclock",
+		"wifisync",
+		"wireless",
+		"wired",
+		"tls",
+		"proxy",
+		"synchostname",
+		"setmebx",
+		"changeamtpassword",
+		"setamtfeatures",
+		"enable-operational-state",
+		"disable-operational-state",
+		"configuretls",
+		"httpproxy",
+		"sethostname",
+		"invalid-subcommand",
+		strings.Repeat("a", 1000),
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, subcommand string) {
+		if len(subcommand) > 5000 {
+			t.Skip("Subcommand too long")
+		}
+
+		trimmed := strings.TrimSpace(subcommand)
+		if trimmed == "" {
+			t.Skip("Configure requires a subcommand")
+		}
+
+		// Skip help flags and other global flags which would require special handling
+		if strings.HasPrefix(trimmed, "-") {
+			t.Skip("Flags should be tested separately")
+		}
+
+		// Prevent interactive prompts for password-required configure subcommands.
+		t.Setenv("MEBX_PASSWORD", "dummy")
+		t.Setenv("RPC_NEWAMTPASSWORD", "dummy")
+		t.Setenv("MPS_ADDRESS", "mps.example.com")
+		t.Setenv("MPS_CERT", "dummy")
+		t.Setenv("MPS_PASSWORD", "dummy")
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "configure", trimmed}
+
+		defer recoverAndRepanic(t, subcommand)
 
 		_, _, err := Parse(args, mockAMTCommand)
 		_ = err
@@ -1075,6 +1263,110 @@ func FuzzAmtInfoFlagCombinations(f *testing.F) {
 
 		if url != "" {
 			args = append(args, "--url", url)
+		}
+
+		if jsonOutput {
+			args = append(args, "--json")
+		}
+
+		if tableOutput {
+			args = append(args, "--table")
+		}
+
+		if verbose {
+			args = append(args, "--verbose")
+		}
+
+		defer recoverAndRepanic(t, strings.Join(args, " "))
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzConfigureFlagCombinations tests randomized combinations of configure flags.
+func FuzzConfigureFlagCombinations(f *testing.F) {
+	f.Fuzz(func(t *testing.T,
+		subcommand string,
+		password string,
+		mebxPassword string,
+		newAMTPassword string,
+		mpsAddress string,
+		mpsCert string,
+		mpsPassword string,
+		kvm bool,
+		sol bool,
+		ider bool,
+		jsonOutput bool,
+		tableOutput bool,
+		verbose bool,
+	) {
+		if len(subcommand) > 1000 || len(password) > 1000 || len(mebxPassword) > 1000 ||
+			len(newAMTPassword) > 1000 || len(mpsAddress) > 1000 || len(mpsCert) > 1000 || len(mpsPassword) > 1000 {
+			t.Skip("Input too long")
+		}
+
+		trimmedSubcommand := strings.TrimSpace(subcommand)
+		if trimmedSubcommand == "" {
+			t.Skip("Configure requires a subcommand")
+		}
+
+		// Help/global flags intentionally call os.Exit (and are covered by other fuzzers).
+		if strings.HasPrefix(trimmedSubcommand, "-") || containsHelpFlag([]string{trimmedSubcommand}) {
+			t.Skip("Flags are not valid configure subcommands")
+		}
+
+		// Prevent interactive prompts for password-required configure subcommands.
+		t.Setenv("MEBX_PASSWORD", "dummy")
+		t.Setenv("RPC_NEWAMTPASSWORD", "dummy")
+		t.Setenv("MPS_ADDRESS", "mps.example.com")
+		t.Setenv("MPS_CERT", "dummy")
+		t.Setenv("MPS_PASSWORD", "dummy")
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "configure", trimmedSubcommand}
+
+		if password != "" {
+			args = append(args, "--password", password)
+		}
+
+		switch trimmedSubcommand {
+		case "mebx", "setmebx":
+			if mebxPassword != "" {
+				args = append(args, "--mebxpassword", mebxPassword)
+			}
+		case "amtpassword", "changeamtpassword":
+			if newAMTPassword != "" {
+				args = append(args, "--newamtpassword", newAMTPassword)
+			}
+		case "cira":
+			if mpsAddress != "" {
+				args = append(args, "--mpsaddress", mpsAddress)
+			}
+
+			if mpsCert != "" {
+				args = append(args, "--mpscert", mpsCert)
+			}
+
+			if mpsPassword != "" {
+				args = append(args, "--mpspassword", mpsPassword)
+			}
+		case "amtfeatures", "setamtfeatures":
+			if kvm {
+				args = append(args, "--kvm")
+			}
+
+			if sol {
+				args = append(args, "--sol")
+			}
+
+			if ider {
+				args = append(args, "--ider")
+			}
 		}
 
 		if jsonOutput {
