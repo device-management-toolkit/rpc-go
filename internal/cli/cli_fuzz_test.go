@@ -1283,6 +1283,7 @@ func FuzzAmtInfoFlagCombinations(f *testing.F) {
 		_ = err
 	})
 }
+
 // FuzzConfigureFlagCombinations tests randomized combinations of configure flags.
 func FuzzConfigureFlagCombinations(f *testing.F) {
 	f.Fuzz(func(t *testing.T,
