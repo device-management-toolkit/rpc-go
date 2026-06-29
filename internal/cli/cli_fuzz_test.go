@@ -831,3 +831,267 @@ func FuzzVersionFlagCombinations(f *testing.F) {
 		_ = err
 	})
 }
+
+// FuzzAmtInfo tests the amtinfo command with various flag combinations and inputs.
+func FuzzAmtInfo(f *testing.F) {
+	seeds := []string{
+		// Default and selective info retrieval
+		"",
+		"--all",
+		"-A",
+		"--ver",
+		"-r",
+		"--bld",
+		"-b",
+		"--sku",
+		"-s",
+		"--uuid",
+		"-u",
+		"--upid",
+		"--mode",
+		"-m",
+		"--provisioningState",
+		"-p",
+		"--dns",
+		"-d",
+		"--hostname",
+		"--lan",
+		"-l",
+		"--ras",
+		"-a",
+		"--operationalState",
+		"--cert",
+		"-c",
+		"--userCert",
+		"--proxy",
+
+		// Combined options
+		"--ver --bld --sku",
+		"--uuid --mode --provisioningState",
+		"--dns --hostname --lan --ras",
+		"--cert --userCert --proxy",
+		"--json --all",
+		"--table --all",
+		"--verbose --all",
+		"--log-level debug --all",
+		"--skip-amt-cert-check --all",
+
+		// Sync mode
+		"--sync --url https://server.com/api/v1/devices",
+		"--sync --url http://localhost:8080/api/v1/devices",
+		"--sync --url https://server.com/api/v1/devices --auth-token abc.def.ghi",
+		"--sync --url https://server.com/api/v1/devices --auth-username user --auth-password secret",
+		"--sync --url https://server.com/api/v1/devices --auth-endpoint https://server.com/api/v1/authorize",
+		"--sync --url https://server.com/api/v1/devices --devices-endpoint https://server.com/api/v1/devices",
+
+		// Expected validation failures
+		"--sync",
+		"--sync --url",
+		"--sync --url ://bad-url",
+		"--sync --url ftp://unsupported.scheme",
+
+		// Edge cases
+		"--sync --url " + strings.Repeat("https://a", 50),
+		"--sync --url https://server.com/path?query=value&other=test",
+		"--sync --url https://user:pass@host:9999/path",
+		"--sync --url https://server.com/path with spaces",
+		"--log-level invalid --all",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, flags string) {
+		if len(flags) > 10000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "amtinfo"}
+
+		if trimmed := strings.TrimSpace(flags); trimmed != "" {
+			parsedFlags := splitFuzzFlags(flags)
+			if containsHelpFlag(parsedFlags) {
+				t.Skip("Help flags intentionally call os.Exit")
+			}
+
+			args = append(args, parsedFlags...)
+		}
+
+		defer recoverAndRepanic(t, flags)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzAmtInfoURL tests URL parsing/validation for amtinfo sync mode.
+func FuzzAmtInfoURL(f *testing.F) {
+	seeds := []string{
+		"https://localhost/api/v1/devices",
+		"https://server.com/api/v1/devices",
+		"https://server.com:8443/api/v1/devices",
+		"http://localhost:8080/api/v1/devices",
+		"https://server.com/path?query=value#fragment",
+		"://missing-scheme",
+		"https://",
+		"server.com/api/v1/devices",
+		strings.Repeat("https://", 100),
+		"https://" + strings.Repeat("a", 2000),
+		"https://server.com/path with spaces",
+	}
+
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, url string) {
+		if len(url) > 5000 {
+			t.Skip("URL too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "amtinfo", "--sync", "--url", url}
+
+		defer recoverAndRepanic(t, url)
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
+
+// FuzzAmtInfoFlagCombinations tests randomized combinations of amtinfo flags.
+func FuzzAmtInfoFlagCombinations(f *testing.F) {
+	f.Fuzz(func(t *testing.T,
+		ver bool,
+		bld bool,
+		sku bool,
+		uuid bool,
+		upid bool,
+		mode bool,
+		provState bool,
+		dns bool,
+		hostname bool,
+		lan bool,
+		ras bool,
+		opState bool,
+		cert bool,
+		userCert bool,
+		proxy bool,
+		all bool,
+		sync bool,
+		url string,
+		jsonOutput bool,
+		tableOutput bool,
+		verbose bool,
+	) {
+		if len(url) > 1000 {
+			t.Skip("Input too long")
+		}
+
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockAMTCommand := setupMockAMT(ctrl)
+
+		args := []string{"rpc", "amtinfo"}
+
+		if ver {
+			args = append(args, "--ver")
+		}
+
+		if bld {
+			args = append(args, "--bld")
+		}
+
+		if sku {
+			args = append(args, "--sku")
+		}
+
+		if uuid {
+			args = append(args, "--uuid")
+		}
+
+		if upid {
+			args = append(args, "--upid")
+		}
+
+		if mode {
+			args = append(args, "--mode")
+		}
+
+		if provState {
+			args = append(args, "--provisioningState")
+		}
+
+		if dns {
+			args = append(args, "--dns")
+		}
+
+		if hostname {
+			args = append(args, "--hostname")
+		}
+
+		if lan {
+			args = append(args, "--lan")
+		}
+
+		if ras {
+			args = append(args, "--ras")
+		}
+
+		if opState {
+			args = append(args, "--operationalState")
+		}
+
+		if cert {
+			args = append(args, "--cert")
+		}
+
+		if userCert {
+			args = append(args, "--userCert")
+		}
+
+		if proxy {
+			args = append(args, "--proxy")
+		}
+
+		if all {
+			args = append(args, "--all")
+		}
+
+		if sync {
+			args = append(args, "--sync")
+		}
+
+		if url != "" {
+			args = append(args, "--url", url)
+		}
+
+		if jsonOutput {
+			args = append(args, "--json")
+		}
+
+		if tableOutput {
+			args = append(args, "--table")
+		}
+
+		if verbose {
+			args = append(args, "--verbose")
+		}
+
+		defer recoverAndRepanic(t, strings.Join(args, " "))
+
+		_, _, err := Parse(args, mockAMTCommand)
+		_ = err
+	})
+}
