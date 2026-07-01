@@ -1,3 +1,10 @@
+# [2.52.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.51.0...v2.52.0) (2026-07-01)
+
+
+### Features
+
+* **rps:** display real-time activation progress on the CLI ([#1391](https://github.com/device-management-toolkit/rpc-go/issues/1391)) ([241f53c](https://github.com/device-management-toolkit/rpc-go/commit/241f53c221b958a3b6d276a5bb46305a65e1a43d)), closes [device-management-toolkit/rps#2665](https://github.com/device-management-toolkit/rps/issues/2665)
+
 # [2.51.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.8...v2.51.0) (2026-07-01)
 
 
