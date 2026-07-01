@@ -267,6 +267,20 @@ func TestCreateMessageRequestNoUUID(t *testing.T) {
 	assert.Equal(t, expectedUUID, msgPayload.UUID)
 }
 
+func TestCreateMessageRequestProgressSupported(t *testing.T) {
+	result, createErr := p.CreateMessageRequest(flags.Flags{})
+	assert.NoError(t, createErr)
+	assert.NotEmpty(t, result.Payload)
+	decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+	assert.NoError(t, decodeErr)
+
+	msgPayload := MessagePayload{}
+	jsonErr := json.Unmarshal(decodedBytes, &msgPayload)
+	assert.NoError(t, jsonErr)
+	// The client advertises progress support so RPS streams progress messages.
+	assert.True(t, msgPayload.ProgressSupported)
+}
+
 func TestCreateMessageRequestHostnameInfo(t *testing.T) {
 	flags := flags.Flags{
 		HostnameInfo: flags.HostnameInfo{

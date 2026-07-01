@@ -227,6 +227,14 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) []byte {
 		return []byte(PortSwitchSentinel + activation.Payload)
 	}
 
+	// Progress: log the message at info level, return a sentinel so the
+	// executor loop stays alive without forwarding to LMS.
+	if activation.Method == MethodProgress {
+		log.Info(activation.Message)
+
+		return []byte(ProgressSentinel)
+	}
+
 	statusMessage := StatusMessage{}
 
 	switch activation.Method {

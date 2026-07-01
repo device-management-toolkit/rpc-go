@@ -89,6 +89,8 @@ type MessagePayload struct {
 	FriendlyName      string                `json:"friendlyName,omitempty"`
 	TLSEnforced       bool                  `json:"tlsEnforced,omitempty"`
 	TLSTunnel         bool                  `json:"tlsTunnel,omitempty"`
+	// ProgressSupported tells RPS this client can handle `progress` messages.
+	ProgressSupported bool `json:"progressSupported,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -105,6 +107,12 @@ const MethodPortSwitchAck = "port_switch_ack"
 
 // PortSwitchSentinel is the prefix used to detect port_switch payloads in HandleDataFromRPS
 const PortSwitchSentinel = "port_switch:"
+
+// MethodProgress is RPS reporting activation progress; informational only.
+const MethodProgress = "progress"
+
+// ProgressSentinel marks a progress message so the executor keeps the loop alive.
+const ProgressSentinel = "progress:"
 
 // PortSwitchPayload is the JSON payload from RPS's port_switch message
 type PortSwitchPayload struct {
@@ -254,6 +262,7 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 
 	payload.IPConfiguration = flags.IpConfiguration
 	payload.HostnameInfo = flags.HostnameInfo
+	payload.ProgressSupported = true
 
 	if flags.UUID != "" {
 		if isKnownInvalidUUID(flags.UUID) {

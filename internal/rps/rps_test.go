@@ -18,6 +18,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -227,6 +228,51 @@ func TestProcessMessageSuccess(t *testing.T) {
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage([]byte(activation))
 	assert.Nil(t, decodedMessage)
+}
+
+func TestProcessMessageProgress(t *testing.T) {
+	activation := `{
+        "method": "progress",
+        "message": "Configuring network settings"
+    }`
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	// Hook after Connect so only ProcessMessage's output is captured.
+	logHook := test.NewGlobal()
+	defer logHook.Reset()
+
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	// Sentinel (never nil) keeps the executor loop alive.
+	assert.Equal(t, ProgressSentinel, string(decodedMessage))
+	// Progress is logged at info level so it shows without -v.
+	entry := logHook.LastEntry()
+	assert.NotNil(t, entry)
+	assert.Equal(t, log.InfoLevel, entry.Level)
+	assert.Equal(t, "Configuring network settings", entry.Message)
+}
+
+func TestProcessMessageProgressJSONOutputLogged(t *testing.T) {
+	activation := `{
+        "method": "progress",
+        "message": "Configuring network settings"
+    }`
+	jsonFlags := flags.NewFlags([]string{}, MockPRSuccess)
+	jsonFlags.JsonOutput = true
+	server := NewAMTActivationServer(jsonFlags)
+	server.Connect(true)
+
+	// Hook after Connect so only ProcessMessage's output is captured.
+	logHook := test.NewGlobal()
+	defer logHook.Reset()
+
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	// Sentinel still returned in --json mode.
+	assert.Equal(t, ProgressSentinel, string(decodedMessage))
+	// Progress is logged in --json mode too (no special suppression).
+	entry := logHook.LastEntry()
+	assert.NotNil(t, entry)
+	assert.Equal(t, "Configuring network settings", entry.Message)
 }
 
 func TestProcessMessageStructuredSuccess(t *testing.T) {

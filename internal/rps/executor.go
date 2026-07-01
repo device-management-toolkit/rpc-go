@@ -5,11 +5,11 @@
 package rps
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -156,9 +156,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return false
 	}
 
+	// Progress sentinel: keep the loop alive, forward nothing to LMS.
+	if string(msgPayload) == ProgressSentinel {
+		return false
+	}
+
 	// Detect port_switch sentinel from ProcessMessage
-	if strings.HasPrefix(string(msgPayload), PortSwitchSentinel) {
-		jsonData := string(msgPayload)[len(PortSwitchSentinel):]
+	if bytes.HasPrefix(msgPayload, []byte(PortSwitchSentinel)) {
+		jsonData := string(msgPayload[len(PortSwitchSentinel):])
 
 		err := e.handlePortSwitch(jsonData)
 		if err != nil {
