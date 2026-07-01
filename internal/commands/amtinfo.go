@@ -724,6 +724,7 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 	if discovered != nil {
 		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
 	}
+
 	body, err := json.Marshal(createPayload)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal create payload: %w", err)
