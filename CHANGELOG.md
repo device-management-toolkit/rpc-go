@@ -1,3 +1,10 @@
+# [2.51.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.8...v2.51.0) (2026-07-01)
+
+
+### Features
+
+* **rps:** display structured per-component activation result ([#1349](https://github.com/device-management-toolkit/rpc-go/issues/1349)) ([91260ad](https://github.com/device-management-toolkit/rpc-go/commit/91260ade241c412389154182b3475bef9c24118f)), closes [rps#2665](https://github.com/rps/issues/2665) [device-management-toolkit/rps#2665](https://github.com/device-management-toolkit/rps/issues/2665)
+
 ## [2.50.8](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.7...v2.50.8) (2026-06-03)
 
 ## [2.50.7](https://github.com/device-management-toolkit/rpc-go/compare/v2.50.6...v2.50.7) (2026-05-28)
