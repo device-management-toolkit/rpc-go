@@ -289,8 +289,20 @@ func (lme *LMEConnection) Connect() error {
 
 		bin_buf := apf.ChannelOpenPort(lme.ourChannel, port)
 
+		// Account for this CHANNEL_OPEN before Send so a concurrent APF listener
+		// can't process OPEN_CONFIRMATION/OPEN_FAILURE and call Done() first.
+		// This ordering prevents WaitGroup underflow across retry attempts.
+		if lme.Session.WaitGroup != nil {
+			lme.Session.WaitGroup.Add(1)
+		}
+
 		err := lme.Command.Send(bin_buf.Bytes())
 		if err != nil {
+			// Undo the Add(1) since we failed to send the channel open
+			if lme.Session.WaitGroup != nil {
+				lme.Session.WaitGroup.Done()
+			}
+
 			lastErr = err
 			if attempts < 4 && (errors.Is(err, heci.ErrDeviceReinitialized) || err.Error() == "no such device" || err.Error() == "The device is not connected.") {
 				log.Warn(err.Error())
@@ -333,7 +345,6 @@ func (lme *LMEConnection) Connect() error {
 		}
 
 		lme.retries = 0
-		lme.Session.WaitGroup.Add(1)
 
 		return nil
 	}
