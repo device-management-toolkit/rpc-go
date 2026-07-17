@@ -25,6 +25,7 @@ func TestDevicePayload_JSON_WithPasswords(t *testing.T) {
 		Password:     "AMT-Pass1!",
 		MEBXPassword: "MEBx-Pass1!",
 		MPSPassword:  "MPS-Pass1!",
+		CertHash:     "deadbeef",
 	}
 
 	data, err := json.Marshal(payload)
@@ -36,6 +37,7 @@ func TestDevicePayload_JSON_WithPasswords(t *testing.T) {
 	assert.Equal(t, "AMT-Pass1!", m["password"])
 	assert.Equal(t, "MEBx-Pass1!", m["mebxpassword"])
 	assert.Equal(t, "MPS-Pass1!", m["mpspassword"])
+	assert.Equal(t, "deadbeef", m["certHash"])
 }
 
 func TestDevicePayload_JSON_WithoutPasswords(t *testing.T) {
@@ -182,6 +184,39 @@ func TestClearDeviceMPSPassword_Failure(t *testing.T) {
 	defer server.Close()
 
 	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestUpdateDeviceCertificatePin_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		body, _ := io.ReadAll(r.Body)
+
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &m))
+		assert.Equal(t, "guid-123", m["guid"])
+		assert.Equal(t, "abc123", m["certHash"])
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := UpdateDeviceCertificatePin(server.URL, "test-token", "guid-123", "abc123", false, "")
+	assert.NoError(t, err)
+}
+
+func TestUpdateDeviceCertificatePin_Failure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := UpdateDeviceCertificatePin(server.URL, "test-token", "guid-123", "abc123", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }

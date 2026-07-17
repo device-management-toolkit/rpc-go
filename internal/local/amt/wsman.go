@@ -7,8 +7,10 @@ package amt
 
 import (
 	"context"
+	"crypto/sha256"
 	cryptotls "crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"net"
 	"strings"
 	"time"
@@ -50,6 +52,7 @@ type GoWSMANMessages struct {
 	wsmanMessages  wsman.Messages
 	target         string
 	localTransport *LocalTransport
+	lastCertHash   string
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {
@@ -109,6 +112,9 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 				state := tlsConn.ConnectionState()
 				if len(state.PeerCertificates) > 0 {
 					cert := state.PeerCertificates[0]
+					hash := sha256.Sum256(cert.Raw)
+					g.lastCertHash = hex.EncodeToString(hash[:])
+
 					logrus.Trace("Server certificate: ", cert)
 				} else {
 					logrus.Warn("No peer certificates received from LMS TLS connection")
@@ -147,6 +153,16 @@ func (g *GoWSMANMessages) Close() error {
 	}
 
 	return nil
+}
+
+func (g *GoWSMANMessages) LastServerCertificateFingerprint() string {
+	if g.localTransport != nil {
+		if fingerprint := g.localTransport.LastServerCertificateFingerprint(); fingerprint != "" {
+			return fingerprint
+		}
+	}
+
+	return g.lastCertHash
 }
 
 func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {

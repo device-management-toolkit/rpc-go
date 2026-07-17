@@ -140,6 +140,7 @@ type DevicePayload struct {
 	MPSPassword     string      `json:"mpspassword,omitempty"`
 	UseTLS          bool        `json:"useTLS"`
 	AllowSelfSigned bool        `json:"allowSelfSigned"`
+	CertHash        string      `json:"certHash,omitempty"`
 	DeviceInfo      *DeviceInfo `json:"deviceInfo,omitempty"`
 }
 
@@ -279,6 +280,26 @@ func ClearDeviceMPSPassword(consoleBaseURL, token, guid string, skipCertCheck bo
 	}
 
 	log.Infof("MPS password cleared from device %s", guid)
+
+	return nil
+}
+
+// UpdateDeviceCertificatePin updates only the persisted AMT TLS certificate fingerprint.
+func UpdateDeviceCertificatePin(consoleBaseURL, token, guid, certHash string, skipCertCheck bool, devicesEndpoint string) error {
+	endpoint := resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint)
+
+	log.Debugf("Updating device certificate pin: PATCH %s", endpoint)
+
+	payload := map[string]string{
+		"guid":     guid,
+		"certHash": certHash,
+	}
+
+	if err := sendDeviceJSONRequest(http.MethodPatch, endpoint, token, payload, skipCertCheck, "update device certificate pin failed"); err != nil {
+		return err
+	}
+
+	log.Infof("Device %s certificate pin updated in console successfully", guid)
 
 	return nil
 }

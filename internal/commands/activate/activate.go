@@ -19,6 +19,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
+	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -858,7 +859,15 @@ func (cmd *ActivateCmd) updateTLSSettingsAfterActivation(ctx *commands.Context, 
 
 	log.Debugf("Post-activation TLS state: useTLS=%v allowSelfSigned=%v", useTLS, allowSelfSigned)
 
-	return cmd.updateConsoleTLSSettings(ctx, consoleBaseURL, token, guid, useTLS, allowSelfSigned)
+	if err := cmd.updateConsoleTLSSettings(ctx, consoleBaseURL, token, guid, useTLS, allowSelfSigned); err != nil {
+		return err
+	}
+
+	if !useTLS {
+		return nil
+	}
+
+	return cmd.updateConsoleCertificatePin(ctx, consoleBaseURL, token, guid)
 }
 
 // shouldForceTLSFallback determines whether post-activation TLS must be forced for Console.
@@ -902,4 +911,18 @@ func (cmd *ActivateCmd) updateConsoleTLSSettings(ctx *commands.Context, consoleB
 		SkipCertCheck:   ctx.SkipCertCheck,
 		DevicesEndpoint: ctx.DevicesEndpoint,
 	})
+}
+
+func (cmd *ActivateCmd) updateConsoleCertificatePin(ctx *commands.Context, consoleBaseURL, token, guid string) error {
+	wsmanClient, ok := cmd.WSMan.(*localamt.GoWSMANMessages)
+	if !ok {
+		return fmt.Errorf("WSMAN client does not expose live TLS certificate fingerprint")
+	}
+
+	certHash := strings.TrimSpace(wsmanClient.LastServerCertificateFingerprint())
+	if certHash == "" {
+		return fmt.Errorf("live AMT TLS certificate fingerprint unavailable")
+	}
+
+	return device.UpdateDeviceCertificatePin(consoleBaseURL, token, guid, certHash, ctx.SkipCertCheck, ctx.DevicesEndpoint)
 }

@@ -9,7 +9,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	cryptotls "crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +45,8 @@ type LocalTransport struct {
 
 	lmeListenMu   sync.Mutex
 	lmeListenDone chan struct{}
+	tlsStateMu    sync.RWMutex
+	lastCertHash  string
 }
 
 // NewLocalTransport returns a LocalTransport that speaks cleartext HTTP over
@@ -298,6 +303,7 @@ func (l *LocalTransport) attemptTLSRoundTrip(r *http.Request, rawRequest []byte)
 	}
 
 	state := tlsConn.ConnectionState()
+	l.captureServerCertificate(state.PeerCertificates)
 	logrus.Debugf("AMT TLS handshake over APF complete (version=0x%x, cipher=0x%x)", state.Version, state.CipherSuite)
 
 	if _, err := tlsConn.Write(rawRequest); err != nil {
@@ -379,6 +385,25 @@ func (l *LocalTransport) resetHandshake() *sync.WaitGroup {
 	}
 
 	return &sync.WaitGroup{}
+}
+
+func (l *LocalTransport) captureServerCertificate(certs []*x509.Certificate) {
+	if len(certs) == 0 {
+		return
+	}
+
+	hash := sha256.Sum256(certs[0].Raw)
+
+	l.tlsStateMu.Lock()
+	l.lastCertHash = hex.EncodeToString(hash[:])
+	l.tlsStateMu.Unlock()
+}
+
+func (l *LocalTransport) LastServerCertificateFingerprint() string {
+	l.tlsStateMu.RLock()
+	defer l.tlsStateMu.RUnlock()
+
+	return l.lastCertHash
 }
 
 // isTransientLMEError reports whether err is a retryable APF/HTTP hiccup (EOF, channel refusal).
