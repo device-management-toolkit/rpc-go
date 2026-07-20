@@ -9,7 +9,7 @@ require (
 	github.com/alecthomas/kong v1.16.0
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.1
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
