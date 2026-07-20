@@ -1,3 +1,10 @@
+# [3.0.0-beta.40](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.39...v3.0.0-beta.40) (2026-07-20)
+
+
+### Features
+
+* add discovery timestamps to deviceInfo ([#1441](https://github.com/device-management-toolkit/rpc-go/issues/1441)) ([777c380](https://github.com/device-management-toolkit/rpc-go/commit/777c3806faddc4160c61e8b75fd37ba5e7145174)), closes [#1394](https://github.com/device-management-toolkit/rpc-go/issues/1394)
+
 # [3.0.0-beta.39](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.38...v3.0.0-beta.39) (2026-06-25)
 
 
