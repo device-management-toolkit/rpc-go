@@ -1,3 +1,10 @@
+# [3.0.0-beta.41](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.40...v3.0.0-beta.41) (2026-07-20)
+
+
+### Features
+
+* **cli:** add --discover and --register as aliases for amtinfo --sync ([#1448](https://github.com/device-management-toolkit/rpc-go/issues/1448)) ([e8267f3](https://github.com/device-management-toolkit/rpc-go/commit/e8267f3615d3eba5c9db6ad2b7786cd262713daf)), closes [#1406](https://github.com/device-management-toolkit/rpc-go/issues/1406)
+
 # [3.0.0-beta.40](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.39...v3.0.0-beta.40) (2026-07-20)
 
 
