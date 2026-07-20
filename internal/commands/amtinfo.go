@@ -215,7 +215,7 @@ type AmtInfoCmd struct {
 	All bool `help:"Show All AMT Information" short:"A"`
 
 	// Sync to server flags
-	Sync bool   `help:"Sync device info to remote server via HTTP PATCH"`
+	Sync bool   `help:"Sync device info to remote server via HTTP PATCH (aliases: --discover, --register)" aliases:"discover,register"`
 	URL  string `help:"Endpoint URL of the devices API (e.g., https://mps.example.com/api/v1/devices)" name:"url"`
 }
 
@@ -240,7 +240,7 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 	// Basic validation for sync mode
 	if cmd.Sync {
 		if strings.TrimSpace(cmd.URL) == "" {
-			return fmt.Errorf("--url is required when --sync is specified")
+			return fmt.Errorf("--url is required when --sync (aliases --discover or --register) is specified")
 		}
 
 		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
