@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
@@ -490,6 +491,100 @@ func TestInfoService_SyncDeviceInfo_404_PostFallback_ExplicitlyProvisioned(t *te
 	require.True(t, ok, "deviceInfo should be present in POST body")
 	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
 	assert.False(t, deviceInfo["discovered"].(bool), "discovered should be false for explicitly provisioned devices")
+}
+
+// TestInfoService_SyncDeviceInfo_Timestamps covers the discovery timestamp behavior
+// across every sync scenario: existing device (single PATCH) and 404 auto-register
+// (POST + retry PATCH), for both discovered=true and discovered=false. Invariants:
+//   - lastSynced is stamped on every sync, regardless of discovered.
+//   - firstDiscovered and discovered are only sent on POST creation, never on PATCH.
+//   - firstDiscovered is only stamped when discovered=true, and equals the created lastSynced.
+//   - The POST and the retried PATCH carry the same lastSynced timestamp.
+func TestInfoService_SyncDeviceInfo_Timestamps(t *testing.T) {
+	const uuid = "12345678-1234-1234-1234-123456789ABC"
+
+	tests := []struct {
+		name         string
+		discovered   bool
+		deviceExists bool // false → first PATCH 404s, triggering POST create + retry PATCH
+	}{
+		{"existing device, discovered", true, true},
+		{"existing device, provisioned", false, true},
+		{"404 auto-register, discovered", true, false},
+		{"404 auto-register, provisioned", false, false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewInfoService(nil)
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{UUID: uuid}
+
+			var (
+				patchCount int
+				patchBody  syncPayload            // the last successful PATCH
+				postBody   map[string]interface{} // set only when a POST create happens
+			)
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer r.Body.Close()
+
+				switch r.Method {
+				case http.MethodPatch:
+					patchCount++
+					if !tt.deviceExists && patchCount == 1 {
+						w.WriteHeader(http.StatusNotFound)
+
+						return
+					}
+
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+					w.WriteHeader(http.StatusCreated)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &tt.discovered)
+			require.NoError(t, err)
+
+			// PATCH invariants (apply to every scenario).
+			require.NotNil(t, patchBody.DeviceInfo.LastSynced, "lastSynced should be sent on every sync")
+			assert.Nil(t, patchBody.DeviceInfo.FirstDiscovered, "firstDiscovered should never be in PATCH")
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should never be in PATCH")
+
+			if tt.deviceExists {
+				assert.Equal(t, 1, patchCount, "existing device needs a single PATCH")
+
+				return
+			}
+
+			// 404 auto-register: verify POST create body and timestamp agreement.
+			assert.Equal(t, 2, patchCount, "404 should trigger create then retry PATCH")
+
+			deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+			require.True(t, ok, "deviceInfo should be present in POST body")
+			assert.Equal(t, tt.discovered, deviceInfo["discovered"], "discovered should reflect the sync source")
+
+			lastSyncedPost, _ := deviceInfo["lastSynced"].(string)
+			require.NotEmpty(t, lastSyncedPost, "lastSynced should be set on creation")
+			assert.Equal(t, lastSyncedPost, patchBody.DeviceInfo.LastSynced.Format(time.RFC3339Nano),
+				"POST and retried PATCH should carry the same lastSynced")
+
+			firstDiscovered, _ := deviceInfo["firstDiscovered"].(string)
+			if tt.discovered {
+				assert.Equal(t, lastSyncedPost, firstDiscovered, "firstDiscovered should match lastSynced on discovery")
+			} else {
+				assert.Empty(t, firstDiscovered, "firstDiscovered should be absent for provisioned devices")
+			}
+		})
+	}
 }
 
 func TestNewInfoService(t *testing.T) {

@@ -448,10 +448,11 @@ type syncDeviceInfo struct {
 	FWBuild              string        `json:"fwBuild"`
 	FWSku                string        `json:"fwSku"`
 	Discovered           *bool         `json:"discovered,omitempty"`
+	FirstDiscovered      *time.Time    `json:"firstDiscovered,omitempty"`
 	CurrentMode          string        `json:"currentMode"`
 	Features             string        `json:"features"`
 	IPAddress            string        `json:"ipAddress"`
-	LastUpdated          time.Time     `json:"lastUpdated"`
+	LastSynced           *time.Time    `json:"lastSynced,omitempty"`
 	TLSMode              string        `json:"tlsMode,omitempty"`
 	UPID                 *syncUPIDInfo `json:"upid,omitempty"`
 	AMTEnabledInBIOS     *bool         `json:"amtEnabledInBIOS,omitempty"`
@@ -512,10 +513,16 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
 			IPAddress:    bestIPAddress(result),
-			LastUpdated:  time.Now(),
 			LMSInstalled: utils.DetectLMS(s.localTLSEnforced),
 		},
 	}
+
+	// lastSynced advances on every sync (discovered true or false). Because this
+	// is the only sync entry point, non-sync operations (AMT password, tags, etc.)
+	// never touch it. The same timestamp is reused for the 404 create below so the
+	// created record and the retried PATCH agree.
+	now := time.Now().UTC()
+	payload.DeviceInfo.LastSynced = &now
 
 	// Populate additional discovery fields
 	s.populateDiscoveryFields(&payload.DeviceInfo, result)
@@ -556,7 +563,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			discovered = &autoDiscovered
 		}
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered); err != nil {
+		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered, now); err != nil {
 			log.Debugf("device registration (POST) failed: %v", err)
 
 			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
@@ -685,8 +692,9 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
 // The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool) error {
-	body, hostname, err := s.buildDeviceCreatePayload(result, discovered)
+// syncedAt is the sync timestamp, reused so the created record matches the retried PATCH.
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool, syncedAt time.Time) error {
+	body, hostname, err := s.buildDeviceCreatePayload(result, discovered, syncedAt)
 	if err != nil {
 		return err
 	}
@@ -705,11 +713,14 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 }
 
 // buildDeviceCreatePayload constructs the minimal JSON payload for device registration.
-func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *bool) ([]byte, string, error) {
+// syncedAt stamps firstDiscovered and lastSynced so the new record agrees with the retried PATCH.
+func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *bool, syncedAt time.Time) ([]byte, string, error) {
 	hostname := s.getCreateHostname(result)
 
 	type deviceInfoCreate struct {
-		Discovered *bool `json:"discovered,omitempty"`
+		Discovered      *bool      `json:"discovered,omitempty"`
+		FirstDiscovered *time.Time `json:"firstDiscovered,omitempty"`
+		LastSynced      *time.Time `json:"lastSynced,omitempty"`
 	}
 
 	createPayload := struct {
@@ -722,7 +733,15 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 	}
 
 	if discovered != nil {
-		createPayload.DeviceInfo = &deviceInfoCreate{Discovered: discovered}
+		// lastSynced advances on every sync; firstDiscovered is only stamped for a
+		// genuine discovery (discovered=true) and is immutable thereafter.
+		createPayload.DeviceInfo = &deviceInfoCreate{
+			Discovered: discovered,
+			LastSynced: &syncedAt,
+		}
+		if *discovered {
+			createPayload.DeviceInfo.FirstDiscovered = &syncedAt
+		}
 	}
 
 	body, err := json.Marshal(createPayload)

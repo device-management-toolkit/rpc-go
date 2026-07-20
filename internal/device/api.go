@@ -166,30 +166,31 @@ type TLSSettingsUpdate struct {
 
 // DeviceInfo carries device metadata sent to the console.
 type DeviceInfo struct {
-	FWVersion            string    `json:"fwVersion,omitempty"`
-	FWBuild              string    `json:"fwBuild,omitempty"`
-	FWSku                string    `json:"fwSku,omitempty"`
-	Discovered           *bool     `json:"discovered,omitempty"`
-	CurrentMode          string    `json:"currentMode,omitempty"`
-	Features             string    `json:"features,omitempty"`
-	IPAddress            string    `json:"ipAddress,omitempty"`
-	LastUpdated          time.Time `json:"lastUpdated,omitempty"`
-	TLSMode              string    `json:"tlsMode,omitempty"`
-	UPID                 *UPIDInfo `json:"upid,omitempty"`
-	AMTEnabledInBIOS     *bool     `json:"amtEnabledInBIOS,omitempty"`
-	MEInterfaceVersion   string    `json:"meInterfaceVersion,omitempty"`
-	DHCPEnabled          *bool     `json:"dhcpEnabled,omitempty"`
-	CertHashes           []string  `json:"certHashes,omitempty"`
-	LMSInstalled         *bool     `json:"lmsInstalled,omitempty"`
-	LMSVersion           string    `json:"lmsVersion,omitempty"`
-	OSName               string    `json:"osName,omitempty"`
-	OSVersion            string    `json:"osVersion,omitempty"`
-	OSDistro             string    `json:"osDistro,omitempty"`
-	CPUModel             string    `json:"cpuModel,omitempty"`
-	OSIPAddress          string    `json:"osIpAddress,omitempty"`
-	EthernetAdapterCount int       `json:"ethernetAdapterCount,omitempty"`
-	MonitorConnected     *bool     `json:"monitorConnected,omitempty"`
-	IEEE8021xEnabled     *bool     `json:"ieee8021xEnabled,omitempty"`
+	FWVersion            string     `json:"fwVersion,omitempty"`
+	FWBuild              string     `json:"fwBuild,omitempty"`
+	FWSku                string     `json:"fwSku,omitempty"`
+	Discovered           *bool      `json:"discovered,omitempty"`
+	FirstDiscovered      *time.Time `json:"firstDiscovered,omitempty"`
+	CurrentMode          string     `json:"currentMode,omitempty"`
+	Features             string     `json:"features,omitempty"`
+	IPAddress            string     `json:"ipAddress,omitempty"`
+	LastSynced           *time.Time `json:"lastSynced,omitempty"`
+	TLSMode              string     `json:"tlsMode,omitempty"`
+	UPID                 *UPIDInfo  `json:"upid,omitempty"`
+	AMTEnabledInBIOS     *bool      `json:"amtEnabledInBIOS,omitempty"`
+	MEInterfaceVersion   string     `json:"meInterfaceVersion,omitempty"`
+	DHCPEnabled          *bool      `json:"dhcpEnabled,omitempty"`
+	CertHashes           []string   `json:"certHashes,omitempty"`
+	LMSInstalled         *bool      `json:"lmsInstalled,omitempty"`
+	LMSVersion           string     `json:"lmsVersion,omitempty"`
+	OSName               string     `json:"osName,omitempty"`
+	OSVersion            string     `json:"osVersion,omitempty"`
+	OSDistro             string     `json:"osDistro,omitempty"`
+	CPUModel             string     `json:"cpuModel,omitempty"`
+	OSIPAddress          string     `json:"osIpAddress,omitempty"`
+	EthernetAdapterCount int        `json:"ethernetAdapterCount,omitempty"`
+	MonitorConnected     *bool      `json:"monitorConnected,omitempty"`
+	IEEE8021xEnabled     *bool      `json:"ieee8021xEnabled,omitempty"`
 }
 
 // UPIDInfo carries UPID details for the console.
