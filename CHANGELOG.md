@@ -1,3 +1,10 @@
+# [3.0.0-beta.42](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.41...v3.0.0-beta.42) (2026-07-20)
+
+
+### Bug Fixes
+
+* **lme:** add to WaitGroup before sending CHANNEL_OPEN ([#1437](https://github.com/device-management-toolkit/rpc-go/issues/1437)) ([1fab4c8](https://github.com/device-management-toolkit/rpc-go/commit/1fab4c8e4b1ef2c596ce9101193c66560050eea5))
+
 # [3.0.0-beta.41](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.40...v3.0.0-beta.41) (2026-07-20)
 
 
