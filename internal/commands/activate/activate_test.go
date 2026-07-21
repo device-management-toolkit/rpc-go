@@ -577,6 +577,7 @@ func TestAddDeviceToConsole_CIRASetsMPSFields(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &p))
 		assert.Equal(t, "admin", p.MPSUsername)
 		assert.Equal(t, "mps-pass", p.MPSPassword)
+		assert.Equal(t, device.ConnectionTypeCIRA, p.ConnectionType)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -598,6 +599,7 @@ func TestAddDeviceToConsole_NoCIRAClearsMPSFields(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &p))
 		assert.Empty(t, p.MPSUsername)
 		assert.Empty(t, p.MPSPassword)
+		assert.Equal(t, device.ConnectionTypeDirect, p.ConnectionType)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
