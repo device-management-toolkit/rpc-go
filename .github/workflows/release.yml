@@ -49,6 +49,9 @@ jobs:
         with:
           go-version: 'stable'
           check-latest: true
+          # This job publishes release artifacts; do not restore a cache that a
+          # pull request run could have poisoned.
+          cache: false
       - name: Install go-licenses
         run: |
           go install github.com/google/go-licenses@v1.0.0
