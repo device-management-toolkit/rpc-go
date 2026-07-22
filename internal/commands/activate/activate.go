@@ -212,14 +212,19 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	isProfileFile := cmd.Profile != "" && looksLikeFilePath(cmd.Profile)
 
 	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
+		// Profile flows (file or HTTP) orchestrate every AMT operation in
+		// subprocesses, so the parent must not open an LME/MEI handle here — a
+		// handle held across ExecuteProfile blocks each subprocess with EBUSY
+		// ("mei connect busy" → "device or resource busy"). Only the direct
+		// --ccm/--acm path (runLocalActivation) needs the parent WSMAN client.
 		if !isProfileFile {
 			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 				return err
 			}
-		}
 
-		if err := cmd.EnsureWSMAN(ctx); err != nil {
-			return err
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	// Determine activation mode based on flags
@@ -363,6 +368,13 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	// Also store in ctx so postActivationSync can use it for WSMAN TLS probing.
 	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
 		ctx.AMTPassword = amtPassword
+	}
+
+	// Release any parent-held LME/MEI handle before orchestration; the subprocess
+	// steps each open their own handle and would otherwise fail with EBUSY.
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+		cmd.WSMan = nil
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
@@ -638,6 +650,13 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	// Store resolved AMT password in ctx so postActivationSync WSMAN TLS probe works.
 	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
 		ctx.AMTPassword = amtPassword
+	}
+
+	// Release any parent-held LME/MEI handle before orchestration; the subprocess
+	// steps each open their own handle and would otherwise fail with EBUSY.
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+		cmd.WSMan = nil
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
