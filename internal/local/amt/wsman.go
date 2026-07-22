@@ -9,6 +9,7 @@ import (
 	"context"
 	cryptotls "crypto/tls"
 	"encoding/base64"
+	"errors"
 	"net"
 	"strings"
 	"time"
@@ -89,14 +90,13 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	if clientParams.UseTLS {
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
-		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		defer cancel()
-
 		dialer := &cryptotls.Dialer{
 			Config: tlsConfig,
 		}
 
-		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		conn, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		}, probeTimeout)
 		if err != nil {
 			logrus.Debugf("LMS TLS port not active, using LME-over-HECI with local TLS termination. LMS TLS dial error: %v", err)
 
@@ -118,12 +118,11 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			defer conn.Close()
 		}
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		defer cancel()
-
 		dialer := &net.Dialer{}
 
-		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		con, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		}, probeTimeout)
 		if err != nil {
 			logrus.Debug("LMS not active, using local transport instead.")
 
@@ -138,6 +137,56 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	g.wsmanMessages = wsman.NewMessages(clientParams)
 
 	return nil
+}
+
+// probeLMS dials LMS to decide whether an LMS daemon is answering or the caller
+// must fall back to LME-over-HECI. A dial that fails fast (e.g. connection
+// refused: LMS is genuinely down) returns immediately so the fallback happens
+// without delay. A dial that times out is retried a bounded number of times:
+// LMS can be up yet momentarily unreachable — most notably during the
+// post-activation AMT/LMS port-stack restart — and misreading that transient
+// timeout as "LMS not active" pushes the request onto the HECI transport, which
+// then contends for /dev/mei0 and fails with "device or resource busy". Each
+// attempt uses its own timeout-bound context.
+func probeLMS(dial func(context.Context) (net.Conn, error), timeout time.Duration) (net.Conn, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= utils.LMSProbeAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		conn, err := dial(ctx)
+
+		cancel()
+
+		if err == nil {
+			return conn, nil
+		}
+
+		lastErr = err
+
+		// Only a timeout is worth retrying; a refused/unreachable dial won't clear
+		// by waiting, so fall back to HECI immediately. Don't sleep after the final
+		// attempt - there's no retry left to wait for.
+		if !isDialTimeout(err) || attempt == utils.LMSProbeAttempts {
+			break
+		}
+
+		logrus.Debugf("LMS dial timed out (attempt %d/%d); retrying before HECI fallback", attempt, utils.LMSProbeAttempts)
+		time.Sleep(utils.LMSProbeRetryDelay * time.Millisecond)
+	}
+
+	return nil, lastErr
+}
+
+// isDialTimeout reports whether err is a dial deadline/timeout rather than a
+// fast failure such as connection refused.
+func isDialTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // Close closes any open local transport connections

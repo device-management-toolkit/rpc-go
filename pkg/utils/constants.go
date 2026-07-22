@@ -32,8 +32,16 @@ const (
 	MPSServerMaxLength = 256
 
 	// LMSConnectionTimeout is the maximum wait for LMS TCP connection setup.
-	LMSConnectionTimeout    = 5    // seconds
-	LMSDialerTimeout        = 5    // seconds
+	LMSConnectionTimeout = 5 // seconds
+	LMSDialerTimeout     = 5 // seconds
+	// LMSProbeAttempts bounds how many times SetupWsmanClient dials LMS before
+	// falling back to LME-over-HECI. A refused connection (LMS down) fails fast
+	// and does not consume retries; only dial timeouts (LMS up but momentarily
+	// not answering, e.g. during the post-activation AMT/LMS port-stack restart)
+	// are retried, so the extra attempts never slow the genuine LMS-down path.
+	LMSProbeAttempts = 3 // total LMS dial attempts
+	// LMSProbeRetryDelay is the wait between LMS dial retries after a timeout.
+	LMSProbeRetryDelay      = 1000 // milliseconds
 	HeciReadTimeout         = 3    // seconds
 	HeciRetryDelay          = 1500 // milliseconds
 	HeciReinitDelay         = 300  // milliseconds
