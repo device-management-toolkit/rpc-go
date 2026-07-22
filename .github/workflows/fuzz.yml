@@ -32,6 +32,8 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -42,8 +44,10 @@ jobs:
         run: go mod download
 
       - name: Run custom duration fuzz tests (Manual)
+        env:
+          FUZZ_TIME_INPUT: ${{ inputs.fuzz_time }}
         run: |
-          FUZZ_TIME="${{ inputs.fuzz_time || '5m' }}"
+          FUZZ_TIME="${FUZZ_TIME_INPUT:-5m}"
           echo "Running fuzz tests for ${FUZZ_TIME}"
           go test -run=^$ -fuzz=^FuzzDeactivate$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
@@ -96,6 +100,8 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
