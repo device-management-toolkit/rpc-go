@@ -162,6 +162,7 @@ var (
 	WifiConfigurationWithWarnings     = CustomError{Code: 112, Message: "WifiConfigurationWithWarnings"}
 	UnmarshalMessageFailed            = CustomError{Code: 113, Message: "UnmarshalMessageFailed"}
 	DeleteConfigsFailed               = CustomError{Code: 114, Message: "DeleteConfigsFailed"}
+	DeviceNotActivated                = CustomError{Code: 115, Message: "DeviceNotActivated", Details: "device is not activated to configure. Please activate the device first"}
 	MissingOrIncorrectWifiProfileName = CustomError{Code: 116, Message: "MissingOrIncorrectWifiProfileName"}
 	MissingIeee8021xConfiguration     = CustomError{Code: 117, Message: "MissingIeee8021xConfiguration"}
 	SetMEBXPasswordFailed             = CustomError{Code: 118, Message: "SetMEBXPasswordFailed"}

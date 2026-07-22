@@ -27,6 +27,10 @@ const (
 	commandAMTPassword = "amtpassword"
 	flagPassword       = "--password"
 	flagNewAMTPassword = "--newamtpassword"
+
+	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
+	// because the device is not yet activated; activation continues afterward.
+	msgPasswordAlignSkipped = "AMT password alignment skipped: device is not activated yet; will continue with activation"
 )
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
@@ -704,6 +708,10 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 			log.Info("AMT password aligned to profile value using provided current password")
 
 			return nil
+		} else if isDeviceNotActivatedErr(err) {
+			log.Warn(msgPasswordAlignSkipped)
+
+			return nil
 		}
 		// If it failed (e.g., wrong provided current), proceed to auth-probe and interactive fallback
 	}
@@ -715,5 +723,30 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	args := po.baseArgs()
 	args = append(args, commandConfigure, commandAMTPassword, flagNewAMTPassword, newPass)
 
-	return po.executeWithPasswordFallback(args)
+	err := po.executeWithPasswordFallback(args)
+	if isDeviceNotActivatedErr(err) {
+		log.Warn(msgPasswordAlignSkipped)
+
+		return nil
+	}
+
+	return err
+}
+
+// isDeviceNotActivatedErr reports whether err signals that a configure subprocess
+// refused because the device is not yet activated. The orchestrator drives every
+// step through CLIExecutor, which reports failures as *ExecError, so we match on
+// the typed exit code rather than substring-matching subprocess output (verbose
+// Digest logs make substring matching unreliable — see CLAUDE.md).
+func isDeviceNotActivatedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var execErr *ExecError
+	if errors.As(err, &execErr) {
+		return execErr.ExitCode == utils.DeviceNotActivated.Code
+	}
+
+	return false
 }

@@ -342,3 +342,53 @@ func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 		t.Errorf("expected MEBx configure command, got: %s", argsStr)
 	}
 }
+
+func deviceNotActivatedExecError() error {
+	return &ExecError{
+		ExitCode: utils.DeviceNotActivated.Code,
+		Output:   "device is not activated to configure. Please activate the device first",
+		Err:      fmt.Errorf("exit status %d", utils.DeviceNotActivated.Code),
+	}
+}
+
+func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_WithCurrentPassword(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	po.currentControlMode = 2
+
+	mock := newMockExecutor()
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+
+	err := po.verifyAndAlignAMTPassword()
+	if err != nil {
+		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
+	}
+
+	if mock.callCount != 1 {
+		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
+	}
+}
+
+func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_NoCurrentPassword(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	po.currentControlMode = 0 // executeWithPasswordFallback returns original error in pre-provisioning
+
+	mock := newMockExecutor()
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+
+	err := po.verifyAndAlignAMTPassword()
+	if err != nil {
+		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
+	}
+
+	if mock.callCount != 1 {
+		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
+	}
+}
