@@ -16,7 +16,7 @@ namespace ClientAgent
         private static extern int rpcCheckAccess();
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output);
+        private static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output, ref IntPtr errOutput);
 
         private const int SUCCESS = 0;
 
@@ -47,11 +47,22 @@ namespace ClientAgent
             // Build command
             string command = string.Join(" ", args);
             byte[] cmdBytes = Encoding.UTF8.GetBytes(command);
-            IntPtr output = IntPtr.Zero;
 
             // Execute command
-            int result = rpcExec(cmdBytes, ref output);
+            IntPtr output = IntPtr.Zero;
+            IntPtr errOutput = IntPtr.Zero;
+            int result = rpcExec(cmdBytes, ref output, ref errOutput);
 
+            // Show stderr output
+            if (errOutput != IntPtr.Zero)
+            {
+                string? errString = Marshal.PtrToStringAnsi(errOutput);
+                if (!string.IsNullOrEmpty(errString))
+                {
+                    Console.Error.WriteLine(errString);
+                }
+                Marshal.FreeHGlobal(errOutput);
+            }
             // Show output
             if (output != IntPtr.Zero)
             {
