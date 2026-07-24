@@ -25,9 +25,9 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 9.0.x
     - name: Build rpc as library
-      run: go build -buildmode=c-shared -o rpc.so ./cmd/rpc   
+      run: go build -buildmode=c-shared -o librpc.so ./cmd/rpc   
     - name: Restore dependencies
       run: cd samples/dotnet && dotnet restore
     - name: Build
