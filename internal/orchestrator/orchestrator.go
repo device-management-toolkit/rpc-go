@@ -31,6 +31,20 @@ const (
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
 	// because the device is not yet activated; activation continues afterward.
 	msgPasswordAlignSkipped = "AMT password alignment skipped: device is not activated yet; will continue with activation"
+
+	// postActivationSettleAttempts bounds how many extra times a configuration
+	// step is retried when it fails while the AMT firmware is still settling
+	// after activation. Right after activation the firmware restarts its local
+	// management (LMS) port stack and can briefly lock the admin account, so a
+	// step fired into that window fails with a dropped connection (EOF/reset) or
+	// a transient "account temporarily locked" 401 even though the password is
+	// correct. A fresh subprocess retried after a delay re-authenticates against
+	// the now-settled firmware and succeeds.
+	postActivationSettleAttempts = 4
+	// postActivationSettleDelaySeconds is the wait between post-activation settle
+	// retries, giving the firmware time to finish the port-stack restart and
+	// clear the transient account lock.
+	postActivationSettleDelaySeconds = 3
 )
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
@@ -47,6 +61,15 @@ type ProfileOrchestrator struct {
 	globalPassword string
 	// skip AMT certificate verification when connecting over TLS
 	skipAMTCertCheck bool
+	// activatedThisRun is set once this orchestration performs activation. It
+	// gates the post-activation settle retries so they only apply while the
+	// firmware is restarting its port stack; on an already-activated device a
+	// configuration failure is genuine and must fail fast.
+	activatedThisRun bool
+	// settleDelaySeconds is the wait between post-activation settle retries.
+	// Defaults to postActivationSettleDelaySeconds; overridable in tests to
+	// avoid real sleeps.
+	settleDelaySeconds int
 }
 
 // NewProfileOrchestrator creates a new profile orchestrator. The currentPassword argument
@@ -56,12 +79,13 @@ type ProfileOrchestrator struct {
 // argument controls whether AMT TLS certificate verification should be skipped for sub-commands.
 func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassword string, skipAMTCertCheck bool) *ProfileOrchestrator {
 	return &ProfileOrchestrator{
-		profile:          cfg,
-		executor:         &CLIExecutor{},
-		currentPassword:  strings.TrimSpace(currentPassword),
-		mebxPassword:     strings.TrimSpace(mebxPassword),
-		globalPassword:   strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
-		skipAMTCertCheck: skipAMTCertCheck,
+		profile:            cfg,
+		executor:           &CLIExecutor{},
+		currentPassword:    strings.TrimSpace(currentPassword),
+		mebxPassword:       strings.TrimSpace(mebxPassword),
+		globalPassword:     strings.TrimSpace(cfg.Configuration.AMTSpecific.AdminPassword),
+		skipAMTCertCheck:   skipAMTCertCheck,
+		settleDelaySeconds: postActivationSettleDelaySeconds,
 	}
 }
 
@@ -126,16 +150,28 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
+
+		po.activatedThisRun = true
 	} else if currentControlMode == 0 {
 		if err := po.executeActivation(); err != nil {
 			return fmt.Errorf("activation failed: %w", err)
 		}
+
+		po.activatedThisRun = true
 	} else {
 		log.Info("AMT already activated, skipping activation step")
 	}
 
-	// wait a sec after activation
-	utils.Pause(1)
+	// Give the firmware time to settle before the first configuration step. When
+	// we just activated, the firmware is restarting its local management (LMS)
+	// port stack and briefly locks the admin account, so a longer initial wait
+	// lets the first step authenticate on a settled stack rather than burning a
+	// settle retry (and adding to the lockout counter) on a doomed attempt.
+	if po.activatedThisRun {
+		utils.Pause(postActivationSettleDelaySeconds)
+	} else {
+		utils.Pause(1)
+	}
 
 	// Step 2: MEBx password configuration (ACM only)
 	if err := po.executeMEBxConfiguration(); err != nil {
@@ -182,9 +218,49 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	return nil
 }
 
-// executeWithPasswordFallback executes a CLI command and, on authentication failure,
-// prompts for the old AMT password to rotate it to the profile's new password, then retries.
+// executeWithPasswordFallback runs a configuration step, absorbing the transient
+// failures that occur while the AMT firmware is still settling after activation.
+//
+// Right after activation the firmware restarts its local management (LMS) port
+// stack and can briefly lock the admin account. A step fired into that window
+// fails with a dropped connection (EOF/reset) or a transient "account
+// temporarily locked" 401 even though the password is correct — the same
+// port-stack-restart race already handled on the activation commit and the LMS
+// dial. Because each step is a fresh subprocess that re-authenticates (new
+// digest challenge) and re-reads control mode, simply retrying after a short
+// delay lets it succeed once the firmware settles. Retries apply only when this
+// run performed activation; on an already-activated device a failure is genuine
+// and returned immediately. The underlying state-set operations are idempotent,
+// so re-applying a step that partially succeeded is safe.
 func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error {
+	err := po.executeWithPasswordRotation(args)
+	if err == nil || !po.activatedThisRun {
+		return err
+	}
+
+	for attempt := 1; attempt < postActivationSettleAttempts; attempt++ {
+		// A device-not-activated failure is not a settling symptom; retrying
+		// won't help, so surface it right away.
+		if isDeviceNotActivatedErr(err) {
+			return err
+		}
+
+		log.Warnf("Configuration step failed while AMT may still be settling after activation (attempt %d/%d): %v. Retrying in %ds...",
+			attempt, postActivationSettleAttempts, err, po.settleDelaySeconds)
+		utils.Pause(po.settleDelaySeconds)
+
+		err = po.executeWithPasswordRotation(args)
+		if err == nil {
+			return nil
+		}
+	}
+
+	return err
+}
+
+// executeWithPasswordRotation executes a CLI command and, on authentication failure,
+// prompts for the old AMT password to rotate it to the profile's new password, then retries.
+func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string) error {
 	err := po.executor.Execute(args)
 	if err == nil {
 		return nil
