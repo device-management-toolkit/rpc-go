@@ -317,6 +317,91 @@ func TestExecuteWithPasswordFallback_AuthExitCodeTriggersRotationAndRetry(t *tes
 	}
 }
 
+func TestExecuteWithPasswordFallback_NoSettleRetryWhenNotActivatedThisRun(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	mock.errs = []error{nonAuthExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	// activatedThisRun defaults to false: device was already activated, so a
+	// configuration failure is genuine and must fail fast without settle retries.
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("expected 1 call (no settle retry when not activated this run), got %d", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetryRecoversAfterActivation(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// Two transient post-activation failures (dropped connection / locked
+	// account), then success once the firmware settles.
+	mock.errs = []error{nonAuthExecError(), nonAuthExecError(), nil}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err != nil {
+		t.Fatalf("executeWithPasswordFallback() error = %v, want nil after settle retry", err)
+	}
+
+	if mock.callCount != 3 {
+		t.Fatalf("expected 3 calls (fail, fail, succeed), got %d", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetryBounded(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// Every attempt fails; the retry loop must be bounded and then surface the error.
+	mock.errs = []error{nonAuthExecError(), nonAuthExecError(), nonAuthExecError(), nonAuthExecError(), nonAuthExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
+	}
+
+	if mock.callCount != postActivationSettleAttempts {
+		t.Errorf("expected %d calls (bounded settle retries), got %d", postActivationSettleAttempts, mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetrySkippedForDeviceNotActivated(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// A device-not-activated failure is not a settling symptom; do not retry.
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected device-not-activated error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("expected 1 call (no settle retry for device-not-activated), got %d", mock.callCount)
+	}
+}
+
 func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
