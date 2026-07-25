@@ -22,6 +22,13 @@ const (
 
 	// LMSAddress is used for determining what address to connect to LMS on
 	LMSAddress = "localhost"
+	// LMSLoopbackAddress is the literal loopback IP the local LMS probe dials.
+	// LMS only ever listens on loopback, so the probe must not go through host
+	// resolution: on some managed devices "localhost" resolves via DNS to
+	// rotating routable corporate IPs (observed: 10.49.x / 10.99.x), and dialing
+	// those times out, is misread as "LMS up but restarting", and blocks the
+	// HECI fallback. Dialing 127.0.0.1 directly sidesteps resolution entirely.
+	LMSLoopbackAddress = "127.0.0.1"
 	// LMSPort is used for determining what port to connect to LMS on
 	LMSPort    = "16992"
 	LMSTLSPort = "16993"

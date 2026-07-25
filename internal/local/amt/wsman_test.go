@@ -45,6 +45,79 @@ func TestIsDialTimeout(t *testing.T) {
 	}
 }
 
+// opTimeoutErr wraps a net.Error timeout in a *net.OpError carrying the dial
+// target address, mirroring what net.Dialer.DialContext returns on a real
+// connect timeout. addr is the "host:port" the dial targeted.
+func opTimeoutErr(addr string) error {
+	host, port, _ := net.SplitHostPort(addr)
+
+	return &net.OpError{
+		Op:   "dial",
+		Net:  "tcp4",
+		Addr: &net.TCPAddr{IP: net.ParseIP(host), Port: atoiOrZero(port)},
+		Err:  timeoutErr{},
+	}
+}
+
+func atoiOrZero(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+
+		n = n*10 + int(r-'0')
+	}
+
+	return n
+}
+
+// TestLMSUpButUnready_TimeoutClassification pins the loopback gating: a dial
+// timeout only means "LMS up, keep off HECI" when the dial targeted loopback.
+// A timeout against a routable address (localhost mis-resolving to a corporate
+// IP) must NOT be read as LMS-up, so the caller can fall back to HECI.
+func TestLMSUpButUnready_TimeoutClassification(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"loopback timeout is lms-up", opTimeoutErr("127.0.0.1:16992"), true},
+		{"routable timeout is not lms-up", opTimeoutErr("10.49.14.88:16992"), false},
+		{"bare timeout (no addr) defaults lms-up", context.DeadlineExceeded, true},
+		{"eof is lms-up regardless of addr", io.EOF, true},
+		{"reset is lms-up", syscall.ECONNRESET, true},
+		{"refused is not lms-up", syscall.ECONNREFUSED, false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, lmsUpButUnready(tt.err))
+		})
+	}
+}
+
+// TestProbeLMS_RoutableTimeoutFallsBackToHECI reproduces the AMT16 local-mode
+// failure: "localhost" resolved to a rotating routable IP, so every dial timed
+// out against a host LMS never listens on. probeLMS must return the raw error
+// (not errLMSUpButUnready) so the caller falls back to HECI instead of
+// hard-failing after the recovery budget.
+func TestProbeLMS_RoutableTimeoutFallsBackToHECI(t *testing.T) {
+	attempts := 0
+
+	conn, err := probeLMS(func(context.Context) (net.Conn, error) {
+		attempts++
+
+		return nil, opTimeoutErr("10.49.14.88:16992")
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
+
+	require.Error(t, err)
+	assert.Nil(t, conn)
+	assert.NotErrorIs(t, err, errLMSUpButUnready, "a routable-IP timeout must not claim LMS-up; caller needs HECI fallback")
+	assert.Equal(t, 1, attempts, "a non-loopback timeout is not a restart; do not burn the recovery budget retrying")
+}
+
 func TestProbeLMS_SuccessNoRetry(t *testing.T) {
 	attempts := 0
 

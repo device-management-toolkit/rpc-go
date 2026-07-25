@@ -100,7 +100,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		}
 
 		conn, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+			return dialer.DialContext(ctx, "tcp", utils.LMSLoopbackAddress+":"+utils.LMSTLSPort)
 		}, probeTimeout, recoveryBudget, retryDelay)
 		if err != nil {
 			// A dial that was refused means LMS is genuinely down, so LME-over-HECI
@@ -138,7 +138,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		dialer := &net.Dialer{}
 
 		con, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+			return dialer.DialContext(ctx, "tcp4", utils.LMSLoopbackAddress+":"+utils.LMSPort)
 		}, probeTimeout, recoveryBudget, retryDelay)
 		if err != nil {
 			// LMS up but its port did not recover: it still owns the MEI, so HECI
@@ -225,14 +225,43 @@ func probeLMS(dial func(context.Context) (net.Conn, error), timeout, budget, ret
 // yet serving — a connect timeout, or a connection accepted then reset/closed
 // mid-handshake (EOF) while the AMT/LMS TLS port stack restarts. A refused or
 // otherwise fast-failing dial (LMS genuinely down) returns false.
+//
+// A timeout only implies "LMS restarting" when the dial targeted loopback,
+// where LMS actually listens. If the dial timed out against a non-loopback
+// address (e.g. "localhost" mis-resolving to a routable corporate IP), LMS was
+// never really reached, so we return false and let the caller fall back to
+// HECI instead of hard-failing after the recovery budget.
 func lmsUpButUnready(err error) bool {
 	if isDialTimeout(err) {
-		return true
+		return dialTargetIsLoopback(err)
 	}
 
 	return errors.Is(err, io.EOF) ||
 		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNRESET)
+}
+
+// dialTargetIsLoopback reports whether a failed dial's target address is a
+// loopback address. When the address cannot be determined from the error it
+// returns true, preserving the historical "LMS is up, keep retrying" behavior
+// for loopback dials rather than eagerly contending for the MEI over HECI.
+func dialTargetIsLoopback(err error) bool {
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Addr == nil {
+		return true
+	}
+
+	host, _, splitErr := net.SplitHostPort(opErr.Addr.String())
+	if splitErr != nil {
+		host = opErr.Addr.String()
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true
+	}
+
+	return ip.IsLoopback()
 }
 
 // isDialTimeout reports whether err is a dial deadline/timeout rather than a
