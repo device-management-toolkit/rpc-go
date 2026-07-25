@@ -244,6 +244,41 @@ func (e Executor) HandleInterrupt() {
 }
 
 // HandleDataFromRPS processes one RPS message and returns true when activation should stop.
+// lmsErrorClass categorizes an error surfaced on the LMS/LME errors channel so
+// the relay loop can decide whether to keep polling, treat the round as a
+// benign quiet round, or fail the activation.
+type lmsErrorClass int
+
+const (
+	// lmsErrorFatal is a genuine LMS/LME error that fails the activation (or, in
+	// TLS-tunnel mode, triggers a connection reset).
+	lmsErrorFatal lmsErrorClass = iota
+	// lmsErrorPoll is the normal HECI driver read timeout seen while polling for
+	// data; the loop should keep waiting.
+	lmsErrorPoll
+	// lmsErrorQuietRound is a read timeout with no bytes: a legitimate round
+	// where AMT sends nothing on this socket (a TLS 1.3 handshake round after
+	// our client Finished, or the plain relay's WSMAN request — e.g. the Setup
+	// that activates the device — that AMT acknowledges without an immediate
+	// reply). Before the TLS tunnel existed, lm.Listen forwarded an empty buffer
+	// for this case and the relay simply waited for the next RPS message; this
+	// class restores that benign handling on both the tunnel and plain paths.
+	// Genuine read errors arrive as other error types and stay lmsErrorFatal.
+	lmsErrorQuietRound
+)
+
+// classifyLMSError maps an errors-channel value to its lmsErrorClass.
+func classifyLMSError(err error) lmsErrorClass {
+	switch {
+	case errors.Is(err, heci.ErrReadTimeout):
+		return lmsErrorPoll
+	case errors.Is(err, lm.ErrLMSReadTimeoutNoData):
+		return lmsErrorQuietRound
+	default:
+		return lmsErrorFatal
+	}
+}
+
 func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	msg, err := e.server.ProcessMessage(dataFromServer)
 	if err != nil {
@@ -454,22 +489,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			return false
 		case errFromLMS := <-e.errors:
 			if errFromLMS != nil {
-				// HECI read timeout is expected while polling for data.
-				if errors.Is(errFromLMS, heci.ErrReadTimeout) {
+				switch classifyLMSError(errFromLMS) {
+				case lmsErrorPoll:
+					// HECI read timeout is expected while polling for data.
 					log.Debug("heci read timeout (normal driver timeout, not an error)")
 
 					continue
-				}
-
-				// TLS 1.3 has normal handshake rounds where LMS emits no immediate
-				// bytes (e.g. immediately after our client Finished). The LMS
-				// Listen goroutine surfaces those via ErrLMSReadTimeoutNoData; in
-				// TLS-tunnel mode treat them as a benign continuation so the
-				// connection and AMT-side TLS state stay alive and the next
-				// queued tls_data RPS message rides the same socket. Outside
-				// TLS-tunnel mode the historical fatal handling still applies.
-				if e.tlsTunnelActive && errors.Is(errFromLMS, lm.ErrLMSReadTimeoutNoData) {
-					log.Trace("No LMS data before read timeout for this TLS round-trip; continuing without connection_reset")
+				case lmsErrorQuietRound:
+					log.Trace("No LMS data before read timeout for this round-trip; continuing without failing activation")
 
 					return false
 				}
