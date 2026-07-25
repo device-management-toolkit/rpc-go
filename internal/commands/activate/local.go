@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -801,10 +802,19 @@ func (service *LocalActivationService) commitActivation() error {
 }
 
 // isConnectionResetErr reports whether err is a dropped/reset transport
-// connection (EOF, connection reset, or use of a closed connection) rather than
-// an application-level failure. These are the symptoms of the LMS relay being
-// torn down mid-response by the post-commit firmware port-stack restart. The
-// net/http error is wrapped in *url.Error, but errors.Is unwraps through it.
+// connection rather than an application-level failure. These are the symptoms of
+// the LMS relay being torn down mid-response by the post-commit firmware
+// port-stack restart:
+//
+//   - EOF / connection reset / use-of-closed-connection: the response was cut
+//     off while in flight.
+//   - apf.ErrChannelOpenFailure: after the initial cut-off, the LME transport
+//     resets HECI and retries, but the firmware refuses the fresh APF channel
+//     (APF_CHANNEL_OPEN_FAILURE) while the port stack is still restarting, so
+//     this — not the EOF — is the error that ultimately surfaces to the caller.
+//
+// The net/http error is wrapped in *url.Error and apf wraps its sentinel with
+// %w, but errors.Is unwraps through both.
 func isConnectionResetErr(err error) bool {
 	if err == nil {
 		return false
@@ -812,7 +822,8 @@ func isConnectionResetErr(err error) bool {
 
 	return errors.Is(err, io.EOF) ||
 		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, net.ErrClosed)
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, apf.ErrChannelOpenFailure)
 }
 
 // isDataMissingError checks if an error is PT_STATUS_DATA_MISSING (error code 2057).

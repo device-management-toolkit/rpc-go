@@ -6,11 +6,13 @@ package activate
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"syscall"
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/setupandconfiguration"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"go.uber.org/mock/gomock"
@@ -26,6 +28,8 @@ func TestIsConnectionResetErr(t *testing.T) {
 		{"bare EOF", io.EOF, true},
 		{"connection reset", syscall.ECONNRESET, true},
 		{"url.Error wrapping EOF (the observed CommitChanges symptom)", &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: io.EOF}, true},
+		{"APF channel-open failure (port stack restarting on LME retry)", fmt.Errorf("%w, reason code: 2", apf.ErrChannelOpenFailure), true},
+		{"url.Error wrapping APF channel-open failure", &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: fmt.Errorf("%w, reason code: 2", apf.ErrChannelOpenFailure)}, true},
 		{"unrelated error", errors.New("some other failure"), false},
 	}
 
@@ -51,6 +55,35 @@ func TestCommitActivation_ConnectionResetButActivated(t *testing.T) {
 	mockWSMAN.EXPECT().
 		CommitChanges().
 		Return(setupandconfiguration.Response{}, &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: io.EOF})
+
+	service := &LocalActivationService{
+		wsman:      mockWSMAN,
+		amtCommand: &MockAMTCommand{controlMode: AMTControlModeACM},
+	}
+
+	if err := service.commitActivation(); err != nil {
+		t.Fatalf("commitActivation() error = %v, want nil (device is provisioned)", err)
+	}
+}
+
+// TestCommitActivation_ChannelOpenFailureButActivated reproduces the AMT20 TLS
+// log: CommitChanges is cut off by an EOF, the LME transport resets HECI and
+// retries, and the retry hits APF_CHANNEL_OPEN_FAILURE (reason code 2) because
+// the firmware port stack is still restarting. That channel-open failure — not
+// the EOF — is the error that surfaces, yet the device is actually provisioned,
+// so the commit must be treated as a success rather than rolled back.
+func TestCommitActivation_ChannelOpenFailureButActivated(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	mockWSMAN.EXPECT().
+		CommitChanges().
+		Return(setupandconfiguration.Response{}, &url.Error{
+			Op:  "Post",
+			URL: "https://localhost:16993/wsman",
+			Err: fmt.Errorf("%w, reason code: 2", apf.ErrChannelOpenFailure),
+		})
 
 	service := &LocalActivationService{
 		wsman:      mockWSMAN,
