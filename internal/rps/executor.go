@@ -42,6 +42,24 @@ var maxPortSwitchDelaySeconds = envInt("RPC_PORT_SWITCH_MAX_DELAY", 60)
 // after port_switch. Overridable via RPC_PORT_SWITCH_EXTRA_DELAY.
 var extraPortSwitchDelaySeconds = envInt("RPC_PORT_SWITCH_EXTRA_DELAY", 0)
 
+// lmePortSwitchProbe, when true, replaces the blind LME port-switch sleep with an
+// active readiness probe: rpc-go opens a throwaway APF channel on the switched
+// port and acks RPS as soon as AMT accepts it, instead of always sleeping the
+// full server-requested delay. On LME boxes the delay fires 2-3 times per
+// activation (30-45s total of dead wait) even though AMT's TLS port is usually
+// ready far sooner. The probe caps its retries at the same delay budget, so the
+// worst case (port never becomes ready within the budget) matches the old blind
+// sleep exactly. Default off until hardware-validated; enable via
+// RPC_LME_PORT_SWITCH_PROBE=true. Only affects the LME (HECI/APF) transport; the
+// LMS path already reconnects a real socket and needs no probe.
+var lmePortSwitchProbe = envBool("RPC_LME_PORT_SWITCH_PROBE", false)
+
+// lmePortSwitchProbeInterval is the wait between LME port-switch readiness probe
+// attempts. Short enough to reclaim most of the delay budget once AMT's TLS port
+// binds, long enough not to hammer the firmware with back-to-back CHANNEL_OPENs
+// while it is still restarting.
+const lmePortSwitchProbeInterval = 1 * time.Second
+
 // envInt returns the integer value of env var name, or def if unset/invalid.
 func envInt(name string, def int) int {
 	v := os.Getenv(name)
@@ -63,6 +81,23 @@ func envInt(name string, def int) int {
 	}
 
 	return n
+}
+
+// envBool returns the boolean value of env var name, or def if unset/invalid.
+func envBool(name string, def bool) bool {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Warnf("ignoring invalid %s=%q: %v", name, v, err)
+
+		return def
+	}
+
+	return b
 }
 
 // waitWithSignal sleeps for d but returns early with an error if SIGINT/SIGTERM
@@ -1042,6 +1077,10 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	// socket that isn't listening (that's why we're on LME in the first
 	// place). Keep the LME handle, honor the delay, flip the port.
 	if e.isLME {
+		if lmePortSwitchProbe {
+			return e.portSwitchLMEWithProbe(psPayload, delaySeconds)
+		}
+
 		if err := waitWithSignal(time.Duration(delaySeconds) * time.Second); err != nil {
 			return err
 		}
@@ -1059,14 +1098,7 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 
 		log.Info("Port switch: LME retargeted to port ", psPayload.Port)
 
-		ackMsg := e.payload.CreateMessageResponse([]byte("ok"), MethodPortSwitchAck)
-		if err := e.server.Send(ackMsg); err != nil {
-			return err
-		}
-
-		log.Info("Port switch: sent port_switch_ack to RPS")
-
-		return nil
+		return e.sendPortSwitchAck()
 	}
 
 	log.Infof("Port switch: closing LMS connection")
@@ -1129,13 +1161,110 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 
 	log.Info("Port switch: successfully switched to port ", psPayload.Port)
 
-	// Send port_switch_ack back to RPS
+	return e.sendPortSwitchAck()
+}
+
+// sendPortSwitchAck tells RPS the port switch is complete so it starts the TLS
+// handshake on the new port. RPS sends the ClientHello immediately on receipt,
+// so callers must only ack once the new port is actually ready to accept it.
+func (e *Executor) sendPortSwitchAck() error {
 	ackMsg := e.payload.CreateMessageResponse([]byte("ok"), MethodPortSwitchAck)
 	if err := e.server.Send(ackMsg); err != nil {
 		return err
 	}
 
 	log.Info("Port switch: sent port_switch_ack to RPS")
+
+	return nil
+}
+
+// portSwitchLMEWithProbe handles an LME-mode port switch by actively probing the
+// switched port for readiness instead of blindly sleeping the server-requested
+// delay. It retargets the LME connection to the new port, then repeatedly opens
+// a throwaway APF channel (via prepareLMETunnel, the same path the real TLS
+// rounds use) until AMT accepts one - proving its TLS subsystem has finished
+// restarting on the new port - or the delay budget is exhausted. On the first
+// successful probe it tears the throwaway channel down so RPS's ClientHello
+// opens a fresh one, then acks. If the budget runs out it acks anyway, matching
+// the blind-sleep path's optimism (worst case: identical total wait).
+func (e *Executor) portSwitchLMEWithProbe(psPayload PortSwitchPayload, delaySeconds int) error {
+	lmec, ok := e.localManagement.(*lm.LMEConnection)
+	if !ok {
+		return fmt.Errorf("LME port switch requires *lm.LMEConnection")
+	}
+
+	port, perr := strconv.ParseUint(psPayload.Port, 10, 32)
+	if perr != nil {
+		return fmt.Errorf("port switch: invalid port %q: %w", psPayload.Port, perr)
+	}
+
+	lmec.SetPort(uint32(port))
+	e.tlsTunnelActive = true
+
+	log.Info("Port switch: LME retargeted to port ", psPayload.Port)
+
+	// probe opens (and, via stopLMEListen on the next call, retires) a persistent
+	// channel on the switched port. A nil error means AMT accepted an APF channel
+	// there, i.e. the TLS port is live; on the first success retire the throwaway
+	// channel so RPS's ClientHello opens a clean session (prepareLMETunnel rebuilds
+	// it on the next round).
+	probe := func() error {
+		if err := e.prepareLMETunnel(); err != nil {
+			return err
+		}
+
+		e.stopLMEListen(lmec)
+		e.lmConnected = false
+
+		return nil
+	}
+
+	budget := time.Duration(delaySeconds) * time.Second
+	if err := probeUntilReady(probe, waitWithSignal, budget, lmePortSwitchProbeInterval, psPayload.Port); err != nil {
+		return err
+	}
+
+	return e.sendPortSwitchAck()
+}
+
+// probeUntilReady calls probe up to a budget's worth of interval-spaced attempts.
+// It returns nil both when a probe succeeds (port ready) and when the attempts
+// are exhausted (ack anyway, matching the blind sleep's optimism); it returns
+// non-nil only when the wait is interrupted (SIGINT/SIGTERM), so the caller
+// aborts the activation loop promptly. The attempt count is derived from
+// budget/interval rather than wall-clock, so the total wait matches the old
+// blind sleep and the loop is deterministic under an injected no-op wait. wait
+// is injected so tests can drive the loop without real sleeping.
+func probeUntilReady(probe func() error, wait func(time.Duration) error, budget, interval time.Duration, port string) error {
+	maxAttempts := 1
+	if interval > 0 && budget > interval {
+		maxAttempts = int(budget / interval)
+	}
+
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := probe()
+		if err == nil {
+			log.Infof("Port switch: LME port %s ready after %d probe attempt(s)", port, attempt)
+
+			return nil
+		}
+
+		lastErr = err
+
+		if attempt == maxAttempts {
+			break
+		}
+
+		log.Debugf("Port switch: LME port %s probe %d not ready (%v); retrying", port, attempt, lastErr)
+
+		if err := wait(interval); err != nil {
+			return err
+		}
+	}
+
+	log.Warnf("Port switch: LME port %s not confirmed ready within budget (%v); acking anyway", port, lastErr)
 
 	return nil
 }
