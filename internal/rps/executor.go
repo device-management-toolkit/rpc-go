@@ -256,13 +256,16 @@ const (
 	// lmsErrorPoll is the normal HECI driver read timeout seen while polling for
 	// data; the loop should keep waiting.
 	lmsErrorPoll
-	// lmsErrorQuietRound is a read timeout with no bytes: a legitimate round
-	// where AMT sends nothing on this socket (a TLS 1.3 handshake round after
-	// our client Finished, or the plain relay's WSMAN request — e.g. the Setup
-	// that activates the device — that AMT acknowledges without an immediate
-	// reply). Before the TLS tunnel existed, lm.Listen forwarded an empty buffer
-	// for this case and the relay simply waited for the next RPS message; this
-	// class restores that benign handling on both the tunnel and plain paths.
+	// lmsErrorQuietRound is a first-byte read timeout with no bytes. In
+	// TLS-tunnel mode this is a legitimate quiet round (a TLS 1.3 handshake
+	// round after our client Finished, where AMT correctly stays silent) and we
+	// keep the tunnel alive. On the plain relay — where lm.Listen now waits a
+	// full plainFirstByteTimeout (3s), long enough for even the slow activating
+	// Setup response — a no-byte timeout instead means AMT was genuinely
+	// unresponsive for the whole window; we still yield rather than hard-fail
+	// (matching the pre-TLS-tunnel behavior, where lm.Listen forwarded an empty
+	// buffer and the relay simply waited for the next RPS message) so a
+	// transient stall doesn't abort an otherwise-recoverable activation.
 	// Genuine read errors arrive as other error types and stay lmsErrorFatal.
 	lmsErrorQuietRound
 )
