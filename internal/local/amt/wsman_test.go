@@ -8,12 +8,12 @@ package amt
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"syscall"
 	"testing"
 	"time"
 
-	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +52,7 @@ func TestProbeLMS_SuccessNoRetry(t *testing.T) {
 		attempts++
 
 		return &net.TCPConn{}, nil
-	}, time.Millisecond)
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
 
 	require.NoError(t, err)
 	assert.NotNil(t, conn)
@@ -66,7 +66,7 @@ func TestProbeLMS_RefusedFailsFast(t *testing.T) {
 		attempts++
 
 		return nil, syscall.ECONNREFUSED
-	}, time.Millisecond)
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
 
 	require.Error(t, err)
 	assert.Nil(t, conn)
@@ -80,11 +80,51 @@ func TestProbeLMS_TimeoutRetriesThenGivesUp(t *testing.T) {
 		attempts++
 
 		return nil, context.DeadlineExceeded
-	}, time.Millisecond)
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
 
 	require.Error(t, err)
 	assert.Nil(t, conn)
-	assert.Equal(t, utils.LMSProbeAttempts, attempts, "a timeout must be retried up to the attempt cap")
+	assert.ErrorIs(t, err, errLMSUpButUnready, "an exhausted timeout must signal LMS-up so the caller skips HECI")
+	assert.Greater(t, attempts, 1, "a timeout must be retried, not fail on the first attempt")
+}
+
+// TestProbeLMS_EOFTreatedAsLMSUp reproduces the AMT21 LMS log: the LMS TLS dial
+// is accepted then dropped with EOF while the AMT/LMS port stack restarts. That
+// means LMS is up and owns the MEI, so probeLMS must retry and ultimately signal
+// errLMSUpButUnready rather than returning a raw error that triggers HECI fallback.
+func TestProbeLMS_EOFTreatedAsLMSUp(t *testing.T) {
+	attempts := 0
+
+	conn, err := probeLMS(func(context.Context) (net.Conn, error) {
+		attempts++
+
+		return nil, io.EOF
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
+
+	require.Error(t, err)
+	assert.Nil(t, conn)
+	assert.ErrorIs(t, err, errLMSUpButUnready, "an EOF dial means LMS is up; caller must not fall back to HECI")
+	assert.ErrorIs(t, err, io.EOF, "the underlying dial error should remain wrapped")
+	assert.Greater(t, attempts, 1, "an EOF dial must be retried while LMS restarts")
+}
+
+// TestProbeLMS_EOFThenSuccess verifies that once LMS finishes restarting, a
+// subsequent successful dial is returned and no LMS-up error is surfaced.
+func TestProbeLMS_EOFThenSuccess(t *testing.T) {
+	attempts := 0
+
+	conn, err := probeLMS(func(context.Context) (net.Conn, error) {
+		attempts++
+		if attempts < 2 {
+			return nil, io.EOF
+		}
+
+		return &net.TCPConn{}, nil
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
+
+	require.NoError(t, err)
+	assert.NotNil(t, conn)
+	assert.Equal(t, 2, attempts, "should stop retrying once LMS answers")
 }
 
 func TestProbeLMS_TimeoutThenSuccess(t *testing.T) {
@@ -97,7 +137,7 @@ func TestProbeLMS_TimeoutThenSuccess(t *testing.T) {
 		}
 
 		return &net.TCPConn{}, nil
-	}, time.Millisecond)
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
 
 	require.NoError(t, err)
 	assert.NotNil(t, conn)
