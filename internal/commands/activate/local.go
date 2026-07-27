@@ -194,9 +194,14 @@ func (cmd *LocalActivateCmd) handleStopConfiguration(ctx *commands.Context) erro
 		}
 	}
 	// Call StopConfiguration to clean up host-based config state
-	_, stopErr := amtCmd.StopConfiguration()
+	stopResp, stopErr := amtCmd.StopConfiguration()
 	if stopErr != nil {
 		return fmt.Errorf("failed to stop configuration: %w", stopErr)
+	}
+	// The firmware reports the real result in the response status; a non-success
+	// status must not be reported as success.
+	if stopResp.Status != amtStatusSuccess {
+		return fmt.Errorf("failed to stop configuration: firmware status %q", stopResp.Status)
 	}
 
 	if ctx.JsonOutput {
@@ -710,9 +715,15 @@ func (service *LocalActivationService) setupMEBxAndCommit() error {
 func (service *LocalActivationService) stopConfigOnFailure() {
 	log.Info("Activation failed; putting device back to pre-provisioning state")
 
-	_, err := service.amtCommand.StopConfiguration()
+	stopResp, err := service.amtCommand.StopConfiguration()
 	if err != nil {
 		log.Error("Failed to stop configuration: ", err)
+
+		return
+	}
+
+	if stopResp.Status != amtStatusSuccess {
+		log.Errorf("Failed to stop configuration: firmware status %q", stopResp.Status)
 	}
 }
 
