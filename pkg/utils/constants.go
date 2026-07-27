@@ -22,6 +22,13 @@ const (
 
 	// LMSAddress is used for determining what address to connect to LMS on
 	LMSAddress = "localhost"
+	// LMSLoopbackAddress is the literal loopback IP the local LMS probe dials.
+	// LMS only ever listens on loopback, so the probe must not go through host
+	// resolution: on some managed devices "localhost" resolves via DNS to
+	// rotating routable corporate IPs (observed: 10.49.x / 10.99.x), and dialing
+	// those times out, is misread as "LMS up but restarting", and blocks the
+	// HECI fallback. Dialing 127.0.0.1 directly sidesteps resolution entirely.
+	LMSLoopbackAddress = "127.0.0.1"
 	// LMSPort is used for determining what port to connect to LMS on
 	LMSPort    = "16992"
 	LMSTLSPort = "16993"
@@ -32,8 +39,18 @@ const (
 	MPSServerMaxLength = 256
 
 	// LMSConnectionTimeout is the maximum wait for LMS TCP connection setup.
-	LMSConnectionTimeout    = 5    // seconds
-	LMSDialerTimeout        = 5    // seconds
+	LMSConnectionTimeout = 5 // seconds
+	LMSDialerTimeout     = 5 // seconds
+	// LMSRecoveryBudget bounds the wall-clock time SetupWsmanClient keeps retrying
+	// the LMS dial before giving up. A refused connection (LMS genuinely down)
+	// fails fast and does not consume the budget; only a dial that times out or is
+	// accepted-then-dropped (LMS up but its TLS port stack restarting, e.g. right
+	// after activation) is retried. While LMS is up it owns /dev/mei0, so falling
+	// back to LME-over-HECI would only contend for the MEI and fail with "device
+	// or resource busy" - the caller waits out the restart on the LMS path instead.
+	LMSRecoveryBudget = 30 // seconds
+	// LMSProbeRetryDelay is the wait between LMS dial retries.
+	LMSProbeRetryDelay      = 1000 // milliseconds
 	HeciReadTimeout         = 3    // seconds
 	HeciRetryDelay          = 1500 // milliseconds
 	HeciReinitDelay         = 300  // milliseconds
