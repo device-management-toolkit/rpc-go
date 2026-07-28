@@ -84,6 +84,40 @@ func (lme *LMEConnection) StopListen() {
 	}
 }
 
+// CloseChannel sends APF_CHANNEL_CLOSE for the session's currently confirmed
+// channel so AMT releases the channel slot it allocated on OPEN_CONFIRMATION.
+// AMT's forwarded-tcpip pool is small (8 slots, SenderChannel 0..7) and it only
+// frees a slot when it sees a close, so a superseding TLS session that just
+// abandons the old channel leaks a slot for the rest of the activation; after
+// enough re-handshakes every subsequent CHANNEL_OPEN is rejected (reason 4
+// RESOURCE_SHORTAGE, or reason 1 when the rebind races the shortage).
+//
+// AMT addresses channels by its own sender number, which is what Send() uses
+// for CHANNEL_DATA, so the close must carry Session.SenderChannel too.
+//
+// Only the abandoned-channel case needs a close. A nil StreamDataBuffer means
+// apf.ProcessChannelClose already saw AMT's own CHANNEL_CLOSE for our confirmed
+// channel and cleared the stream, so the slot is already free and closing again
+// would address a channel AMT has forgotten; EnableTunnel re-arms the buffer for
+// each new session and runs after the caller's teardown, so this stays an
+// accurate "AMT has not closed us" test. Best-effort: the caller is tearing the
+// session down regardless, so a failed close is logged, not returned, and the
+// confirmed flag is cleared either way so we never send two closes for one
+// channel.
+func (lme *LMEConnection) CloseChannel() {
+	if lme.Session == nil || !lme.Session.HandshakeConfirmed || lme.Session.StreamDataBuffer == nil {
+		return
+	}
+
+	log.Debug("LME tunnel: closing superseded APF channel")
+
+	if err := lme.Command.Send(apf.BuildChannelCloseBytes(lme.Session.SenderChannel)); err != nil {
+		log.Debugf("LME tunnel: failed to close superseded APF channel: %v", err)
+	}
+
+	lme.Session.HandshakeConfirmed = false
+}
+
 // AMT advertises tcpip-forward for a management port plus a matching
 // redirection port. Which ports appear depends on whether TLS is enforced:
 //   - non-TLS device: 16992 (management) + 623 (redirection)
