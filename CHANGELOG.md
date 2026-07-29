@@ -1,3 +1,26 @@
+# [3.0.0-beta.43](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.42...v3.0.0-beta.43) (2026-07-28)
+
+# [3.0.0-beta.42](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.41...v3.0.0-beta.42) (2026-07-20)
+
+
+### Bug Fixes
+
+* **lme:** add to WaitGroup before sending CHANNEL_OPEN ([#1437](https://github.com/device-management-toolkit/rpc-go/issues/1437)) ([1fab4c8](https://github.com/device-management-toolkit/rpc-go/commit/1fab4c8e4b1ef2c596ce9101193c66560050eea5))
+
+# [3.0.0-beta.41](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.40...v3.0.0-beta.41) (2026-07-20)
+
+
+### Features
+
+* **cli:** add --discover and --register as aliases for amtinfo --sync ([#1448](https://github.com/device-management-toolkit/rpc-go/issues/1448)) ([e8267f3](https://github.com/device-management-toolkit/rpc-go/commit/e8267f3615d3eba5c9db6ad2b7786cd262713daf)), closes [#1406](https://github.com/device-management-toolkit/rpc-go/issues/1406)
+
+# [3.0.0-beta.40](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.39...v3.0.0-beta.40) (2026-07-20)
+
+
+### Features
+
+* add discovery timestamps to deviceInfo ([#1441](https://github.com/device-management-toolkit/rpc-go/issues/1441)) ([777c380](https://github.com/device-management-toolkit/rpc-go/commit/777c3806faddc4160c61e8b75fd37ba5e7145174)), closes [#1394](https://github.com/device-management-toolkit/rpc-go/issues/1394)
+
 # [3.0.0-beta.39](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.38...v3.0.0-beta.39) (2026-06-25)
 
 

@@ -54,6 +54,10 @@ func (c *MockHECICommands) ReceiveMessage(buffer []byte, done *uint32) (bytesRea
 // payload length back so pthi.Command.Send doesn't see a byteswritten mismatch.
 type queuedHECIMock struct {
 	queue chan []byte
+	// onSend, when set, runs synchronously inside SendMessage. Connect uses
+	// pthi.Command.Send, which calls this directly, so tests can observe or
+	// interleave logic at the exact moment a frame is sent.
+	onSend func()
 }
 
 func newQueuedHECIMock(buffer int) *queuedHECIMock {
@@ -65,6 +69,10 @@ func (m *queuedHECIMock) InitHOTHAM() error                   { return nil }
 func (m *queuedHECIMock) InitWithGUID(guid interface{}) error { return nil }
 func (m *queuedHECIMock) GetBufferSize() uint32               { return 5120 }
 func (m *queuedHECIMock) SendMessage(buffer []byte, done *uint32) (int, error) {
+	if m.onSend != nil {
+		m.onSend()
+	}
+
 	return len(buffer), nil
 }
 
@@ -403,4 +411,39 @@ func Test_Listen_StaleCloseIgnoredUntilOpenFailure(t *testing.T) {
 	}
 
 	close(mock.queue)
+}
+
+// Test_Connect_WaitGroupManagement covers the #1398 ordering regression by
+// triggering Done() during Send; Add must already be in place.
+func Test_Connect_WaitGroupManagement(t *testing.T) {
+	resetMock()
+
+	lmDataChannel := make(chan []byte, 1)
+	lmErrorChannel := make(chan error, 1)
+	wg := &sync.WaitGroup{}
+	lme := NewLMEConnection(lmDataChannel, lmErrorChannel, wg)
+
+	mock := newQueuedHECIMock(1)
+	mock.onSend = func() {
+		lme.Session.WaitGroup.Done()
+	}
+	lme.Command.Heci = mock
+
+	assert.NotPanics(t, func() {
+		err := lme.Connect()
+		assert.NoError(t, err)
+	})
+
+	done := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("WaitGroup counter not balanced after Connect")
+	}
 }

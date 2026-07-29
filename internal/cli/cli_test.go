@@ -100,6 +100,40 @@ func TestParse_WSManCommandAliases(t *testing.T) {
 	}
 }
 
+func TestParse_AmtInfoSyncAliases(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"--sync", []string{"rpc", "amtinfo", "--sync", "--url", "https://example.com/api/v1/devices"}},
+		{"--discover", []string{"rpc", "amtinfo", "--discover", "--url", "https://example.com/api/v1/devices"}},
+		{"--register", []string{"rpc", "amtinfo", "--register", "--url", "https://example.com/api/v1/devices"}},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
+
+			_, parsed, err := Parse(tt.args, mockAMT)
+			assert.NoError(t, err)
+
+			if !assert.NotNil(t, parsed) {
+				return
+			}
+
+			assert.True(t, parsed.AmtInfo.Sync, "Sync should be true when %s is passed", tt.name)
+		})
+	}
+}
+
 func TestGlobalsBeforeApply(t *testing.T) {
 	tests := []struct {
 		name    string

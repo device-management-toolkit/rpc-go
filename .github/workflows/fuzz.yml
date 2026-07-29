@@ -26,15 +26,17 @@ jobs:
     
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
         with:
           egress-policy: audit
 
       - name: Check out code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -42,8 +44,10 @@ jobs:
         run: go mod download
 
       - name: Run custom duration fuzz tests (Manual)
+        env:
+          FUZZ_TIME_INPUT: ${{ inputs.fuzz_time }}
         run: |
-          FUZZ_TIME="${{ inputs.fuzz_time || '5m' }}"
+          FUZZ_TIME="${FUZZ_TIME_INPUT:-5m}"
           echo "Running fuzz tests for ${FUZZ_TIME}"
           go test -run=^$ -fuzz=^FuzzDeactivate$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzDeactivateURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
@@ -54,6 +58,14 @@ jobs:
           go test -run=^$ -fuzz=^FuzzActivateProfile$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzActivatePassword$ -fuzztime=${FUZZ_TIME} ./internal/cli
           go test -run=^$ -fuzz=^FuzzActivateFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzVersion$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzVersionFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzAmtInfo$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzAmtInfoURL$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzAmtInfoFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigure$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigureSubcommand$ -fuzztime=${FUZZ_TIME} ./internal/cli
+          go test -run=^$ -fuzz=^FuzzConfigureFlagCombinations$ -fuzztime=${FUZZ_TIME} ./internal/cli
 
       - name: Upload fuzz failure artifacts
         if: failure()
@@ -82,15 +94,17 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
         with:
           egress-policy: audit
 
       - name: Check out code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -110,6 +124,14 @@ jobs:
           go test ./internal/cli -run=^$ -fuzz=^FuzzActivateProfile$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzActivatePassword$ -fuzztime=1x
           go test ./internal/cli -run=^$ -fuzz=^FuzzActivateFlagCombinations$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzVersion$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzVersionFlagCombinations$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfo$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfoURL$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzAmtInfoFlagCombinations$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigure$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigureSubcommand$ -fuzztime=1x
+          go test ./internal/cli -run=^$ -fuzz=^FuzzConfigureFlagCombinations$ -fuzztime=1x
 
       - name: Report regression test results
         if: failure()
