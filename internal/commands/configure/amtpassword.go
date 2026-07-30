@@ -21,7 +21,7 @@ import (
 type AMTPasswordCmd struct {
 	ConfigureBaseCmd
 
-	NewPassword string `help:"New AMT password" name:"newamtpassword"`
+	NewPassword string `help:"New AMT password" name:"newamtpassword" env:"NEW_AMT_PASSWORD"`
 }
 
 // BeforeApply validates the AMT password change command before execution
