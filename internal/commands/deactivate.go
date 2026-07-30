@@ -433,18 +433,32 @@ func (cmd *DeactivateCmd) provisioningHalted(ctx *Context) bool {
 func (cmd *DeactivateCmd) recoverInProvisioningOverHECI(ctx *Context, wsmanErr error) error {
 	log.Warnf("WSMAN deactivate failed while device is in provisioning (%v); recovering over HECI", wsmanErr)
 
-	// Unprovision reports failure through the state in the firmware response as
-	// well as through err — deactivateCCM below checks both. Gating on err alone
-	// would report a firmware-rejected unprovision as a successful deactivation.
 	state, err := ctx.AMTCommand.Unprovision()
 
+	// Unprovision reports failure through the state in the firmware response as
+	// well as through err — deactivateCCM below checks both. Gating on err alone
+	// would report a firmware-rejected unprovision as a successful deactivation
+	// and skip the StopConfiguration fallback.
 	switch {
 	case err != nil:
-		log.Error("Status: Unable to deactivate over HECI ", err)
+		log.Warnf("HECI unprovision failed for in-provisioning device (%v); stopping incomplete configuration", err)
+	case state != 0:
+		log.Warnf("HECI unprovision for in-provisioning device reported state %d; stopping incomplete configuration", state)
+	default:
+		log.Info("Status: Device deactivated")
+
+		return nil
+	}
+
+	stopResp, stopErr := ctx.AMTCommand.StopConfiguration()
+	if stopErr != nil {
+		log.Error("Status: Unable to stop incomplete configuration over HECI ", stopErr)
 
 		return utils.UnableToDeactivate
-	case state != 0:
-		log.Errorf("Status: Unable to deactivate over HECI; firmware reported state %d", state)
+	}
+
+	if stopResp.Status != "AMT_STATUS_SUCCESS" {
+		log.Errorf("Status: Unable to stop incomplete configuration over HECI: %s", stopResp.Status)
 
 		return utils.UnableToDeactivate
 	}
