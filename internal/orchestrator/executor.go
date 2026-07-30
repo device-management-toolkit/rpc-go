@@ -41,6 +41,9 @@ func (e *ExecError) Unwrap() error { return e.Err }
 // CommandExecutor interface for executing commands
 type CommandExecutor interface {
 	Execute(args []string) error
+	// ExecuteWithEnv executes a command with custom environment variables
+	// without mutating the global process environment.
+	ExecuteWithEnv(args []string, env map[string]string) error
 }
 
 // CLIExecutor executes commands using the CLI
@@ -48,6 +51,12 @@ type CLIExecutor struct{}
 
 // Execute runs the RPC command with the given arguments
 func (e *CLIExecutor) Execute(args []string) error {
+	return e.ExecuteWithEnv(args, nil)
+}
+
+// ExecuteWithEnv runs the RPC command with the given arguments and custom environment variables.
+// Environment variables are passed per-subprocess without mutating the global process environment.
+func (e *CLIExecutor) ExecuteWithEnv(args []string, env map[string]string) error {
 	// Get the current executable path
 	executable, err := os.Executable()
 	if err != nil {
@@ -66,6 +75,17 @@ func (e *CLIExecutor) Execute(args []string) error {
 	ctx := context.Background()
 
 	cmd := exec.CommandContext(ctx, executable, args...)
+
+	// Start with parent's environment
+	cmd.Env = os.Environ()
+
+	// Add custom environment variables without mutating global process env.
+	// This prevents credential leakage in c-shared library mode where the host
+	// process environment would otherwise retain passwords after rpcExec returns.
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	// Capture output while still streaming to the console
 	var buf bytes.Buffer
 
@@ -91,11 +111,26 @@ func (e *CLIExecutor) Execute(args []string) error {
 
 // DirectExecutor executes commands directly (for testing or embedded use)
 type DirectExecutor struct {
-	ExecuteFunc func(args []string) error
+	ExecuteFunc        func(args []string) error
+	ExecuteWithEnvFunc func(args []string, env map[string]string) error
 }
 
 // Execute runs the command using the provided function
 func (e *DirectExecutor) Execute(args []string) error {
+	if e.ExecuteFunc != nil {
+		return e.ExecuteFunc(args)
+	}
+
+	return nil
+}
+
+// ExecuteWithEnv runs the command with environment variables using the provided function
+func (e *DirectExecutor) ExecuteWithEnv(args []string, env map[string]string) error {
+	if e.ExecuteWithEnvFunc != nil {
+		return e.ExecuteWithEnvFunc(args, env)
+	}
+
+	// Fallback to ExecuteFunc if ExecuteWithEnvFunc not provided (backward compatibility)
 	if e.ExecuteFunc != nil {
 		return e.ExecuteFunc(args)
 	}
