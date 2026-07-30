@@ -6,10 +6,14 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -219,4 +223,175 @@ func TestServerAuthFlags_ApplyToRequest(t *testing.T) {
 			assert.Equal(t, tt.wantHeader, req.Header.Get("Authorization"))
 		})
 	}
+}
+
+func TestServerAuthFlags_WarnIfInsecure(t *testing.T) {
+	tests := []struct {
+		name          string
+		flags         ServerAuthFlags
+		cliArgs       []string
+		expectWarning bool
+		description   string
+	}{
+		{
+			name:          "token from env - no warning",
+			flags:         ServerAuthFlags{AuthToken: "env-token"},
+			cliArgs:       []string{"rpc", "version"}, // No auth flags
+			expectWarning: false,
+			description:   "Token from environment variable should not warn",
+		},
+		{
+			name:          "token from CLI - warning",
+			flags:         ServerAuthFlags{AuthToken: "cli-token"},
+			cliArgs:       []string{"rpc", "version", "--auth-token", "cli-token"},
+			expectWarning: true,
+			description:   "Token from CLI flag should warn",
+		},
+		{
+			name: "basic auth from env - no warning",
+			flags: ServerAuthFlags{
+				AuthUsername: "user",
+				AuthPassword: "pass",
+			},
+			cliArgs:       []string{"rpc", "version"}, // No auth flags
+			expectWarning: false,
+			description:   "Basic auth from environment should not warn",
+		},
+		{
+			name: "basic auth from CLI - warning",
+			flags: ServerAuthFlags{
+				AuthUsername: "user",
+				AuthPassword: "pass",
+			},
+			cliArgs:       []string{"rpc", "version", "--auth-username", "user", "--auth-password", "pass"},
+			expectWarning: true,
+			description:   "Basic auth from CLI should warn",
+		},
+		{
+			name: "only password on CLI - partial warning",
+			flags: ServerAuthFlags{
+				AuthUsername: "user",
+				AuthPassword: "pass",
+			},
+			cliArgs:       []string{"rpc", "version", "--auth-password", "pass"},
+			expectWarning: true,
+			description:   "Password from CLI should warn even if username from env",
+		},
+		{
+			name:          "no credentials - no warning",
+			flags:         ServerAuthFlags{},
+			cliArgs:       []string{"rpc", "version"},
+			expectWarning: false,
+			description:   "No credentials should not warn",
+		},
+		{
+			name: "username only from CLI - warning",
+			flags: ServerAuthFlags{
+				AuthUsername: "user",
+			},
+			cliArgs:       []string{"rpc", "version", "--auth-username", "user"},
+			expectWarning: true,
+			description:   "Username only from CLI should warn",
+		},
+		{
+			name: "password only from CLI - warning",
+			flags: ServerAuthFlags{
+				AuthPassword: "pass",
+			},
+			cliArgs:       []string{"rpc", "version", "--auth-password", "pass"},
+			expectWarning: true,
+			description:   "Password only from CLI should warn",
+		},
+		{
+			name: "token from CLI even with env vars set - warning",
+			flags: ServerAuthFlags{
+				AuthToken: "cli-token",
+			},
+			cliArgs:       []string{"rpc", "version", "--auth-token", "cli-token"},
+			expectWarning: true,
+			description:   "Token from CLI should warn even if AUTH_TOKEN env var is also set",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore os.Args
+			oldArgs := os.Args
+			defer func() { os.Args = oldArgs }()
+
+			// Set os.Args to simulate CLI invocation
+			os.Args = tt.cliArgs
+
+			// Capture log output
+			var logBuf bytes.Buffer
+
+			originalOutput := logrus.StandardLogger().Out
+			originalLevel := logrus.GetLevel()
+
+			logrus.SetOutput(&logBuf)
+			logrus.SetLevel(logrus.WarnLevel) // Ensure warnings are logged
+
+			defer func() {
+				logrus.SetOutput(originalOutput)
+				logrus.SetLevel(originalLevel)
+			}()
+
+			// Call the warning function
+			tt.flags.WarnIfInsecure()
+
+			// Check if warning was logged
+			logOutput := logBuf.String()
+			hasWarning := strings.Contains(logOutput, "SECURITY WARNING")
+
+			if hasWarning != tt.expectWarning {
+				t.Errorf("%s: expected warning=%v, got warning=%v\nLog output:\n%s",
+					tt.description, tt.expectWarning, hasWarning, logOutput)
+			}
+
+			// If we expect a warning, verify it contains key elements
+			if tt.expectWarning {
+				assert.Contains(t, logOutput, "SECURITY WARNING", "Warning should contain security notice")
+				assert.Contains(t, logOutput, "visible in process listings", "Warning should mention process visibility")
+				assert.Contains(t, logOutput, "Use environment variables instead", "Warning should suggest env vars")
+			}
+		})
+	}
+}
+
+func TestServerAuthFlags_AfterApply(t *testing.T) {
+	// Save and restore os.Args
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Simulate CLI with auth token
+	os.Args = []string{"rpc", "version", "--auth-token", "test-token"}
+
+	// Test that AfterApply calls WarnIfInsecure
+	flags := ServerAuthFlags{
+		AuthToken: "test-token",
+	}
+
+	// Capture log output
+	var logBuf bytes.Buffer
+
+	originalOutput := logrus.StandardLogger().Out
+	originalLevel := logrus.GetLevel()
+
+	logrus.SetOutput(&logBuf)
+	logrus.SetLevel(logrus.WarnLevel)
+
+	defer func() {
+		logrus.SetOutput(originalOutput)
+		logrus.SetLevel(originalLevel)
+	}()
+
+	// Call AfterApply
+	err := flags.AfterApply()
+
+	// Should not return error
+	assert.NoError(t, err, "AfterApply should not return error")
+
+	// Should have triggered warning
+	logOutput := logBuf.String()
+	assert.Contains(t, logOutput, "SECURITY WARNING", "AfterApply should trigger warning for CLI credentials")
 }
