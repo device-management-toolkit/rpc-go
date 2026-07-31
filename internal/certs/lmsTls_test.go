@@ -7,15 +7,21 @@ package certs
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"math/big"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -65,17 +71,72 @@ func createCertTemplate(commonName string, isCA bool, ou []string) *x509.Certifi
 }
 
 func TestGetTLSConfig(t *testing.T) {
-	mode := 0
-	tlsConfig := GetTLSConfig(&mode, nil, true)
-	assert.NotNil(t, tlsConfig)
-	assert.True(t, tlsConfig.InsecureSkipVerify)
-	assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+	tests := []struct {
+		name                 string
+		mode                 int
+		skip                 bool
+		expectInsecureSkip   bool
+		expectPeerVerifyHook bool
+	}{
+		{
+			name:                 "pre-provisioning with verification enabled",
+			mode:                 0,
+			skip:                 false,
+			expectInsecureSkip:   true,
+			expectPeerVerifyHook: true,
+		},
+		{
+			name:                 "pre-provisioning with verification skipped",
+			mode:                 0,
+			skip:                 true,
+			expectInsecureSkip:   true,
+			expectPeerVerifyHook: true,
+		},
+		{
+			name:                 "ccm-acm with verification enabled",
+			mode:                 1,
+			skip:                 false,
+			expectInsecureSkip:   false,
+			expectPeerVerifyHook: false,
+		},
+		{
+			name:                 "ccm-acm with verification skipped",
+			mode:                 1,
+			skip:                 true,
+			expectInsecureSkip:   true,
+			expectPeerVerifyHook: false,
+		},
+	}
 
-	mode = 1
-	tlsConfig = GetTLSConfig(&mode, nil, true)
-	assert.NotNil(t, tlsConfig)
-	assert.True(t, tlsConfig.InsecureSkipVerify)
-	assert.Nil(t, tlsConfig.VerifyPeerCertificate)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tlsConfig := GetTLSConfig(&tt.mode, nil, tt.skip, nil)
+			assert.NotNil(t, tlsConfig)
+			assert.Equal(t, tt.expectInsecureSkip, tlsConfig.InsecureSkipVerify)
+
+			if tt.expectPeerVerifyHook {
+				assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+			} else {
+				assert.Nil(t, tlsConfig.VerifyPeerCertificate)
+			}
+		})
+	}
+}
+
+func TestVerifyUPIDBinding(t *testing.T) {
+	romTemplate := createCertTemplate("ROM CA", true, []string{"ODCA 2 CSME P"})
+	romCert, _ := createTestCert(t, romTemplate, nil, nil)
+	romHash := sha256.Sum256(romCert.Raw)
+
+	hwSerial := make([]byte, upid.HWSerialNumSize)
+	copy(hwSerial[:20], romHash[:20])
+
+	matchingUPID := &upid.UPID{HWSerialNum: hwSerial}
+	assert.NoError(t, VerifyUPIDBinding(romCert, matchingUPID))
+
+	hwSerial[0] ^= 0xFF
+	mismatchedUPID := &upid.UPID{HWSerialNum: hwSerial}
+	assert.Error(t, VerifyUPIDBinding(romCert, mismatchedUPID))
 }
 
 func TestVerifyLeafCertificate(t *testing.T) {
@@ -98,6 +159,84 @@ func TestVerifyLeafCertificate(t *testing.T) {
 	}
 }
 
+func TestVerifyLeafCertificate_WithAMTHashValidation(t *testing.T) {
+	leafTemplate := createCertTemplate("iAMT CSME IDevID RCFG", false, []string{"Leaf OU"})
+	leafCert, _ := createTestCert(t, leafTemplate, nil, nil)
+
+	sha256Hash := sha256.Sum256(leafCert.Raw)
+	sha384Hash := sha512.Sum384(leafCert.Raw)
+
+	tests := []struct {
+		name      string
+		amtInfo   *amt.SecureHBasedResponse
+		shouldErr bool
+	}{
+		{
+			name: "accepts SHA256 hex hash from AMT",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "SHA256",
+				AMTCertHash:   strings.ToUpper(hex.EncodeToString(sha256Hash[:])),
+			},
+			shouldErr: false,
+		},
+		{
+			name: "accepts SHA256 raw bytes from AMT buffer",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "SHA256",
+				AMTCertHash:   string(append(sha256Hash[:], make([]byte, 32)...)),
+			},
+			shouldErr: false,
+		},
+		{
+			name: "accepts SHA384 raw bytes from AMT buffer",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "SHA384",
+				AMTCertHash:   string(append(sha384Hash[:], make([]byte, 16)...)),
+			},
+			shouldErr: false,
+		},
+		{
+			name: "rejects mismatched AMT hash",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "SHA256",
+				AMTCertHash:   strings.Repeat("0", 64),
+			},
+			shouldErr: true,
+		},
+		{
+			name: "rejects mismatched hash with empty algorithm and reports SHA256",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "   ",
+				AMTCertHash:   strings.Repeat("0", 64),
+			},
+			shouldErr: true,
+		},
+		{
+			name: "rejects malformed SHA256 hex hash from AMT",
+			amtInfo: &amt.SecureHBasedResponse{
+				HashAlgorithm: "SHA256",
+				AMTCertHash:   strings.Repeat("Z", 64),
+			},
+			shouldErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := VerifyLeafCertificate(leafCert, tt.amtInfo)
+			if tt.shouldErr {
+				assert.Error(t, err)
+
+				if tt.name == "rejects mismatched hash with empty algorithm and reports SHA256" {
+					assert.ErrorContains(t, err, "algorithm=SHA256")
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestVerifyROMODCACertificate(t *testing.T) {
 	tests := []struct {
 		cn        string
@@ -106,6 +245,7 @@ func TestVerifyROMODCACertificate(t *testing.T) {
 	}{
 		{"ROM CA Cert", []string{"ODCA 2 CSME P"}, false},
 		{"ROM DE Cert", []string{"On Die CSME P"}, false},
+		{"ROM CA Cert", []string{"Invalid OU Prefix"}, true},
 		{"Invalid Cert", []string{"Invalid OU"}, true},
 	}
 
@@ -298,4 +438,95 @@ func TestVerifyFullChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+func buildUPIDBindingTestChain(t *testing.T) ([][]byte, *x509.Certificate, *x509.Certificate) {
+	t.Helper()
+
+	rootTemplate := createCertTemplate("Root CA", true, []string{"Root OU"})
+	rootCert, rootKey := createTestCert(t, rootTemplate, nil, nil)
+
+	lastIntermTemplate := createCertTemplate("Last Intermediate", true, []string{"Last Interim OU"})
+	lastIntermCert, lastIntermKey := createTestCert(t, lastIntermTemplate, rootCert, rootKey)
+
+	// This certificate signs ROM ODCA and provides issuer OU used by VerifyROMODCACertificate.
+	odcaIssuerTemplate := createCertTemplate("ODCA Issuer", true, []string{"ODCA 2 CSME P"})
+	odcaIssuerCert, odcaIssuerKey := createTestCert(t, odcaIssuerTemplate, lastIntermCert, lastIntermKey)
+
+	romODCATemplate := createCertTemplate("ROM CA", true, []string{"ROM OU"})
+	romODCACert, romODCAKey := createTestCert(t, romODCATemplate, odcaIssuerCert, odcaIssuerKey)
+
+	interm2Template := createCertTemplate("Intermediate 2", true, []string{"Intermediate 2 OU"})
+	interm2Cert, interm2Key := createTestCert(t, interm2Template, romODCACert, romODCAKey)
+
+	interm1Template := createCertTemplate("Intermediate 1", true, []string{"Intermediate 1 OU"})
+	interm1Cert, interm1Key := createTestCert(t, interm1Template, interm2Cert, interm2Key)
+
+	leafTemplate := createCertTemplate("iAMT CSME IDevID RCFG", false, []string{"Leaf OU"})
+	leafCert, _ := createTestCert(t, leafTemplate, interm1Cert, interm1Key)
+
+	mockFS := &mockFileSystem{
+		certFiles: []string{"root.cer"},
+		certData:  map[string][]byte{"trustedstore/root.cer": rootCert.Raw},
+	}
+
+	oldLoadRootCAPool := LoadRootCAPool
+	LoadRootCAPool = func() (*x509.CertPool, error) {
+		return LoadRootCAPoolwithFS(mockFS)
+	}
+
+	t.Cleanup(func() {
+		LoadRootCAPool = oldLoadRootCAPool
+	})
+
+	rawCerts := [][]byte{
+		leafCert.Raw,
+		interm1Cert.Raw,
+		interm2Cert.Raw,
+		romODCACert.Raw,
+		odcaIssuerCert.Raw,
+		lastIntermCert.Raw,
+	}
+
+	return rawCerts, leafCert, romODCACert
+}
+
+func TestVerifyCertificates_UPIDBinding_Success(t *testing.T) {
+	mode := 0
+	rawCerts, leafCert, romODCACert := buildUPIDBindingTestChain(t)
+
+	romHash := sha256.Sum256(romODCACert.Raw)
+	hwSerial := make([]byte, upid.HWSerialNumSize)
+	copy(hwSerial[:20], romHash[:20])
+	upidInfo := &upid.UPID{HWSerialNum: hwSerial}
+
+	leafHash := sha256.Sum256(leafCert.Raw)
+	amtCertInfo := &amt.SecureHBasedResponse{
+		HashAlgorithm: hashAlgorithmSHA256,
+		AMTCertHash:   strings.ToUpper(hex.EncodeToString(leafHash[:])),
+	}
+
+	err := VerifyCertificates(rawCerts, &mode, amtCertInfo, upidInfo)
+	assert.NoError(t, err)
+}
+
+func TestVerifyCertificates_UPIDBinding_Mismatch(t *testing.T) {
+	mode := 0
+	rawCerts, leafCert, romODCACert := buildUPIDBindingTestChain(t)
+
+	romHash := sha256.Sum256(romODCACert.Raw)
+	hwSerial := make([]byte, upid.HWSerialNumSize)
+	copy(hwSerial[:20], romHash[:20])
+	hwSerial[0] ^= 0xFF
+	upidInfo := &upid.UPID{HWSerialNum: hwSerial}
+
+	leafHash := sha256.Sum256(leafCert.Raw)
+	amtCertInfo := &amt.SecureHBasedResponse{
+		HashAlgorithm: hashAlgorithmSHA256,
+		AMTCertHash:   strings.ToUpper(hex.EncodeToString(leafHash[:])),
+	}
+
+	err := VerifyCertificates(rawCerts, &mode, amtCertInfo, upidInfo)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "UPID CSME HW ID does not match ROM ODCA certificate hash")
 }

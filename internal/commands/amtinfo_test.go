@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
@@ -180,9 +181,12 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.Equal(t, "/api/v1/devices", gotPath)
 	assert.Equal(t, "application/json", gotContentType)
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Equal(t, "192.168.1.100", gotBody.Hostname)
 	assert.Equal(t, "16.1.25", gotBody.DeviceInfo.FWVersion)
 	assert.Equal(t, "3425", gotBody.DeviceInfo.FWBuild)
 	assert.Equal(t, "16392", gotBody.DeviceInfo.FWSku)
+	// Discovered field is not sent in PATCH updates (only in POST during creation)
+	assert.Nil(t, gotBody.DeviceInfo.Discovered)
 	// LMSVersion depends on whether LMS is running on the test machine;
 	// only assert if LMSInstalled is true in the payload.
 	if gotBody.DeviceInfo.LMSInstalled {
@@ -363,6 +367,226 @@ func TestAmtInfoCmd_Run_WithSync_UserPass_TokenExchange_CustomEndpoint(t *testin
 	assert.Equal(t, "Bearer custom-token", strings.TrimSpace(gotAuth))
 }
 
+func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
+	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+
+	var (
+		patchCount int
+		postCalled bool
+		postBody   map[string]interface{}
+	)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPatch:
+			assert.Equal(t, "/api/v1/devices", r.URL.Path)
+
+			var patchBody syncPayload
+
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+
+			// Discovered should NOT be in PATCH bodies (only in POST)
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should not be sent in PATCH updates")
+
+			patchCount++
+			if patchCount == 1 {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		case http.MethodPost:
+			postCalled = true
+
+			assert.Equal(t, "/api/v1/devices", r.URL.Path)
+
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+
+	err := cmd.Run(ctx)
+	assert.NoError(t, err)
+	assert.True(t, postCalled, "POST should have been called to create device")
+	assert.Equal(t, 2, patchCount, "PATCH should have been retried after POST")
+	// Verify discovered=true was sent in POST body under deviceInfo
+	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", postBody["guid"])
+	assert.Equal(t, "192.168.1.100", postBody["hostname"])
+	deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+	require.True(t, ok, "deviceInfo should be present in POST body")
+	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
+	assert.True(t, deviceInfo["discovered"].(bool), "discovered should be true for auto-registration")
+}
+
+func TestInfoService_SyncDeviceInfo_404_PostFallback_ExplicitlyProvisioned(t *testing.T) {
+	service := NewInfoService(nil)
+	ctx := &Context{SkipCertCheck: true}
+	result := &InfoResult{UUID: "12345678-1234-1234-1234-123456789ABC"}
+	explicitlyProvisioned := false
+
+	var (
+		patchCount int
+		postBody   map[string]interface{}
+	)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPatch:
+			defer r.Body.Close()
+
+			var patchBody syncPayload
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should not be sent in PATCH updates")
+
+			patchCount++
+			if patchCount == 1 {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		case http.MethodPost:
+			defer r.Body.Close()
+
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+			w.WriteHeader(http.StatusCreated)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &explicitlyProvisioned)
+	require.NoError(t, err)
+	assert.Equal(t, 2, patchCount)
+
+	deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+	require.True(t, ok, "deviceInfo should be present in POST body")
+	assert.NotNil(t, deviceInfo["discovered"], "discovered should be in POST deviceInfo")
+	assert.False(t, deviceInfo["discovered"].(bool), "discovered should be false for explicitly provisioned devices")
+}
+
+// TestInfoService_SyncDeviceInfo_Timestamps covers the discovery timestamp behavior
+// across every sync scenario: existing device (single PATCH) and 404 auto-register
+// (POST + retry PATCH), for both discovered=true and discovered=false. Invariants:
+//   - lastSynced is stamped on every sync, regardless of discovered.
+//   - firstDiscovered and discovered are only sent on POST creation, never on PATCH.
+//   - firstDiscovered is only stamped when discovered=true, and equals the created lastSynced.
+//   - The POST and the retried PATCH carry the same lastSynced timestamp.
+func TestInfoService_SyncDeviceInfo_Timestamps(t *testing.T) {
+	const uuid = "12345678-1234-1234-1234-123456789ABC"
+
+	tests := []struct {
+		name         string
+		discovered   bool
+		deviceExists bool // false → first PATCH 404s, triggering POST create + retry PATCH
+	}{
+		{"existing device, discovered", true, true},
+		{"existing device, provisioned", false, true},
+		{"404 auto-register, discovered", true, false},
+		{"404 auto-register, provisioned", false, false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewInfoService(nil)
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{UUID: uuid}
+
+			var (
+				patchCount int
+				patchBody  syncPayload            // the last successful PATCH
+				postBody   map[string]interface{} // set only when a POST create happens
+			)
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer r.Body.Close()
+
+				switch r.Method {
+				case http.MethodPatch:
+					patchCount++
+					if !tt.deviceExists && patchCount == 1 {
+						w.WriteHeader(http.StatusNotFound)
+
+						return
+					}
+
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&patchBody))
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+					w.WriteHeader(http.StatusCreated)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &tt.discovered)
+			require.NoError(t, err)
+
+			// PATCH invariants (apply to every scenario).
+			require.NotNil(t, patchBody.DeviceInfo.LastSynced, "lastSynced should be sent on every sync")
+			assert.Nil(t, patchBody.DeviceInfo.FirstDiscovered, "firstDiscovered should never be in PATCH")
+			assert.Nil(t, patchBody.DeviceInfo.Discovered, "discovered should never be in PATCH")
+
+			if tt.deviceExists {
+				assert.Equal(t, 1, patchCount, "existing device needs a single PATCH")
+
+				return
+			}
+
+			// 404 auto-register: verify POST create body and timestamp agreement.
+			assert.Equal(t, 2, patchCount, "404 should trigger create then retry PATCH")
+
+			deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+			require.True(t, ok, "deviceInfo should be present in POST body")
+			assert.Equal(t, tt.discovered, deviceInfo["discovered"], "discovered should reflect the sync source")
+
+			lastSyncedPost, _ := deviceInfo["lastSynced"].(string)
+			require.NotEmpty(t, lastSyncedPost, "lastSynced should be set on creation")
+			assert.Equal(t, lastSyncedPost, patchBody.DeviceInfo.LastSynced.Format(time.RFC3339Nano),
+				"POST and retried PATCH should carry the same lastSynced")
+
+			firstDiscovered, _ := deviceInfo["firstDiscovered"].(string)
+			if tt.discovered {
+				assert.Equal(t, lastSyncedPost, firstDiscovered, "firstDiscovered should match lastSynced on discovery")
+			} else {
+				assert.Empty(t, firstDiscovered, "firstDiscovered should be absent for provisioned devices")
+			}
+		})
+	}
+}
+
 func TestNewInfoService(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -374,6 +598,29 @@ func TestNewInfoService(t *testing.T) {
 	assert.Equal(t, mockAMT, service.amtCommand)
 	assert.False(t, service.jsonOutput)
 	assert.Empty(t, service.password)
+}
+
+func TestNewInfoService_WithOptions(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	service := NewInfoService(
+		mockAMT,
+		WithJSONOutput(true),
+		WithPassword("testpassword"),
+		WithLocalTLSEnforced(true),
+		WithSkipAMTCertCheck(true),
+		WithHECIAvailable(false),
+	)
+
+	assert.NotNil(t, service)
+	assert.Equal(t, mockAMT, service.amtCommand)
+	assert.True(t, service.jsonOutput)
+	assert.Equal(t, "testpassword", service.password)
+	assert.True(t, service.localTLSEnforced)
+	assert.True(t, service.skipAMTCertCheck)
+	assert.False(t, service.heciAvailable)
 }
 
 func TestInfoService_GetAMTInfo(t *testing.T) {
@@ -1484,7 +1731,7 @@ func TestInfoService_SyncDeviceInfo_EmptyUUID_ReturnsError(t *testing.T) {
 	ctx := &Context{}
 	result := &InfoResult{}
 
-	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
 }
@@ -1493,7 +1740,7 @@ func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
 	service := NewInfoService(nil)
 	ctx := &Context{}
 
-	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil)
+	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
 }
@@ -1508,7 +1755,7 @@ func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
 		"03000200-0400-0500-0006-000700080009",
 	} {
 		result := &InfoResult{UUID: sentinel}
-		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil)
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid device UUID sentinel value")
 	}

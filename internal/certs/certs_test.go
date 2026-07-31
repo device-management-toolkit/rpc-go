@@ -6,7 +6,6 @@
 package certs
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,20 +45,11 @@ func TestNewSignedCompositeAMT16(t *testing.T) {
 
 	RunNewSignedCompositeTest(t, amt16DER)
 }
-
-func TestNewCompositeChain(t *testing.T) {
-	chain, err := NewCompositeChain("test")
-	assert.Nil(t, err)
-	assert.NotEmpty(t, chain.Root.Pem)
-	assert.NotEmpty(t, chain.Root.Fingerprint)
-	assert.NotEmpty(t, chain.Intermediate.Pem)
-	assert.NotEmpty(t, chain.Intermediate.Fingerprint)
-	assert.NotEmpty(t, chain.Leaf.Pem)
-	assert.NotEmpty(t, chain.Leaf.Fingerprint)
-
-	assert.True(t, strings.Contains(chain.Root.Pem, "BEGIN CERTIFICATE"))
-	assert.True(t, strings.Contains(chain.Root.Pem, "END CERTIFICATE"))
-	strippedPem := chain.Root.StripPem()
-	assert.False(t, strings.Contains(strippedPem, "BEGIN CERTIFICATE"))
-	assert.False(t, strings.Contains(strippedPem, "END CERTIFICATE"))
+func TestStripPem(t *testing.T) {
+	c := Composite{Pem: "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"}
+	stripped := c.StripPem()
+	assert.Equal(t, "ABC", stripped)
+	assert.NotContains(t, stripped, "BEGIN CERTIFICATE")
+	assert.NotContains(t, stripped, "END CERTIFICATE")
+	assert.NotContains(t, stripped, "\n")
 }

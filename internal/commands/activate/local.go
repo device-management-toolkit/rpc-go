@@ -27,6 +27,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 	pkcs12 "software.sslmate.com/src/go-pkcs12"
@@ -366,7 +367,7 @@ func (service *LocalActivationService) activateCCM() error {
 
 	if service.localTLSEnforced {
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck, nil)
 	}
 	// Create WSMAN client
 	service.wsman = localamt.NewGoWSMANMessages(utils.LMSAddress)
@@ -513,7 +514,7 @@ func (service *LocalActivationService) commitCCMChanges() error {
 	// Re-setup WSMAN client with admin credentials before committing
 	// This is required because the initial setup used LSA credentials
 	controlMode := service.config.ControlMode
-	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck)
+	tlsConfig := certs.GetTLSConfig(&controlMode, nil, service.context.SkipAMTCertCheck, nil)
 
 	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
 	if err != nil {
@@ -568,8 +569,19 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 			return nil, err
 		}
 
+		var upidInfo *upid.UPID
+
+		if !service.context.SkipAMTCertCheck {
+			fetchedUPID, upidErr := service.amtCommand.GetUPID()
+			if upidErr != nil {
+				log.WithError(upidErr).Debug("Unable to read Intel UPID; skipping UPID binding verification")
+			} else {
+				upidInfo = fetchedUPID
+			}
+		}
+
 		controlMode := service.config.ControlMode // Use stored control mode
-		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck)
+		tlsConfig = certs.GetTLSConfig(&controlMode, &startHBasedResponse, service.context.SkipAMTCertCheck, upidInfo)
 		// Add client certificate to TLS config
 		tlsCert := tls.Certificate{
 			PrivateKey: certsAndKeys.keys[0],

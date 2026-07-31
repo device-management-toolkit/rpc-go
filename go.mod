@@ -6,19 +6,19 @@ go 1.25.0
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/alecthomas/kong v1.15.0
+	github.com/alecthomas/kong v1.16.0
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.0
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/muesli/termenv v0.16.0
-	github.com/shirou/gopsutil/v4 v4.26.5
+	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
@@ -44,13 +44,13 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zalando/go-keyring v0.2.8 // indirect
-	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/term v0.44.0
+	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
-	software.sslmate.com/src/go-pkcs12 v0.7.2
+	software.sslmate.com/src/go-pkcs12 v0.7.3
 )

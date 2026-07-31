@@ -1,3 +1,49 @@
+# [3.0.0-beta.43](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.42...v3.0.0-beta.43) (2026-07-28)
+
+# [3.0.0-beta.42](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.41...v3.0.0-beta.42) (2026-07-20)
+
+
+### Bug Fixes
+
+* **lme:** add to WaitGroup before sending CHANNEL_OPEN ([#1437](https://github.com/device-management-toolkit/rpc-go/issues/1437)) ([1fab4c8](https://github.com/device-management-toolkit/rpc-go/commit/1fab4c8e4b1ef2c596ce9101193c66560050eea5))
+
+# [3.0.0-beta.41](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.40...v3.0.0-beta.41) (2026-07-20)
+
+
+### Features
+
+* **cli:** add --discover and --register as aliases for amtinfo --sync ([#1448](https://github.com/device-management-toolkit/rpc-go/issues/1448)) ([e8267f3](https://github.com/device-management-toolkit/rpc-go/commit/e8267f3615d3eba5c9db6ad2b7786cd262713daf)), closes [#1406](https://github.com/device-management-toolkit/rpc-go/issues/1406)
+
+# [3.0.0-beta.40](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.39...v3.0.0-beta.40) (2026-07-20)
+
+
+### Features
+
+* add discovery timestamps to deviceInfo ([#1441](https://github.com/device-management-toolkit/rpc-go/issues/1441)) ([777c380](https://github.com/device-management-toolkit/rpc-go/commit/777c3806faddc4160c61e8b75fd37ba5e7145174)), closes [#1394](https://github.com/device-management-toolkit/rpc-go/issues/1394)
+
+# [3.0.0-beta.39](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.38...v3.0.0-beta.39) (2026-06-25)
+
+
+### Features
+
+* include discovered flag in device sync payloads ([#1397](https://github.com/device-management-toolkit/rpc-go/issues/1397)) ([cf35329](https://github.com/device-management-toolkit/rpc-go/commit/cf353295882a0483ee6eecbce1957e4e38c8655e))
+
+# [3.0.0-beta.38](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.37...v3.0.0-beta.38) (2026-06-25)
+
+
+### Features
+
+* auto-register device on 404 and sync on activation lifecycle ([#1369](https://github.com/device-management-toolkit/rpc-go/issues/1369)) ([8909e5d](https://github.com/device-management-toolkit/rpc-go/commit/8909e5dbbba24be5872e742ffec216d90a3bcd0a))
+
+# [3.0.0-beta.37](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.36...v3.0.0-beta.37) (2026-06-24)
+
+
+### Features
+
+* Enabled ODCA verification for rpc-go activation ([cab9e79](https://github.com/device-management-toolkit/rpc-go/commit/cab9e7979f80b4ba42425a1514148a44f8b0bb88))
+
+# [3.0.0-beta.36](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.35...v3.0.0-beta.36) (2026-06-24)
+
 # [3.0.0-beta.35](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.34...v3.0.0-beta.35) (2026-06-19)
 
 

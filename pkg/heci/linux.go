@@ -312,11 +312,13 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 
 			if heci.useGUIDClient {
 				heci.mu.Unlock()
+
 				return 0, ErrDeviceNotInitialized
 			}
 
 			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
 				heci.mu.Unlock()
+
 				return 0, initErr
 			}
 
@@ -456,6 +458,7 @@ func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead int, 
 
 			if initErr := heci.initLocked(heci.useLME, heci.useWD); initErr != nil {
 				heci.mu.Unlock()
+
 				return 0, initErr
 			}
 
