@@ -1,2 +1,3 @@
 build.sh text eol=lf
 sign.sh text eol=lf
+sign-windows.sh text eol=lf
