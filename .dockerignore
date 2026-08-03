@@ -1,0 +1,44 @@
+# Version control
+.git
+.gitignore
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go build artifacts
+bin/
+dist/
+build/
+
+# Dependencies
+vendor/
+go.mod.backup
+go.sum.backup
+
+# Test and coverage
+*.out
+*.test
+coverage/
+
+# Documentation and config
+README.md
+.env
+.env.*
+*.yaml
+docker-compose*
+compose*
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Build context bloat
+node_modules/
+npm-debug.log
+*.log
