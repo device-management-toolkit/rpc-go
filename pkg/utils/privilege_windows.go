@@ -8,6 +8,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,9 @@ import (
 
 	"golang.org/x/sys/windows"
 )
+
+// errElevationDeclined is returned when the user dismisses the UAC prompt.
+var errElevationDeclined = errors.New("elevation was declined at the UAC prompt")
 
 // IsElevated returns true if the current process has administrator privileges.
 func IsElevated() bool {
@@ -66,12 +70,15 @@ func SelfElevate() error {
 
 	// Escape each argument for both argv parsing and cmd.exe metacharacters,
 	// then append "& pause" to keep the elevated console window open.
-	var escaped []string
+	escaped := []string{escapeCmdMetachars(syscall.EscapeArg(exe))}
 	for _, arg := range os.Args[1:] {
 		escaped = append(escaped, escapeCmdMetachars(syscall.EscapeArg(arg)))
 	}
 
-	cmdLine := fmt.Sprintf(`/c %s %s & echo. & echo Press any key to exit... & pause >nul`, escapeCmdMetachars(syscall.EscapeArg(exe)), strings.Join(escaped, " "))
+	// /s makes cmd.exe strip exactly the outer quote pair we add here. Without
+	// it, cmd strips the first and last quote on the line, splitting any quoted
+	// path apart into "The system cannot find the path specified."
+	cmdLine := fmt.Sprintf(`/s /c "%s & echo. & echo Press any key to exit... & pause >nul"`, strings.Join(escaped, " "))
 
 	params, err := windows.UTF16PtrFromString(cmdLine)
 	if err != nil {
@@ -97,22 +104,52 @@ func SelfElevate() error {
 
 	r, _, sysErr := shellExecuteEx.Call(uintptr(unsafe.Pointer(&sei)))
 	if r == 0 {
+		//nolint:misspell // because: ERROR_CANCELLED is the Win32 constant name in x/sys/windows
+		if errors.Is(sysErr, windows.ERROR_CANCELLED) {
+			return errElevationDeclined
+		}
+
 		return fmt.Errorf("ShellExecuteEx failed: %w", sysErr)
 	}
 
-	if sei.hProcess != 0 {
-		windows.CloseHandle(windows.Handle(sei.hProcess))
+	if sei.hProcess == 0 {
+		return nil
+	}
+
+	defer windows.CloseHandle(windows.Handle(sei.hProcess))
+
+	// Block until the elevated process exits, so we outlive the UAC prompt.
+	// `go run` deletes our executable as soon as we return, leaving the child
+	// with "The system cannot find the path specified."
+	if _, err := windows.WaitForSingleObject(windows.Handle(sei.hProcess), windows.INFINITE); err != nil {
+		return fmt.Errorf("failed to wait for elevated process: %w", err)
 	}
 
 	return nil
 }
 
-// escapeCmdMetachars escapes cmd.exe metacharacters with ^ to prevent interpretation.
+// cmdMetachars are the characters cmd.exe interprets outside a quoted region.
+const cmdMetachars = `^&|<>()`
+
+// escapeCmdMetachars escapes cmd.exe metacharacters with ^, skipping quoted
+// regions where cmd already treats them literally and ^ is not an escape
+// character (escaping there would leak a caret into the argument).
 func escapeCmdMetachars(s string) string {
-	r := strings.NewReplacer(
-		"^", "^^", "&", "^&", "|", "^|",
-		"<", "^<", ">", "^>",
+	var (
+		b        strings.Builder
+		inQuotes bool
 	)
 
-	return r.Replace(s)
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuotes = !inQuotes
+		case !inQuotes && strings.ContainsRune(cmdMetachars, r):
+			b.WriteRune('^')
+		}
+
+		b.WriteRune(r)
+	}
+
+	return b.String()
 }
