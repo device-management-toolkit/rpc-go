@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -598,18 +599,37 @@ func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) 
 	return tlsConfig, nil
 }
 
+// connectAdminAfterActivation retries the admin connection while AMT re-arms its TLS listener post-activation.
+func (service *LocalActivationService) connectAdminAfterActivation(tlsConfig *tls.Config) (general.Response, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= hbcMaxAttempts; attempt++ {
+		err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+		if err != nil {
+			return general.Response{}, fmt.Errorf("failed to setup admin WSMAN client: %w", err)
+		}
+
+		settings, err := service.wsman.GetGeneralSettings()
+		if err == nil {
+			return settings, nil
+		}
+
+		lastErr = err
+
+		if attempt < hbcMaxAttempts {
+			log.Warnf("AMT not ready yet after activation (%d/%d): %v. Waiting %s for firmware to settle...", attempt, hbcMaxAttempts, err, hbcBackoff)
+			time.Sleep(hbcBackoff)
+		}
+	}
+
+	return general.Response{}, fmt.Errorf("failed to get AMT general settings after %d attempts: %w", hbcMaxAttempts, lastErr)
+}
+
 // activateACMWithTLS performs ACM activation with TLS (new cleaner path)
 func (service *LocalActivationService) activateACMWithTLS(tlsConfig *tls.Config) error {
-	// For TLS path, we need to update the AMT password and then commit
-	// Setup WSMAN client with admin credentials, reusing the TLS config that has client certs
-	err := service.wsman.SetupWsmanClient("admin", service.config.AMTPassword, service.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig)
+	generalSettings, err := service.connectAdminAfterActivation(tlsConfig)
 	if err != nil {
-		return fmt.Errorf("failed to setup admin WSMAN client: %w", err)
-	}
-	// Get general settings to obtain digest realm for password hashing
-	generalSettings, err := service.wsman.GetGeneralSettings()
-	if err != nil {
-		return fmt.Errorf("failed to get AMT general settings: %w", err)
+		return err
 	}
 
 	// Create authentication challenge with new password
@@ -881,10 +901,10 @@ func (service *LocalActivationService) convertPfxToObject(pfxb64, passphrase str
 	return pfxOut, nil
 }
 
-// HBC retry tuning.
+// AMT firmware retry tuning (shared by HBC start and the post-activation admin connection settle).
 const hbcMaxAttempts = 3
 
-var hbcBackoff = 2 * time.Second
+var hbcBackoff = 3 * time.Second
 
 // runStartHBCWithRetry invokes startSecureHostBasedConfiguration with retries on
 // transient AMT FW / HECI instability. A non-SUCCESS Status means AMT isn't armed
@@ -898,6 +918,8 @@ func (service *LocalActivationService) runStartHBCWithRetry(certsAndKeys CertsAn
 	for attempt := 1; attempt <= hbcMaxAttempts; attempt++ {
 		response, err = service.startSecureHostBasedConfiguration(certsAndKeys)
 		if err == nil && response.Status == amtStatusSuccess {
+			log.Infof("Host-Based Configuration started successfully (status=%q); AMT is transitioning to in-provisioning mode", response.Status)
+
 			return response, nil
 		}
 
