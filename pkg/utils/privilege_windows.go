@@ -92,7 +92,7 @@ func SelfElevate() error {
 	}
 	sei.cbSize = uint32(unsafe.Sizeof(sei))
 
-	shell32 := windows.NewLazyDLL("shell32.dll")
+	shell32 := windows.NewLazySystemDLL("shell32.dll")
 	shellExecuteEx := shell32.NewProc("ShellExecuteExW")
 
 	r, _, sysErr := shellExecuteEx.Call(uintptr(unsafe.Pointer(&sei)))
