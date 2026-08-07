@@ -18,9 +18,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -96,6 +100,16 @@ const (
 	jsonKeyFriendly   = "friendly_name"
 	jsonValueSuccess  = "success"
 	amtStatusSuccess  = "AMT_STATUS_SUCCESS"
+)
+
+const (
+	// commitPortRestartAttempts bounds how many times activation re-reads the AMT
+	// control mode after CommitChanges drops its connection, to confirm whether
+	// the commit completed during the firmware port-stack restart.
+	commitPortRestartAttempts = 3
+	// commitPortRestartDelay is the wait between control-mode re-reads while the
+	// firmware finishes the post-commit port-stack restart (milliseconds).
+	commitPortRestartDelay = 1000
 )
 
 func (m ActivationMode) String() string {
@@ -666,10 +680,8 @@ func (service *LocalActivationService) setupMEBxAndCommit() error {
 		return nil
 	}
 	// No MEBx password provided — try CommitChanges directly
-	result, err := service.wsman.CommitChanges()
+	err := service.commitActivation()
 	if err == nil {
-		log.Debug(result)
-
 		return nil
 	}
 
@@ -740,16 +752,78 @@ func (service *LocalActivationService) setMEBxAndCommit(mebxPassword string) err
 
 	log.Info("Successfully updated MEBx Password.")
 
-	result, err := service.wsman.CommitChanges()
-	if err != nil {
+	if err := service.commitActivation(); err != nil {
 		log.Error(err.Error())
 
 		return utils.ActivationFailed
 	}
 
-	log.Debug(result)
-
 	return nil
+}
+
+// commitActivation calls CommitChanges to finalize activation. CommitChanges is
+// the step where the firmware restarts the AMT/LMS local port stack; on
+// TLS-enforced platforms (AMT19+) that restart tears down the LMS relay
+// connection while the HTTP response is still in flight, so the call returns a
+// connection-drop error (EOF / reset) even though the commit already took
+// effect. Substring-matching the transport error would be brittle, so instead we
+// confirm the authoritative firmware state: re-read the control mode over HECI
+// and, if the device is now provisioned, treat the commit as the success it was.
+// Any other error (or a device still in pre-provisioning) is a genuine failure.
+func (service *LocalActivationService) commitActivation() error {
+	result, err := service.wsman.CommitChanges()
+	if err == nil {
+		log.Debug(result)
+
+		return nil
+	}
+
+	if !isConnectionResetErr(err) {
+		return err
+	}
+
+	log.Warnf("CommitChanges connection dropped (%v); the firmware may be restarting the local port stack. Verifying activation state over HECI...", err)
+
+	for attempt := 1; attempt <= commitPortRestartAttempts; attempt++ {
+		mode, modeErr := service.amtCommand.GetControlMode()
+		if modeErr == nil && mode != AMTControlModePreProvisioning {
+			log.Info("Device is provisioned; CommitChanges succeeded despite the dropped connection.")
+
+			return nil
+		}
+
+		if attempt < commitPortRestartAttempts {
+			time.Sleep(commitPortRestartDelay * time.Millisecond)
+		}
+	}
+
+	// Still pre-provisioning (or control mode unreadable): the commit really failed.
+	return err
+}
+
+// isConnectionResetErr reports whether err is a dropped/reset transport
+// connection rather than an application-level failure. These are the symptoms of
+// the LMS relay being torn down mid-response by the post-commit firmware
+// port-stack restart:
+//
+//   - EOF / connection reset / use-of-closed-connection: the response was cut
+//     off while in flight.
+//   - apf.ErrChannelOpenFailure: after the initial cut-off, the LME transport
+//     resets HECI and retries, but the firmware refuses the fresh APF channel
+//     (APF_CHANNEL_OPEN_FAILURE) while the port stack is still restarting, so
+//     this — not the EOF — is the error that ultimately surfaces to the caller.
+//
+// The net/http error is wrapped in *url.Error and apf wraps its sentinel with
+// %w, but errors.Is unwraps through both.
+func isConnectionResetErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, apf.ErrChannelOpenFailure)
 }
 
 // isDataMissingError checks if an error is PT_STATUS_DATA_MISSING (error code 2057).
