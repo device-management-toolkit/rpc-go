@@ -52,6 +52,8 @@ const (
 	// GUID-targeted clients (InitWithGUID / InitHOTHAM). These paths are not
 	// EBUSY-tuned like initLocked; a small fixed number of attempts is enough.
 	guidConnectAttempts = 3
+	// heciWriteBusyAttempts bounds the EBUSY retry loop around a HECI write.
+	heciWriteBusyAttempts = 3
 )
 
 // PTHI
@@ -176,11 +178,18 @@ func (heci *Driver) initLocked(useLME, useWD bool) error {
 			break
 		}
 
-		log.Warnf("mei connect busy, retry %d", i+1)
+		// Per-attempt busy is an expected transient (the ME settles within a few
+		// retries); log at debug so it only shows under -v. The exhausted-ladder
+		// case below emits a single warning.
+		log.Debugf("mei connect busy, retry %d", i+1)
 		time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
 	}
 
 	if err != nil {
+		if errors.Is(err, syscall.EBUSY) {
+			log.Warnf("mei connect still busy after %d attempts", heciConnectAttempts)
+		}
+
 		return err
 	}
 
@@ -340,8 +349,9 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 
 		// Increase EBUSY retry attempts from 1 to 3 with exponential backoff.
 		if errors.Is(err, syscall.EBUSY) {
-			for attempt := 0; attempt < 3; attempt++ {
-				log.Warnf("mei write busy, retrying (attempt %d/3)", attempt+1)
+			for attempt := 0; attempt < heciWriteBusyAttempts; attempt++ {
+				// Expected transient; debug-only so it doesn't spam without -v.
+				log.Debugf("mei write busy, retrying (attempt %d/%d)", attempt+1, heciWriteBusyAttempts)
 				delay := time.Duration(attempt+1) * utils.HeciRetryDelay * time.Millisecond
 				time.Sleep(delay)
 
@@ -361,6 +371,10 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten int, 
 				if !errors.Is(err, syscall.EBUSY) {
 					break
 				}
+			}
+
+			if errors.Is(err, syscall.EBUSY) {
+				log.Warnf("mei write still busy after %d attempts", heciWriteBusyAttempts)
 			}
 		}
 

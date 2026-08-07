@@ -433,8 +433,23 @@ func (cmd *DeactivateCmd) provisioningHalted(ctx *Context) bool {
 func (cmd *DeactivateCmd) recoverInProvisioningOverHECI(ctx *Context, wsmanErr error) error {
 	log.Warnf("WSMAN deactivate failed while device is in provisioning (%v); recovering over HECI", wsmanErr)
 
-	if _, err := ctx.AMTCommand.Unprovision(); err != nil {
-		log.Error("Status: Unable to deactivate over HECI ", err)
+	if _, err := ctx.AMTCommand.Unprovision(); err == nil {
+		log.Info("Status: Device deactivated")
+
+		return nil
+	} else {
+		log.Warnf("HECI unprovision failed for in-provisioning device (%v); stopping incomplete configuration", err)
+	}
+
+	stopResp, stopErr := ctx.AMTCommand.StopConfiguration()
+	if stopErr != nil {
+		log.Error("Status: Unable to stop incomplete configuration over HECI ", stopErr)
+
+		return utils.UnableToDeactivate
+	}
+
+	if stopResp.Status != "AMT_STATUS_SUCCESS" {
+		log.Errorf("Status: Unable to stop incomplete configuration over HECI: %s", stopResp.Status)
 
 		return utils.UnableToDeactivate
 	}

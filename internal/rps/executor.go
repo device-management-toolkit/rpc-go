@@ -945,6 +945,12 @@ func (e *Executor) stopLMEListen(lmec *lm.LMEConnection) {
 	}
 
 	e.lmeListenDone = nil
+
+	// Release AMT's channel slot now that no reader is left on it. AMT only
+	// frees a forwarded-tcpip slot when it sees a close, and its pool is 8
+	// slots deep, so skipping this leaks one slot per superseding TLS session
+	// and later CHANNEL_OPENs are rejected for resource shortage.
+	lmec.CloseChannel()
 }
 
 func (e *Executor) stopLMEForwarder() {
