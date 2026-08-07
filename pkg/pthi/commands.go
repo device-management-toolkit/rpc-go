@@ -314,6 +314,15 @@ func (pthi Command) Unprovision() (state int, err error) {
 
 	binary.Read(buf2, binary.LittleEndian, &response.State)
 
+	// The firmware reports the real result in the response header Status, not in
+	// the State payload. A non-success status (e.g. AMT_STATUS_INVALID_AMT_MODE,
+	// returned when a HECI unprovision is attempted on an ACM device) must not be
+	// reported as success — otherwise callers see State==0 and assume the device
+	// was deactivated when the firmware actually rejected the request.
+	if response.Header.Status != AMT_STATUS_SUCCESS {
+		return int(response.State), fmt.Errorf("unprovision failed: %s", response.Header.Status)
+	}
+
 	return int(response.State), nil
 }
 
