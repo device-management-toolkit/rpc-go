@@ -6,7 +6,9 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -317,6 +319,153 @@ func TestExecuteWithPasswordFallback_AuthExitCodeTriggersRotationAndRetry(t *tes
 	}
 }
 
+func TestExecuteWithPasswordFallback_NoSettleRetryWhenNotActivatedThisRun(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	mock.errs = []error{nonAuthExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	// activatedThisRun defaults to false: device was already activated, so a
+	// configuration failure is genuine and must fail fast without settle retries.
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("expected 1 call (no settle retry when not activated this run), got %d", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetryRecoversAfterActivation(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// Two transient post-activation failures (dropped connection / locked
+	// account), then success once the firmware settles.
+	mock.errs = []error{nonAuthExecError(), nonAuthExecError(), nil}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err != nil {
+		t.Fatalf("executeWithPasswordFallback() error = %v, want nil after settle retry", err)
+	}
+
+	if mock.callCount != 3 {
+		t.Fatalf("expected 3 calls (fail, fail, succeed), got %d", mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetryBounded(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// Every attempt fails; the retry loop must be bounded and then surface the error.
+	mock.errs = []error{nonAuthExecError(), nonAuthExecError(), nonAuthExecError(), nonAuthExecError(), nonAuthExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
+	}
+
+	if mock.callCount != postActivationSettleAttempts {
+		t.Errorf("expected %d calls (bounded settle retries), got %d", postActivationSettleAttempts, mock.callCount)
+	}
+}
+
+func TestExecuteWithPasswordFallback_SettleRetrySkippedForDeviceNotActivated(t *testing.T) {
+	cfg := config.Configuration{}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	mock := newMockExecutor()
+	// A device-not-activated failure is not a settling symptom; do not retry.
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+
+	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"})
+	if err == nil {
+		t.Fatalf("expected device-not-activated error to surface, got nil")
+	}
+
+	if mock.callCount != 1 {
+		t.Errorf("expected 1 call (no settle retry for device-not-activated), got %d", mock.callCount)
+	}
+}
+
+// failingPasswordReader stands in for an interactive prompt. Any read is a test
+// failure signal: settle retries must never reach the password prompt.
+type failingPasswordReader struct{}
+
+func (r *failingPasswordReader) ReadPassword() (string, error) {
+	return "", errors.New("password prompt must not be reached during settle retries")
+}
+
+func (r *failingPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return "", errors.New("password prompt must not be reached during settle retries")
+}
+
+// TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt pins the retry path:
+// rotation runs once, on the initial execution. Routing settle retries back
+// through executeWithPasswordRotation would re-prompt on every attempt and, on
+// success, recurse into the settle loop again.
+func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
+	originalPR := utils.PR
+	utils.PR = &failingPasswordReader{}
+
+	defer func() { utils.PR = originalPR }()
+
+	cfg := config.Configuration{}
+	// An AdminPassword plus control mode 2 is what arms the rotation path.
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	// A supplied current password arms the non-interactive rotation attempt.
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	// Every call reports an auth failure — the error that triggers rotation. The
+	// slice is longer than any path through the loop needs, so a rotating retry
+	// path cannot pass by simply running out of errors.
+	mock.errs = make([]error, 32)
+	for i := range mock.errs {
+		mock.errs[i] = authExecError()
+	}
+
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+	po.currentControlMode = 2
+
+	if err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}); err == nil {
+		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
+	}
+
+	rotations := 0
+
+	for _, args := range mock.executedArgs {
+		if slices.Contains(args, commandAMTPassword) {
+			rotations++
+		}
+	}
+
+	// Exactly one: the initial execution's rotation. Routing the retries back
+	// through executeWithPasswordRotation would rotate once per settle attempt.
+	if rotations != 1 {
+		t.Errorf("expected 1 rotation attempt (the initial one), got %d across %s",
+			rotations, strings.Join(mock.executedArgs[len(mock.executedArgs)-1], " "))
+	}
+}
+
 func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
@@ -340,5 +489,55 @@ func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
 	argsStr := strings.Join(mock.executedArgs[0], " ")
 	if !strings.Contains(argsStr, "configure mebx --mebxpassword mebx-pwd") {
 		t.Errorf("expected MEBx configure command, got: %s", argsStr)
+	}
+}
+
+func deviceNotActivatedExecError() error {
+	return &ExecError{
+		ExitCode: utils.DeviceNotActivated.Code,
+		Output:   "device is not activated to configure. Please activate the device first",
+		Err:      fmt.Errorf("exit status %d", utils.DeviceNotActivated.Code),
+	}
+}
+
+func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_WithCurrentPassword(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	po.currentControlMode = 2
+
+	mock := newMockExecutor()
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+
+	err := po.verifyAndAlignAMTPassword()
+	if err != nil {
+		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
+	}
+
+	if mock.callCount != 1 {
+		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
+	}
+}
+
+func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_NoCurrentPassword(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
+	po.currentControlMode = 0 // executeWithPasswordFallback returns original error in pre-provisioning
+
+	mock := newMockExecutor()
+	mock.errs = []error{deviceNotActivatedExecError()}
+	po.executor = mock
+
+	err := po.verifyAndAlignAMTPassword()
+	if err != nil {
+		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
+	}
+
+	if mock.callCount != 1 {
+		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
 	}
 }

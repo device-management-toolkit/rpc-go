@@ -987,6 +987,36 @@ func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
 	assert.False(t, spy.Called, "password prompt should not be triggered when profile file is provided")
 }
 
+func TestActivateCmd_Run_ProfileFileDoesNotOpenParentWSMAN(t *testing.T) {
+	// Regression: the profile fullflow orchestrates AMT operations in subprocesses,
+	// each of which opens its own LME/MEI handle. If the parent opens a WSMAN/LME
+	// handle here (via EnsureWSMAN) it holds /dev/mei0 across ExecuteProfile and every
+	// subprocess fails with EBUSY ("mei connect busy" → "device or resource busy").
+	// A password being available in ctx must NOT cause the parent to open a handle
+	// when the target is a profile file.
+	spy := &MockPasswordReaderSpy{}
+	origPR := utils.PR
+	utils.PR = spy
+
+	defer func() { utils.PR = origPR }()
+
+	cmd := &ActivateCmd{
+		Profile:          "config.yaml", // file path triggers profile fullflow
+		Key:              "some-encryption-key",
+		ProvisioningCert: "base64cert", // triggers hasLocalActivationFlags()
+	}
+	cmd.ControlMode = 0
+
+	// Password present in ctx would satisfy EnsureWSMAN's precondition if it were called.
+	ctx := &commands.Context{AMTPassword: utils.TestPassword}
+
+	// Run fails when decrypting the non-existent profile file; the assertion is that
+	// no parent-side WSMAN handle was ever created.
+	_ = cmd.Run(ctx)
+
+	assert.Nil(t, cmd.WSMan, "parent must not open a WSMAN/LME handle for the profile-file path")
+}
+
 func TestPostActivationSync_SendsPatch(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
