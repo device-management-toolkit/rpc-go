@@ -60,6 +60,23 @@ jobs:
         with:
           cosign-release: 'v3.0.2'
 
+      # Authenticode signing of the Windows executables via Azure Trusted
+      # Signing. Skipped automatically (sign-windows.sh no-ops) when the
+      # AZURE_TS_* secrets are absent, e.g. on forks.
+      - name: Install sign tool (Authenticode)
+        if: ${{ vars.AZURE_TS_ENDPOINT != '' }}
+        run: |
+          dotnet tool install --global sign --version 0.9.1-beta.24469.1
+          echo "PATH=$PATH:$HOME/.dotnet/tools" >> "$GITHUB_ENV"
+
+      - name: Azure login for Trusted Signing
+        if: ${{ vars.AZURE_TS_ENDPOINT != '' }}
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@c4a2fa890676fc2db25ad0aacd8ab4a0f1f4c024 # v4.2.1
         with:
@@ -70,3 +87,6 @@ jobs:
             @semantic-release/exec@6.0.3
         env:
           GITHUB_TOKEN: ${{ secrets.ROSIE_TOKEN }}
+          AZURE_TS_ENDPOINT: ${{ vars.AZURE_TS_ENDPOINT }}
+          AZURE_TS_ACCOUNT: ${{ vars.AZURE_TS_ACCOUNT }}
+          AZURE_TS_CERT_PROFILE: ${{ vars.AZURE_TS_CERT_PROFILE }}
