@@ -27,6 +27,15 @@ func TestIsConnectionResetErr(t *testing.T) {
 		{"nil", nil, false},
 		{"bare EOF", io.EOF, true},
 		{"connection reset", syscall.ECONNRESET, true},
+		{"bare unexpected EOF", io.ErrUnexpectedEOF, true},
+		// The exact error observed on AMT 20.0.5 (ISM) over LME. This, not the bare
+		// io.EOF above, is what the transport produces on real hardware; the io.EOF
+		// case is retained only because it is cheap to keep matching. Recovery
+		// normally still works because the LME retry is refused and
+		// apf.ErrChannelOpenFailure surfaces instead — when the retry succeeds in
+		// reopening the channel, this error arrives on its own and missing it
+		// reports a device that did activate as a failure.
+		{"url.Error wrapping the LME transport's unexpected EOF", &url.Error{Op: "Post", URL: "https://127.0.0.1:16993/wsman", Err: fmt.Errorf("read response over AMT TLS: %w", io.ErrUnexpectedEOF)}, true},
 		{"url.Error wrapping EOF (the observed CommitChanges symptom)", &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: io.EOF}, true},
 		{"APF channel-open failure (port stack restarting on LME retry)", fmt.Errorf("%w, reason code: 2", apf.ErrChannelOpenFailure), true},
 		{"url.Error wrapping APF channel-open failure", &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: fmt.Errorf("%w, reason code: 2", apf.ErrChannelOpenFailure)}, true},

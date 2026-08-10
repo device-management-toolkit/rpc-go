@@ -825,10 +825,24 @@ func (service *LocalActivationService) commitActivation() error {
 //
 //   - EOF / connection reset / use-of-closed-connection: the response was cut
 //     off while in flight.
+//   - io.ErrUnexpectedEOF: the same cut-off, reported as a short read because it
+//     landed part-way through a TLS record. This — not a bare io.EOF — is what
+//     the LME transport actually produces on AMT19+ ("read response over AMT
+//     TLS: unexpected EOF"); across every captured AMT20/21 LME run a clean
+//     io.EOF never appeared. It is a distinct sentinel, so errors.Is against
+//     io.EOF does not match it. internal/local/amt already pairs the two in
+//     isTransientLMEError and lmsUpButUnready.
 //   - apf.ErrChannelOpenFailure: after the initial cut-off, the LME transport
-//     resets HECI and retries, but the firmware refuses the fresh APF channel
-//     (APF_CHANNEL_OPEN_FAILURE) while the port stack is still restarting, so
-//     this — not the EOF — is the error that ultimately surfaces to the caller.
+//     resets HECI and retries. Usually the firmware refuses the fresh APF
+//     channel (APF_CHANNEL_OPEN_FAILURE) while the port stack is still
+//     restarting, and that is the error the caller ends up seeing.
+//
+// The last two interact, which is what makes the io.ErrUnexpectedEOF case easy
+// to miss: while the retry keeps being refused, ErrChannelOpenFailure masks the
+// short read and recovery works. Only when the retry does reopen the channel —
+// new APF channel, fresh TLS handshake — and the response is still lost does
+// io.ErrUnexpectedEOF reach the caller alone. Matching only one of the two
+// therefore passes on most hardware runs and fails on a few.
 //
 // The net/http error is wrapped in *url.Error and apf wraps its sentinel with
 // %w, but errors.Is unwraps through both.
@@ -838,6 +852,7 @@ func isConnectionResetErr(err error) bool {
 	}
 
 	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, net.ErrClosed) ||
 		errors.Is(err, apf.ErrChannelOpenFailure)
