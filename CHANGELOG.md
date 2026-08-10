@@ -1,3 +1,10 @@
+# [3.0.0-beta.45](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.44...v3.0.0-beta.45) (2026-08-10)
+
+
+### Bug Fixes
+
+* local activation/deactivation reports the correct outcome ([#1463](https://github.com/device-management-toolkit/rpc-go/issues/1463)) ([d8afbf0](https://github.com/device-management-toolkit/rpc-go/commit/d8afbf0a99ba8ba1f3802a09087e5e0a0e22ea15))
+
 # [3.0.0-beta.44](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.43...v3.0.0-beta.44) (2026-08-10)
 
 
