@@ -183,6 +183,30 @@ func TestUnprovision(t *testing.T) {
 	assert.Equal(t, 0, result)
 }
 
+func TestUnprovisionFirmwareRejects(t *testing.T) {
+	numBytes = GET_REQUEST_SIZE + 4
+	// Firmware rejects a HECI unprovision on an ACM device with
+	// AMT_STATUS_INVALID_AMT_MODE in the response header status. The State
+	// payload is still 0, so the status is the only signal of failure.
+	prepareMessage := UnprovisionResponse{
+		Header: ResponseMessageHeader{Status: AMT_STATUS_INVALID_AMT_MODE},
+	}
+
+	var bin_buf bytes.Buffer
+
+	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
+	message = bin_buf.Bytes()
+
+	state, err := pthi.Unprovision()
+	assert.Error(t, err)
+	// -1, not the payload state: a caller that ignores err must not read a
+	// plausible-looking 0 out of a rejected unprovision.
+	assert.Equal(t, -1, state)
+	assert.Contains(t, err.Error(), "AMT_STATUS_INVALID_AMT_MODE")
+	assert.Contains(t, err.Error(), "0x3")
+	assert.Contains(t, err.Error(), "reported state 0")
+}
+
 func TestGetCodeVersions(t *testing.T) {
 	numBytes = GET_REQUEST_SIZE
 	prepareMessage := GetCodeVersionsResponse{
