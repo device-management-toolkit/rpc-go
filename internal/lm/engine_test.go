@@ -447,3 +447,103 @@ func Test_Connect_WaitGroupManagement(t *testing.T) {
 		t.Fatal("WaitGroup counter not balanced after Connect")
 	}
 }
+
+// capturingHECIMock records every frame handed to SendMessage so channel-close
+// tests can assert on the exact bytes rpc-go puts on the wire.
+type capturingHECIMock struct {
+	sent    [][]byte
+	sendErr error
+}
+
+func (m *capturingHECIMock) Init(useLME, useWD bool) error       { return nil }
+func (m *capturingHECIMock) InitHOTHAM() error                   { return nil }
+func (m *capturingHECIMock) InitWithGUID(guid interface{}) error { return nil }
+func (m *capturingHECIMock) GetBufferSize() uint32               { return 5120 }
+func (m *capturingHECIMock) Close()                              {}
+
+func (m *capturingHECIMock) SendMessage(buffer []byte, done *uint32) (int, error) {
+	if m.sendErr != nil {
+		return 0, m.sendErr
+	}
+
+	m.sent = append(m.sent, append([]byte(nil), buffer...))
+
+	return len(buffer), nil
+}
+
+func (m *capturingHECIMock) ReceiveMessage(buffer []byte, done *uint32) (int, error) {
+	return 0, nil
+}
+
+// newCloseChannelFixture builds an LMEConnection whose session looks like a
+// confirmed tunnel channel: AMT's sender channel is 6 and the stream buffer is
+// live (i.e. AMT has NOT closed us), which is the state a superseding TLS
+// session abandons.
+func newCloseChannelFixture() (*LMEConnection, *capturingHECIMock) {
+	mock := &capturingHECIMock{}
+	lme := &LMEConnection{
+		Command: pthi.Command{Heci: mock},
+		Session: &apf.Session{
+			SenderChannel:      6,
+			RecipientChannel:   19,
+			HandshakeConfirmed: true,
+			StreamDataBuffer:   make(chan []byte, 1),
+		},
+	}
+
+	return lme, mock
+}
+
+func TestCloseChannel_SendsCloseForAMTSenderChannel(t *testing.T) {
+	lme, mock := newCloseChannelFixture()
+
+	lme.CloseChannel()
+
+	assert.Len(t, mock.sent, 1, "abandoning a confirmed channel must send exactly one CHANNEL_CLOSE")
+	assert.Equal(t, apf.BuildChannelCloseBytes(6), mock.sent[0],
+		"close must address AMT's sender channel so AMT frees the slot it allocated")
+	assert.False(t, lme.Session.HandshakeConfirmed, "confirmed flag must clear so we never double-close")
+}
+
+func TestCloseChannel_IsIdempotent(t *testing.T) {
+	lme, mock := newCloseChannelFixture()
+
+	lme.CloseChannel()
+	lme.CloseChannel()
+
+	assert.Len(t, mock.sent, 1, "a second call must not send another close for the same channel")
+}
+
+func TestCloseChannel_SkipsWhenAMTAlreadyClosed(t *testing.T) {
+	lme, mock := newCloseChannelFixture()
+	// apf.ProcessChannelClose nils StreamDataBuffer when AMT's own CHANNEL_CLOSE
+	// targets our confirmed channel; the slot is already free.
+	lme.Session.StreamDataBuffer = nil
+
+	lme.CloseChannel()
+
+	assert.Empty(t, mock.sent, "must not close a channel AMT has already torn down")
+}
+
+func TestCloseChannel_SkipsWhenNoChannelConfirmed(t *testing.T) {
+	lme, mock := newCloseChannelFixture()
+	lme.Session.HandshakeConfirmed = false
+
+	lme.CloseChannel()
+
+	assert.Empty(t, mock.sent, "no confirmed channel means there is no slot to release")
+}
+
+func TestCloseChannel_NilSessionDoesNotPanic(t *testing.T) {
+	lme := &LMEConnection{Command: pthi.Command{Heci: &capturingHECIMock{}}}
+
+	assert.NotPanics(t, lme.CloseChannel)
+}
+
+func TestCloseChannel_SendErrorIsBestEffort(t *testing.T) {
+	lme, mock := newCloseChannelFixture()
+	mock.sendErr = errors.New("heci write failed")
+
+	assert.NotPanics(t, lme.CloseChannel, "teardown must survive a failed close")
+	assert.False(t, lme.Session.HandshakeConfirmed, "state must clear even when the close fails")
+}

@@ -4,12 +4,29 @@
  **********************************************************************/
 package utils
 
+import "time"
+
 type ReturnCode int
 
 var (
 	ProjectVersion string = "Development Build"
 	BuildDate      string = "unknown"
 	BuildCommit    string = "unknown"
+)
+
+// LMS probe timings. Typed as durations so call sites use them directly rather
+// than re-deriving the unit from a comment.
+const (
+	// LMSRecoveryBudget bounds the wall-clock time SetupWsmanClient keeps retrying
+	// the LMS dial before giving up. A refused connection (LMS genuinely down)
+	// fails fast and does not consume the budget; only a dial that times out or is
+	// accepted-then-dropped (LMS up but its TLS port stack restarting, e.g. right
+	// after activation) is retried. While LMS is up it owns /dev/mei0, so falling
+	// back to LME-over-HECI would only contend for the MEI and fail with "device
+	// or resource busy" - the caller waits out the restart on the LMS path instead.
+	LMSRecoveryBudget = 30 * time.Second
+	// LMSProbeRetryDelay is the wait between LMS dial retries.
+	LMSProbeRetryDelay = 1 * time.Second
 )
 
 const (
@@ -20,8 +37,18 @@ const (
 	// ClientName is the name of the exectable
 	ClientName = "RPC"
 
-	// LMSAddress is used for determining what address to connect to LMS on
-	LMSAddress = "localhost"
+	// LMSAddress is the address used to connect to LMS. It is the literal loopback
+	// IP rather than "localhost" because LMS only ever listens on loopback and the
+	// dial must not go through host resolution: on some managed devices
+	// "localhost" resolves via DNS to rotating routable corporate IPs (observed:
+	// 10.49.x / 10.99.x), and dialing those times out, is misread as "LMS up but
+	// restarting", and blocks the HECI fallback. Dialing 127.0.0.1 sidesteps
+	// resolution entirely.
+	//
+	// This must stay the same value the LMS probe dials — a probe against loopback
+	// while the WSMAN client targets a resolved name would confirm one endpoint and
+	// then talk to another.
+	LMSAddress = "127.0.0.1"
 	// LMSPort is used for determining what port to connect to LMS on
 	LMSPort    = "16992"
 	LMSTLSPort = "16993"
