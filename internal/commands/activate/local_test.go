@@ -231,6 +231,10 @@ type MockAMTCommand struct {
 	upidErr          error
 	upidCalls        int
 	stopConfigStatus string
+	// provisioningState is what GetProvisioningState reports: 0 pre, 1 in
+	// provisioning, 2 post. Tests that expect a completed activation must set
+	// this to provisioningStatePostProvisioning.
+	provisioningState int
 }
 type MockChangeEnabled struct {
 	amtEnabled bool
@@ -253,7 +257,7 @@ func (m *MockAMTCommand) GetProvisioningState() (int, error) {
 		return 0, errors.New("mock error")
 	}
 
-	return 0, nil
+	return m.provisioningState, nil
 }
 
 func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {

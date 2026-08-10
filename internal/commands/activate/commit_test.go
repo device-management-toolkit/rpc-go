@@ -57,8 +57,11 @@ func TestCommitActivation_ConnectionResetButActivated(t *testing.T) {
 		Return(setupandconfiguration.Response{}, &url.Error{Op: "Post", URL: "https://localhost:16993/wsman", Err: io.EOF})
 
 	service := &LocalActivationService{
-		wsman:      mockWSMAN,
-		amtCommand: &MockAMTCommand{controlMode: AMTControlModeACM},
+		wsman: mockWSMAN,
+		amtCommand: &MockAMTCommand{
+			controlMode:       AMTControlModeACM,
+			provisioningState: provisioningStatePostProvisioning,
+		},
 	}
 
 	if err := service.commitActivation(); err != nil {
@@ -86,12 +89,67 @@ func TestCommitActivation_ChannelOpenFailureButActivated(t *testing.T) {
 		})
 
 	service := &LocalActivationService{
-		wsman:      mockWSMAN,
-		amtCommand: &MockAMTCommand{controlMode: AMTControlModeACM},
+		wsman: mockWSMAN,
+		amtCommand: &MockAMTCommand{
+			controlMode:       AMTControlModeACM,
+			provisioningState: provisioningStatePostProvisioning,
+		},
 	}
 
 	if err := service.commitActivation(); err != nil {
 		t.Fatalf("commitActivation() error = %v, want nil (device is provisioned)", err)
+	}
+}
+
+// TestCommitActivation_ConnectionResetStillInProvisioning verifies that a control
+// mode alone is not accepted as proof the commit landed. A device that halted
+// mid-activation reports ACM while still sitting in provisioning state 1; that is
+// a genuine failure and must not be reported as a successful activation.
+func TestCommitActivation_ConnectionResetStillInProvisioning(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	mockWSMAN.EXPECT().
+		CommitChanges().
+		Return(setupandconfiguration.Response{}, io.EOF)
+
+	service := &LocalActivationService{
+		wsman: mockWSMAN,
+		amtCommand: &MockAMTCommand{
+			controlMode:       AMTControlModeACM,
+			provisioningState: 1,
+		},
+	}
+
+	if err := service.commitActivation(); !errors.Is(err, io.EOF) {
+		t.Fatalf("commitActivation() error = %v, want io.EOF (still in provisioning)", err)
+	}
+}
+
+// TestCommitActivation_ProvisioningStateUnreadableFallsBackToControlMode verifies
+// the escape hatch: firmware that cannot report a provisioning state must not turn
+// genuine activations into failures, so an unreadable state falls back to the
+// control-mode decision.
+func TestCommitActivation_ProvisioningStateUnreadableFallsBackToControlMode(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	mockWSMAN.EXPECT().
+		CommitChanges().
+		Return(setupandconfiguration.Response{}, io.EOF)
+
+	service := &LocalActivationService{
+		wsman: mockWSMAN,
+		amtCommand: &MockAMTCommand{
+			controlMode:   AMTControlModeACM,
+			shouldErrorOn: "GetProvisioningState",
+		},
+	}
+
+	if err := service.commitActivation(); err != nil {
+		t.Fatalf("commitActivation() error = %v, want nil (state unreadable, mode says provisioned)", err)
 	}
 }
 

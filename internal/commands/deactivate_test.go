@@ -883,6 +883,25 @@ func TestDeactivateCmd_ExecuteFullUnprovision(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("HECI unprovision reporting a non-zero state is not a success", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, tlsCertRequired)
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(provisioningStateInProvisioning, nil)
+		// Firmware rejected the request through the response state, not through err.
+		mockAMT.EXPECT().Unprovision().Return(1, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.ErrorIs(t, err, utils.UnableToDeactivate)
+	})
+
 	t.Run("provisioned device does not fall back to HECI", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()

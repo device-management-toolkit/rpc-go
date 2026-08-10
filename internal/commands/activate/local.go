@@ -92,6 +92,13 @@ const (
 	AMTControlModeACM = 2
 )
 
+// provisioningStatePostProvisioning is the HECI provisioning-state value for a
+// device that finished activation. A control mode alone is not proof of success:
+// a device that halted mid-activation reports ACM/CCM while still sitting in
+// "in provisioning" (state 1), so activation must confirm this state before
+// calling a dropped CommitChanges a success.
+const provisioningStatePostProvisioning = 2
+
 const (
 	activationModeCCM = "CCM"
 	activationModeACM = "ACM"
@@ -787,9 +794,19 @@ func (service *LocalActivationService) commitActivation() error {
 	for attempt := 1; attempt <= commitPortRestartAttempts; attempt++ {
 		mode, modeErr := service.amtCommand.GetControlMode()
 		if modeErr == nil && mode != AMTControlModePreProvisioning {
-			log.Info("Device is provisioned; CommitChanges succeeded despite the dropped connection.")
+			// A control mode alone is not proof the commit landed: a device that
+			// halted mid-activation reports ACM/CCM while still sitting "in
+			// provisioning". Require post-provisioning before calling it a success.
+			// If the state cannot be read at all, fall back to the control mode
+			// rather than failing an activation that most likely succeeded.
+			state, stateErr := service.amtCommand.GetProvisioningState()
+			if stateErr != nil || state == provisioningStatePostProvisioning {
+				log.Info("Device is provisioned; CommitChanges succeeded despite the dropped connection.")
 
-			return nil
+				return nil
+			}
+
+			log.Debugf("Control mode %d is set but the device is still in provisioning state %d; activation has not completed", mode, state)
 		}
 
 		if attempt < commitPortRestartAttempts {
