@@ -6,7 +6,9 @@
 package orchestrator
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -399,6 +401,68 @@ func TestExecuteWithPasswordFallback_SettleRetrySkippedForDeviceNotActivated(t *
 
 	if mock.callCount != 1 {
 		t.Errorf("expected 1 call (no settle retry for device-not-activated), got %d", mock.callCount)
+	}
+}
+
+// failingPasswordReader stands in for an interactive prompt. Any read is a test
+// failure signal: settle retries must never reach the password prompt.
+type failingPasswordReader struct{}
+
+func (r *failingPasswordReader) ReadPassword() (string, error) {
+	return "", errors.New("password prompt must not be reached during settle retries")
+}
+
+func (r *failingPasswordReader) ReadPasswordWithConfirmation(prompt, confirmPrompt string) (string, error) {
+	return "", errors.New("password prompt must not be reached during settle retries")
+}
+
+// TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt pins the retry path:
+// rotation runs once, on the initial execution. Routing settle retries back
+// through executeWithPasswordRotation would re-prompt on every attempt and, on
+// success, recurse into the settle loop again.
+func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
+	originalPR := utils.PR
+	utils.PR = &failingPasswordReader{}
+
+	defer func() { utils.PR = originalPR }()
+
+	cfg := config.Configuration{}
+	// An AdminPassword plus control mode 2 is what arms the rotation path.
+	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
+
+	// A supplied current password arms the non-interactive rotation attempt.
+	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
+	mock := newMockExecutor()
+	// Every call reports an auth failure — the error that triggers rotation. The
+	// slice is longer than any path through the loop needs, so a rotating retry
+	// path cannot pass by simply running out of errors.
+	mock.errs = make([]error, 32)
+	for i := range mock.errs {
+		mock.errs[i] = authExecError()
+	}
+
+	po.executor = mock
+	po.settleDelaySeconds = 0
+	po.activatedThisRun = true
+	po.currentControlMode = 2
+
+	if err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}); err == nil {
+		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
+	}
+
+	rotations := 0
+
+	for _, args := range mock.executedArgs {
+		if slices.Contains(args, commandAMTPassword) {
+			rotations++
+		}
+	}
+
+	// Exactly one: the initial execution's rotation. Routing the retries back
+	// through executeWithPasswordRotation would rotate once per settle attempt.
+	if rotations != 1 {
+		t.Errorf("expected 1 rotation attempt (the initial one), got %d across %s",
+			rotations, strings.Join(mock.executedArgs[len(mock.executedArgs)-1], " "))
 	}
 }
 

@@ -251,7 +251,13 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string) error 
 			attempt, postActivationSettleAttempts, err, po.settleDelaySeconds)
 		utils.Pause(po.settleDelaySeconds)
 
-		err = po.executeWithPasswordRotation(args)
+		// Retry the step directly rather than through executeWithPasswordRotation.
+		// Rotation already ran on the initial execution above; re-entering it here
+		// would prompt for the current password again on every settle attempt
+		// (worst case attempts × maxTries prompts) and, on success, recurse back
+		// into this loop. Settle retries exist to wait out a restarting port stack,
+		// which needs no credential interaction.
+		err = po.executor.Execute(args)
 		if err == nil {
 			return nil
 		}
