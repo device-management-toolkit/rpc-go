@@ -1,3 +1,10 @@
+# [3.0.0-beta.46](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.45...v3.0.0-beta.46) (2026-08-10)
+
+
+### Bug Fixes
+
+* **internal:** profile orchestration robustness (subprocess model) ([#1464](https://github.com/device-management-toolkit/rpc-go/issues/1464)) ([1f8ddd2](https://github.com/device-management-toolkit/rpc-go/commit/1f8ddd29afde42b0c65b3227b9d6cb5794cd4303))
+
 # [3.0.0-beta.45](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.44...v3.0.0-beta.45) (2026-08-10)
 
 
