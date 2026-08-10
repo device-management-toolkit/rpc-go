@@ -25,6 +25,13 @@ const (
 	ControlModeACM = 2
 )
 
+// provisioningStateInProvisioning is the HECI provisioning-state value for a
+// device that began but never finished activation: a control mode is set but the
+// flow never reached "provisioned". Such a device exposes a mutual-TLS port on
+// :16993 that rpc has no client certificate for, so a WSMAN deactivate can never
+// complete — it must be recovered over HECI instead.
+const provisioningStateInProvisioning = 1
+
 // setupTLSConfig creates TLS configuration if local TLS is enforced
 func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 	tlsConfig := &tls.Config{}
@@ -352,7 +359,7 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 
 		return cmd.deactivateCCM(ctx)
 	case ControlModeACM:
-		return cmd.deactivateACM()
+		return cmd.deactivateACM(ctx)
 	default:
 		log.Error("Deactivation failed. Device control mode: " + utils.InterpretControlMode(controlMode))
 
@@ -361,13 +368,13 @@ func (cmd *DeactivateCmd) executeLocalDeactivate(ctx *Context) error {
 }
 
 // deactivateACM handles ACM mode deactivation
-func (cmd *DeactivateCmd) deactivateACM() error {
+func (cmd *DeactivateCmd) deactivateACM(ctx *Context) error {
 	// Execute deactivation operation
 	if cmd.PartialUnprovision {
 		return cmd.executePartialUnprovision()
 	}
 
-	return cmd.executeFullUnprovision()
+	return cmd.executeFullUnprovision(ctx)
 }
 
 // executePartialUnprovision performs partial unprovision operation
@@ -385,10 +392,59 @@ func (cmd *DeactivateCmd) executePartialUnprovision() error {
 }
 
 // executeFullUnprovision performs full unprovision operation
-func (cmd *DeactivateCmd) executeFullUnprovision() error {
+func (cmd *DeactivateCmd) executeFullUnprovision(ctx *Context) error {
 	_, err := cmd.WSMan.Unprovision(1)
-	if err != nil {
-		log.Error("Status: Unable to deactivate ", err)
+	if err == nil {
+		log.Info("Status: Device deactivated")
+
+		return nil
+	}
+
+	// A device that halted mid-activation ("in provisioning") exposes a mutual-TLS
+	// port on :16993 that rpc has no client certificate for, so the WSMAN
+	// Unprovision above can never complete (it fails at the TLS handshake). That
+	// stuck half-state is recoverable over HECI instead, so fall back to it rather
+	// than leaving the device permanently wedged.
+	if cmd.provisioningHalted(ctx) {
+		return cmd.recoverInProvisioningOverHECI(ctx, err)
+	}
+
+	log.Error("Status: Unable to deactivate ", err)
+
+	return utils.UnableToDeactivate
+}
+
+// provisioningHalted reports whether the device is stuck "in provisioning" — a
+// control mode is set but activation never completed. The provisioning state is
+// read over HECI, which is unaffected by the TLS-port state that blocks WSMAN.
+func (cmd *DeactivateCmd) provisioningHalted(ctx *Context) bool {
+	state, stateErr := ctx.AMTCommand.GetProvisioningState()
+	if stateErr != nil {
+		log.Debugf("Could not read provisioning state to classify deactivate failure: %v", stateErr)
+
+		return false
+	}
+
+	return state == provisioningStateInProvisioning
+}
+
+// recoverInProvisioningOverHECI unprovisions a device stuck "in provisioning"
+// using HECI, bypassing the WSMAN/TLS path that cannot complete in that state.
+func (cmd *DeactivateCmd) recoverInProvisioningOverHECI(ctx *Context, wsmanErr error) error {
+	log.Warnf("WSMAN deactivate failed while device is in provisioning (%v); recovering over HECI", wsmanErr)
+
+	// Unprovision reports failure through the state in the firmware response as
+	// well as through err — deactivateCCM below checks both. Gating on err alone
+	// would report a firmware-rejected unprovision as a successful deactivation.
+	state, err := ctx.AMTCommand.Unprovision()
+
+	switch {
+	case err != nil:
+		log.Error("Status: Unable to deactivate over HECI ", err)
+
+		return utils.UnableToDeactivate
+	case state != 0:
+		log.Errorf("Status: Unable to deactivate over HECI; firmware reported state %d", state)
 
 		return utils.UnableToDeactivate
 	}

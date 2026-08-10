@@ -18,9 +18,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -88,6 +92,13 @@ const (
 	AMTControlModeACM = 2
 )
 
+// provisioningStatePostProvisioning is the HECI provisioning-state value for a
+// device that finished activation. A control mode alone is not proof of success:
+// a device that halted mid-activation reports ACM/CCM while still sitting in
+// "in provisioning" (state 1), so activation must confirm this state before
+// calling a dropped CommitChanges a success.
+const provisioningStatePostProvisioning = 2
+
 const (
 	activationModeCCM = "CCM"
 	activationModeACM = "ACM"
@@ -96,6 +107,16 @@ const (
 	jsonKeyFriendly   = "friendly_name"
 	jsonValueSuccess  = "success"
 	amtStatusSuccess  = "AMT_STATUS_SUCCESS"
+)
+
+const (
+	// commitPortRestartAttempts bounds how many times activation re-reads the AMT
+	// control mode after CommitChanges drops its connection, to confirm whether
+	// the commit completed during the firmware port-stack restart.
+	commitPortRestartAttempts = 3
+	// commitPortRestartDelay is the wait between control-mode re-reads while the
+	// firmware finishes the post-commit port-stack restart (milliseconds).
+	commitPortRestartDelay = 1000
 )
 
 func (m ActivationMode) String() string {
@@ -666,10 +687,8 @@ func (service *LocalActivationService) setupMEBxAndCommit() error {
 		return nil
 	}
 	// No MEBx password provided — try CommitChanges directly
-	result, err := service.wsman.CommitChanges()
+	err := service.commitActivation()
 	if err == nil {
-		log.Debug(result)
-
 		return nil
 	}
 
@@ -740,16 +759,103 @@ func (service *LocalActivationService) setMEBxAndCommit(mebxPassword string) err
 
 	log.Info("Successfully updated MEBx Password.")
 
-	result, err := service.wsman.CommitChanges()
-	if err != nil {
+	if err := service.commitActivation(); err != nil {
 		log.Error(err.Error())
 
 		return utils.ActivationFailed
 	}
 
-	log.Debug(result)
-
 	return nil
+}
+
+// commitActivation calls CommitChanges to finalize activation. CommitChanges is
+// the step where the firmware restarts the AMT/LMS local port stack; on
+// TLS-enforced platforms (AMT19+) that restart tears down the LMS relay
+// connection while the HTTP response is still in flight, so the call returns a
+// connection-drop error (EOF / reset) even though the commit already took
+// effect. Substring-matching the transport error would be brittle, so instead we
+// confirm the authoritative firmware state: re-read the control mode over HECI
+// and, if the device is now provisioned, treat the commit as the success it was.
+// Any other error (or a device still in pre-provisioning) is a genuine failure.
+func (service *LocalActivationService) commitActivation() error {
+	result, err := service.wsman.CommitChanges()
+	if err == nil {
+		log.Debug(result)
+
+		return nil
+	}
+
+	if !isConnectionResetErr(err) {
+		return err
+	}
+
+	log.Warnf("CommitChanges connection dropped (%v); the firmware may be restarting the local port stack. Verifying activation state over HECI...", err)
+
+	for attempt := 1; attempt <= commitPortRestartAttempts; attempt++ {
+		mode, modeErr := service.amtCommand.GetControlMode()
+		if modeErr == nil && mode != AMTControlModePreProvisioning {
+			// A control mode alone is not proof the commit landed: a device that
+			// halted mid-activation reports ACM/CCM while still sitting "in
+			// provisioning". Require post-provisioning before calling it a success.
+			// If the state cannot be read at all, fall back to the control mode
+			// rather than failing an activation that most likely succeeded.
+			state, stateErr := service.amtCommand.GetProvisioningState()
+			if stateErr != nil || state == provisioningStatePostProvisioning {
+				log.Info("Device is provisioned; CommitChanges succeeded despite the dropped connection.")
+
+				return nil
+			}
+
+			log.Debugf("Control mode %d is set but the device is still in provisioning state %d; activation has not completed", mode, state)
+		}
+
+		if attempt < commitPortRestartAttempts {
+			time.Sleep(commitPortRestartDelay * time.Millisecond)
+		}
+	}
+
+	// Still pre-provisioning (or control mode unreadable): the commit really failed.
+	return err
+}
+
+// isConnectionResetErr reports whether err is a dropped/reset transport
+// connection rather than an application-level failure. These are the symptoms of
+// the LMS relay being torn down mid-response by the post-commit firmware
+// port-stack restart:
+//
+//   - EOF / connection reset / use-of-closed-connection: the response was cut
+//     off while in flight.
+//   - io.ErrUnexpectedEOF: the same cut-off, reported as a short read because it
+//     landed part-way through a TLS record. This — not a bare io.EOF — is what
+//     the LME transport actually produces on AMT19+ ("read response over AMT
+//     TLS: unexpected EOF"); across every captured AMT20/21 LME run a clean
+//     io.EOF never appeared. It is a distinct sentinel, so errors.Is against
+//     io.EOF does not match it. internal/local/amt already pairs the two in
+//     isTransientLMEError and lmsUpButUnready.
+//   - apf.ErrChannelOpenFailure: after the initial cut-off, the LME transport
+//     resets HECI and retries. Usually the firmware refuses the fresh APF
+//     channel (APF_CHANNEL_OPEN_FAILURE) while the port stack is still
+//     restarting, and that is the error the caller ends up seeing.
+//
+// The last two interact, which is what makes the io.ErrUnexpectedEOF case easy
+// to miss: while the retry keeps being refused, ErrChannelOpenFailure masks the
+// short read and recovery works. Only when the retry does reopen the channel —
+// new APF channel, fresh TLS handshake — and the response is still lost does
+// io.ErrUnexpectedEOF reach the caller alone. Matching only one of the two
+// therefore passes on most hardware runs and fails on a few.
+//
+// The net/http error is wrapped in *url.Error and apf wraps its sentinel with
+// %w, but errors.Is unwraps through both.
+func isConnectionResetErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, apf.ErrChannelOpenFailure)
 }
 
 // isDataMissingError checks if an error is PT_STATUS_DATA_MISSING (error code 2057).

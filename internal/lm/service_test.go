@@ -7,6 +7,7 @@ package lm
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -97,4 +98,50 @@ func TestListen(t *testing.T) {
 
 	<-wait2
 	lms.Close() // should close client pipe
+}
+
+// TestListenPlainWaitsForDelayedResponse pins the plain-relay first-byte window
+// against regression. The activating IPS_HostBasedSetupService/Setup response
+// arrives after AMT runs its provisioning crypto — well past the old 500ms
+// read timeout. With plainFirstByteTimeout (3s) the relay must still capture
+// and forward that delayed response rather than timing out empty and closing
+// the socket (which stranded the reply, made RPS retry Setup against an
+// already-activated device, and reported "Failed to activate").
+func TestListenPlainWaitsForDelayedResponse(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	data := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+	lms := &LMSConnection{
+		Connection: server,
+		useTls:     false,
+		data:       data,
+		errors:     errCh,
+	}
+
+	go lms.Listen()
+
+	// Respond well after the retired 500ms window but inside the 3s budget,
+	// mimicking AMT's slow Setup reply.
+	const afterOldTimeout = 900 * time.Millisecond
+
+	go func() {
+		time.Sleep(afterOldTimeout)
+
+		_, err := client.Write([]byte("setup-response"))
+		assert.NoError(t, err)
+
+		client.Close()
+	}()
+
+	select {
+	case got := <-data:
+		assert.Equal(t, []byte("setup-response"), got)
+	case err := <-errCh:
+		t.Fatalf("plain relay abandoned the delayed response: %v", err)
+	case <-time.After(plainFirstByteTimeout + time.Second):
+		t.Fatal("Listen did not deliver the delayed response within the plain first-byte window")
+	}
 }
