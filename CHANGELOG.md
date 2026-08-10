@@ -1,3 +1,10 @@
+# [3.0.0-beta.47](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.46...v3.0.0-beta.47) (2026-08-10)
+
+
+### Bug Fixes
+
+* **local:** local LMS/LME transport reliability and log noise ([#1466](https://github.com/device-management-toolkit/rpc-go/issues/1466)) ([07aa0f4](https://github.com/device-management-toolkit/rpc-go/commit/07aa0f4ee2a153dca1181e28fc78a2385aac5414))
+
 # [3.0.0-beta.46](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.45...v3.0.0-beta.46) (2026-08-10)
 
 
