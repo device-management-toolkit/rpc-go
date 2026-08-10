@@ -89,8 +89,6 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	}
 
 	probeTimeout := time.Duration(utils.LMSDialerTimeout) * time.Second
-	recoveryBudget := time.Duration(utils.LMSRecoveryBudget) * time.Second
-	retryDelay := utils.LMSProbeRetryDelay * time.Millisecond
 
 	if clientParams.UseTLS {
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
@@ -100,8 +98,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		}
 
 		conn, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp", utils.LMSLoopbackAddress+":"+utils.LMSTLSPort)
-		}, probeTimeout, recoveryBudget, retryDelay)
+			return dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		}, probeTimeout, utils.LMSRecoveryBudget, utils.LMSProbeRetryDelay)
 		if err != nil {
 			// A dial that was refused means LMS is genuinely down, so LME-over-HECI
 			// is the correct path. But a dial that timed out or was accepted then
@@ -138,8 +136,8 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		dialer := &net.Dialer{}
 
 		con, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
-			return dialer.DialContext(ctx, "tcp4", utils.LMSLoopbackAddress+":"+utils.LMSPort)
-		}, probeTimeout, recoveryBudget, retryDelay)
+			return dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		}, probeTimeout, utils.LMSRecoveryBudget, utils.LMSProbeRetryDelay)
 		if err != nil {
 			// LMS up but its port did not recover: it still owns the MEI, so HECI
 			// fallback is futile. Surface the error rather than contending for /dev/mei0.
@@ -193,13 +191,29 @@ func probeLMS(dial func(context.Context) (net.Conn, error), timeout, budget, ret
 	var lastErr error
 
 	for attempt := 1; ; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		// Clamp the attempt to what is left of the budget: a full-length dial
+		// started near the end would overrun the budget by up to one timeout.
+		attemptTimeout := timeout
+		if remaining := time.Until(deadline); remaining < attemptTimeout {
+			attemptTimeout = remaining
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
 		conn, err := dial(ctx)
 
 		cancel()
 
 		if err == nil {
 			return conn, nil
+		}
+
+		// A dialer can hand back a usable-looking conn alongside an error (a
+		// connect that completed but whose handshake failed). Nothing below reads
+		// it, so close it or the retry loop leaks a descriptor per attempt.
+		if conn != nil {
+			if closeErr := conn.Close(); closeErr != nil {
+				logrus.Debugf("closing LMS conn returned with dial error: %v", closeErr)
+			}
 		}
 
 		lastErr = err

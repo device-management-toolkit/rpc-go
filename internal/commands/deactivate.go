@@ -32,6 +32,10 @@ const (
 // complete — it must be recovered over HECI instead.
 const provisioningStateInProvisioning = 1
 
+// amtStatusSuccess is the firmware status string a successful HECI command
+// reports in its response.
+const amtStatusSuccess = "AMT_STATUS_SUCCESS"
+
 // setupTLSConfig creates TLS configuration if local TLS is enforced
 func (cmd *DeactivateCmd) setupTLSConfig(ctx *Context) *tls.Config {
 	tlsConfig := &tls.Config{}
@@ -457,7 +461,7 @@ func (cmd *DeactivateCmd) recoverInProvisioningOverHECI(ctx *Context, wsmanErr e
 		return utils.UnableToDeactivate
 	}
 
-	if stopResp.Status != "AMT_STATUS_SUCCESS" {
+	if stopResp.Status != amtStatusSuccess {
 		log.Errorf("Status: Unable to stop incomplete configuration over HECI: %s", stopResp.Status)
 
 		return utils.UnableToDeactivate

@@ -217,3 +217,71 @@ func TestProbeLMS_TimeoutThenSuccess(t *testing.T) {
 	assert.NotNil(t, conn)
 	assert.Equal(t, 2, attempts, "should stop retrying once LMS answers")
 }
+
+// trackedConn records whether it was closed. It embeds net.TCPConn only to
+// satisfy net.Conn; none of the embedded methods are called.
+type trackedConn struct {
+	net.TCPConn
+
+	closed bool
+}
+
+func (c *trackedConn) Close() error {
+	c.closed = true
+
+	return nil
+}
+
+// TestProbeLMS_ClosesConnReturnedWithError covers a dialer that hands back a
+// usable-looking conn alongside an error (a connect that completed but whose
+// handshake failed). Nothing reads that conn, so probeLMS must close it or the
+// retry loop leaks a descriptor per attempt for the whole recovery budget.
+func TestProbeLMS_ClosesConnReturnedWithError(t *testing.T) {
+	var conns []*trackedConn
+
+	_, err := probeLMS(func(context.Context) (net.Conn, error) {
+		c := &trackedConn{}
+		conns = append(conns, c)
+
+		return c, io.EOF
+	}, time.Millisecond, 5*time.Millisecond, time.Millisecond)
+
+	require.Error(t, err)
+	require.NotEmpty(t, conns, "dial should have been attempted")
+
+	for i, c := range conns {
+		assert.True(t, c.closed, "conn from attempt %d returned with an error was not closed", i+1)
+	}
+}
+
+// TestProbeLMS_DoesNotOverrunBudget pins the per-attempt timeout clamp: with a
+// dial timeout far larger than the remaining budget, an unclamped attempt would
+// block for the full dial timeout past the deadline.
+func TestProbeLMS_DoesNotOverrunBudget(t *testing.T) {
+	const (
+		dialTimeout = 500 * time.Millisecond
+		budget      = 50 * time.Millisecond
+		retryDelay  = time.Millisecond
+	)
+
+	start := time.Now()
+
+	// Block until the context the probe supplies expires, so the attempt lasts
+	// exactly as long as probeLMS allows it to.
+	_, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+		<-ctx.Done()
+
+		return nil, ctx.Err()
+	}, dialTimeout, budget, retryDelay)
+
+	elapsed := time.Since(start)
+
+	// Clamped, the single attempt ends with the budget (~50ms). Unclamped it runs
+	// the full dial timeout (~500ms). The bound sits well between the two so slow
+	// CI machines do not flake it.
+	const slack = 200 * time.Millisecond
+
+	require.Error(t, err)
+	assert.Less(t, elapsed, budget+slack,
+		"probe overran its budget by a full dial timeout; per-attempt timeout is not clamped to the remaining budget")
+}
