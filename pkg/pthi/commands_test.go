@@ -197,9 +197,14 @@ func TestUnprovisionFirmwareRejects(t *testing.T) {
 	binary.Write(&bin_buf, binary.LittleEndian, prepareMessage)
 	message = bin_buf.Bytes()
 
-	_, err := pthi.Unprovision()
+	state, err := pthi.Unprovision()
 	assert.Error(t, err)
+	// -1, not the payload state: a caller that ignores err must not read a
+	// plausible-looking 0 out of a rejected unprovision.
+	assert.Equal(t, -1, state)
 	assert.Contains(t, err.Error(), "AMT_STATUS_INVALID_AMT_MODE")
+	assert.Contains(t, err.Error(), "0x3")
+	assert.Contains(t, err.Error(), "reported state 0")
 }
 
 func TestGetCodeVersions(t *testing.T) {

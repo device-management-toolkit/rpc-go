@@ -319,8 +319,14 @@ func (pthi Command) Unprovision() (state int, err error) {
 	// returned when a HECI unprovision is attempted on an ACM device) must not be
 	// reported as success — otherwise callers see State==0 and assume the device
 	// was deactivated when the firmware actually rejected the request.
+	//
+	// Return -1 rather than the payload state, matching every other failure exit
+	// in this file: a caller that ignores err then sees an obviously invalid
+	// state instead of a plausible 0. The message carries the symbolic and the
+	// numeric status — Status.String() renders unrecognized codes generically —
+	// plus the reported state, so an unknown rejection is still diagnosable.
 	if response.Header.Status != AMT_STATUS_SUCCESS {
-		return int(response.State), fmt.Errorf("unprovision failed: %s", response.Header.Status)
+		return -1, fmt.Errorf("unprovision failed: %s (0x%x), reported state %d", response.Header.Status, uint32(response.Header.Status), response.State)
 	}
 
 	return int(response.State), nil
