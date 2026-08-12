@@ -541,3 +541,77 @@ func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_NoCurrentPassword
 		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
 	}
 }
+
+func TestExecuteCIRAConfiguration_SkipsWhenNotConfigured(t *testing.T) {
+	po := NewProfileOrchestrator(config.Configuration{}, "pwd", "", false)
+	mock := newMockExecutor()
+	po.executor = mock
+
+	err := po.executeCIRAConfiguration()
+	if err != nil {
+		t.Fatalf("executeCIRAConfiguration() error = %v, want nil", err)
+	}
+
+	if mock.callCount != 0 {
+		t.Errorf("expected no executor calls when CIRA is not configured, got %d", mock.callCount)
+	}
+}
+
+func TestExecuteCIRAConfiguration_UsesCorrectFlagNames(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
+	cfg.Configuration.AMTSpecific.CIRA.MPSCert = "cert-pem-data"
+	cfg.Configuration.AMTSpecific.CIRA.MPSPassword = "mps-secret"
+
+	po := NewProfileOrchestrator(cfg, "amt-pwd", "", false)
+	mock := newMockExecutor()
+	po.executor = mock
+
+	err := po.executeCIRAConfiguration()
+	if err != nil {
+		t.Fatalf("executeCIRAConfiguration() error = %v", err)
+	}
+
+	if mock.callCount != 1 {
+		t.Fatalf("expected 1 executor call, got %d", mock.callCount)
+	}
+
+	args := mock.executedArgs[0]
+	argsStr := strings.Join(args, " ")
+
+	// Regression guard: orchestrator must use --mpsaddress / --mpscert, not dashed variants.
+	for _, wrong := range []string{"--mps-address", "--mps-cert"} {
+		if slices.Contains(args, wrong) {
+			t.Errorf("args must not contain %q (kebab-case), got: %s", wrong, argsStr)
+		}
+	}
+
+	for _, want := range []string{"configure", "cira", "--mpsaddress", "mps.example.com", "--mpscert", "cert-pem-data", "--mpspassword", "mps-secret"} {
+		if !slices.Contains(args, want) {
+			t.Errorf("expected %q in args, got: %s", want, argsStr)
+		}
+	}
+}
+
+func TestExecuteCIRAConfiguration_WithEnvDetection(t *testing.T) {
+	cfg := config.Configuration{}
+	cfg.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
+	cfg.Configuration.AMTSpecific.CIRA.MPSCert = "cert-pem-data"
+	cfg.Configuration.AMTSpecific.CIRA.EnvironmentDetection = []string{"corp.example.com", "vpn.example.com"}
+
+	po := NewProfileOrchestrator(cfg, "amt-pwd", "", false)
+	mock := newMockExecutor()
+	po.executor = mock
+
+	err := po.executeCIRAConfiguration()
+	if err != nil {
+		t.Fatalf("executeCIRAConfiguration() error = %v", err)
+	}
+
+	args := mock.executedArgs[0]
+	argsStr := strings.Join(args, " ")
+
+	if !strings.Contains(argsStr, "--envdetection corp.example.com,vpn.example.com") {
+		t.Errorf("expected --envdetection with comma-joined values, got: %s", argsStr)
+	}
+}
