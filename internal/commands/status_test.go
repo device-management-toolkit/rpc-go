@@ -461,6 +461,8 @@ func TestStatusCmd_Run_JSON(t *testing.T) {
 	assert.Equal(t, "pre_activation", evaluation["selectedCheckSet"])
 	assert.Equal(t, "pre_provisioning", evaluation["detectedState"])
 	assert.Equal(t, "ready", evaluation["overallResult"])
+	assert.NotNil(t, evaluation["wiredAdapterName"])
+	assert.NotNil(t, evaluation["wirelessAdapterName"])
 }
 
 func TestStatusCmd_Run_JSON_IncludesADRContract(t *testing.T) {

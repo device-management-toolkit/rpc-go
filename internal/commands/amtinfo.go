@@ -248,10 +248,6 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
 			return fmt.Errorf("invalid --url: %w", err)
 		}
-		// // Require some form of authentication when syncing
-		// if err := cmd.ValidateRequired(true); err != nil {
-		// 	return err
-		// }
 	}
 
 	return nil
