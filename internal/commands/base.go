@@ -295,9 +295,14 @@ func isPermanentHECIErrorText(msg string) bool {
 		return false
 	}
 
+	msg = strings.ToLower(msg)
+
 	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
 		strings.Contains(msg, "inappropriate ioctl") || // broader ioctl mismatch
-		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
-		strings.Contains(msg, "not found") || // missing HECI/MEI device path
-		strings.Contains(msg, utils.HECIDriverNotDetected.Error()) // already-classified sentinel
+		strings.Contains(msg, "open /dev/mei0: no such file or directory") || // Linux MEI driver path missing
+		strings.Contains(msg, "open /dev/mei: no such file or directory") || // Linux MEI driver path missing
+		strings.Contains(msg, "open \\\\.\\heci: the system cannot find the file specified") || // Windows HECI device missing
+		strings.Contains(msg, "heci driver not found") || // explicit Windows/library driver absence
+		strings.Contains(msg, "mei driver not found") || // explicit Linux/library driver absence
+		strings.Contains(msg, strings.ToLower(utils.HECIDriverNotDetected.Error())) // already-classified sentinel
 }
