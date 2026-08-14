@@ -96,16 +96,34 @@ func captureStdout(t *testing.T, fn func()) string {
 	}()
 
 	os.Stdout = w
+	outCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		out, readErr := io.ReadAll(r)
+		if readErr != nil {
+			errCh <- readErr
+
+			return
+		}
+
+		outCh <- out
+	}()
 
 	fn()
 
 	require.NoError(t, w.Close())
 
-	out, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.NoError(t, r.Close())
+	select {
+	case readErr := <-errCh:
+		require.NoError(t, readErr)
 
-	return string(out)
+		return ""
+	case out := <-outCh:
+		require.NoError(t, r.Close())
+
+		return string(out)
+	}
 }
 
 func TestResolveHostTarget(t *testing.T) {
@@ -229,7 +247,7 @@ func TestStatusCmd_Gather_NotReady_NoNetwork(t *testing.T) {
 	assert.True(t, result.LMSInstalled)
 	assert.False(t, result.WiredLinkUp)
 	assert.False(t, result.WirelessLinkUp)
-	assert.False(t, result.ReadyToProvision, "both NICs down should not be ready")
+	assert.True(t, result.ReadyToProvision, "in auto profile, ACM-only network blockers should still allow CCM readiness")
 }
 
 func TestStatusCmd_Gather_HostUnreachable_ProvisionableNotManaged(t *testing.T) {
@@ -368,6 +386,44 @@ func TestStatusCmd_Gather_NonVProFromHECIError(t *testing.T) {
 	})
 	assert.Contains(t, out, "Platform type: non-vPro, contact Intel for manual checks")
 	assert.Contains(t, out, "Device is not eligible for ACM activation.")
+}
+
+func TestStatusCmd_AdminCheck_MissingDriverErrorDoesNotBypassElevation(t *testing.T) {
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = false
+	cmd.HECIError = "open /dev/mei0: no such file or directory"
+
+	check := cmd.adminCheck()
+
+	if utils.IsElevated() {
+		assert.Equal(t, checkPass, check.state)
+
+		return
+	}
+
+	assert.Equal(t, checkFail, check.state)
+	assert.Contains(t, check.detail, "cannot access MEI")
+}
+
+func TestStatusCmd_MEICheck_MissingDriverErrorDoesNotPass(t *testing.T) {
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = false
+	cmd.HECIError = "open /dev/mei0: no such file or directory"
+
+	var result StatusResult
+
+	check := cmd.meiCheck(&result)
+
+	assert.Equal(t, checkFail, check.state)
+	assert.False(t, result.MEIDriverPresent)
+
+	if utils.IsElevated() {
+		assert.Contains(t, check.detail, "Intel MEI driver not installed")
+
+		return
+	}
+
+	assert.Contains(t, check.detail, "cannot access MEI")
 }
 
 func TestStatusCmd_Run_JSON(t *testing.T) {
@@ -1040,6 +1096,36 @@ func TestStatusCmd_Gather_CCMProfile_DoesNotBlockOnACMChecks(t *testing.T) {
 	for _, c := range checks {
 		if c.label == "DNS suffix (AMT vs OS)" {
 			assert.Equal(t, checkWarn, c.state)
+		}
+	}
+}
+
+func TestStatusCmd_Gather_AutoProfile_AllowsCCMWhenOnlyACMChecksFail(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
+	stubDial(t, map[string]bool{"localhost:16992": true})
+	stubLMSVersion(t, "2406.0.0.0")
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	result, checks := cmd.gather(&Context{AMTCommand: mockAMT})
+
+	assert.Equal(t, checkSetPreActivation, result.SelectedCheckSet)
+	assert.True(t, result.ReadyToProvision)
+
+	for _, c := range checks {
+		if c.label == linkReadinessCheckLabel {
+			assert.Equal(t, checkFail, c.state)
 		}
 	}
 }
