@@ -6,13 +6,18 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -53,6 +58,12 @@ var statusDetectMonitorConnected = utils.DetectMonitorConnected
 
 // statusGetLMSVersion is a package var so tests can stub the OS LMS version query.
 var statusGetLMSVersion = utils.GetLMSVersion
+
+var (
+	statusPCIControllersOnce sync.Once
+	statusWiredPCIName       string
+	statusWirelessPCIName    string
+)
 
 // checkState models the outcome of a single readiness check.
 type checkState int
@@ -127,6 +138,8 @@ type StatusResult struct {
 	LMSInstalled           bool   `json:"lmsInstalled"`
 	WiredSupported         bool   `json:"wiredSupported"`
 	WirelessSupported      bool   `json:"wirelessSupported"`
+	WiredAdapterName       string `json:"wiredAdapterName,omitempty"`
+	WirelessAdapterName    string `json:"wirelessAdapterName,omitempty"`
 	WiredLinkUp            bool   `json:"wiredLinkUp"`
 	WirelessLinkUp         bool   `json:"wirelessLinkUp"`
 	Host                   string `json:"host,omitempty"`
@@ -176,6 +189,8 @@ type statusJSONEvaluation struct {
 	DetectedState          string `json:"detectedState"`
 	SelectedCheckSet       string `json:"selectedCheckSet"`
 	PasswordContext        string `json:"passwordContext,omitempty"`
+	WiredAdapterName       string `json:"wiredAdapterName"`
+	WirelessAdapterName    string `json:"wirelessAdapterName"`
 	OverallResult          string `json:"overallResult"`
 	OverallStatus          string `json:"overallStatus"`
 	TotalChecks            int    `json:"totalChecks"`
@@ -902,6 +917,19 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, pro
 
 	result.WiredSupported = wired.IsEnabled || wired.LinkStatus != "" || wired.MACAddress != "" || wired.IPAddress != "" || wired.OsIPAddress != ""
 	result.WirelessSupported = wireless.IsEnabled || wireless.LinkStatus != "" || wireless.MACAddress != "" || wireless.IPAddress != "" || wireless.OsIPAddress != ""
+	result.WiredAdapterName = interfaceNameForMAC(wired.MACAddress)
+	result.WirelessAdapterName = interfaceNameForMAC(wireless.MACAddress)
+
+	if result.WiredAdapterName == "" || result.WirelessAdapterName == "" {
+		wiredPCIName, wirelessPCIName := pciAdapterNames()
+		if result.WiredAdapterName == "" {
+			result.WiredAdapterName = wiredPCIName
+		}
+
+		if result.WirelessAdapterName == "" {
+			result.WirelessAdapterName = wirelessPCIName
+		}
+	}
 
 	result.WiredLinkUp = strings.EqualFold(wired.LinkStatus, linkStatusUp)
 	result.WirelessLinkUp = strings.EqualFold(wireless.LinkStatus, linkStatusUp)
@@ -915,7 +943,7 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, pro
 	}
 
 	if result.WiredLinkUp {
-		return healthCheck{label, checkPass, "AMT wired link up"}
+		return healthCheck{label, checkPass, "AMT network link available for ACM checks"}
 	}
 
 	if result.WirelessLinkUp {
@@ -1498,8 +1526,8 @@ func renderStatus(w io.Writer, result StatusResult, checks []healthCheck) {
 
 	b.WriteString("SKU Information\n")
 	b.WriteString(infoIndent + "Processor: " + fallbackValue(utils.GetCPUModel()) + "\n")
-	b.WriteString(infoIndent + "Wired Adapter: " + fallbackValue(wiredAdapterSummary(result)) + "\n")
-	b.WriteString(infoIndent + "Wireless Adapter: " + fallbackValue(wirelessAdapterSummary(result)) + "\n")
+	b.WriteString(infoIndent + "Wired Adapter: " + fallbackValue(strings.TrimSpace(result.WiredAdapterName)) + "\n")
+	b.WriteString(infoIndent + "Wireless Adapter: " + fallbackValue(strings.TrimSpace(result.WirelessAdapterName)) + "\n")
 
 	osInfo := utils.GetOSInfo()
 	b.WriteString(infoIndent + "OS: " + fallbackValue(strings.TrimSpace(osInfo.Distro+" "+osInfo.Version)) + "\n\n")
@@ -1528,28 +1556,82 @@ func fallbackValue(v string) string {
 	return v
 }
 
-func wiredAdapterSummary(result StatusResult) string {
-	if result.WiredSupported {
-		if result.WiredLinkUp {
-			return "supported, link up"
-		}
-
-		return "supported, link down"
+func interfaceNameForMAC(mac string) string {
+	target, err := net.ParseMAC(strings.TrimSpace(mac))
+	if err != nil || len(target) == 0 {
+		return ""
 	}
 
-	return "not supported"
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		if len(iface.HardwareAddr) == 0 {
+			continue
+		}
+
+		if bytes.Equal(iface.HardwareAddr, target) {
+			return iface.Name
+		}
+	}
+
+	return ""
 }
 
-func wirelessAdapterSummary(result StatusResult) string {
-	if result.WirelessSupported {
-		if result.WirelessLinkUp {
-			return "supported, link up"
-		}
-
-		return "supported, link down"
+func pciAdapterNames() (string, string) {
+	if runtime.GOOS != "linux" {
+		return "", ""
 	}
 
-	return "not supported"
+	statusPCIControllersOnce.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "lspci")
+
+		out, err := cmd.Output()
+		if err != nil {
+			return
+		}
+
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+
+			lower := strings.ToLower(trimmed)
+			if statusWiredPCIName == "" && strings.Contains(lower, "ethernet controller") {
+				statusWiredPCIName = pciDeviceLabel(trimmed)
+			}
+
+			if statusWirelessPCIName == "" && strings.Contains(lower, "network controller") {
+				statusWirelessPCIName = pciDeviceLabel(trimmed)
+			}
+
+			if statusWiredPCIName != "" && statusWirelessPCIName != "" {
+				break
+			}
+		}
+	})
+
+	return statusWiredPCIName, statusWirelessPCIName
+}
+
+func pciDeviceLabel(line string) string {
+	parts := strings.SplitN(line, ": ", 3)
+	if len(parts) == 3 {
+		return strings.TrimSpace(parts[2])
+	}
+
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[1])
+	}
+
+	return strings.TrimSpace(line)
 }
 
 func anyCheckWarn(checks []healthCheck, label string) bool {
@@ -1895,6 +1977,8 @@ func outputStatusJSON(w io.Writer, result StatusResult, checks []healthCheck) er
 			DetectedState:          detectedStateKey(result),
 			SelectedCheckSet:       result.SelectedCheckSet,
 			PasswordContext:        passwordContext(result),
+			WiredAdapterName:       fallbackValue(strings.TrimSpace(result.WiredAdapterName)),
+			WirelessAdapterName:    fallbackValue(strings.TrimSpace(result.WirelessAdapterName)),
 			OverallResult:          overallResult(result),
 			OverallStatus:          strings.TrimSuffix(summaryText, "."),
 			TotalChecks:            len(checks),
