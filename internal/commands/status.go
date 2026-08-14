@@ -405,7 +405,7 @@ func (cmd *StatusCmd) gatherPreActivation(ctx *Context, result StatusResult, con
 		checks = append(checks, hostCheck)
 	}
 
-	result.ReadyToProvision = !hasBlockingFailure(checks)
+	result.ReadyToProvision = !hasProvisioningBlockingFailure(checks, profile)
 
 	return result, checks
 }
@@ -523,6 +523,31 @@ func hasBlockingFailure(checks []healthCheck) bool {
 	return false
 }
 
+func hasProvisioningBlockingFailure(checks []healthCheck, profile statusCheckProfile) bool {
+	for _, c := range checks {
+		if c.state != checkFail {
+			continue
+		}
+
+		if profile == statusProfileAuto && isACMOnlyProvisioningBlocker(c) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func isACMOnlyProvisioningBlocker(check healthCheck) bool {
+	switch check.label {
+	case dnsSuffixCheckLabel, linkReadinessCheckLabel:
+		return true
+	default:
+		return false
+	}
+}
+
 func summarizeChecks(checks []healthCheck) checkStats {
 	stats := checkStats{}
 
@@ -598,7 +623,7 @@ func (cmd *StatusCmd) wsmanAccessCheck(result *StatusResult) healthCheck {
 func (cmd *StatusCmd) adminCheck() healthCheck {
 	const label = "Running as admin/root"
 
-	if utils.IsElevated() || cmd.HECIAvailable || isPermanentHECIErrorText(cmd.HECIError) {
+	if utils.IsElevated() || cmd.HECIAvailable || isNonAMTPlatformHECIErrorText(cmd.HECIError) {
 		return healthCheck{label, checkPass, "Running as admin/root"}
 	}
 
@@ -620,10 +645,9 @@ func (cmd *StatusCmd) meiCheck(result *StatusResult) healthCheck {
 		return healthCheck{label, checkPass, "Intel MEI driver installed and responding — " + ver + ", current"}
 	}
 
-	// A permanent HECI error indicates a real Intel ME device without AMT support
-	// (for example, non-vPro hardware or a missing/invalid MEI stack), not an
-	// elevation problem that can be fixed by running as admin/root.
-	if isPermanentHECIErrorText(cmd.HECIError) {
+	// A non-vPro ioctl mismatch indicates a real Intel ME device without AMT
+	// support. Missing-driver/path errors must still report the driver absent.
+	if isNonAMTPlatformHECIErrorText(cmd.HECIError) {
 		result.MEIDriverPresent = true
 
 		return healthCheck{label, checkPass, "Intel MEI driver installed, non-AMT Intel ME device"}
@@ -638,6 +662,12 @@ func (cmd *StatusCmd) meiCheck(result *StatusResult) healthCheck {
 	}
 
 	return healthCheck{label, checkFail, "Intel MEI driver not installed"}
+}
+
+func isNonAMTPlatformHECIErrorText(msg string) bool {
+	msg = strings.ToLower(strings.TrimSpace(msg))
+
+	return strings.Contains(msg, "inappropriate ioctl for device") || strings.Contains(msg, "inappropriate ioctl")
 }
 
 func (cmd *StatusCmd) amtEnabledInBIOSCheck(result *StatusResult) healthCheck {

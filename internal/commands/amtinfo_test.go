@@ -21,6 +21,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -28,6 +29,58 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+func captureStdoutSafely(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	outCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		out, readErr := io.ReadAll(r)
+		if readErr != nil {
+			errCh <- readErr
+
+			return
+		}
+
+		outCh <- out
+	}()
+
+	os.Stdout = w
+
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fnErr := fn()
+
+	require.NoError(t, w.Close())
+
+	select {
+	case readErr := <-errCh:
+		require.NoError(t, readErr)
+
+		return "", fnErr
+	case out := <-outCh:
+		require.NoError(t, r.Close())
+
+		return string(out), fnErr
+	}
+}
+
+func stubWSMANFactory(t *testing.T, wsman interfaces.WSMANer) {
+	t.Helper()
+
+	originalFactory := newWSMANClient
+	newWSMANClient = func(string) interfaces.WSMANer { return wsman }
+
+	t.Cleanup(func() { newWSMANClient = originalFactory })
+}
 
 func TestAmtInfoCmd_Run(t *testing.T) {
 	tests := []struct {
@@ -100,17 +153,19 @@ func TestAmtInfoCmd_Run(t *testing.T) {
 			tt.ctx.AMTCommand = mockAMT
 			tt.cmd.HECIAvailable = true
 
-			// Capture output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
+			if tt.cmd.All && tt.ctx.AMTPassword != "" {
+				mockWSMAN := mock.NewMockWSMANer(ctrl)
+				mockWSMAN.EXPECT().SetupWsmanClient("admin", tt.ctx.AMTPassword, false, false, gomock.Any()).Return(nil)
+				mockWSMAN.EXPECT().GetPublicKeyCerts().Return(nil, nil)
+				mockWSMAN.EXPECT().GetMPSSAP().Return(nil, nil)
+				mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return(nil, nil)
+				stubWSMANFactory(t, mockWSMAN)
+			}
 
-			err := tt.cmd.Run(tt.ctx)
-
-			w.Close()
-
-			out, _ := io.ReadAll(r)
-			os.Stdout = oldStdout
+			captured, err := captureStdoutSafely(t, func() error {
+				return tt.cmd.Run(tt.ctx)
+			})
+			out := []byte(captured)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -2059,18 +2114,14 @@ func TestInfoService_getOSIPAddress_NetworkInterfaces(t *testing.T) {
 
 // Test the captureStdout helper function itself
 func TestCaptureStdout(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	out, err := captureStdoutSafely(t, func() error {
+		fmt.Print("test output")
 
-	fmt.Print("test output")
+		return nil
+	})
+	require.NoError(t, err)
 
-	w.Close()
-
-	out, _ := io.ReadAll(r)
-	os.Stdout = oldStdout
-
-	assert.Equal(t, "test output", string(out))
+	assert.Equal(t, "test output", out)
 }
 
 // Test JSON marshaling error case by creating a problematic type
