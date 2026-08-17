@@ -707,10 +707,10 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 	args = append(args, commandConfigure, "cira")
 
 	// MPS Address is required
-	args = append(args, "--mps-address", cira.MPSAddress)
+	args = append(args, "--mpsaddress", cira.MPSAddress)
 
 	// MPS Certificate is required
-	args = append(args, "--mps-cert", cira.MPSCert)
+	args = append(args, "--mpscert", cira.MPSCert)
 
 	// MPS Password - if not provided, the CLI will prompt
 	if cira.MPSPassword != "" {
