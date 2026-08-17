@@ -9,9 +9,13 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type Version struct {
@@ -129,4 +133,115 @@ func TestReceiveMessage(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Positive(t, bytesRead)
+}
+
+// TestMeiDevicePathsOrder pins the LMS-style probe order: /dev/mei0..3 ascending.
+func TestMeiDevicePathsOrder(t *testing.T) {
+	expected := []string{"/dev/mei0", "/dev/mei1", "/dev/mei2", "/dev/mei3"}
+	assert.Equal(t, expected, meiDevicePaths)
+}
+
+// TestOpenMEIDevicePathNotExist verifies opening a missing node fails and leaves
+// no handle on the driver.
+func TestOpenMEIDevicePathNotExist(t *testing.T) {
+	h := Driver{}
+	err := h.openMEIDevicePath(filepath.Join(t.TempDir(), "mei0"))
+
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	assert.Nil(t, h.meiDevice)
+}
+
+// TestOpenAndConnectNoDevices verifies that when no MEI node exists the probe
+// reports a not-found error and leaves no dangling handle on the driver.
+func TestOpenAndConnectNoDevices(t *testing.T) {
+	orig := meiDevicePaths
+	defer func() { meiDevicePaths = orig }()
+
+	dir := t.TempDir()
+	meiDevicePaths = []string{
+		filepath.Join(dir, "mei0"),
+		filepath.Join(dir, "mei1"),
+	}
+
+	h := Driver{}
+	data := CMEIConnectClientData{data: MEI_IAMTHIF}
+	err := h.openAndConnect(&data, heciConnectAttempts, true)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	assert.Nil(t, h.meiDevice)
+}
+
+// TestOpenAndConnectSkipsNonClientDevice verifies that a node which opens but is
+// not a real MEI client (the connect ioctl fails) is closed and skipped rather
+// than left open.
+func TestOpenAndConnectSkipsNonClientDevice(t *testing.T) {
+	orig := meiDevicePaths
+	defer func() { meiDevicePaths = orig }()
+
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "mei0")
+	require.NoError(t, os.WriteFile(fake, []byte{}, 0o600))
+	meiDevicePaths = []string{fake}
+
+	h := Driver{}
+	data := CMEIConnectClientData{data: MEI_IAMTHIF}
+	err := h.openAndConnect(&data, guidConnectAttempts, false)
+
+	assert.Error(t, err)
+	assert.Nil(t, h.meiDevice)
+}
+
+// TestOpenAndConnectAdvancesPastMissingDevice verifies the probe moves on from a
+// missing node to the next candidate instead of stopping at the first gap.
+func TestOpenAndConnectAdvancesPastMissingDevice(t *testing.T) {
+	orig := meiDevicePaths
+	defer func() { meiDevicePaths = orig }()
+
+	dir := t.TempDir()
+	present := filepath.Join(dir, "mei1")
+	require.NoError(t, os.WriteFile(present, []byte{}, 0o600))
+
+	// First node is absent; second exists but is not a real MEI client.
+	meiDevicePaths = []string{filepath.Join(dir, "mei0"), present}
+
+	h := Driver{}
+	data := CMEIConnectClientData{data: MEI_IAMTHIF}
+	err := h.openAndConnect(&data, guidConnectAttempts, false)
+
+	// Reached the second node (open ok, ioctl failed), so the error is the
+	// ioctl failure, not NotExist - proving it advanced past the missing node.
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, fs.ErrNotExist)
+	assert.Nil(t, h.meiDevice)
+}
+
+// TestInitNoDevices verifies Init surfaces an error (and no handle) when the
+// probe finds no usable MEI device.
+func TestInitNoDevices(t *testing.T) {
+	orig := meiDevicePaths
+	defer func() { meiDevicePaths = orig }()
+
+	meiDevicePaths = []string{filepath.Join(t.TempDir(), "missing")}
+
+	h := Driver{}
+	err := h.Init(false, false)
+
+	assert.Error(t, err)
+	assert.Nil(t, h.meiDevice)
+}
+
+// TestInitWithGUIDNoDevices verifies the GUID-targeted probe also fails cleanly
+// when no device is present.
+func TestInitWithGUIDNoDevices(t *testing.T) {
+	orig := meiDevicePaths
+	defer func() { meiDevicePaths = orig }()
+
+	meiDevicePaths = []string{filepath.Join(t.TempDir(), "missing")}
+
+	h := Driver{}
+	err := h.InitWithGUID(MEI_IAMTHIF)
+
+	assert.Error(t, err)
+	assert.Nil(t, h.meiDevice)
 }

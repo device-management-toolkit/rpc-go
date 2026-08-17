@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"sync"
 	"syscall"
@@ -39,8 +40,6 @@ type Driver struct {
 const (
 	Device                   = "/dev/mei0"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
-	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
-	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
 	pollWarnLogInterval      = 15 * time.Second
 	// heciConnectAttempts bounds the MEI_CONNECT_CLIENT EBUSY retry loop.
 	// Connect almost always succeeds on retry 1 after a reopen; the extra
@@ -55,6 +54,11 @@ const (
 	// heciWriteBusyAttempts bounds the EBUSY retry loop around a HECI write.
 	heciWriteBusyAttempts = 3
 )
+
+// meiDevicePaths lists the MEI character devices probed in order. Mirrors the
+// LMS client, which tries /dev/mei0 through /dev/mei3 and uses the first device
+// that exposes the requested client GUID.
+var meiDevicePaths = []string{"/dev/mei0", "/dev/mei1", "/dev/mei2", "/dev/mei3"}
 
 // PTHI
 var MEI_IAMTHIF = [16]uint8{0x28, 0x00, 0xf8, 0x12, 0xb7, 0xb4, 0x2d, 0x4b, 0xac, 0xa8, 0x46, 0xe0, 0xff, 0x65, 0x81, 0x4c}
@@ -94,25 +98,26 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return heci.initLocked(useLME, useWD)
 }
 
-// openMEIDevice closes any previously opened MEI handle and reopens the device,
-// logging a privilege/availability hint when the open fails. Shared by every
-// Init* entry point so the close-then-reopen and error-classification logic
-// lives in one place.
-func (heci *Driver) openMEIDevice() error {
+// openMEIDevicePath closes any previously opened MEI handle and opens the given
+// device node, classifying the failure for logging. Shared by the device-probe
+// loop so the close-then-reopen and error-classification logic lives in one
+// place. Failures are logged at debug because probing missing nodes is expected
+// while iterating /dev/mei0..3; the overall failure is surfaced by openAndConnect.
+func (heci *Driver) openMEIDevicePath(path string) error {
 	if heci.meiDevice != nil {
 		_ = heci.meiDevice.Close()
 		heci.meiDevice = nil
 	}
 
-	dev, err := os.OpenFile(Device, syscall.O_RDWR, 0)
+	dev, err := os.OpenFile(path, syscall.O_RDWR, 0)
 	if err != nil {
-		switch err.Error() {
-		case errMsgPermissionDenied:
-			log.Debug("need administrator privileges")
-		case errMsgNoSuchFile:
-			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			log.Debugf("need administrator privileges to open %s", path)
+		case errors.Is(err, fs.ErrNotExist):
+			log.Debugf("%s not present", path)
 		default:
-			log.Errorf("Cannot open MEI Device: %v", err)
+			log.Debugf("cannot open %s: %v", path, err)
 		}
 
 		return err
@@ -121,6 +126,80 @@ func (heci *Driver) openMEIDevice() error {
 	heci.meiDevice = dev
 
 	return nil
+}
+
+// connectClient issues MEI_CONNECT_CLIENT on the currently open device for the
+// GUID in data. It retries up to attempts times; when ramp is true the backoff
+// grows per attempt and only EBUSY is retried (the IAMTHIF/LME/WD path),
+// otherwise every failure is retried immediately (GUID-targeted clients).
+func (heci *Driver) connectClient(data *CMEIConnectClientData, attempts int, ramp bool) error {
+	var err error
+
+	for i := 0; i < attempts; i++ {
+		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(data)))
+		if err == nil {
+			return nil
+		}
+
+		if !ramp {
+			continue
+		}
+
+		// Only a busy device is worth retrying; any other error won't clear by
+		// waiting. Don't sleep after the final attempt - there's no retry left.
+		if !errors.Is(err, syscall.EBUSY) || i == attempts-1 {
+			break
+		}
+
+		// Per-attempt busy is an expected transient (the ME settles within a few
+		// retries); log at debug so it only shows under -v.
+		log.Debugf("mei connect busy, retry %d", i+1)
+		time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
+	}
+
+	return err
+}
+
+// openAndConnect probes meiDevicePaths in order, mirroring the LMS client. For
+// each node it opens the device and attempts to connect the client GUID in
+// data. A node that is absent/inaccessible, or present but not hosting the
+// requested client, is skipped and the next node is tried. A busy device stops
+// the probe (like LMS breaking out on TEE_BUSY) because another node won't
+// clear it. On success the connected handle is left open on the driver.
+func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ramp bool) error {
+	var lastErr error
+
+	for _, path := range meiDevicePaths {
+		if err := heci.openMEIDevicePath(path); err != nil {
+			lastErr = err
+
+			continue
+		}
+
+		if err := heci.connectClient(data, attempts, ramp); err != nil {
+			lastErr = err
+
+			if errors.Is(err, syscall.EBUSY) {
+				break
+			}
+
+			continue
+		}
+
+		return nil
+	}
+
+	// No device connected; drop any dangling handle from the last probe.
+	if heci.meiDevice != nil {
+		_ = heci.meiDevice.Close()
+		heci.meiDevice = nil
+	}
+
+	if lastErr != nil && errors.Is(lastErr, fs.ErrNotExist) {
+		log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+	}
+
+	return lastErr
 }
 
 // parseConnectClientData reads the MEI_CONNECT_CLIENT response out of data and
@@ -145,11 +224,6 @@ func (heci *Driver) initLocked(useLME, useWD bool) error {
 	heci.useWD = useWD
 	heci.useGUIDClient = false
 
-	// Close any previous device handle before reopening.
-	if err := heci.openMEIDevice(); err != nil {
-		return err
-	}
-
 	data := CMEIConnectClientData{}
 	if useWD {
 		data.data = MEI_WDIF
@@ -159,32 +233,12 @@ func (heci *Driver) initLocked(useLME, useWD bool) error {
 		data.data = MEI_IAMTHIF
 	}
 
-	var err error
-
-	// retry with backoff in case the device is busy after a reset. The ME is
-	// typically ready within a few ms of a reopen and connect succeeds on the
-	// first retry, so start with a short backoff and ramp up only for the
-	// rarer cases where it stays busy longer. Don't sleep after the final
-	// attempt - there's no retry left to wait for.
-	for i := 0; i < heciConnectAttempts; i++ {
-		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
-		if err == nil {
-			break
-		}
-
-		// Only a busy device is worth retrying; any other error won't clear by
-		// waiting. Don't sleep after the final attempt - there's no retry left.
-		if !errors.Is(err, syscall.EBUSY) || i == heciConnectAttempts-1 {
-			break
-		}
-
-		// Per-attempt busy is an expected transient (the ME settles within a few
-		// retries); log at debug so it only shows under -v. The exhausted-ladder
-		// case below emits a single warning.
-		log.Debugf("mei connect busy, retry %d", i+1)
-		time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
-	}
-
+	// Probe /dev/mei0..3 (LMS-style) and connect the client on the first device
+	// that hosts it. EBUSY is retried per device with a ramped backoff: the ME
+	// is typically ready within a few ms of a reopen and connect succeeds on the
+	// first retry, so the backoff starts short and ramps up only for the rarer
+	// cases where the device stays busy longer.
+	err := heci.openAndConnect(&data, heciConnectAttempts, true)
 	if err != nil {
 		if errors.Is(err, syscall.EBUSY) {
 			log.Warnf("mei connect still busy after %d attempts", heciConnectAttempts)
@@ -211,24 +265,11 @@ func (heci *Driver) InitWithGUID(guid interface{}) error {
 		return errors.New("invalid GUID type for Linux, expected [16]uint8")
 	}
 
-	// Close any previous device handle before reopening.
-	if err := heci.openMEIDevice(); err != nil {
-		return err
-	}
-
 	data := CMEIConnectClientData{}
 	data.data = guidBytes
 
-	var err error
-
-	for i := 0; i < guidConnectAttempts; i++ {
-		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
+	// Probe /dev/mei0..3 (LMS-style) for the device hosting this client GUID.
+	if err := heci.openAndConnect(&data, guidConnectAttempts, false); err != nil {
 		return err
 	}
 
@@ -244,26 +285,11 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.useWD = false
 	heci.useGUIDClient = true
 
-	// Close any previous device handle before reopening.
-	if err := heci.openMEIDevice(); err != nil {
-		return err
-	}
-
 	data := CMEIConnectClientData{}
 	data.data = MEI_HOTHAM
 
-	var err error
-
-	for i := 0; i < guidConnectAttempts; i++ {
-		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
-		if err == nil {
-			log.Tracef("InitHOTHAM: Connected successfully on attempt %d", i+1)
-
-			break
-		}
-	}
-
-	if err != nil {
+	// Probe /dev/mei0..3 (LMS-style) for the device hosting the HOTHAM client.
+	if err := heci.openAndConnect(&data, guidConnectAttempts, false); err != nil {
 		log.Errorf("InitHOTHAM: Failed to connect to HOTHAM GUID after %d attempts: %v", guidConnectAttempts, err)
 
 		return err
