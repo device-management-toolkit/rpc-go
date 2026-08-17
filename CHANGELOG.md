@@ -1,3 +1,10 @@
+# [3.0.0-beta.49](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.48...v3.0.0-beta.49) (2026-08-17)
+
+
+### Bug Fixes
+
+* **internal:** correct orchestrator CIRA flag names for configure subprocess ([#1486](https://github.com/device-management-toolkit/rpc-go/issues/1486)) ([ec3b1af](https://github.com/device-management-toolkit/rpc-go/commit/ec3b1afa1d3365fb8151a722c67fb974ab91cacd))
+
 # [3.0.0-beta.48](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.47...v3.0.0-beta.48) (2026-08-11)
 
 
