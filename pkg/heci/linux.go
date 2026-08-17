@@ -10,6 +10,8 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"io/fs"
 	"os"
 	"syscall"
 	"unsafe"
@@ -29,6 +31,11 @@ const (
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
 )
 
+// meiDevicePaths lists the MEI character devices probed in order. Mirrors the
+// LMS client, which tries /dev/mei0 through /dev/mei3 and uses the first device
+// that exposes the requested client GUID.
+var meiDevicePaths = []string{"/dev/mei0", "/dev/mei1", "/dev/mei2", "/dev/mei3"}
+
 // PTHI
 var MEI_IAMTHIF = [16]uint8{0x28, 0x00, 0xf8, 0x12, 0xb7, 0xb4, 0x2d, 0x4b, 0xac, 0xa8, 0x46, 0xe0, 0xff, 0x65, 0x81, 0x4c}
 
@@ -43,21 +50,6 @@ func NewDriver() *Driver {
 }
 
 func (heci *Driver) Init(useLME, useWD bool) error {
-	var err error
-
-	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
-	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
-			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
-			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			log.Error("Cannot open MEI Device")
-		}
-
-		return err
-	}
-
 	data := CMEIConnectClientData{}
 	if useWD {
 		data.data = MEI_WDIF
@@ -67,21 +59,15 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		data.data = MEI_IAMTHIF
 	}
 
-	// we try up to 3 times in case the resource/device is still busy from previous call.
-	for i := 0; i < 3; i++ {
-		err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(&data)))
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
+	// Probe /dev/mei0..3 (LMS-style) and connect the client on the first
+	// device that hosts it.
+	if err := heci.openAndConnect(&data); err != nil {
 		return err
 	}
 
 	t := MEIConnectClientData{}
 
-	err = binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
+	err := binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
 	if err != nil {
 		return err
 	}
@@ -90,6 +76,70 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	heci.protocolVersion = t.ProtocolVersion // should be 4?
 
 	return nil
+}
+
+// openAndConnect probes meiDevicePaths in order, mirroring the LMS client. For
+// each node it opens the device and attempts to connect the client GUID in
+// data. A node that is absent/inaccessible, or present but not hosting the
+// requested client, is skipped and the next node is tried. A busy device stops
+// the probe (like LMS breaking out on TEE_BUSY) since another node won't clear
+// it. On success the connected handle is left open on the driver.
+func (heci *Driver) openAndConnect(data *CMEIConnectClientData) error {
+	if len(meiDevicePaths) == 0 {
+		return fs.ErrNotExist
+	}
+
+	var lastErr error
+
+	for _, path := range meiDevicePaths {
+		dev, err := os.OpenFile(path, syscall.O_RDWR, 0)
+		if err != nil {
+			// Preserve the most actionable error: permission errors override not-exist,
+			// and later not-exist errors shouldn't hide earlier ioctl/open errors.
+			if lastErr == nil || errors.Is(err, fs.ErrPermission) || (errors.Is(lastErr, fs.ErrNotExist) && !errors.Is(err, fs.ErrNotExist)) {
+				lastErr = err
+			}
+
+			switch {
+			case errors.Is(err, fs.ErrPermission):
+				log.Debugf("need administrator privileges to open %s", path)
+			case errors.Is(err, fs.ErrNotExist):
+				log.Debugf("%s not present", path)
+			default:
+				log.Debugf("cannot open %s: %v", path, err)
+			}
+
+			continue
+		}
+
+		heci.meiDevice = dev
+
+		// we try up to 3 times in case the resource/device is still busy from a
+		// previous call.
+		for i := 0; i < 3; i++ {
+			err = Ioctl(heci.meiDevice.Fd(), IOCTL_MEI_CONNECT_CLIENT, uintptr(unsafe.Pointer(data)))
+			if err == nil {
+				return nil
+			}
+		}
+
+		lastErr = err
+
+		_ = heci.meiDevice.Close()
+		heci.meiDevice = nil
+
+		// A busy device won't clear by moving to another node; stop like LMS
+		// does on TEE_BUSY.
+		if errors.Is(err, syscall.EBUSY) {
+			break
+		}
+	}
+
+	if lastErr != nil && errors.Is(lastErr, fs.ErrNotExist) {
+		log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+	}
+
+	return lastErr
 }
 
 func (heci *Driver) GetBufferSize() uint32 {
