@@ -1,7 +1,7 @@
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
 github.com/alecthomas/assert/v2 v2.11.0/go.mod h1:Bze95FyfUr7x34QZrjL+XP+0qgp/zg8yS+TtBj1WA3k=
-github.com/alecthomas/kong v1.16.0 h1:g92/kUxBcdcTPOM79yE63viJgtcp5dNyrB3/O2cjYT4=
-github.com/alecthomas/kong v1.16.0/go.mod h1:wrlbXem1CWqUV5Vbmss5ISYhsVPkBb1Yo7YKJghju2I=
+github.com/alecthomas/kong v1.16.1 h1:ixhCt93XkJ98kGposQ54+bl0IK6XwqB40AsMynU7Z8E=
+github.com/alecthomas/kong v1.16.1/go.mod h1:wrlbXem1CWqUV5Vbmss5ISYhsVPkBb1Yo7YKJghju2I=
 github.com/alecthomas/kong-yaml v0.2.0 h1:iiVVqVttmOsHKawlaW/TljPsjaEv1O4ODx6dloSA58Y=
 github.com/alecthomas/kong-yaml v0.2.0/go.mod h1:vMvOIy+wpB49MCZ0TA3KMts38Mu9YfRP03Q1StN69/g=
 github.com/alecthomas/repr v0.5.2 h1:SU73FTI9D1P5UNtvseffFSGmdNci/O6RsqzeXJtP0Qs=
@@ -26,8 +26,8 @@ github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMF
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.3 h1:vVza5m43IfWzvz5hhri7ftQ6n3YwbLq+mEACNi8v55s=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.3/go.mod h1:qyUtbGy8ylKeKxkwJ+YjBC5sVrdKfLJtnQYCjUEU8to=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.4 h1:KKWVbkmBOwYe/4es6Tze0Etm/IhQ1i8L/+rQJZ1MWh4=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.4/go.mod h1:qyUtbGy8ylKeKxkwJ+YjBC5sVrdKfLJtnQYCjUEU8to=
 github.com/ebitengine/purego v0.10.2 h1:W809HbnvzAxgdm+aOvlSekrM16wGCdT/e76+9tS7gzE=
 github.com/ebitengine/purego v0.10.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/geoffgarside/ber v1.1.0 h1:qTmFG4jJbwiSzSXoNJeHcOprVzZ8Ulde2Rrrifu5U9w=

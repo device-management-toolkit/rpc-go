@@ -9,8 +9,12 @@ import (
 	"context"
 	cryptotls "crypto/tls"
 	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman"
@@ -89,15 +93,26 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	if clientParams.UseTLS {
 		clientParams.SelfSignedAllowed = tlsConfig.InsecureSkipVerify
 
-		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		defer cancel()
-
 		dialer := &cryptotls.Dialer{
 			Config: tlsConfig,
 		}
 
-		conn, err := dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		conn, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", utils.LMSAddress+":"+utils.LMSTLSPort)
+		}, probeTimeout, utils.LMSRecoveryBudget, utils.LMSProbeRetryDelay)
 		if err != nil {
+			// A dial that was refused means LMS is genuinely down, so LME-over-HECI
+			// is the correct path. But a dial that timed out or was accepted then
+			// dropped means LMS is up with its TLS port stack restarting; it still
+			// owns /dev/mei0, so falling back to HECI would only contend for the MEI
+			// and fail with "device or resource busy". In that case probeLMS has
+			// already exhausted the recovery budget, so surface the error instead.
+			if errors.Is(err, errLMSUpButUnready) {
+				logrus.Errorf("LMS is up but its TLS port did not recover within the retry budget; not falling back to HECI: %v", err)
+
+				return err
+			}
+
 			logrus.Debugf("LMS TLS port not active, using LME-over-HECI with local TLS termination. LMS TLS dial error: %v", err)
 
 			g.localTransport = NewLocalTransportTLS(tlsConfig)
@@ -118,13 +133,20 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			defer conn.Close()
 		}
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-		defer cancel()
-
 		dialer := &net.Dialer{}
 
-		con, err := dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		con, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
+		}, probeTimeout, utils.LMSRecoveryBudget, utils.LMSProbeRetryDelay)
 		if err != nil {
+			// LMS up but its port did not recover: it still owns the MEI, so HECI
+			// fallback is futile. Surface the error rather than contending for /dev/mei0.
+			if errors.Is(err, errLMSUpButUnready) {
+				logrus.Errorf("LMS is up but its local port did not recover within the retry budget; not falling back to HECI: %v", err)
+
+				return err
+			}
+
 			logrus.Debug("LMS not active, using local transport instead.")
 
 			g.localTransport = NewLocalTransport()
@@ -138,6 +160,134 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 	g.wsmanMessages = wsman.NewMessages(clientParams)
 
 	return nil
+}
+
+// errLMSUpButUnready indicates the LMS dial reached LMS — it either timed out or
+// was accepted then dropped mid-handshake — but LMS never became usable within
+// the recovery budget. LMS owns /dev/mei0 while it is up, so the caller must NOT
+// fall back to LME-over-HECI on this error: the MEI is unavailable and HECI
+// would only fail with "device or resource busy".
+var errLMSUpButUnready = errors.New("LMS is up but its local port is not ready")
+
+// probeLMS dials LMS to decide whether an LMS daemon is answering or the caller
+// must fall back to LME-over-HECI. The two failure classes are treated very
+// differently:
+//
+//   - A dial that fails fast (connection refused / unreachable) means LMS is
+//     genuinely down. It won't clear by waiting, so probeLMS returns the raw
+//     error immediately and the caller falls back to HECI.
+//   - A dial that times out, or is accepted then dropped mid-handshake (EOF /
+//     reset), means LMS is up but its TLS port stack is momentarily restarting
+//     (most notably right after activation). LMS still holds /dev/mei0, so a HECI
+//     fallback would only contend for the MEI and fail with "device or resource
+//     busy". probeLMS retries the dial until utils.LMSRecoveryBudget is spent and,
+//     if LMS still hasn't recovered, wraps errLMSUpButUnready so the caller keeps
+//     off HECI and surfaces a clean failure instead.
+//
+// Each attempt uses its own timeout-bound context.
+func probeLMS(dial func(context.Context) (net.Conn, error), timeout, budget, retryDelay time.Duration) (net.Conn, error) {
+	deadline := time.Now().Add(budget)
+
+	var lastErr error
+
+	for attempt := 1; ; attempt++ {
+		// Clamp the attempt to what is left of the budget: a full-length dial
+		// started near the end would overrun the budget by up to one timeout.
+		attemptTimeout := timeout
+		if remaining := time.Until(deadline); remaining < attemptTimeout {
+			attemptTimeout = remaining
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
+		conn, err := dial(ctx)
+
+		cancel()
+
+		if err == nil {
+			return conn, nil
+		}
+
+		// A dialer can hand back a usable-looking conn alongside an error (a
+		// connect that completed but whose handshake failed). Nothing below reads
+		// it, so close it or the retry loop leaks a descriptor per attempt.
+		if conn != nil {
+			if closeErr := conn.Close(); closeErr != nil {
+				logrus.Debugf("closing LMS conn returned with dial error: %v", closeErr)
+			}
+		}
+
+		lastErr = err
+
+		// LMS genuinely down: fall back to HECI immediately (raw error, no sentinel).
+		if !lmsUpButUnready(err) {
+			return nil, err
+		}
+
+		// LMS answered the socket but isn't serving yet. Stop once another retry
+		// would overrun the recovery budget, and tell the caller LMS is up so it
+		// does not contend for the MEI via HECI.
+		if time.Now().Add(retryDelay).After(deadline) {
+			return nil, fmt.Errorf("%w: %w", errLMSUpButUnready, lastErr)
+		}
+
+		logrus.Debugf("LMS dial did not complete (attempt %d, %v); retrying while LMS local port restarts", attempt, err)
+		time.Sleep(retryDelay)
+	}
+}
+
+// lmsUpButUnready reports whether a failed LMS dial indicates LMS is up but not
+// yet serving — a connect timeout, or a connection accepted then reset/closed
+// mid-handshake (EOF) while the AMT/LMS TLS port stack restarts. A refused or
+// otherwise fast-failing dial (LMS genuinely down) returns false.
+//
+// A timeout only implies "LMS restarting" when the dial targeted loopback,
+// where LMS actually listens. If the dial timed out against a non-loopback
+// address (e.g. "localhost" mis-resolving to a routable corporate IP), LMS was
+// never really reached, so we return false and let the caller fall back to
+// HECI instead of hard-failing after the recovery budget.
+func lmsUpButUnready(err error) bool {
+	if isDialTimeout(err) {
+		return dialTargetIsLoopback(err)
+	}
+
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET)
+}
+
+// dialTargetIsLoopback reports whether a failed dial's target address is a
+// loopback address. When the address cannot be determined from the error it
+// returns true, preserving the historical "LMS is up, keep retrying" behavior
+// for loopback dials rather than eagerly contending for the MEI over HECI.
+func dialTargetIsLoopback(err error) bool {
+	var opErr *net.OpError
+	if !errors.As(err, &opErr) || opErr.Addr == nil {
+		return true
+	}
+
+	host, _, splitErr := net.SplitHostPort(opErr.Addr.String())
+	if splitErr != nil {
+		host = opErr.Addr.String()
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true
+	}
+
+	return ip.IsLoopback()
+}
+
+// isDialTimeout reports whether err is a dial deadline/timeout rather than a
+// fast failure such as connection refused.
+func isDialTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var netErr net.Error
+
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // Close closes any open local transport connections
