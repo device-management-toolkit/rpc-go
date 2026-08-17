@@ -38,7 +38,7 @@ const (
 )
 
 var (
-	modsetupapi = syscall.NewLazyDLL("setupapi.dll")
+	modsetupapi = windows.NewLazySystemDLL("setupapi.dll")
 
 	procSetupDiGetClassDevsW              = modsetupapi.NewProc("SetupDiGetClassDevsW")
 	procSetupDiGetDeviceRegistryPropertyW = modsetupapi.NewProc("SetupDiGetDeviceRegistryPropertyW")

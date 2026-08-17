@@ -9,10 +9,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/setupandconfiguration"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -837,5 +839,143 @@ func TestDeactivateCmd_setupTLSConfig_ControlModePaths(t *testing.T) {
 		assert.NotNil(t, tlsConfig)
 		assert.True(t, tlsConfig.InsecureSkipVerify)
 		assert.NotNil(t, tlsConfig.VerifyPeerCertificate)
+	})
+}
+
+// TestDeactivateCmd_ExecuteFullUnprovision covers the ACM full-unprovision path,
+// including the HECI recovery fallback for a device stuck "in provisioning" whose
+// mutual-TLS :16993 port blocks the WSMAN Unprovision (the AMT21 cleanup log).
+func TestDeactivateCmd_ExecuteFullUnprovision(t *testing.T) {
+	tlsCertRequired := &url.Error{
+		Op:  "Post",
+		URL: "https://localhost:16993/wsman",
+		Err: errors.New("remote error: tls: certificate required"),
+	}
+
+	t.Run("WSMAN unprovision succeeds", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{})
+		assert.NoError(t, err)
+	})
+
+	t.Run("in-provisioning device recovers over HECI when WSMAN fails", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, tlsCertRequired)
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(provisioningStateInProvisioning, nil)
+		mockAMT.EXPECT().Unprovision().Return(0, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.NoError(t, err)
+	})
+
+	t.Run("HECI unprovision reporting a non-zero state falls through to stop-config", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, tlsCertRequired)
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(provisioningStateInProvisioning, nil)
+		// Firmware rejected the request through the response state, not through
+		// err. That must not read as success — the stop-config fallback still runs.
+		mockAMT.EXPECT().Unprovision().Return(1, nil)
+		mockAMT.EXPECT().StopConfiguration().Return(amt.StopConfigurationResponse{Status: "AMT_STATUS_SUCCESS"}, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.NoError(t, err)
+	})
+
+	t.Run("provisioned device does not fall back to HECI", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, errors.New("boom"))
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(2, nil) // post-provisioning
+		// No Unprovision() expectation: HECI fallback must not run.
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.ErrorIs(t, err, utils.UnableToDeactivate)
+	})
+
+	t.Run("HECI unprovision rejection stops incomplete configuration", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, tlsCertRequired)
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(provisioningStateInProvisioning, nil)
+		mockAMT.EXPECT().Unprovision().Return(-1, errors.New("invalid AMT mode"))
+		mockAMT.EXPECT().StopConfiguration().Return(amt.StopConfigurationResponse{Status: "AMT_STATUS_SUCCESS"}, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.NoError(t, err)
+	})
+
+	t.Run("StopConfiguration rejection surfaces UnableToDeactivate", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, tlsCertRequired)
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(provisioningStateInProvisioning, nil)
+		mockAMT.EXPECT().Unprovision().Return(-1, errors.New("invalid AMT mode"))
+		mockAMT.EXPECT().StopConfiguration().Return(amt.StopConfigurationResponse{Status: "AMT_STATUS_INVALID_AMT_MODE"}, nil)
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.ErrorIs(t, err, utils.UnableToDeactivate)
+	})
+
+	t.Run("unreadable provisioning state keeps the WSMAN failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, errors.New("boom"))
+
+		mockAMT := mock.NewMockInterface(ctrl)
+		mockAMT.EXPECT().GetProvisioningState().Return(-1, errors.New("HECI busy"))
+		// No Unprovision() expectation: cannot confirm the half-state, so no fallback.
+
+		cmd := &DeactivateCmd{}
+		cmd.WSMan = mockWSMAN
+
+		err := cmd.executeFullUnprovision(&Context{AMTCommand: mockAMT})
+		assert.ErrorIs(t, err, utils.UnableToDeactivate)
 	})
 }

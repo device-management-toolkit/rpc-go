@@ -220,16 +220,21 @@ func TestNewLocalActivationService(t *testing.T) {
 
 // Mock AMT Command for testing
 type MockAMTCommand struct {
-	controlMode     int
-	changeEnabled   MockChangeEnabled
-	shouldErrorOn   string
-	unProvisionMode int
-	hbcResponses    []amt.SecureHBasedResponse
-	hbcErrors       []error
-	hbcCalls        int
-	upidValue       *upid.UPID
-	upidErr         error
-	upidCalls       int
+	controlMode      int
+	changeEnabled    MockChangeEnabled
+	shouldErrorOn    string
+	unProvisionMode  int
+	hbcResponses     []amt.SecureHBasedResponse
+	hbcErrors        []error
+	hbcCalls         int
+	upidValue        *upid.UPID
+	upidErr          error
+	upidCalls        int
+	stopConfigStatus string
+	// provisioningState is what GetProvisioningState reports: 0 pre, 1 in
+	// provisioning, 2 post. Tests that expect a completed activation must set
+	// this to provisioningStatePostProvisioning.
+	provisioningState int
 }
 type MockChangeEnabled struct {
 	amtEnabled bool
@@ -252,7 +257,7 @@ func (m *MockAMTCommand) GetProvisioningState() (int, error) {
 		return 0, errors.New("mock error")
 	}
 
-	return 0, nil
+	return m.provisioningState, nil
 }
 
 func (m *MockAMTCommand) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
@@ -456,7 +461,11 @@ func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, err
 		return amt.StopConfigurationResponse{}, errors.New("mock error")
 	}
 
-	return amt.StopConfigurationResponse{Status: "Success"}, nil
+	if m.stopConfigStatus != "" {
+		return amt.StopConfigurationResponse{Status: m.stopConfigStatus}, nil
+	}
+
+	return amt.StopConfigurationResponse{Status: "AMT_STATUS_SUCCESS"}, nil
 }
 
 func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
@@ -625,10 +634,11 @@ func TestLocalActivationService_enableAMT(t *testing.T) {
 // interactive prompt behavior covered in base tests.
 func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 	tests := []struct {
-		name          string
-		jsonOutput    bool
-		shouldErrorOn string
-		wantErr       bool
+		name             string
+		jsonOutput       bool
+		shouldErrorOn    string
+		stopConfigStatus string
+		wantErr          bool
 	}{
 		{
 			name:       "successful stop config with JSON output",
@@ -646,12 +656,19 @@ func TestLocalActivateCmd_handleStopConfiguration(t *testing.T) {
 			shouldErrorOn: "StopConfiguration",
 			wantErr:       true,
 		},
+		{
+			name:             "firmware rejects with non-success status",
+			jsonOutput:       false,
+			stopConfigStatus: "AMT_STATUS_INVALID_AMT_MODE",
+			wantErr:          true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{
-				unProvisionMode: 2,
-				shouldErrorOn:   tt.shouldErrorOn,
+				unProvisionMode:  2,
+				shouldErrorOn:    tt.shouldErrorOn,
+				stopConfigStatus: tt.stopConfigStatus,
 			}
 
 			cmd := &LocalActivateCmd{

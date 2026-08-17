@@ -1,3 +1,47 @@
+# [3.0.0-beta.49](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.48...v3.0.0-beta.49) (2026-08-17)
+
+
+### Bug Fixes
+
+* **internal:** correct orchestrator CIRA flag names for configure subprocess ([#1486](https://github.com/device-management-toolkit/rpc-go/issues/1486)) ([ec3b1af](https://github.com/device-management-toolkit/rpc-go/commit/ec3b1afa1d3365fb8151a722c67fb974ab91cacd))
+
+# [3.0.0-beta.48](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.47...v3.0.0-beta.48) (2026-08-11)
+
+
+### Features
+
+* warn when credentials passed via CLI flags ([#1472](https://github.com/device-management-toolkit/rpc-go/issues/1472)) ([9f373ea](https://github.com/device-management-toolkit/rpc-go/commit/9f373eab183cce39c79817167c89f1911697eec4))
+
+# [3.0.0-beta.47](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.46...v3.0.0-beta.47) (2026-08-10)
+
+
+### Bug Fixes
+
+* **local:** local LMS/LME transport reliability and log noise ([#1466](https://github.com/device-management-toolkit/rpc-go/issues/1466)) ([07aa0f4](https://github.com/device-management-toolkit/rpc-go/commit/07aa0f4ee2a153dca1181e28fc78a2385aac5414))
+
+# [3.0.0-beta.46](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.45...v3.0.0-beta.46) (2026-08-10)
+
+
+### Bug Fixes
+
+* **internal:** profile orchestration robustness (subprocess model) ([#1464](https://github.com/device-management-toolkit/rpc-go/issues/1464)) ([1f8ddd2](https://github.com/device-management-toolkit/rpc-go/commit/1f8ddd29afde42b0c65b3227b9d6cb5794cd4303))
+
+# [3.0.0-beta.45](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.44...v3.0.0-beta.45) (2026-08-10)
+
+
+### Bug Fixes
+
+* local activation/deactivation reports the correct outcome ([#1463](https://github.com/device-management-toolkit/rpc-go/issues/1463)) ([d8afbf0](https://github.com/device-management-toolkit/rpc-go/commit/d8afbf0a99ba8ba1f3802a09087e5e0a0e22ea15))
+
+# [3.0.0-beta.44](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.43...v3.0.0-beta.44) (2026-08-10)
+
+
+### Bug Fixes
+
+* **internal:** honor firmware status on deactivate and stop-config ([#1462](https://github.com/device-management-toolkit/rpc-go/issues/1462)) ([fd064c3](https://github.com/device-management-toolkit/rpc-go/commit/fd064c3225ba71499c5500a46570e137c610e239))
+
+# [3.0.0-beta.43](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.42...v3.0.0-beta.43) (2026-07-28)
+
 # [3.0.0-beta.42](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.41...v3.0.0-beta.42) (2026-07-20)
 
 
