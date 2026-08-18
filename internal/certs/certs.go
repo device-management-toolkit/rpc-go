@@ -221,12 +221,16 @@ func ParseAMTPublicKey(derKey string) (any, error) {
 
 func NewCompositeChain(password string) (CompositeChain, error) {
 	chain := CompositeChain{}
-	chain.Root, _ = NewRootComposite()
+
+	var err error
+
+	chain.Root, err = NewRootComposite()
+	if err != nil {
+		return chain, err
+	}
 
 	chain.Intermediate = Composite{}
 	template := GetIntermediateCATemplate()
-
-	var err error
 
 	chain.Intermediate.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
