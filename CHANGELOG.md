@@ -1,3 +1,10 @@
+## [2.52.4](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.3...v2.52.4) (2026-08-18)
+
+
+### Bug Fixes
+
+* prevent nil pointer panic when root CA generation fails ([#1506](https://github.com/device-management-toolkit/rpc-go/issues/1506)) ([cd84648](https://github.com/device-management-toolkit/rpc-go/commit/cd8464833d6286534a2c6e755f041419b1c59380))
+
 ## [2.52.3](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.2...v2.52.3) (2026-07-28)
 
 ## [2.52.2](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.1...v2.52.2) (2026-07-09)
