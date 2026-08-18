@@ -167,11 +167,21 @@ func (heci *Driver) connectClient(data *CMEIConnectClientData, attempts int, ram
 // the probe (like LMS breaking out on TEE_BUSY) because another node won't
 // clear it. On success the connected handle is left open on the driver.
 func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ramp bool) error {
-	var lastErr error
+	var (
+		lastErr error
+		permErr error
+	)
 
 	for _, path := range meiDevicePaths {
 		if err := heci.openMEIDevicePath(path); err != nil {
-			lastErr = err
+			if errors.Is(err, fs.ErrPermission) && permErr == nil {
+				permErr = err
+			}
+			// Avoid masking earlier errors (eg permission denied) with a later
+			// fs.ErrNotExist from trailing probe paths.
+			if lastErr == nil || errors.Is(lastErr, fs.ErrNotExist) {
+				lastErr = err
+			}
 
 			continue
 		}
