@@ -6,11 +6,49 @@
 package certs
 
 import (
+	"crypto/rand"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// errorReader stands in for an exhausted OS entropy pool.
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("simulated entropy failure")
+}
+
+// failFirstKeyReader fails one key generation, then delegates. Single byte
+// reads pass through: crypto/rand probes with one byte and discards the error.
+type failFirstKeyReader struct {
+	original io.Reader
+	failed   bool
+}
+
+func (r *failFirstKeyReader) Read(p []byte) (int, error) {
+	if !r.failed && len(p) > 1 {
+		r.failed = true
+
+		return 0, errors.New("simulated entropy failure")
+	}
+
+	return r.original.Read(p)
+}
+
+// swapEntropy replaces crypto/rand.Reader and restores it after the test.
+// Callers must not use t.Parallel(), since rand.Reader is process wide.
+func swapEntropy(t *testing.T, reader io.Reader) {
+	t.Helper()
+
+	original := rand.Reader
+	rand.Reader = reader
+
+	t.Cleanup(func() { rand.Reader = original })
+}
 
 func RunNewSignedCompositeTest(t *testing.T, testDer string) {
 	rootComp, err := NewRootComposite()
@@ -62,4 +100,37 @@ func TestNewCompositeChain(t *testing.T) {
 	strippedPem := chain.Root.StripPem()
 	assert.False(t, strings.Contains(strippedPem, "BEGIN CERTIFICATE"))
 	assert.False(t, strings.Contains(strippedPem, "END CERTIFICATE"))
+}
+
+func TestNewRootCompositeKeyFailure(t *testing.T) {
+	swapEntropy(t, errorReader{})
+
+	composite, err := NewRootComposite()
+	assert.Error(t, err)
+	assert.Nil(t, composite.Cert)
+	assert.Empty(t, composite.Pem)
+	assert.Empty(t, composite.Fingerprint)
+}
+
+// A discarded NewRootComposite error left a nil root cert and key, which
+// x509.CreateCertificate then dereferenced. Only the root generation fails here.
+func TestNewCompositeChainRootFailure(t *testing.T) {
+	swapEntropy(t, &failFirstKeyReader{original: rand.Reader})
+
+	var (
+		chain CompositeChain
+		err   error
+	)
+
+	assert.NotPanics(t, func() {
+		chain, err = NewCompositeChain("test")
+	})
+
+	assert.Error(t, err)
+	assert.Nil(t, chain.Root.Cert)
+	assert.Empty(t, chain.Root.Pem)
+	assert.Empty(t, chain.Intermediate.Pem)
+	assert.Empty(t, chain.Leaf.Pem)
+	assert.Empty(t, chain.PfxData)
+	assert.Empty(t, chain.Pfxb64)
 }
