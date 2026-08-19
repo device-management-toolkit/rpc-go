@@ -917,18 +917,16 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, pro
 
 	result.WiredSupported = wired.IsEnabled || wired.LinkStatus != "" || wired.MACAddress != "" || wired.IPAddress != "" || wired.OsIPAddress != ""
 	result.WirelessSupported = wireless.IsEnabled || wireless.LinkStatus != "" || wireless.MACAddress != "" || wireless.IPAddress != "" || wireless.OsIPAddress != ""
-	result.WiredAdapterName = interfaceNameForMAC(wired.MACAddress)
-	result.WirelessAdapterName = interfaceNameForMAC(wireless.MACAddress)
+	wiredPCIName, wirelessPCIName := pciAdapterNames()
+	result.WiredAdapterName = wiredPCIName
 
-	if result.WiredAdapterName == "" || result.WirelessAdapterName == "" {
-		wiredPCIName, wirelessPCIName := pciAdapterNames()
-		if result.WiredAdapterName == "" {
-			result.WiredAdapterName = wiredPCIName
-		}
+	if result.WiredAdapterName == "" {
+		result.WiredAdapterName = interfaceNameForMAC(wired.MACAddress)
+	}
 
-		if result.WirelessAdapterName == "" {
-			result.WirelessAdapterName = wirelessPCIName
-		}
+	result.WirelessAdapterName = wirelessPCIName
+	if result.WirelessAdapterName == "" {
+		result.WirelessAdapterName = interfaceNameForMAC(wireless.MACAddress)
 	}
 
 	result.WiredLinkUp = strings.EqualFold(wired.LinkStatus, linkStatusUp)
