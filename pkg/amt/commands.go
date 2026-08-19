@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/psr"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -187,6 +188,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	GetUPID() (*upid.UPID, error)
+	GetPSR() (*psr.PSR, error)
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
@@ -206,6 +208,7 @@ type AMTCommand struct {
 	PTHI   pthi.Interface
 	HOTHAM hotham.Interface
 	UPID   upid.Interface
+	PSR    psr.Interface
 }
 
 func NewAMTCommand() AMTCommand {
@@ -213,6 +216,7 @@ func NewAMTCommand() AMTCommand {
 		PTHI:   pthi.NewCommand(),
 		HOTHAM: hotham.NewCommand(),
 		UPID:   upid.NewCommand(),
+		PSR:    psr.NewCommand(),
 	}
 }
 
@@ -622,6 +626,13 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 // GetUPID retrieves the Intel Unique Platform Identifier
 func (amt AMTCommand) GetUPID() (*upid.UPID, error) {
 	return amt.UPID.GetUPID()
+}
+
+// GetPSR retrieves the Intel Platform Service Record.
+// PSR requires CSME 16.1+ firmware and OEM enablement; callers should treat
+// psr.ErrPSRNotSupported as an ordinary outcome rather than a failure.
+func (amt AMTCommand) GetPSR() (*psr.PSR, error) {
+	return amt.PSR.GetPSR()
 }
 
 // GetFlog retrieves the CSME Flash Log (FLOG)

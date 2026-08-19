@@ -28,6 +28,8 @@ import (
 const (
 	configFilePath     = "config.yaml"
 	commandAmtInfo     = "amtinfo"
+	commandPSRInfo     = "psrinfo"
+	commandPSR         = "psr"
 	commandVersion     = "version"
 	commandActivate    = "activate"
 	commandDeactivate  = "deactivate"
@@ -60,6 +62,7 @@ type CLI struct {
 	commands.ServerAuthFlags
 
 	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	PSRInfo     commands.PSRInfoCmd        `cmd:"" name:"psrinfo" aliases:"psr" help:"Display the Intel Platform Service Record (PSR)"`
 	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
@@ -173,7 +176,8 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 
 // knownCommands lists the valid top-level command names for hasCommand detection.
 var knownCommands = map[string]bool{
-	commandAmtInfo: true, commandVersion: true, commandActivate: true,
+	commandAmtInfo: true, commandPSRInfo: true, commandPSR: true,
+	commandVersion: true, commandActivate: true,
 	commandDeactivate: true, commandConfigure: true, commandDiagnostics: true, commandDiag: true,
 }
 

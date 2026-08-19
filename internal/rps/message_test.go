@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/psr"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -99,6 +100,10 @@ func (c MockAMT) StartConfigurationHBased(amt.SecureHBasedParameters) (amt.Secur
 }
 
 func (c MockAMT) GetUPID() (*upid.UPID, error) {
+	return nil, nil
+}
+
+func (c MockAMT) GetPSR() (*psr.PSR, error) {
 	return nil, nil
 }
 
