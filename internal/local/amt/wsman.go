@@ -104,7 +104,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 			// A dial that was refused means LMS is genuinely down, so LME-over-HECI
 			// is the correct path. But a dial that timed out or was accepted then
 			// dropped means LMS is up with its TLS port stack restarting; it still
-			// owns /dev/mei0, so falling back to HECI would only contend for the MEI
+			// owns /dev/mei, so falling back to HECI would only contend for the MEI
 			// and fail with "device or resource busy". In that case probeLMS has
 			// already exhausted the recovery budget, so surface the error instead.
 			if errors.Is(err, errLMSUpButUnready) {
@@ -140,7 +140,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 		}, probeTimeout, utils.LMSRecoveryBudget, utils.LMSProbeRetryDelay)
 		if err != nil {
 			// LMS up but its port did not recover: it still owns the MEI, so HECI
-			// fallback is futile. Surface the error rather than contending for /dev/mei0.
+			// fallback is futile. Surface the error rather than contending for /dev/mei.
 			if errors.Is(err, errLMSUpButUnready) {
 				logrus.Errorf("LMS is up but its local port did not recover within the retry budget; not falling back to HECI: %v", err)
 
@@ -164,7 +164,7 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 
 // errLMSUpButUnready indicates the LMS dial reached LMS — it either timed out or
 // was accepted then dropped mid-handshake — but LMS never became usable within
-// the recovery budget. LMS owns /dev/mei0 while it is up, so the caller must NOT
+// the recovery budget. LMS owns /dev/mei while it is up, so the caller must NOT
 // fall back to LME-over-HECI on this error: the MEI is unavailable and HECI
 // would only fail with "device or resource busy".
 var errLMSUpButUnready = errors.New("LMS is up but its local port is not ready")
@@ -178,7 +178,7 @@ var errLMSUpButUnready = errors.New("LMS is up but its local port is not ready")
 //     error immediately and the caller falls back to HECI.
 //   - A dial that times out, or is accepted then dropped mid-handshake (EOF /
 //     reset), means LMS is up but its TLS port stack is momentarily restarting
-//     (most notably right after activation). LMS still holds /dev/mei0, so a HECI
+//     (most notably right after activation). LMS still holds /dev/mei, so a HECI
 //     fallback would only contend for the MEI and fail with "device or resource
 //     busy". probeLMS retries the dial until utils.LMSRecoveryBudget is spent and,
 //     if LMS still hasn't recovered, wraps errLMSUpButUnready so the caller keeps

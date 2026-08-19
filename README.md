@@ -122,7 +122,7 @@ sudo ./rpc
 ### Docker
 
 ```bash
-$ docker run --rm -it --device /dev/mei0 rpc-go:latest
+$ docker run --rm -it --device /dev/mei rpc-go:latest
 ```
 
 <br>

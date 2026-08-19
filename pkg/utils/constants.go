@@ -21,7 +21,7 @@ const (
 	// the LMS dial before giving up. A refused connection (LMS genuinely down)
 	// fails fast and does not consume the budget; only a dial that times out or is
 	// accepted-then-dropped (LMS up but its TLS port stack restarting, e.g. right
-	// after activation) is retried. While LMS is up it owns /dev/mei0, so falling
+	// after activation) is retried. While LMS is up it owns /dev/mei, so falling
 	// back to LME-over-HECI would only contend for the MEI and fail with "device
 	// or resource busy" - the caller waits out the restart on the LMS path instead.
 	LMSRecoveryBudget = 30 * time.Second
