@@ -34,6 +34,9 @@ const (
 	commandConfigure   = "configure"
 	commandDiagnostics = "diagnostics"
 	commandDiag        = "diag"
+	commandStatus      = "status"
+	commandHealth      = "health"
+	commandDoctor      = "doctor"
 )
 
 // Global flags that apply to all commands
@@ -60,6 +63,7 @@ type CLI struct {
 	commands.ServerAuthFlags
 
 	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Status      commands.StatusCmd         `cmd:"status" aliases:"health,doctor" help:"Check provisioning readiness or post-activation manageability health"`
 	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
@@ -175,6 +179,7 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 var knownCommands = map[string]bool{
 	commandAmtInfo: true, commandVersion: true, commandActivate: true,
 	commandDeactivate: true, commandConfigure: true, commandDiagnostics: true, commandDiag: true,
+	commandStatus: true, commandHealth: true, commandDoctor: true,
 }
 
 // hasCommand checks if args contain a recognized command name.
