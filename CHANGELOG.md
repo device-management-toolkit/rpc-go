@@ -1,3 +1,10 @@
+# [3.0.0-beta.50](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.49...v3.0.0-beta.50) (2026-08-20)
+
+
+### Bug Fixes
+
+* validate rpc-go v3 C# sample shared-library workflow ([#1467](https://github.com/device-management-toolkit/rpc-go/issues/1467)) ([b3ab924](https://github.com/device-management-toolkit/rpc-go/commit/b3ab92470af1ef84e4fbd17740a912b13f2c5860))
+
 # [3.0.0-beta.49](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.48...v3.0.0-beta.49) (2026-08-17)
 
 
