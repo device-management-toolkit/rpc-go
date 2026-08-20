@@ -224,7 +224,7 @@ func (cmd *AMTBaseCmd) RequiresAMTPassword() bool {
 func isPermanentHECIError(err error) bool {
 	msg := err.Error()
 
-	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
+	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei is wrong device type
 		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
 		msg == utils.HECIDriverNotDetected.Error() // already-classified sentinel
 }
