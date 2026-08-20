@@ -37,10 +37,10 @@ type Driver struct {
 }
 
 const (
-	Device                   = "/dev/mei0"
+	Device                   = "/dev/mei"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
-	errMsgPermissionDenied   = "open /dev/mei0: permission denied"
-	errMsgNoSuchFile         = "open /dev/mei0: no such file or directory"
+	errMsgPermissionDenied   = "open /dev/mei: permission denied"
+	errMsgNoSuchFile         = "open /dev/mei: no such file or directory"
 	pollWarnLogInterval      = 15 * time.Second
 	// heciConnectAttempts bounds the MEI_CONNECT_CLIENT EBUSY retry loop.
 	// Connect almost always succeeds on retry 1 after a reopen; the extra

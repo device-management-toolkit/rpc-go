@@ -32,6 +32,12 @@ type GetUUIDRequest struct {
 	Header MessageHeader
 }
 
+func TestDeviceUsesMeiSymlink(t *testing.T) {
+	assert.Equal(t, "/dev/mei", Device)
+	assert.Equal(t, "open /dev/mei: permission denied", errMsgPermissionDenied)
+	assert.Equal(t, "open /dev/mei: no such file or directory", errMsgNoSuchFile)
+}
+
 func TestHeciInit(t *testing.T) {
 	h := Driver{}
 	err := h.Init(false, false)
