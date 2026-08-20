@@ -6,17 +6,17 @@ go 1.25.0
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/alecthomas/kong v1.16.0
+	github.com/alecthomas/kong v1.16.1
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.48.3
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/muesli/termenv v0.16.0
-	github.com/shirou/gopsutil/v4 v4.26.6
-	github.com/sirupsen/logrus v1.9.4
-	github.com/stretchr/testify v1.11.1
+	github.com/shirou/gopsutil/v4 v4.26.7
+	github.com/sirupsen/logrus v1.10.0
+	github.com/stretchr/testify v1.12.0
 	go.uber.org/mock v0.6.0
 	golang.org/x/sys v0.47.0
 )
@@ -28,7 +28,7 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/geoffgarside/ber v1.1.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
@@ -48,8 +48,6 @@ require (
 )
 
 require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.3

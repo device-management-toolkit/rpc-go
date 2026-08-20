@@ -212,14 +212,25 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	isProfileFile := cmd.Profile != "" && looksLikeFilePath(cmd.Profile)
 
 	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
+		// Profile flows orchestrate every AMT operation in subprocesses, so the
+		// parent must not open an LME/MEI handle here — a handle held across
+		// ExecuteProfile blocks each subprocess with EBUSY ("mei connect busy" →
+		// "device or resource busy"). Only the direct --ccm/--acm path
+		// (runLocalActivation) needs the parent WSMAN client.
+		//
+		// This guard covers the profile-*file* path only. The HTTP profile path
+		// never reaches it (it requires cmd.Local || hasLocalActivationFlags()),
+		// and it deliberately opens WSMAN of its own below to read live TLS state
+		// off an already-activated device, releasing the handle again before
+		// orchestration starts.
 		if !isProfileFile {
 			if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
 				return err
 			}
-		}
 
-		if err := cmd.EnsureWSMAN(ctx); err != nil {
-			return err
+			if err := cmd.EnsureWSMAN(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	// Determine activation mode based on flags
@@ -363,6 +374,17 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	// Also store in ctx so postActivationSync can use it for WSMAN TLS probing.
 	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
 		ctx.AMTPassword = amtPassword
+	}
+
+	// Release any parent-held LME/MEI handle before orchestration; the subprocess
+	// steps each open their own handle and would otherwise fail with EBUSY
+	// ("mei connect busy" → "device or resource busy"). Whether the parent handle
+	// actually blocks a subprocess depends on the OS and the LMS build, so this
+	// close reproduces as a failure only on some combinations — do not remove it
+	// as dead code because a given machine survives without it.
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+		cmd.WSMan = nil
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
@@ -640,6 +662,17 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	// Store resolved AMT password in ctx so postActivationSync WSMAN TLS probe works.
 	if strings.TrimSpace(ctx.AMTPassword) == "" && amtPassword != "" {
 		ctx.AMTPassword = amtPassword
+	}
+
+	// Release any parent-held LME/MEI handle before orchestration; the subprocess
+	// steps each open their own handle and would otherwise fail with EBUSY
+	// ("mei connect busy" → "device or resource busy"). Whether the parent handle
+	// actually blocks a subprocess depends on the OS and the LMS build, so this
+	// close reproduces as a failure only on some combinations — do not remove it
+	// as dead code because a given machine survives without it.
+	if cmd.WSMan != nil {
+		cmd.WSMan.Close()
+		cmd.WSMan = nil
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)

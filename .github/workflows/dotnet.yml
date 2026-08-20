@@ -15,7 +15,7 @@ jobs:
 
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
       with:
         egress-policy: audit
 
@@ -25,9 +25,9 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 10.0.x
     - name: Build rpc as library
-      run: go build -buildmode=c-shared -o rpc.so ./cmd/rpc   
+      run: go build -buildmode=c-shared -o librpc.so ./cmd/rpc   
     - name: Restore dependencies
       run: cd samples/dotnet && dotnet restore
     - name: Build

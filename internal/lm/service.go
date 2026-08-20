@@ -33,6 +33,32 @@ type LMSConnection struct {
 // client Finished — and we must not tear the tunnel down for those).
 var ErrLMSReadTimeoutNoData = errors.New("lms read timeout with no data")
 
+// plainFirstByteTimeout bounds how long the non-TLS-tunnel LMS relay waits for
+// the first byte of AMT's response to a WSMAN request. Unlike the TLS tunnel,
+// the plain relay is strict request/response: every WSMAN message AMT receives
+// produces exactly one HTTP response, so there is no legitimate "quiet round"
+// to yield on — we must wait for the reply. The activating IPS_HostBasedSetup
+// Setup runs provisioning crypto before answering and its first byte can land
+// ~1s out (hardware-validated on AMT16/AMT18; the same near-1s ceiling drives
+// lmeTunnelFirstByteTimeout and HeciReadTimeout), so a 3s window gives ~3x
+// margin while staying under the executor's non-tunnel AMTResponseTimeout (4s)
+// budget so the reply is delivered before the response context aborts. The
+// earlier 500ms window clipped the Setup response: the read timed out empty,
+// the relay closed the socket, RPS never saw the reply, then retried Setup
+// against an already-activated device and reported "Failed to activate."
+const plainFirstByteTimeout = 3 * time.Second
+
+// tlsFirstByteTimeout is the TLS-tunnel analog: kept short (well below RPS's
+// per-operation budget) so a legitimately-silent TLS 1.3 handshake round
+// yields promptly via ErrLMSReadTimeoutNoData instead of stalling the tunnel.
+const tlsFirstByteTimeout = 2 * time.Second
+
+// plainSubsequentReadTimeout is the idle gap, after the first response byte has
+// arrived on the plain relay, used to detect the end of AMT's chunked HTTP
+// response. AMT streams the reply contiguously over the loopback socket, so a
+// short idle window bounds per-round latency without truncating the body.
+const plainSubsequentReadTimeout = 100 * time.Millisecond
+
 func NewLMSConnection(address, port string, useTls bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) *LMSConnection {
 	lms := &LMSConnection{
 		address:       address,
@@ -114,28 +140,38 @@ func (lms *LMSConnection) Close() error {
 
 // Listen reads data from the LMS socket connection.
 //
-// In TLS-tunnel mode the LMS connection is persistent across multiple tls_data
-// round-trips. TLS 1.3 has handshake rounds that legitimately produce zero
-// AMT-side bytes (e.g. immediately after our client Finished). To keep those
-// quiet rounds from stalling the tunnel and from being misread as a dead
-// connection, we use a short first-byte timeout (2s, well below RPS's
-// per-operation budget) and signal "silence before first byte" via a typed
-// ErrLMSReadTimeoutNoData on the errors channel. The executor treats that as
-// a non-fatal continuation in tunnel mode. We also skip the trailing
-// `lms.data <- buf` send for that case so callers can rely on the typed
-// error path instead of conflating timeout-no-data with EOF/close semantics.
-// The same skip applies when a non-timeout read error has been emitted on
-// `lms.errors`, so an empty buf is not delivered to `lms.data` afterwards
-// (which the executor would otherwise treat as a connection close).
+// The first-byte read timeout differs by mode because the two relays have
+// opposite silence semantics:
+//
+//   - Plain (non-TLS-tunnel) relay: strict request/response — every WSMAN
+//     message AMT receives yields exactly one HTTP response, so silence is not
+//     legitimate; we must wait for the reply. We use plainFirstByteTimeout (3s)
+//     so the slow activating Setup response is not clipped. A timeout with no
+//     bytes here is a genuinely unresponsive AMT and is surfaced as
+//     ErrLMSReadTimeoutNoData for the executor to handle.
+//   - TLS-tunnel mode: the connection is persistent across multiple tls_data
+//     round-trips and TLS 1.3 has handshake rounds that legitimately produce
+//     zero AMT-side bytes (e.g. immediately after our client Finished). We use
+//     a short tlsFirstByteTimeout (2s, well below RPS's per-operation budget)
+//     and signal "silence before first byte" via ErrLMSReadTimeoutNoData so
+//     the executor treats it as a non-fatal continuation and keeps the tunnel
+//     alive.
+//
+// In both modes we skip the trailing `lms.data <- buf` send when we timed out
+// with no bytes, so callers rely on the typed error path instead of conflating
+// timeout-no-data with EOF/close semantics. The same skip applies when a
+// non-timeout read error has been emitted on `lms.errors`, so an empty buf is
+// not delivered to `lms.data` afterwards (which the executor would otherwise
+// treat as a connection close).
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
 
-	readTimeout := 500 * time.Millisecond
-	subsequentReadTimeout := 100 * time.Millisecond
+	readTimeout := plainFirstByteTimeout
+	subsequentReadTimeout := plainSubsequentReadTimeout
 
 	if lms.useTls {
-		readTimeout = 2 * time.Second
-		subsequentReadTimeout = 2 * time.Second
+		readTimeout = tlsFirstByteTimeout
+		subsequentReadTimeout = tlsFirstByteTimeout
 	}
 
 	buf := make([]byte, 0, 8192)
