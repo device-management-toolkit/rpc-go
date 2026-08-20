@@ -1,32 +1,38 @@
-# CSharp sample leveraging rpc-go as a library
+# CSharp Sample Leveraging rpc-go as a Library
 
 ## Howto for Ubuntu Linux
-Install dotnet sdk if needed via snap
+
+Install .NET 10 SDK if needed via apt (recommended over snap to avoid glibc 
+compatibility issues with the shared library):
+
 ```shell
-sudo snap install dotnet-sdk
+sudo apt-get install -y dotnet-sdk-10.0
 ```
 
-From the rpc-go root directory, build the csharp executable
+From the rpc-go root directory, build the CSharp executable:
+
 ```shell
 dotnet build samples/dotnet/client.csproj
 ```
-This will create the directory samples/dotnet/bin/Debug/net6.0/  
 
-Build a shared object library from the rpc-go sources
-and just put it directly into the bin folder created above  
+This creates the directory `samples/dotnet/bin/Debug/net10.0/` with `client.dll`.
+
+Build a shared object library from the rpc-go sources and place it in the bin
+folder created above:
+
 NOTE: REQUIRES GCC INSTALLATION  
 NOTE: standard library naming presented here  
-NOTE: assumes the dotnet SDK version is 6.0, check the bin path and adjust as needed
-```
-# at the root of the rpc-go project with the command
-go build -buildmode=c-shared -o samples/dotnet/bin/Debug/net6.0/librpc.so ./cmd
+NOTE: assumes the dotnet SDK version is 10.0, check the bin path and adjust as needed
+
+```shell
+go build -buildmode=c-shared -o samples/dotnet/bin/Debug/net10.0/librpc.so ./cmd/rpc
 ```
 
 On Ubuntu, there seems to be issues with Console.WriteLine showing up in
-the command line termninal. Execute the csharp .dll directly rather than
-using ```dotnet run```  
-NOTE: the path of the .dll is created from ```dotnet build``` step.
-Check the path and .dll name on the build system
+the command line terminal. The sample can be run as either a native
+executable or via dotnet using the .dll directly.
+NOTE: Run from the rpc-go root directory, or navigate to the build output directory.
+
 ```shell
-dotnet samples/dotnet/bin/Debug/net6.0/client.dll
+sudo dotnet samples/dotnet/bin/Debug/net10.0/client.dll amtinfo
 ```

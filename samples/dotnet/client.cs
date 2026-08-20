@@ -16,7 +16,10 @@ namespace ClientAgent
         private static extern int rpcCheckAccess();
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output);
+        private static extern int rpcExec([In] byte[] rpccmd, ref IntPtr output, ref IntPtr errOutput);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void rpcFree(IntPtr ptr);
 
         private const int SUCCESS = 0;
 
@@ -45,26 +48,63 @@ namespace ClientAgent
             }
 
             // Build command
-            string command = string.Join(" ", args);
-            byte[] cmdBytes = Encoding.UTF8.GetBytes(command);
-            IntPtr output = IntPtr.Zero;
+            string command = BuildCommand(args);
+            byte[] cmdBytes = Encoding.UTF8.GetBytes(command + "\0");
 
             // Execute command
-            int result = rpcExec(cmdBytes, ref output);
+            IntPtr output = IntPtr.Zero;
+            IntPtr errOutput = IntPtr.Zero;
+            int result = rpcExec(cmdBytes, ref output, ref errOutput);
 
+            // Show stderr output
+            if (errOutput != IntPtr.Zero)
+            {
+                string? errString = Marshal.PtrToStringUTF8(errOutput);
+                if (!string.IsNullOrEmpty(errString))
+                {
+                    Console.Error.Write(errString);
+                }
+                rpcFree(errOutput);
+            }
             // Show output
             if (output != IntPtr.Zero)
             {
-                string? outputString = Marshal.PtrToStringAnsi(output);
+                string? outputString = Marshal.PtrToStringUTF8(output);
                 if (!string.IsNullOrEmpty(outputString))
                 {
-                    Console.WriteLine(outputString);
+                    Console.Write(outputString);
                 }
-                Marshal.FreeHGlobal(output);
+                rpcFree(output);
             }
 
             Console.WriteLine($"Exit code: {result}");
             return result;
+        }
+
+        private static string BuildCommand(string[] args)
+        {
+            var builder = new StringBuilder();
+            for (int index = 0; index < args.Length; index++)
+            {
+                if (index > 0)
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(EscapeArgument(args[index]));
+            }
+
+            return builder.ToString();
+        }
+
+        private static string EscapeArgument(string arg)
+        {
+            if (!string.IsNullOrEmpty(arg) && !arg.Contains(' ') && !arg.Contains('"') && !arg.Contains('\r') && !arg.Contains('\n'))
+            {
+                return arg;
+            }
+
+            return '"' + arg.Replace("\"", "\"\"") + '"';
         }
     }
 }
