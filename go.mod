@@ -12,7 +12,7 @@ require (
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/sirupsen/logrus v1.10.0
-	github.com/stretchr/testify v1.12.0
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.47.0
 )
 
@@ -22,6 +22,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/zalando/go-keyring v0.2.8 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 )
 
