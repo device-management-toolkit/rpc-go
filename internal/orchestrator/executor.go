@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const rpcExecutableName = "rpc"
@@ -40,14 +41,17 @@ func (e *ExecError) Unwrap() error { return e.Err }
 
 // CommandExecutor interface for executing commands
 type CommandExecutor interface {
-	Execute(args []string) error
+	// Execute runs a command with optional custom environment variables (env may be nil)
+	// without mutating the global process environment.
+	Execute(args []string, env map[string]string) error
 }
 
 // CLIExecutor executes commands using the CLI
 type CLIExecutor struct{}
 
-// Execute runs the RPC command with the given arguments
-func (e *CLIExecutor) Execute(args []string) error {
+// Execute runs the RPC command with the given arguments and optional custom environment variables.
+// Environment variables are passed per-subprocess without mutating the global process environment.
+func (e *CLIExecutor) Execute(args []string, env map[string]string) error {
 	// Get the current executable path
 	executable, err := os.Executable()
 	if err != nil {
@@ -66,6 +70,34 @@ func (e *CLIExecutor) Execute(args []string) error {
 	ctx := context.Background()
 
 	cmd := exec.CommandContext(ctx, executable, args...)
+
+	// Start with parent's environment, filtering out any keys we're overriding
+	// to ensure our custom values take precedence (some systems take the first
+	// occurrence of duplicate env vars, leading to the wrong value being used).
+	parentEnv := os.Environ()
+
+	envKeys := make(map[string]bool)
+	for k := range env {
+		envKeys[k] = true
+	}
+
+	for _, e := range parentEnv {
+		// Keep entries that don't conflict with custom overrides
+		if idx := strings.Index(e, "="); idx >= 0 {
+			key := e[:idx]
+			if !envKeys[key] {
+				cmd.Env = append(cmd.Env, e)
+			}
+		}
+	}
+
+	// Add custom environment variables without mutating global process env.
+	// This prevents credential leakage in c-shared library mode where the host
+	// process environment would otherwise retain passwords after rpcExec returns.
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	// Capture output while still streaming to the console
 	var buf bytes.Buffer
 
@@ -91,13 +123,13 @@ func (e *CLIExecutor) Execute(args []string) error {
 
 // DirectExecutor executes commands directly (for testing or embedded use)
 type DirectExecutor struct {
-	ExecuteFunc func(args []string) error
+	ExecuteFunc func(args []string, env map[string]string) error
 }
 
 // Execute runs the command using the provided function
-func (e *DirectExecutor) Execute(args []string) error {
+func (e *DirectExecutor) Execute(args []string, env map[string]string) error {
 	if e.ExecuteFunc != nil {
-		return e.ExecuteFunc(args)
+		return e.ExecuteFunc(args, env)
 	}
 
 	return nil
