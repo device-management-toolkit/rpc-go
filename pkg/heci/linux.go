@@ -25,7 +25,7 @@ type Driver struct {
 }
 
 const (
-	Device                   = "/dev/mei0"
+	Device                   = "/dev/mei"
 	IOCTL_MEI_CONNECT_CLIENT = 0xC0104801
 )
 
@@ -47,9 +47,9 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 
 	heci.meiDevice, err = os.OpenFile(Device, syscall.O_RDWR, 0)
 	if err != nil {
-		if err.Error() == "open /dev/mei0: permission denied" {
+		if os.IsPermission(err) {
 			log.Error("need administrator privileges")
-		} else if err.Error() == "open /dev/mei0: no such file or directory" {
+		} else if os.IsNotExist(err) {
 			log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 		} else {
 			log.Error("Cannot open MEI Device")

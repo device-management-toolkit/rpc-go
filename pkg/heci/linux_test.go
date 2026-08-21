@@ -10,6 +10,9 @@ package heci
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
+	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,6 +34,34 @@ type MessageHeader struct {
 }
 type GetUUIDRequest struct {
 	Header MessageHeader
+}
+
+func TestDeviceUsesMeiSymlink(t *testing.T) {
+	assert.Equal(t, "/dev/mei", Device)
+}
+
+// Guards the Init() error classification, which relies on os.IsNotExist /
+// os.IsPermission rather than matching err.Error() strings.
+func TestOpenFileErrorsAreClassified(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	_, err := os.OpenFile(missing, syscall.O_RDWR, 0)
+	assert.Error(t, err)
+	assert.True(t, os.IsNotExist(err), "missing device should be classified as not-exist")
+	assert.False(t, os.IsPermission(err))
+
+	denied := filepath.Join(t.TempDir(), "no-perms")
+	f, err := os.OpenFile(denied, os.O_CREATE|os.O_WRONLY, 0)
+	assert.NoError(t, err)
+	f.Close()
+
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permission checks")
+	}
+
+	_, err = os.OpenFile(denied, syscall.O_RDWR, 0)
+	assert.Error(t, err)
+	assert.True(t, os.IsPermission(err), "unreadable file should be classified as permission error")
+	assert.False(t, os.IsNotExist(err))
 }
 
 func TestHeciInit(t *testing.T) {
