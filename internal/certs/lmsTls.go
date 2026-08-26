@@ -200,7 +200,7 @@ func computeLeafHash(certRaw []byte, hashAlgorithm string) ([]byte, error) {
 	}
 }
 
-func decodeAMTCertHash(rawHash, hashAlgorithm string) ([]byte, error) {
+func decodeAMTCertHash(rawHash string, hashAlgorithm string) ([]byte, error) {
 	wireHash := []byte(rawHash)
 
 	hashLen, err := hashLengthForAlgorithm(hashAlgorithm)

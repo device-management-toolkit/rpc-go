@@ -96,6 +96,10 @@ func (cmd *WirelessCmd) Validate() error {
 		if cmd.IEEE8021xProfileName == "" {
 			return fmt.Errorf("IEEE 802.1x profile name is required for IEEE 802.1x authentication")
 		}
+
+		if cmd.IEEE8021xAuthenticationProtocol == ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2 && cmd.IEEE8021xPassword == "" {
+			return fmt.Errorf("IEEE 802.1x password is required for PEAP-MSCHAPv2 authentication")
+		}
 	case wifi.AuthenticationMethodOther:
 		return fmt.Errorf("unsupported authentication method: Other (%d)", cmd.AuthenticationMethod)
 	case wifi.AuthenticationMethodOpenSystem:

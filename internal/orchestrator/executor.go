@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 const rpcExecutableName = "rpc"
@@ -71,29 +70,19 @@ func (e *CLIExecutor) Execute(args []string, env map[string]string) error {
 
 	cmd := exec.CommandContext(ctx, executable, args...)
 
-	// Start with parent's environment, filtering out any keys we're overriding
-	// to ensure our custom values take precedence (some systems take the first
-	// occurrence of duplicate env vars, leading to the wrong value being used).
-	parentEnv := os.Environ()
-
-	envKeys := make(map[string]bool)
-	for k := range env {
-		envKeys[k] = true
-	}
-
-	for _, e := range parentEnv {
-		// Keep entries that don't conflict with custom overrides
-		if idx := strings.Index(e, "="); idx >= 0 {
-			key := e[:idx]
-			if !envKeys[key] {
-				cmd.Env = append(cmd.Env, e)
-			}
+	// Keep only the environment needed by the subprocess. PATH is required by
+	// commands invoked by the RPC binary; credentials and other configuration
+	// are supplied explicitly by the orchestrator.
+	if _, provided := env["PATH"]; !provided {
+		path, ok := os.LookupEnv("PATH")
+		if !ok {
+			path = ""
 		}
+
+		cmd.Env = append(cmd.Env, "PATH="+path)
 	}
 
-	// Add custom environment variables without mutating global process env.
-	// This prevents credential leakage in c-shared library mode where the host
-	// process environment would otherwise retain passwords after rpcExec returns.
+	// Do not mutate the global process environment when passing per-subprocess values.
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}

@@ -183,6 +183,20 @@ func TestWirelessCmd_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "802.1x PEAP authentication with missing password",
+			cmd: &WirelessCmd{
+				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				IEEE8021xProfileName:            "8021xprofile",
+				ProfileName:                     "testprofile",
+				SSID:                            "testssid",
+				Priority:                        1,
+				AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
+				EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
+				IEEE8021xAuthenticationProtocol: 2,
+			},
+			wantErr: true,
+		},
+		{
 			name: "unsupported authentication method",
 			cmd: &WirelessCmd{
 				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},

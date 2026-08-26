@@ -45,7 +45,6 @@ func TestNewSignedCompositeAMT16(t *testing.T) {
 
 	RunNewSignedCompositeTest(t, amt16DER)
 }
-
 func TestStripPem(t *testing.T) {
 	c := Composite{Pem: "-----BEGIN CERTIFICATE-----\nABC\n-----END CERTIFICATE-----\n"}
 	stripped := c.StripPem()
