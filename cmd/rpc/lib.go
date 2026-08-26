@@ -7,6 +7,9 @@ package main
 // NOTE: this file is designed to be built into a C library and the import
 // of 'C' introduces a dependency on the gcc toolchain
 
+/*
+#include <stdlib.h>
+*/
 import "C"
 
 import (
@@ -15,6 +18,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unsafe"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/cli"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
@@ -103,6 +107,13 @@ func rpcExec(Input *C.char, Output, ErrOutput **C.char) int {
 	captureAndRestoreStderr()
 
 	return int(utils.Success)
+}
+
+//export rpcFree
+func rpcFree(ptr *C.char) {
+	if ptr != nil {
+		C.free(unsafe.Pointer(ptr))
+	}
 }
 
 func handleError(err error) int {
