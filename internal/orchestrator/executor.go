@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const rpcExecutableName = "rpc"
@@ -70,21 +71,30 @@ func (e *CLIExecutor) Execute(args []string, env map[string]string) error {
 
 	cmd := exec.CommandContext(ctx, executable, args...)
 
-	// Keep only the environment needed by the subprocess. PATH is required by
-	// commands invoked by the RPC binary; credentials and other configuration
-	// are supplied explicitly by the orchestrator.
-	if _, provided := env["PATH"]; !provided {
-		path, ok := os.LookupEnv("PATH")
-		if !ok {
-			path = ""
-		}
+	// Inherit the current process environment to preserve runtime settings, then
+	// overlay the explicitly supplied per-subprocess values.
+	cmd.Env = os.Environ()
 
-		cmd.Env = append(cmd.Env, "PATH="+path)
+	if env == nil {
+		env = map[string]string{}
 	}
 
-	// Do not mutate the global process environment when passing per-subprocess values.
 	for k, v := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		prefix := k + "="
+		replaced := false
+
+		for i, existing := range cmd.Env {
+			if strings.HasPrefix(existing, prefix) {
+				cmd.Env[i] = fmt.Sprintf("%s%s", prefix, v)
+				replaced = true
+
+				break
+			}
+		}
+
+		if !replaced {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s%s", prefix, v))
+		}
 	}
 
 	// Capture output while still streaming to the console
