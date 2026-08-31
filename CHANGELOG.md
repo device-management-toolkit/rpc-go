@@ -1,3 +1,10 @@
+## [2.52.6](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.5...v2.52.6) (2026-08-31)
+
+
+### Bug Fixes
+
+* **heci:** support /dev/mei0-mei3 for RPC v2 connection ([#1505](https://github.com/device-management-toolkit/rpc-go/issues/1505)) ([c5445fb](https://github.com/device-management-toolkit/rpc-go/commit/c5445fb3cc1bd7a9d7217894b199c4c6cc77ffaf))
+
 ## [2.52.5](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.4...v2.52.5) (2026-08-26)
 
 ## [2.52.4](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.3...v2.52.4) (2026-08-18)
