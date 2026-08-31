@@ -25,9 +25,9 @@ type WirelessCmd struct {
 	// 802.1x settings
 	IEEE8021xProfileName            string `help:"802.1x profile name" name:"ieee8021xProfileName"`
 	IEEE8021xUsername               string `help:"802.1x username" alias:"username" name:"ieee8021xUsername"`
-	IEEE8021xPassword               string `help:"802.1x password" name:"ieee8021xPassword"`
+	IEEE8021xPassword               string `help:"802.1x password" env:"IEEE8021X_PASSWORD" name:"ieee8021xPassword"`
 	IEEE8021xAuthenticationProtocol int    `help:"802.1x authentication protocol (0=EAP-TLS, 2=PEAPv0/EAP-MSCHAPv2)" alias:"authenticationprotocol" enum:"0,2" default:"0" name:"ieee8021xAuthenticationProtocol"`
-	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" alias:"privatekey" name:"ieee8021xPrivateKey"`
+	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" env:"IEEE8021X_PRIVATE_KEY" alias:"privatekey" name:"ieee8021xPrivateKey"`
 	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" alias:"clientcert" name:"ieee8021xClientCert"`
 	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" alias:"cacert" name:"ieee8021xCACert"`
 
@@ -37,7 +37,7 @@ type WirelessCmd struct {
 	Priority             int    `help:"WiFi priority" name:"priority" default:"1"`
 	AuthenticationMethod int    `help:"Authentication method (4=WPA-PSK, 6=WPA2-PSK, 7=WPA2-IEEE8021x)" enum:"4,6,7" default:"6" name:"authenticationMethod"`
 	EncryptionMethod     int    `help:"Encryption method (3=TKIP, 4=CCMP)" enum:"3,4" default:"4" name:"encryptionMethod"`
-	PSKPassphrase        string `help:"WPA/WPA2 passphrase" name:"pskPassphrase"`
+	PSKPassphrase        string `help:"WPA/WPA2 passphrase" env:"PSK_PASSPHRASE" name:"pskPassphrase"`
 	// Maintenance
 	Purge bool `help:"Purge all existing AMT wireless profiles and exit" name:"purge"`
 }
@@ -95,6 +95,10 @@ func (cmd *WirelessCmd) Validate() error {
 
 		if cmd.IEEE8021xProfileName == "" {
 			return fmt.Errorf("IEEE 802.1x profile name is required for IEEE 802.1x authentication")
+		}
+
+		if cmd.IEEE8021xAuthenticationProtocol == ieee8021x.AuthenticationProtocolPEAPv0_EAPMSCHAPv2 && cmd.IEEE8021xPassword == "" {
+			return fmt.Errorf("IEEE 802.1x password is required for PEAP-MSCHAPv2 authentication")
 		}
 	case wifi.AuthenticationMethodOther:
 		return fmt.Errorf("unsupported authentication method: Other (%d)", cmd.AuthenticationMethod)
