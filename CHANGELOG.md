@@ -1,3 +1,26 @@
+# [3.0.0-beta.52](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.51...v3.0.0-beta.52) (2026-08-31)
+
+
+### Bug Fixes
+
+* pass all passwords via environment variables ([#1474](https://github.com/device-management-toolkit/rpc-go/issues/1474)) ([da05083](https://github.com/device-management-toolkit/rpc-go/commit/da050833f25a495152ac5c0a26395e6374d5abba))
+
+# [3.0.0-beta.51](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.50...v3.0.0-beta.51) (2026-08-26)
+
+# [3.0.0-beta.50](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.49...v3.0.0-beta.50) (2026-08-20)
+
+
+### Bug Fixes
+
+* validate rpc-go v3 C# sample shared-library workflow ([#1467](https://github.com/device-management-toolkit/rpc-go/issues/1467)) ([b3ab924](https://github.com/device-management-toolkit/rpc-go/commit/b3ab92470af1ef84e4fbd17740a912b13f2c5860))
+
+# [3.0.0-beta.49](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.48...v3.0.0-beta.49) (2026-08-17)
+
+
+### Bug Fixes
+
+* **internal:** correct orchestrator CIRA flag names for configure subprocess ([#1486](https://github.com/device-management-toolkit/rpc-go/issues/1486)) ([ec3b1af](https://github.com/device-management-toolkit/rpc-go/commit/ec3b1afa1d3365fb8151a722c67fb974ab91cacd))
+
 # [3.0.0-beta.48](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.47...v3.0.0-beta.48) (2026-08-11)
 
 
