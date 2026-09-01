@@ -11,3 +11,11 @@ package utils
 func GetMEIDriverVersion() string {
 	return ""
 }
+
+func getAdapterDHCPEnabled(string) *bool {
+	return nil
+}
+
+func getAdapterDisplayName(string) string {
+	return ""
+}

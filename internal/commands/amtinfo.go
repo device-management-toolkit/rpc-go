@@ -444,37 +444,54 @@ type syncPayload struct {
 }
 
 type syncDeviceInfo struct {
-	FWVersion            string        `json:"fwVersion"`
-	FWBuild              string        `json:"fwBuild"`
-	FWSku                string        `json:"fwSku"`
-	Discovered           *bool         `json:"discovered,omitempty"`
-	FirstDiscovered      *time.Time    `json:"firstDiscovered,omitempty"`
-	CurrentMode          string        `json:"currentMode"`
-	Features             string        `json:"features"`
-	IPAddress            string        `json:"ipAddress"`
-	LastSynced           *time.Time    `json:"lastSynced,omitempty"`
-	TLSMode              string        `json:"tlsMode,omitempty"`
-	UPID                 *syncUPIDInfo `json:"upid,omitempty"`
-	AMTEnabledInBIOS     *bool         `json:"amtEnabledInBIOS,omitempty"`
-	MEInterfaceVersion   string        `json:"meInterfaceVersion,omitempty"`
-	DHCPEnabled          *bool         `json:"dhcpEnabled,omitempty"`
-	CertHashes           []string      `json:"certHashes,omitempty"`
-	LMSInstalled         bool          `json:"lmsInstalled"`
-	LMSVersion           string        `json:"lmsVersion,omitempty"`
-	OSName               string        `json:"osName"`
-	OSVersion            string        `json:"osVersion,omitempty"`
-	OSDistro             string        `json:"osDistro,omitempty"`
-	CPUModel             string        `json:"cpuModel,omitempty"`
-	OSIPAddress          string        `json:"osIpAddress,omitempty"`
-	EthernetAdapterCount int           `json:"ethernetAdapterCount,omitempty"`
-	MonitorConnected     *bool         `json:"monitorConnected,omitempty"`
-	IEEE8021xEnabled     *bool         `json:"ieee8021xEnabled,omitempty"`
+	FWVersion            string                   `json:"fwVersion"`
+	FWBuild              string                   `json:"fwBuild"`
+	FWSku                string                   `json:"fwSku"`
+	Discovered           *bool                    `json:"discovered,omitempty"`
+	FirstDiscovered      *time.Time               `json:"firstDiscovered,omitempty"`
+	CurrentMode          string                   `json:"currentMode"`
+	Features             string                   `json:"features"`
+	IPAddress            string                   `json:"ipAddress"`
+	LastSynced           *time.Time               `json:"lastSynced,omitempty"`
+	TLSMode              string                   `json:"tlsMode,omitempty"`
+	UPID                 *syncUPIDInfo            `json:"upid,omitempty"`
+	AMTEnabledInBIOS     *bool                    `json:"amtEnabledInBIOS,omitempty"`
+	MEInterfaceVersion   string                   `json:"meInterfaceVersion,omitempty"`
+	DHCPEnabled          *bool                    `json:"dhcpEnabled,omitempty"`
+	CertHashes           []string                 `json:"certHashes,omitempty"`
+	LMSInstalled         bool                     `json:"lmsInstalled"`
+	LMSVersion           string                   `json:"lmsVersion,omitempty"`
+	OSName               string                   `json:"osName"`
+	OSVersion            string                   `json:"osVersion,omitempty"`
+	OSDistro             string                   `json:"osDistro,omitempty"`
+	OSDNSSuffix          string                   `json:"dnsSuffixOS,omitempty"`
+	CPUModel             string                   `json:"cpuModel,omitempty"`
+	OSIPAddress          string                   `json:"osIpAddress,omitempty"`
+	EthernetAdapterCount int                      `json:"ethernetAdapterCount,omitempty"`
+	MonitorConnected     *bool                    `json:"monitorConnected,omitempty"`
+	IEEE8021xEnabled     *bool                    `json:"ieee8021xEnabled,omitempty"`
+	MENetwork            *syncMENetwork           `json:"meNetwork,omitempty"`
+	OSNetwork            *utils.OSNetworkAdapters `json:"osNetwork,omitempty"`
+	PlatformAdapters     *utils.PlatformAdapters  `json:"platformAdapters,omitempty"`
 }
 
 type syncUPIDInfo struct {
 	CSMEId            string `json:"csmeId,omitempty"`
 	OEMId             string `json:"oemId,omitempty"`
 	OEMPlatformIdType string `json:"oemPlatformIdType,omitempty"`
+}
+
+type syncMENetwork struct {
+	Wired    *syncMEInterface `json:"wired,omitempty"`
+	Wireless *syncMEInterface `json:"wireless,omitempty"`
+}
+
+type syncMEInterface struct {
+	IPAddress   string `json:"ipAddress,omitempty"`
+	DHCPEnabled *bool  `json:"dhcpEnabled,omitempty"`
+	DHCPMode    string `json:"dhcpMode,omitempty"`
+	LinkStatus  string `json:"linkStatus,omitempty"`
+	MACAddress  string `json:"macAddress,omitempty"`
 }
 
 // SyncDeviceInfo sends a PATCH to the provided endpoint URL with the device info payload.
@@ -817,7 +834,7 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 }
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
-func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string) error {
+func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WSMANer, endpoint, token, guid string) error {
 	log.Debug("Starting device info collection for sync")
 
 	infoCmd := &AmtInfoCmd{
@@ -828,6 +845,7 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		UUID:       true,
 		Mode:       true,
 		Lan:        true,
+		DNS:        true,
 	}
 
 	log.Debug("Initializing info service for sync")
@@ -837,6 +855,7 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		WithLocalTLSEnforced(baseCmd.LocalTLSEnforced),
 		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
 		WithHECIAvailable(baseCmd.HECIAvailable),
+		WithWSMANClient(wsman),
 	)
 
 	log.Debug("Collecting AMT device information")
@@ -899,6 +918,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	if result.WiredAdapter != nil {
 		info.DHCPEnabled = &result.WiredAdapter.DHCPEnabled
 	}
+
+	info.MENetwork = buildSyncMENetwork(result)
 
 	// Certificate hashes (extract hash strings)
 	if result.CertificateHashes != nil {
@@ -971,10 +992,21 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 
 	info.OSVersion = osInfo.Version
 	info.OSDistro = osInfo.Distro
+	info.OSDNSSuffix = result.DNSSuffixOS
 	info.CPUModel = utils.GetCPUModel()
 	info.OSIPAddress = utils.GetOSIPAddress()
 	info.EthernetAdapterCount = utils.GetEthernetAdapterCount()
 	info.MonitorConnected = utils.DetectMonitorConnected()
+
+	osNetwork := utils.GetOSNetworkAdapters()
+	if len(osNetwork.Wired) > 0 || osNetwork.Wireless != nil {
+		info.OSNetwork = &osNetwork
+	}
+
+	platformAdapters := utils.GetPlatformAdapters()
+	if platformAdapters.Wired != "" || platformAdapters.Wireless != "" {
+		info.PlatformAdapters = &platformAdapters
+	}
 
 	monitorConnected := statusUnknown
 	if info.MonitorConnected != nil {
@@ -990,6 +1022,39 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 		info.EthernetAdapterCount,
 		monitorConnected,
 	)
+}
+
+func buildSyncMENetwork(result *InfoResult) *syncMENetwork {
+	network := &syncMENetwork{}
+	if result.WiredAdapter != nil {
+		network.Wired = buildSyncMEInterface(result.WiredAdapter)
+	}
+
+	if result.WirelessAdapter != nil {
+		network.Wireless = buildSyncMEInterface(result.WirelessAdapter)
+	}
+
+	if network.Wired == nil && network.Wireless == nil {
+		return nil
+	}
+
+	return network
+}
+
+func buildSyncMEInterface(adapter *amt.InterfaceSettings) *syncMEInterface {
+	if adapter == nil {
+		return nil
+	}
+
+	dhcpEnabled := adapter.DHCPEnabled
+
+	return &syncMEInterface{
+		IPAddress:   strings.TrimSpace(adapter.IPAddress),
+		DHCPEnabled: &dhcpEnabled,
+		DHCPMode:    strings.TrimSpace(adapter.DHCPMode),
+		LinkStatus:  strings.TrimSpace(adapter.LinkStatus),
+		MACAddress:  strings.TrimSpace(adapter.MACAddress),
+	}
 }
 
 // getTLSModeFromWSMAN queries AMT TLS settings via WSMan and returns the mode string.

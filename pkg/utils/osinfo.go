@@ -16,11 +16,34 @@ import (
 	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
+const loopbackInterfaceName = "lo"
+
 // OSInfo holds operating system metadata.
 type OSInfo struct {
 	Name    string
 	Version string
 	Distro  string
+}
+
+// OSNetworkInterface holds OS-reported network adapter details.
+type OSNetworkInterface struct {
+	Name        string `json:"name,omitempty"`
+	IPAddress   string `json:"ipAddress,omitempty"`
+	DHCPEnabled *bool  `json:"dhcpEnabled,omitempty"`
+	LinkStatus  string `json:"linkStatus,omitempty"`
+	MACAddress  string `json:"macAddress,omitempty"`
+}
+
+// OSNetworkAdapters groups OS-reported wired and wireless adapters.
+type OSNetworkAdapters struct {
+	Wired    []OSNetworkInterface `json:"wired,omitempty"`
+	Wireless *OSNetworkInterface  `json:"wireless,omitempty"`
+}
+
+// PlatformAdapters summarizes platform adapter names.
+type PlatformAdapters struct {
+	Wired    string `json:"wired,omitempty"`
+	Wireless string `json:"wireless,omitempty"`
 }
 
 // GetOSInfo returns the OS name, kernel/build version, and distro string.
@@ -96,7 +119,7 @@ func GetOSIPAddress() string {
 
 	for _, iface := range ifaces {
 		name := strings.ToLower(iface.Name)
-		if name == "lo" || strings.Contains(name, "loopback") {
+		if name == loopbackInterfaceName || strings.Contains(name, "loopback") {
 			continue
 		}
 
@@ -131,6 +154,112 @@ func GetOSIPAddress() string {
 	return fallback
 }
 
+// GetOSNetworkAdapters returns non-virtual OS network adapters grouped by type.
+func GetOSNetworkAdapters() OSNetworkAdapters {
+	ifaces, err := gnet.Interfaces()
+	if err != nil {
+		return OSNetworkAdapters{}
+	}
+
+	adapters := OSNetworkAdapters{}
+
+	for _, iface := range ifaces {
+		name := strings.ToLower(iface.Name)
+		if name == loopbackInterfaceName || strings.Contains(name, "loopback") || iface.HardwareAddr == "" || isVirtualAdapter(name) {
+			continue
+		}
+
+		wireless := isWirelessAdapter(name)
+
+		wired := isPhysicalEthernet(name)
+		if !wireless && !wired {
+			continue
+		}
+
+		adapter := OSNetworkInterface{
+			Name:        iface.Name,
+			IPAddress:   firstUsableIPv4(iface.Addrs),
+			DHCPEnabled: getAdapterDHCPEnabled(iface.Name),
+			LinkStatus:  linkStatusFromFlags(iface.Flags),
+			MACAddress:  iface.HardwareAddr,
+		}
+
+		if wireless {
+			if adapters.Wireless == nil {
+				adapters.Wireless = &adapter
+			}
+
+			continue
+		}
+
+		adapters.Wired = append(adapters.Wired, adapter)
+	}
+
+	return adapters
+}
+
+// GetPlatformAdapters returns a best-effort wired/wireless adapter name summary.
+func GetPlatformAdapters() PlatformAdapters {
+	ifaces, err := gnet.Interfaces()
+	if err != nil {
+		return PlatformAdapters{}
+	}
+
+	adapters := PlatformAdapters{}
+
+	for _, iface := range ifaces {
+		name := strings.ToLower(iface.Name)
+		if name == loopbackInterfaceName || strings.Contains(name, "loopback") || iface.HardwareAddr == "" || isVirtualAdapter(name) {
+			continue
+		}
+
+		if isWirelessAdapter(name) {
+			if adapters.Wireless == "" {
+				adapters.Wireless = adapterDisplayName(iface.Name)
+			}
+
+			continue
+		}
+
+		if isPhysicalEthernet(name) && adapters.Wired == "" {
+			adapters.Wired = adapterDisplayName(iface.Name)
+		}
+	}
+
+	return adapters
+}
+
+func firstUsableIPv4(addrs []gnet.InterfaceAddr) string {
+	for _, addr := range addrs {
+		ip := strings.SplitN(addr.Addr, "/", 2)[0]
+		if ip == "" || strings.Contains(ip, ":") || strings.HasPrefix(ip, "169.254.") {
+			continue
+		}
+
+		return ip
+	}
+
+	return ""
+}
+
+func linkStatusFromFlags(flags []string) string {
+	for _, flag := range flags {
+		if strings.EqualFold(flag, "up") {
+			return "up"
+		}
+	}
+
+	return "down"
+}
+
+func adapterDisplayName(interfaceName string) string {
+	if displayName := getAdapterDisplayName(interfaceName); strings.TrimSpace(displayName) != "" {
+		return strings.TrimSpace(displayName)
+	}
+
+	return interfaceName
+}
+
 // isVirtualAdapter returns true for known virtual/software adapter names.
 func isVirtualAdapter(name string) bool {
 	virtualPrefixes := []string{
@@ -161,6 +290,14 @@ func isPhysicalEthernet(name string) bool {
 		strings.HasPrefix(name, "ethernet ")
 }
 
+func isWirelessAdapter(name string) bool {
+	return strings.HasPrefix(name, "wl") ||
+		strings.HasPrefix(name, "wlan") ||
+		strings.Contains(name, "wi-fi") ||
+		strings.Contains(name, "wifi") ||
+		strings.Contains(name, "wireless")
+}
+
 // GetEthernetAdapterCount returns the number of physical ethernet adapters.
 func GetEthernetAdapterCount() int {
 	ifaces, err := gnet.Interfaces()
@@ -172,11 +309,11 @@ func GetEthernetAdapterCount() int {
 
 	for _, iface := range ifaces {
 		name := strings.ToLower(iface.Name)
-		if name == "lo" || strings.Contains(name, "loopback") || iface.HardwareAddr == "" {
+		if name == loopbackInterfaceName || strings.Contains(name, "loopback") || iface.HardwareAddr == "" {
 			continue
 		}
 
-		if strings.HasPrefix(name, "eth") || strings.HasPrefix(name, "en") {
+		if isPhysicalEthernet(name) {
 			count++
 		}
 	}
