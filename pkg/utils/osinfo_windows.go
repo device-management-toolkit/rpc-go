@@ -52,3 +52,54 @@ func GetMEIDriverVersion() string {
 
 	return strings.TrimSpace(string(out))
 }
+
+func getAdapterDHCPEnabled(interfaceName string) *bool {
+	ctx, cancel := context.WithTimeout(context.Background(), osInfoTimeout)
+	defer cancel()
+
+	psBinary := findPowerShellBinary()
+	if psBinary == "" {
+		return nil
+	}
+
+	name := escapePowerShellSingleQuotedString(interfaceName)
+	script := "$idx = (Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -eq '" + name + "' -or $_.Name -eq '" + name + "' } | Select-Object -First 1 -ExpandProperty InterfaceIndex); if ($idx -ne $null) { (Get-CimInstance Win32_NetworkAdapterConfiguration -Filter \"InterfaceIndex=$idx\").DHCPEnabled }"
+	out, err := runCommandOutput(ctx, psBinary, "-NoProfile", "-Command", script)
+	if err != nil {
+		return nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(string(out))) {
+	case "true":
+		enabled := true
+		return &enabled
+	case "false":
+		enabled := false
+		return &enabled
+	default:
+		return nil
+	}
+}
+
+func getAdapterDisplayName(interfaceName string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), osInfoTimeout)
+	defer cancel()
+
+	psBinary := findPowerShellBinary()
+	if psBinary == "" {
+		return ""
+	}
+
+	name := escapePowerShellSingleQuotedString(interfaceName)
+	script := "Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -eq '" + name + "' -or $_.Name -eq '" + name + "' } | Select-Object -First 1 -ExpandProperty Name"
+	out, err := runCommandOutput(ctx, psBinary, "-NoProfile", "-Command", script)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(out))
+}
+
+func escapePowerShellSingleQuotedString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}

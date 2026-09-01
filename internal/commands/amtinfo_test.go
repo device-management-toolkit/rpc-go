@@ -211,6 +211,43 @@ func TestInfoService_populateDiscoveryFields_MEInterfaceVersion(t *testing.T) {
 	assert.Equal(t, expectedMEIVersion, info.MEInterfaceVersion)
 }
 
+func TestBuildSyncMENetwork(t *testing.T) {
+	result := &InfoResult{
+		WiredAdapter: &amt.InterfaceSettings{
+			IPAddress:   " 10.0.0.12 ",
+			DHCPEnabled: true,
+			DHCPMode:    " active ",
+			LinkStatus:  " up ",
+			MACAddress:  " AA:BB:CC:DD:EE:10 ",
+		},
+		WirelessAdapter: &amt.InterfaceSettings{
+			IPAddress:   "192.168.1.20",
+			DHCPEnabled: false,
+			DHCPMode:    "passive",
+			LinkStatus:  "down",
+			MACAddress:  "AA:BB:CC:DD:EE:20",
+		},
+	}
+
+	network := buildSyncMENetwork(result)
+
+	require.NotNil(t, network)
+	require.NotNil(t, network.Wired)
+	require.Equal(t, "10.0.0.12", network.Wired.IPAddress)
+	require.NotNil(t, network.Wired.DHCPEnabled)
+	require.True(t, *network.Wired.DHCPEnabled)
+	require.Equal(t, "active", network.Wired.DHCPMode)
+	require.Equal(t, "up", network.Wired.LinkStatus)
+	require.Equal(t, "AA:BB:CC:DD:EE:10", network.Wired.MACAddress)
+	require.NotNil(t, network.Wireless)
+	require.Equal(t, "192.168.1.20", network.Wireless.IPAddress)
+	require.NotNil(t, network.Wireless.DHCPEnabled)
+	require.False(t, *network.Wireless.DHCPEnabled)
+	require.Equal(t, "passive", network.Wireless.DHCPMode)
+	require.Equal(t, "down", network.Wireless.LinkStatus)
+	require.Equal(t, "AA:BB:CC:DD:EE:20", network.Wireless.MACAddress)
+}
+
 func TestAmtInfoCmd_Run_WithSync_BearerAuth(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

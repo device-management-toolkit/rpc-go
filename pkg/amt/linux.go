@@ -11,22 +11,52 @@ import (
 	"context"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
 
 func (amt AMTCommand) GetOSDNSSuffix() (string, error) {
 	fqdn, err := getFQDN()
+	if err == nil {
+		if suffix := dnsSuffixFromFQDN(fqdn); suffix != "" {
+			return suffix, nil
+		}
+	}
+
+	if suffix := getNetworkManagerDNSSuffix(); suffix != "" {
+		return suffix, nil
+	}
+
+	return "", err
+}
+
+func dnsSuffixFromFQDN(fqdn string) string {
+	_, suffix, found := strings.Cut(strings.TrimSuffix(strings.TrimSpace(fqdn), "."), ".")
+	if !found {
+		return ""
+	}
+
+	return suffix
+}
+
+func getNetworkManagerDNSSuffix() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "nmcli", "-g", "IP4.DOMAIN,IP4.SEARCHES", "device", "show").Output()
 	if err != nil {
-		return "", err
+		return ""
 	}
 
-	splitName := strings.SplitAfterN(fqdn, ".", 2)
-	if len(splitName) == 2 {
-		return splitName[1], nil
+	for line := range strings.Lines(string(out)) {
+		suffix := strings.TrimSpace(line)
+		if suffix != "" && suffix != "--" {
+			return suffix
+		}
 	}
 
-	return fqdn, err
+	return ""
 }
 
 func getFQDN() (string, error) {
