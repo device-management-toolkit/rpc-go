@@ -29,7 +29,6 @@ import (
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
-	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
@@ -45,10 +44,14 @@ const (
 	notFoundIP         = "Not Found"
 	zeroIP             = "0.0.0.0"
 	zeroMAC            = "00:00:00:00:00:00"
+	postProvisioning   = "post-provisioning"
+	adminControlMode   = "admin control mode"
+	clientControlMode  = "client control mode"
 	statusUnknown      = "unknown"
 	statusEnabled      = "enabled"
 	statusConnected    = "connected"
 	statusUp           = "up"
+	statusDown         = "down"
 	statusNotConnected = "not connected"
 	statusActive       = "active"
 	statusDisabled     = "disabled"
@@ -117,13 +120,12 @@ func renderInfoRow(label, value string) string {
 func styledInfoValue(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case statusEnabled, statusConnected, statusUp, statusActive,
-		"post-provisioning", "admin control mode":
+		postProvisioning, adminControlMode:
 		return infoGreenStyle.Render(value)
-	case statusDisabled, statusNotConnected, "down",
+	case statusDisabled, statusNotConnected, statusDown,
 		"not activated", statusUnknown:
 		return infoRedStyle.Render(value)
-	case "in provisioning",
-		"client control mode":
+	case "in provisioning", clientControlMode:
 		return infoYellowStyle.Render(value)
 	default:
 		return value
@@ -246,10 +248,6 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 		if _, err := neturl.ParseRequestURI(cmd.URL); err != nil {
 			return fmt.Errorf("invalid --url: %w", err)
 		}
-		// // Require some form of authentication when syncing
-		// if err := cmd.ValidateRequired(true); err != nil {
-		// 	return err
-		// }
 	}
 
 	return nil
@@ -2215,7 +2213,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	// SetupWsmanClient falls back to HECI/LME when LMS is absent; no need to gate on LMS here.
-	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+	wsmanClient := newWSMANClient(utils.LMSAddress)
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
