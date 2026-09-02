@@ -241,15 +241,16 @@ func (cmd *DeactivateCmd) executeHttpConsoleDeactivate(ctx *Context) error {
 		return nil
 	}
 
-	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
+	if err := device.DeleteDevice(consoleBaseURL, token, ctx.TenantID, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
 	}
 
 	return nil
 }
 
-// postDeactivationSync syncs device info after deactivation and before device deletion.
-// This allows SyncDeviceInfo's 404 auto-register fallback to run for devices missing in console.
+// postDeactivationSync syncs device info after a deactivation attempt and before device deletion.
+// Auto-register is disabled here: the device is about to be deleted, so a 404 must
+// not recreate the record only for the following DELETE to remove it again.
 func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, token, guid string) {
 	if strings.TrimSpace(consoleBaseURL) == "" || strings.TrimSpace(guid) == "" {
 		return
@@ -257,7 +258,7 @@ func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, tok
 
 	endpoint := BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
 
-	if err := SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
+	if err := SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid, WithAutoRegister(false)); err != nil {
 		log.Warnf("Post-deactivation sync failed: %v", err)
 	}
 }
@@ -342,7 +343,7 @@ func (cmd *DeactivateCmd) deleteDeviceFromConsole(ctx *Context, guid string) err
 		ctx.AuthToken = token
 	}
 
-	if err := device.DeleteDevice(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
+	if err := device.DeleteDevice(consoleBaseURL, token, ctx.TenantID, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		return fmt.Errorf("device deactivated but failed to delete from console: %w", err)
 	}
 

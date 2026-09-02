@@ -27,6 +27,7 @@ import (
 type ProfileFetcher struct {
 	URL           string
 	Token         string
+	TenantID      string
 	Username      string
 	Password      string
 	Timeout       time.Duration
@@ -187,6 +188,10 @@ func (f *ProfileFetcher) fetchData(u, token string) ([]byte, error) {
 
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	if f.TenantID != "" {
+		req.Header.Set("x-tenant-id", f.TenantID)
 	}
 
 	req.Header.Set("Accept", "application/json, application/yaml, text/yaml, text/plain")

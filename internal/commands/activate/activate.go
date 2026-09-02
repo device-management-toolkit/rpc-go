@@ -304,6 +304,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	fetcher := &profile.ProfileFetcher{
 		URL:           cmd.URL,
 		Token:         ctx.AuthToken,
+		TenantID:      ctx.TenantID,
 		Username:      ctx.AuthUsername,
 		Password:      ctx.AuthPassword,
 		AuthEndpoint:  ctx.AuthEndpoint,
@@ -434,7 +435,7 @@ func (cmd *ActivateCmd) clearMPSPasswordFromConsole(ctx *commands.Context, conso
 		return
 	}
 
-	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
+	if err := device.ClearDeviceMPSPassword(consoleBaseURL, token, ctx.TenantID, guid, ctx.SkipCertCheck, ctx.DevicesEndpoint); err != nil {
 		log.Warnf("failed to clear MPS password: %v", err)
 	} else {
 		log.Info("MPS password cleared after CIRA failure")
@@ -503,7 +504,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		payload.MPSPassword = ""
 	}
 
-	err := device.AddDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
+	err := device.AddDevice(consoleBaseURL, token, ctx.TenantID, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
 	if err == nil {
 		return nil
 	}
@@ -516,7 +517,7 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		// Clear discovered field for PATCH updates (only sent during POST)
 		payload.DeviceInfo.Discovered = nil
 
-		if updateErr := device.UpdateDevice(consoleBaseURL, token, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint); updateErr != nil {
+		if updateErr := device.UpdateDevice(consoleBaseURL, token, ctx.TenantID, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint); updateErr != nil {
 			return fmt.Errorf("update also failed: %v", updateErr)
 		}
 
@@ -927,6 +928,7 @@ func (cmd *ActivateCmd) updateConsoleTLSSettings(ctx *commands.Context, consoleB
 	return device.UpdateDeviceTLSSettings(device.TLSSettingsUpdate{
 		ConsoleBaseURL:  consoleBaseURL,
 		Token:           token,
+		TenantID:        ctx.TenantID,
 		GUID:            guid,
 		Hostname:        hostname,
 		Username:        utils.AMTUserName,
