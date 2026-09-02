@@ -1,3 +1,14 @@
+# [3.0.0-beta.53](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.52...v3.0.0-beta.53) (2026-09-01)
+
+# [3.0.0-beta.52](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.51...v3.0.0-beta.52) (2026-08-31)
+
+
+### Bug Fixes
+
+* pass all passwords via environment variables ([#1474](https://github.com/device-management-toolkit/rpc-go/issues/1474)) ([da05083](https://github.com/device-management-toolkit/rpc-go/commit/da050833f25a495152ac5c0a26395e6374d5abba))
+
+# [3.0.0-beta.51](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.50...v3.0.0-beta.51) (2026-08-26)
+
 # [3.0.0-beta.50](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.49...v3.0.0-beta.50) (2026-08-20)
 
 

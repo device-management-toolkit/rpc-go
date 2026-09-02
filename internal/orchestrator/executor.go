@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const rpcExecutableName = "rpc"
@@ -40,14 +41,17 @@ func (e *ExecError) Unwrap() error { return e.Err }
 
 // CommandExecutor interface for executing commands
 type CommandExecutor interface {
-	Execute(args []string) error
+	// Execute runs a command with optional custom environment variables (env may be nil)
+	// without mutating the global process environment.
+	Execute(args []string, env map[string]string) error
 }
 
 // CLIExecutor executes commands using the CLI
 type CLIExecutor struct{}
 
-// Execute runs the RPC command with the given arguments
-func (e *CLIExecutor) Execute(args []string) error {
+// Execute runs the RPC command with the given arguments and optional custom environment variables.
+// Environment variables are passed per-subprocess without mutating the global process environment.
+func (e *CLIExecutor) Execute(args []string, env map[string]string) error {
 	// Get the current executable path
 	executable, err := os.Executable()
 	if err != nil {
@@ -66,6 +70,33 @@ func (e *CLIExecutor) Execute(args []string) error {
 	ctx := context.Background()
 
 	cmd := exec.CommandContext(ctx, executable, args...)
+
+	// Inherit the current process environment to preserve runtime settings, then
+	// overlay the explicitly supplied per-subprocess values.
+	cmd.Env = os.Environ()
+
+	if env == nil {
+		env = map[string]string{}
+	}
+
+	for k, v := range env {
+		prefix := k + "="
+		replaced := false
+
+		for i, existing := range cmd.Env {
+			if strings.HasPrefix(existing, prefix) {
+				cmd.Env[i] = fmt.Sprintf("%s%s", prefix, v)
+				replaced = true
+
+				break
+			}
+		}
+
+		if !replaced {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s%s", prefix, v))
+		}
+	}
+
 	// Capture output while still streaming to the console
 	var buf bytes.Buffer
 
@@ -91,13 +122,13 @@ func (e *CLIExecutor) Execute(args []string) error {
 
 // DirectExecutor executes commands directly (for testing or embedded use)
 type DirectExecutor struct {
-	ExecuteFunc func(args []string) error
+	ExecuteFunc func(args []string, env map[string]string) error
 }
 
 // Execute runs the command using the provided function
-func (e *DirectExecutor) Execute(args []string) error {
+func (e *DirectExecutor) Execute(args []string, env map[string]string) error {
 	if e.ExecuteFunc != nil {
-		return e.ExecuteFunc(args)
+		return e.ExecuteFunc(args, env)
 	}
 
 	return nil
