@@ -1,6 +1,6 @@
 module github.com/device-management-toolkit/rpc-go/v2
 
-go 1.25.0
+go 1.27.0
 
 // uncomment when developing locally
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
@@ -45,7 +45,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zalando/go-keyring v0.2.8 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 )
 
 require (
