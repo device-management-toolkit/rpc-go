@@ -103,6 +103,8 @@ func TestNewCompositeChain(t *testing.T) {
 }
 
 func TestNewRootCompositeKeyFailure(t *testing.T) {
+	// Go >= 1.26 ignores rand.Reader for key gen unless cryptocustomrand=1.
+	t.Setenv("GODEBUG", "cryptocustomrand=1")
 	swapEntropy(t, errorReader{})
 
 	composite, err := NewRootComposite()
@@ -115,6 +117,8 @@ func TestNewRootCompositeKeyFailure(t *testing.T) {
 // A discarded NewRootComposite error left a nil root cert and key, which
 // x509.CreateCertificate then dereferenced. Only the root generation fails here.
 func TestNewCompositeChainRootFailure(t *testing.T) {
+	// Go >= 1.26 ignores rand.Reader for key gen unless cryptocustomrand=1.
+	t.Setenv("GODEBUG", "cryptocustomrand=1")
 	swapEntropy(t, &failFirstKeyReader{original: rand.Reader})
 
 	var (
