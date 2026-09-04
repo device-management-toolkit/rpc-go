@@ -7,7 +7,9 @@ package utils
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -73,4 +75,55 @@ func parseMEIModuleVersionFromPath(modulePath string) (string, bool) {
 	}
 
 	return version, true
+}
+
+func getAdapterDHCPEnabled(interfaceName string) *bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "nmcli", "-g", "GENERAL.CONNECTION", "device", "show", interfaceName).Output()
+	if err != nil {
+		return nil
+	}
+
+	connectionName := strings.TrimSpace(string(out))
+	if connectionName == "" || connectionName == "--" {
+		return nil
+	}
+
+	out, err = exec.CommandContext(ctx, "nmcli", "-g", "ipv4.method", "connection", "show", connectionName).Output()
+	if err != nil {
+		return nil
+	}
+
+	method := strings.ToLower(strings.TrimSpace(string(out)))
+	if method == "" {
+		return nil
+	}
+
+	enabled := method == "auto"
+
+	return &enabled
+}
+
+func getAdapterDisplayName(interfaceName string) string {
+	devicePath, err := os.Readlink(filepath.Join("/sys/class/net", interfaceName, "device"))
+	if err != nil {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "lspci", "-D", "-s", filepath.Base(devicePath)).Output()
+	if err != nil {
+		return ""
+	}
+
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return ""
+	}
+
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(out)), fields[0]))
 }
