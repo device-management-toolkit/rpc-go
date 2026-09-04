@@ -1,0 +1,8 @@
+# Known findings from historical commits that are false positives / test-only
+# fixtures. These cannot be scrubbed without rewriting published git history, so
+# they are allowlisted by fingerprint instead. See CONTRIBUTING.MD before adding
+# new entries.
+da050833f25a495152ac5c0a26395e6374d5abba:internal/orchestrator/orchestrator.go:generic-api-key:39
+6050855f6a79127d0442f27d2401758660e77a39:pkg/configure/wired.go:generic-api-key:41
+6050855f6a79127d0442f27d2401758660e77a39:pkg/configure/wireless.go:generic-api-key:38
+00a0b7ebede2150bcf57c1e46b46a1cb39a470e4:internal/local/tls_test.go:generic-api-key:46
