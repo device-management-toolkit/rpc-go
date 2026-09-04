@@ -813,6 +813,53 @@ func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 	assert.Equal(t, 1, deleteCount, "expected one device DELETE on custom endpoint")
 }
 
+// A device missing from the console must not be recreated by the post-deactivation
+// sync only for the following DELETE to remove it again.
+func TestExecuteHttpConsoleDeactivate_MissingDeviceIsNotRecreated(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+	mockWSMAN.EXPECT().Unprovision(1).Return(setupandconfiguration.Response{}, nil)
+
+	var postCount, deleteCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/devices":
+			// Device is absent from the console.
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/devices":
+			postCount++
+
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/devices/test-guid":
+			deleteCount++
+
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cmd := &DeactivateCmd{URL: server.URL}
+	cmd.ControlMode = ControlModeACM
+	cmd.WSMan = mockWSMAN
+
+	ctx := &Context{AMTCommand: mockAMT, AMTPassword: "test-pass"}
+	ctx.AuthToken = "my-token"
+
+	err := cmd.executeHttpConsoleDeactivate(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, postCount, "missing device must not be re-registered before deletion")
+	assert.Equal(t, 1, deleteCount, "expected one device DELETE")
+}
+
 func TestDeactivateCmd_setupTLSConfig_ControlModePaths(t *testing.T) {
 	t.Run("TLS config in ACM with verification enabled", func(t *testing.T) {
 		cmd := &DeactivateCmd{}
