@@ -40,7 +40,7 @@ The HTTP-fullflow path is the v3 headline feature — orchestration moves from R
 
 ## Commands
 
-**Go 1.25+ required** (per `go.mod`). **Module path is `github.com/device-management-toolkit/rpc-go/v2`** — the `/v2` is historical (kept across the v3 release) and **all intra-repo imports use that prefix**. Don't try to "fix" it.
+**Go 1.27+ required** (per `go.mod`). **Module path is `github.com/device-management-toolkit/rpc-go/v2`** — the `/v2` is historical (kept across the v3 release) and **all intra-repo imports use that prefix**. Don't try to "fix" it.
 
 HECI/MEI access requires **administrator / root**. Local AMT commands (`amtinfo` excepted in degraded mode) fail with `IncorrectPermissions` when not elevated; on interactive terminals the CLI offers to self-elevate.
 
