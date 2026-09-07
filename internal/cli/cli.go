@@ -104,6 +104,10 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 		lipgloss.SetColorProfile(termenv.ColorProfile())
 	}
 
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{
+		Value: g.AMTPassword, EnvVar: "AMT_PASSWORD", FlagName: []string{"password"},
+	})
+
 	return nil
 }
 
@@ -136,6 +140,8 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	} else {
 		parseArgs = []string{}
 	}
+
+	defer commands.SetParsedCLIArgs(parseArgs)()
 
 	ctx, perr := parser.Parse(parseArgs)
 

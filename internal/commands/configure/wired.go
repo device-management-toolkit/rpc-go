@@ -13,6 +13,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -23,16 +24,16 @@ type WiredCmd struct {
 	// 802.1x settings
 	IEEE8021xProfileName            string `help:"802.1x profile name" name:"ieee8021xProfileName"`
 	IEEE8021xUsername               string `help:"802.1x username" alias:"username" name:"ieee8021xUsername"`
-	IEEE8021xPassword               string `help:"802.1x password" name:"ieee8021xPassword"`
+	IEEE8021xPassword               string `help:"802.1x password" env:"IEEE8021X_PASSWORD" name:"ieee8021xPassword"`
 	IEEE8021xAuthenticationProtocol int    `help:"802.1x authentication protocol (0=EAP-TLS, 2=PEAPv0/EAP-MSCHAPv2)" alias:"authenticationprotocol" enum:"0,2" default:"0" name:"ieee8021xAuthenticationProtocol"`
-	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" alias:"privatekey" name:"ieee8021xPrivateKey"`
-	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" alias:"clientcert" name:"ieee8021xClientCert"`
-	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" alias:"cacert" name:"ieee8021xCACert"`
+	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" env:"IEEE8021X_PRIVATE_KEY" alias:"privatekey" name:"ieee8021xPrivateKey"`
+	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" env:"IEEE8021X_CLIENT_CERT" alias:"clientcert" name:"ieee8021xClientCert"`
+	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" env:"IEEE8021X_CA_CERT" alias:"cacert" name:"ieee8021xCACert"`
 
 	// Enterprise Assistant settings
 	EAAddress  string `help:"Enterprise Assistant address" name:"eaAddress"`
 	EAUsername string `help:"Enterprise Assistant username" name:"eaUsername"`
-	EAPassword string `help:"Enterprise Assistant password" name:"eaPassword"`
+	EAPassword string `help:"Enterprise Assistant password" env:"EA_PASSWORD" name:"eaPassword"`
 
 	// Ethernet settings
 	DHCPEnabled   *bool  `help:"Enable DHCP" name:"dhcp"`
@@ -42,6 +43,23 @@ type WiredCmd struct {
 	Gateway       string `help:"Default gateway" name:"gateway"`
 	PrimaryDNS    string `help:"Primary DNS server" name:"primarydns"`
 	SecondaryDNS  string `help:"Secondary DNS server" name:"secondarydns"`
+}
+
+// AfterApply prints security warnings if sensitive values were passed via CLI flags.
+func (cmd *WiredCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(
+		commands.CredentialCLI{Value: cmd.EAPassword, EnvVar: "EA_PASSWORD", FlagName: []string{"eaPassword"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xPassword, EnvVar: "IEEE8021X_PASSWORD", FlagName: []string{"ieee8021xPassword"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xPrivateKey, EnvVar: "IEEE8021X_PRIVATE_KEY", FlagName: []string{"ieee8021xPrivateKey", "privatekey"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xClientCert, EnvVar: "IEEE8021X_CLIENT_CERT", FlagName: []string{"ieee8021xClientCert", "clientcert"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xCACert, EnvVar: "IEEE8021X_CA_CERT", FlagName: []string{"ieee8021xCACert", "cacert"}},
+	)
+
+	return nil
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
