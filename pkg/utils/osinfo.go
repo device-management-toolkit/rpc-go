@@ -40,10 +40,10 @@ type OSNetworkAdapters struct {
 	Wireless *OSNetworkInterface  `json:"wireless,omitempty"`
 }
 
-// PlatformAdapters summarizes platform adapter names.
+// PlatformAdapters summarizes platform adapter names by connection type.
 type PlatformAdapters struct {
-	Wired    string `json:"wired,omitempty"`
-	Wireless string `json:"wireless,omitempty"`
+	Wired    []string `json:"wired,omitempty"`
+	Wireless []string `json:"wireless,omitempty"`
 }
 
 // GetOSInfo returns the OS name, kernel/build version, and distro string.
@@ -198,7 +198,7 @@ func GetOSNetworkAdapters() OSNetworkAdapters {
 	return adapters
 }
 
-// GetPlatformAdapters returns a best-effort wired/wireless adapter name summary.
+// GetPlatformAdapters returns best-effort wired/wireless adapter display names.
 func GetPlatformAdapters() PlatformAdapters {
 	ifaces, err := gnet.Interfaces()
 	if err != nil {
@@ -214,15 +214,13 @@ func GetPlatformAdapters() PlatformAdapters {
 		}
 
 		if isWirelessAdapter(name) {
-			if adapters.Wireless == "" {
-				adapters.Wireless = adapterDisplayName(iface.Name)
-			}
+			adapters.Wireless = append(adapters.Wireless, adapterDisplayName(iface.Name))
 
 			continue
 		}
 
-		if isPhysicalEthernet(name) && adapters.Wired == "" {
-			adapters.Wired = adapterDisplayName(iface.Name)
+		if isPhysicalEthernet(name) {
+			adapters.Wired = append(adapters.Wired, adapterDisplayName(iface.Name))
 		}
 	}
 

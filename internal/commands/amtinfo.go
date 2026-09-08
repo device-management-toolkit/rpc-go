@@ -920,6 +920,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	}
 
 	info.MENetwork = buildSyncMENetwork(result)
+	log.Debugf("Collected ME network information: %+v", info.MENetwork)
 
 	// Certificate hashes (extract hash strings)
 	if result.CertificateHashes != nil {
@@ -1003,10 +1004,14 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 		info.OSNetwork = &osNetwork
 	}
 
+	log.Debugf("Collected OS network information: %+v", info.OSNetwork)
+
 	platformAdapters := utils.GetPlatformAdapters()
-	if platformAdapters.Wired != "" || platformAdapters.Wireless != "" {
+	if len(platformAdapters.Wired) > 0 || len(platformAdapters.Wireless) > 0 {
 		info.PlatformAdapters = &platformAdapters
 	}
+
+	log.Debugf("Collected platform adapter information: %+v", info.PlatformAdapters)
 
 	monitorConnected := statusUnknown
 	if info.MonitorConnected != nil {
