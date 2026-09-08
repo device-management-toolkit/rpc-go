@@ -12,6 +12,10 @@ func GetMEIDriverVersion() string {
 	return ""
 }
 
+func isWirelessInterface(name string) bool {
+	return isWirelessAdapter(name)
+}
+
 func getAdapterDHCPEnabled(string) *bool {
 	return nil
 }

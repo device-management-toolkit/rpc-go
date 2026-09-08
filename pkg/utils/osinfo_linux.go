@@ -77,6 +77,16 @@ func parseMEIModuleVersionFromPath(modulePath string) (string, bool) {
 	return version, true
 }
 
+func isWirelessInterface(name string) bool {
+	if isWirelessAdapter(name) {
+		return true
+	}
+
+	_, err := os.Stat(filepath.Join("/sys/class/net", name, "wireless"))
+
+	return err == nil
+}
+
 func getAdapterDHCPEnabled(interfaceName string) *bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -53,6 +53,10 @@ func GetMEIDriverVersion() string {
 	return strings.TrimSpace(string(out))
 }
 
+func isWirelessInterface(name string) bool {
+	return isWirelessAdapter(name)
+}
+
 func getAdapterDHCPEnabled(interfaceName string) *bool {
 	ctx, cancel := context.WithTimeout(context.Background(), osInfoTimeout)
 	defer cancel()

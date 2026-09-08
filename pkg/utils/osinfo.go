@@ -169,7 +169,7 @@ func GetOSNetworkAdapters() OSNetworkAdapters {
 			continue
 		}
 
-		wireless := isWirelessAdapter(name)
+		wireless := isWirelessInterface(iface.Name)
 
 		wired := isPhysicalEthernet(name)
 		if !wireless && !wired {
@@ -213,7 +213,7 @@ func GetPlatformAdapters() PlatformAdapters {
 			continue
 		}
 
-		if isWirelessAdapter(name) {
+		if isWirelessInterface(iface.Name) {
 			adapters.Wireless = append(adapters.Wireless, adapterDisplayName(iface.Name))
 
 			continue
@@ -289,6 +289,8 @@ func isPhysicalEthernet(name string) bool {
 }
 
 func isWirelessAdapter(name string) bool {
+	name = strings.ToLower(name)
+
 	return strings.HasPrefix(name, "wl") ||
 		strings.HasPrefix(name, "wlan") ||
 		strings.Contains(name, "wi-fi") ||
@@ -296,7 +298,7 @@ func isWirelessAdapter(name string) bool {
 		strings.Contains(name, "wireless")
 }
 
-// GetEthernetAdapterCount returns the number of physical ethernet adapters.
+// GetEthernetAdapterCount returns the number of physical wired and wireless adapters.
 func GetEthernetAdapterCount() int {
 	ifaces, err := gnet.Interfaces()
 	if err != nil {
@@ -307,11 +309,11 @@ func GetEthernetAdapterCount() int {
 
 	for _, iface := range ifaces {
 		name := strings.ToLower(iface.Name)
-		if name == loopbackInterfaceName || strings.Contains(name, "loopback") || iface.HardwareAddr == "" {
+		if name == loopbackInterfaceName || strings.Contains(name, "loopback") || iface.HardwareAddr == "" || isVirtualAdapter(name) {
 			continue
 		}
 
-		if isPhysicalEthernet(name) {
+		if isPhysicalEthernet(name) || isWirelessInterface(iface.Name) {
 			count++
 		}
 	}
