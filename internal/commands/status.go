@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,10 +37,10 @@ const (
 	linkReadinessCheckLabel = "AMT wired/wireless link"
 	// linkStatusUp is the AMT-reported value compared against; the display uses
 	// the connected/disconnected wording below.
-	linkStatusUp     = "up"
-	linkConnected    = "connected"
-	linkDisconnected = "disconnected"
-	meVersionTimeout = 10 * time.Second
+	linkStatusUp        = "up"
+	linkConnected       = "connected"
+	meVersionTimeout    = 10 * time.Second
+	adapterQueryTimeout = 2 * time.Second
 )
 
 // statusDialTCP attempts a TCP connection and reports whether it succeeded.
@@ -95,6 +96,15 @@ const (
 	connectionModeCIRA        = "CIRA"
 	errReadAMTVersion         = "could not read AMT version"
 	userConsentAll            = ^uint32(0)
+	deviceTypeISM             = "Intel Standard Manageability"
+	osWindows                 = "windows"
+)
+
+// Labels shared between the check implementations and the gather post-processing.
+const (
+	labelLocalWSMANSession = "Local WSMAN session"
+	labelTLSTrust          = "TLS configuration / trust inventory"
+	labelFeaturePolicy     = "Redirection / consent baseline"
 )
 
 // symbol renders the colored status glyph for the check state.
@@ -121,8 +131,8 @@ type healthCheck struct {
 	detail string
 }
 
-// StatusResult is the machine-readable result of the status command.
-type StatusResult struct {
+// statusResult is the machine-readable result of the status command.
+type statusResult struct {
 	Command                string `json:"command,omitempty"`
 	PasswordProvided       bool   `json:"passwordProvided,omitempty"`
 	MEIDriverPresent       bool   `json:"meiDriverPresent"`
@@ -189,6 +199,7 @@ type statusJSONEvaluation struct {
 	DetectedState          string `json:"detectedState"`
 	SelectedCheckSet       string `json:"selectedCheckSet"`
 	PasswordContext        string `json:"passwordContext,omitempty"`
+	DeviceType             string `json:"deviceType,omitempty"`
 	WiredAdapterName       string `json:"wiredAdapterName"`
 	WirelessAdapterName    string `json:"wirelessAdapterName"`
 	OverallResult          string `json:"overallResult"`
@@ -347,8 +358,8 @@ func (cmd *StatusCmd) preparePostActivationWSMAN(ctx *Context) {
 }
 
 // gather runs every readiness check and computes the overall verdict.
-func (cmd *StatusCmd) gather(ctx *Context) (StatusResult, []healthCheck) {
-	result := StatusResult{
+func (cmd *StatusCmd) gather(ctx *Context) (statusResult, []healthCheck) {
+	result := statusResult{
 		Command:          "status",
 		PasswordProvided: strings.TrimSpace(ctx.AMTPassword) != "",
 	}
@@ -369,55 +380,102 @@ func (cmd *StatusCmd) gather(ctx *Context) (StatusResult, []healthCheck) {
 	return cmd.gatherPreActivation(ctx, result, controlMode, profile)
 }
 
-func (cmd *StatusCmd) gatherPreActivation(ctx *Context, result StatusResult, controlMode healthCheck, profile statusCheckProfile) (StatusResult, []healthCheck) {
-	checks := make([]healthCheck, 0, 10)
+// statusCheckStep is one entry in the ordered check table executed by the
+// gather functions. New checks are added by inserting a row in the table.
+type statusCheckStep struct {
+	// run performs the check and returns the row to report.
+	run func() healthCheck
+	// skip, when set and true, omits the step entirely (check not applicable).
+	skip func() bool
+	// stopOnFail aborts the remaining steps when this check fails.
+	stopOnFail bool
+	// stopAfter, when set and true, aborts the remaining steps after this check
+	// ran regardless of its state.
+	stopAfter func() bool
+}
 
-	admin := cmd.adminCheck()
+// runCheckSteps executes the table in order and reports whether it was aborted
+// early by a stopOnFail failure or a stopAfter guard.
+func runCheckSteps(steps []statusCheckStep) (checks []healthCheck, stopped bool) {
+	checks = make([]healthCheck, 0, len(steps))
 
-	checks = append(checks, admin)
-	if admin.state == checkFail {
+	for _, step := range steps {
+		if step.skip != nil && step.skip() {
+			continue
+		}
+
+		check := step.run()
+		checks = append(checks, check)
+
+		if step.stopOnFail && check.state == checkFail {
+			return checks, true
+		}
+
+		if step.stopAfter != nil && step.stopAfter() {
+			return checks, true
+		}
+	}
+
+	return checks, false
+}
+
+func findCheck(checks []healthCheck, label string) (healthCheck, bool) {
+	for _, c := range checks {
+		if c.label == label {
+			return c, true
+		}
+	}
+
+	return healthCheck{}, false
+}
+
+// isISMDevice reports whether the decoded SKU is Intel Standard Manageability,
+// which lacks KVM and One-Click Recovery.
+func isISMDevice(deviceType string) bool {
+	return strings.Contains(deviceType, deviceTypeISM)
+}
+
+// isEligiblePlatform reports whether the detected SKU can be provisioned at all.
+// An empty device type means detection did not run, which is not a disqualifier.
+func isEligiblePlatform(deviceType string) bool {
+	if deviceType == "" {
+		return true
+	}
+
+	return strings.Contains(deviceType, "AMT Pro") || isISMDevice(deviceType)
+}
+
+func (cmd *StatusCmd) gatherPreActivation(ctx *Context, result statusResult, controlMode healthCheck, profile statusCheckProfile) (statusResult, []healthCheck) {
+	steps := []statusCheckStep{
+		{run: cmd.adminCheck, stopOnFail: true},
+		{run: func() healthCheck { return cmd.meiCheck(&result) }, stopOnFail: true},
+		{
+			run:        func() healthCheck { return cmd.deviceTypeCheck(ctx, &result) },
+			stopOnFail: true,
+			// Non-vPro: device identified but not eligible – stop before remaining checks.
+			stopAfter: func() bool { return !isEligiblePlatform(result.DeviceType) },
+		},
+		{run: func() healthCheck { return cmd.amtEnabledInBIOSCheck(ctx, &result) }},
+		{run: func() healthCheck { return cmd.amtVersionCheck(ctx, &result) }},
+		{run: func() healthCheck { return cmd.dnsSuffixCheckForProfile(ctx, &result, profile) }},
+		{run: func() healthCheck { return cmd.linkReadinessCheck(ctx, &result, profile) }},
+		{run: func() healthCheck { return cmd.lmsCheck(&result) }},
+		{run: func() healthCheck { return controlMode }},
+		{
+			skip: func() bool { return strings.TrimSpace(cmd.Host) == "" },
+			run: func() healthCheck {
+				check, _ := cmd.hostCheck(&result)
+
+				return check
+			},
+		},
+	}
+
+	checks, stopped := runCheckSteps(steps)
+	if stopped {
 		result.ReadyToProvision = false
 
 		return result, checks
-	}
-
-	mei := cmd.meiCheck(&result)
-
-	checks = append(checks, mei)
-	if mei.state == checkFail {
-		result.ReadyToProvision = false
-
-		return result, checks
-	}
-
-	platform := cmd.deviceTypeCheck(ctx, &result)
-	checks = append(checks, platform)
-	// Non-vPro: device identified but not eligible – stop before remaining checks.
-	if result.DeviceType != "" &&
-		!strings.Contains(result.DeviceType, "AMT Pro") &&
-		!strings.Contains(result.DeviceType, "Intel Standard Manageability") {
-		result.ReadyToProvision = false
-
-		return result, checks
-	}
-
-	if platform.state == checkFail {
-		result.ReadyToProvision = false
-
-		return result, checks
-	}
-
-	checks = append(checks,
-		cmd.amtEnabledInBIOSCheck(&result),
-		cmd.amtVersionCheck(ctx, &result),
-		cmd.dnsSuffixCheckForProfile(ctx, &result, profile),
-		cmd.linkReadinessCheck(ctx, &result, profile),
-		cmd.lmsCheck(&result),
-		controlMode,
-	)
-
-	if hostCheck, ok := cmd.hostCheck(&result); ok {
-		checks = append(checks, hostCheck)
 	}
 
 	result.ReadyToProvision = !hasProvisioningBlockingFailure(checks, profile)
@@ -425,72 +483,58 @@ func (cmd *StatusCmd) gatherPreActivation(ctx *Context, result StatusResult, con
 	return result, checks
 }
 
-func (cmd *StatusCmd) gatherPostActivation(ctx *Context, result StatusResult, profile statusCheckProfile) (StatusResult, []healthCheck) {
-	checks := make([]healthCheck, 0, 16)
-
-	admin := cmd.adminCheck()
-
-	checks = append(checks, admin)
-	if admin.state == checkFail {
-		result.ManageableInProduction = false
-
-		return result, checks
-	}
-
-	mei := cmd.meiCheck(&result)
-
-	checks = append(checks, mei)
-	if mei.state == checkFail {
-		result.ManageableInProduction = false
-
-		return result, checks
-	}
-
-	checks = append(checks,
-		cmd.deviceTypeCheck(ctx, &result),
-		cmd.amtEnabledInBIOSCheck(&result),
-		cmd.amtVersionCheck(ctx, &result),
-		cmd.dnsSuffixCheckForProfile(ctx, &result, profile),
-		cmd.linkReadinessCheck(ctx, &result, profile),
-		cmd.lmsCheck(&result),
-		cmd.modeAlignmentCheck(profile, result),
+func (cmd *StatusCmd) gatherPostActivation(ctx *Context, result statusResult, profile statusCheckProfile) (statusResult, []healthCheck) {
+	var (
+		redirection     redirectionSnapshot
+		redirectionOnce sync.Once
 	)
 
-	activated := cmd.activatedStateCheck(&result)
-	wsman := cmd.wsmanAccessCheck(&result)
-	connection := cmd.connectionModeCheck(ctx, &result)
-	tlsTrust := cmd.tlsTrustCheck(&result)
-	redirection := cmd.readRedirectionSnapshot()
-	featurePolicy := cmd.featurePolicyCheck(&result, redirection)
-	remoteManageability := cmd.remoteManageabilityCheck(&result)
-	cmd.monitorCheck(&result) // populate result.MonitorConnected for kvmCheck; not a separate output row
-	kvm := cmd.kvmCheck(&result, redirection)
+	getRedirection := func() redirectionSnapshot {
+		redirectionOnce.Do(func() { redirection = cmd.readRedirectionSnapshot() })
 
-	checks = append(checks,
-		activated,
-		wsman,
-		connection,
-	)
-
-	// CIRA checks are only relevant when the device is using CIRA mode.
-	if result.ConnectionMode != connectionModeDirect {
-		checks = append(checks,
-			cmd.ciraConfigCheck(&result),
-			cmd.ciraConnectionCheck(&result),
-			cmd.ciraPrerequisitesCheck(&result),
-		)
+		return redirection
 	}
 
-	checks = append(checks,
-		tlsTrust,
-		featurePolicy,
-		remoteManageability,
-		cmd.ocrBIOSCheck(&result),
-		kvm,
-	)
+	// CIRA rows only apply when the device is not directly connected.
+	skipCIRA := func() bool { return result.ConnectionMode == connectionModeDirect }
+
+	steps := []statusCheckStep{
+		{run: cmd.adminCheck, stopOnFail: true},
+		{run: func() healthCheck { return cmd.meiCheck(&result) }, stopOnFail: true},
+		{run: func() healthCheck { return cmd.deviceTypeCheck(ctx, &result) }},
+		{run: func() healthCheck { return cmd.amtEnabledInBIOSCheck(ctx, &result) }},
+		{run: func() healthCheck { return cmd.amtVersionCheck(ctx, &result) }},
+		{run: func() healthCheck { return cmd.dnsSuffixCheckForProfile(ctx, &result, profile) }},
+		{run: func() healthCheck { return cmd.linkReadinessCheck(ctx, &result, profile) }},
+		{run: func() healthCheck { return cmd.lmsCheck(&result) }},
+		{run: func() healthCheck { return cmd.modeAlignmentCheck(profile, result) }},
+		{run: func() healthCheck { return cmd.activatedStateCheck(&result) }},
+		{run: func() healthCheck { return cmd.wsmanAccessCheck(&result) }},
+		{run: func() healthCheck { return cmd.connectionModeCheck(ctx, &result) }},
+		{skip: skipCIRA, run: func() healthCheck { return cmd.ciraConfigCheck(&result) }},
+		{skip: skipCIRA, run: func() healthCheck { return cmd.ciraConnectionCheck(&result) }},
+		{skip: skipCIRA, run: func() healthCheck { return cmd.ciraPrerequisitesCheck(&result) }},
+		{run: func() healthCheck { return cmd.tlsTrustCheck(&result) }},
+		{run: func() healthCheck { return cmd.featurePolicyCheck(&result, getRedirection()) }},
+		{run: func() healthCheck { return cmd.remoteManageabilityCheck(&result) }},
+		{run: func() healthCheck { return cmd.ocrBIOSCheck(&result) }},
+		{run: func() healthCheck { return cmd.kvmCheck(&result, getRedirection()) }},
+	}
+
+	// KVM reporting needs the OS monitor state, which is not a check row of its own.
+	cmd.detectMonitorState(&result)
+
+	checks, stopped := runCheckSteps(steps)
 
 	result.ManageableInProduction = result.MEIDriverPresent && result.AlreadyActivated
+	if stopped {
+		result.ManageableInProduction = false
+
+		return result, checks
+	}
+
 	if result.WSMANAvailable == nil || !*result.WSMANAvailable {
+		wsman, _ := findCheck(checks, labelLocalWSMANSession)
 		result.PartialEvaluation = true
 		result.PartialReason = wsman.detail
 		result.ManageableInProduction = false
@@ -509,11 +553,11 @@ func (cmd *StatusCmd) gatherPostActivation(ctx *Context, result StatusResult, pr
 		result.ManageableInProduction = false
 	}
 
-	if tlsTrust.state != checkPass {
+	if tlsTrust, ok := findCheck(checks, labelTLSTrust); ok && tlsTrust.state != checkPass {
 		result.ManageableInProduction = false
 	}
 
-	if featurePolicy.state != checkPass {
+	if featurePolicy, ok := findCheck(checks, labelFeaturePolicy); ok && featurePolicy.state != checkPass {
 		result.ManageableInProduction = false
 	}
 
@@ -600,7 +644,7 @@ func groupChecksByState(checks []healthCheck) map[checkState][]healthCheck {
 	return grouped
 }
 
-func (cmd *StatusCmd) activatedStateCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) activatedStateCheck(result *statusResult) healthCheck {
 	const label = "AMT activated state"
 
 	if !result.AlreadyActivated {
@@ -618,8 +662,8 @@ func (cmd *StatusCmd) activatedStateCheck(result *StatusResult) healthCheck {
 	return healthCheck{label, checkPass, "AMT activated state: " + result.ControlMode}
 }
 
-func (cmd *StatusCmd) wsmanAccessCheck(result *StatusResult) healthCheck {
-	const label = "Local WSMAN session"
+func (cmd *StatusCmd) wsmanAccessCheck(result *statusResult) healthCheck {
+	const label = labelLocalWSMANSession
 
 	available := cmd.WSMan != nil
 	result.WSMANAvailable = &available
@@ -646,7 +690,7 @@ func (cmd *StatusCmd) adminCheck() healthCheck {
 }
 
 // meiCheck reports whether the MEI/HECI driver is present (i.e. this is an AMT device).
-func (cmd *StatusCmd) meiCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) meiCheck(result *statusResult) healthCheck {
 	const label = "MEI driver"
 
 	result.MEIDriverPresent = cmd.HECIAvailable
@@ -685,20 +729,38 @@ func isNonAMTPlatformHECIErrorText(msg string) bool {
 	return strings.Contains(msg, "inappropriate ioctl for device") || strings.Contains(msg, "inappropriate ioctl")
 }
 
-func (cmd *StatusCmd) amtEnabledInBIOSCheck(result *StatusResult) healthCheck {
+// amtEnabledInBIOSCheck reports whether AMT is enabled in BIOS/MEBx. HECI
+// availability alone only proves the MEI driver responds, so the AMT
+// operational state is read from the ME when the firmware exposes it (ME 16.1+);
+// older firmware has no such query and falls back to HECI reachability.
+func (cmd *StatusCmd) amtEnabledInBIOSCheck(ctx *Context, result *statusResult) healthCheck {
 	const label = "MEBx enabled in BIOS"
 
-	enabled := cmd.HECIAvailable
-	result.AMTEnabledInBIOS = &enabled
+	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
+		disabled := false
+		result.AMTEnabledInBIOS = &disabled
 
-	if enabled {
-		return healthCheck{label, checkPass, "MEBx enabled in BIOS"}
+		return healthCheck{label, checkFail, "MEBx disabled in BIOS"}
 	}
 
-	return healthCheck{label, checkFail, "MEBx disabled in BIOS"}
+	if state, err := ctx.AMTCommand.GetChangeEnabled(); err == nil && state.IsNewInterfaceVersion() {
+		enabled := state.IsAMTEnabled()
+		result.AMTEnabledInBIOS = &enabled
+
+		if enabled {
+			return healthCheck{label, checkPass, "MEBx enabled in BIOS"}
+		}
+
+		return healthCheck{label, checkFail, "AMT is disabled in BIOS/MEBx"}
+	}
+
+	enabled := true
+	result.AMTEnabledInBIOS = &enabled
+
+	return healthCheck{label, checkPass, "MEBx enabled in BIOS"}
 }
 
-func (cmd *StatusCmd) amtVersionCheck(ctx *Context, result *StatusResult) healthCheck {
+func (cmd *StatusCmd) amtVersionCheck(ctx *Context, result *statusResult) healthCheck {
 	const label = "AMT version"
 
 	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
@@ -743,7 +805,7 @@ func parseMajorVersion(version string) int {
 // controlModeCheck reports the activation state. Pre-provisioning (control
 // mode 0) is the green, ready-to-activate state; an already-activated device
 // (CCM/ACM) is flagged so the verdict reports it rather than "ready".
-func (cmd *StatusCmd) controlModeCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) controlModeCheck(result *statusResult) healthCheck {
 	const label = "AMT activated state"
 
 	if !cmd.HECIAvailable {
@@ -769,7 +831,7 @@ func (cmd *StatusCmd) controlModeCheck(result *StatusResult) healthCheck {
 // dnsSuffixCheck validates AMT DNS suffix baseline for ACM workflows.
 // AMT suffix must be configured; OS mismatch is a warning because valid
 // environments can provision with a cert/profile domain independent of host OS.
-func (cmd *StatusCmd) dnsSuffixCheck(ctx *Context, result *StatusResult) healthCheck {
+func (cmd *StatusCmd) dnsSuffixCheck(ctx *Context, result *statusResult) healthCheck {
 	const label = dnsSuffixCheckLabel
 
 	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
@@ -809,7 +871,7 @@ func (cmd *StatusCmd) dnsSuffixCheck(ctx *Context, result *StatusResult) healthC
 	return healthCheck{label, checkWarn, "AMT=" + result.AMTDNSSuffix + " OS=" + result.OSDNSSuffix + " (verify provisioning cert/profile domain alignment)"}
 }
 
-func (cmd *StatusCmd) dnsSuffixCheckForProfile(ctx *Context, result *StatusResult, profile statusCheckProfile) healthCheck {
+func (cmd *StatusCmd) dnsSuffixCheckForProfile(ctx *Context, result *statusResult, profile statusCheckProfile) healthCheck {
 	check := cmd.dnsSuffixCheck(ctx, result)
 	if profile == statusProfileACM {
 		return check
@@ -826,7 +888,7 @@ func (cmd *StatusCmd) dnsSuffixCheckForProfile(ctx *Context, result *StatusResul
 // deviceTypeCheck reports whether the device is a full AMT vPro or a limited
 // Intel Standard Manageability (ISM) product. ISM lacks KVM, SOL, and other
 // advanced provisioning capabilities.
-func (cmd *StatusCmd) deviceTypeCheck(ctx *Context, result *StatusResult) healthCheck {
+func (cmd *StatusCmd) deviceTypeCheck(ctx *Context, result *statusResult) healthCheck {
 	const label = "Platform type"
 
 	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
@@ -863,7 +925,7 @@ func (cmd *StatusCmd) deviceTypeCheck(ctx *Context, result *StatusResult) health
 	switch {
 	case strings.Contains(features, "AMT Pro"):
 		return healthCheck{label, checkPass, "Platform type: vPro"}
-	case strings.Contains(features, "Intel Standard Manageability"):
+	case strings.Contains(features, deviceTypeISM):
 		return healthCheck{label, checkPass, "Platform type: ISM"}
 	default:
 		return healthCheck{label, checkPass, "Platform type: non-vPro, contact Intel for manual checks"}
@@ -873,7 +935,7 @@ func (cmd *StatusCmd) deviceTypeCheck(ctx *Context, result *StatusResult) health
 // lmsCheck reports whether the Local Manageability Service is listening locally.
 // LMS serves the plain port (16992) and, on TLS-enforced devices, the TLS port
 // (16993); either being open means LMS is present.
-func (cmd *StatusCmd) lmsCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) lmsCheck(result *statusResult) healthCheck {
 	const label = "LMS (Local Manageability Service)"
 
 	_, ok := lmsReachable()
@@ -896,7 +958,7 @@ func (cmd *StatusCmd) lmsCheck(result *StatusResult) healthCheck {
 }
 
 // linkReadinessCheck evaluates wired/wireless readiness using the matrix semantics.
-func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, profile statusCheckProfile) healthCheck {
+func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *statusResult, profile statusCheckProfile) healthCheck {
 	const label = linkReadinessCheckLabel
 
 	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
@@ -929,6 +991,10 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, pro
 		result.WirelessAdapterName = interfaceNameForMAC(wireless.MACAddress)
 	}
 
+	if result.WirelessAdapterName == "" {
+		result.WirelessAdapterName = osWirelessInterfaceName()
+	}
+
 	result.WiredLinkUp = strings.EqualFold(wired.LinkStatus, linkStatusUp)
 	result.WirelessLinkUp = strings.EqualFold(wireless.LinkStatus, linkStatusUp)
 
@@ -959,7 +1025,7 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *StatusResult, pro
 	return healthCheck{label, checkFail, "Wired link is down. ACM activation cannot be done"}
 }
 
-func (cmd *StatusCmd) modeAlignmentCheck(profile statusCheckProfile, result StatusResult) healthCheck {
+func (cmd *StatusCmd) modeAlignmentCheck(profile statusCheckProfile, result statusResult) healthCheck {
 	const label = "Requested mode alignment"
 
 	if profile == statusProfileAuto {
@@ -981,7 +1047,7 @@ func (cmd *StatusCmd) modeAlignmentCheck(profile statusCheckProfile, result Stat
 	return healthCheck{label, checkFail, "--ccm/--cm requested but device is not in Client Control Mode"}
 }
 
-func (cmd *StatusCmd) connectionModeCheck(ctx *Context, result *StatusResult) healthCheck {
+func (cmd *StatusCmd) connectionModeCheck(ctx *Context, result *statusResult) healthCheck {
 	const label = "AMT Connection Mode"
 
 	if !cmd.HECIAvailable || ctx.AMTCommand == nil {
@@ -1023,8 +1089,13 @@ func (cmd *StatusCmd) connectionModeCheck(ctx *Context, result *StatusResult) he
 	}
 }
 
-func (cmd *StatusCmd) tlsTrustCheck(result *StatusResult) healthCheck {
-	const label = "TLS configuration / trust inventory"
+// tlsTrustCheck reports how the AMT management interface is secured. It reads
+// AMT_TLSSettingData for the 802.3 (wired) interface to derive the effective TLS
+// mode (None / Server / Mutual / ...) and counts the trusted root certificates
+// in the AMT certificate store. TLS disabled, or mutual TLS with an empty trust
+// store, means remote consoles cannot establish a trusted session.
+func (cmd *StatusCmd) tlsTrustCheck(result *statusResult) healthCheck {
+	const label = labelTLSTrust
 
 	if cmd.WSMan == nil {
 		return healthCheck{label, checkUnavailable, skipWSMANRequired}
@@ -1101,8 +1172,8 @@ func (cmd *StatusCmd) readRedirectionSnapshot() redirectionSnapshot {
 	}
 }
 
-func (cmd *StatusCmd) featurePolicyCheck(result *StatusResult, redirection redirectionSnapshot) healthCheck {
-	const label = "Redirection / consent baseline"
+func (cmd *StatusCmd) featurePolicyCheck(result *statusResult, redirection redirectionSnapshot) healthCheck {
+	const label = labelFeaturePolicy
 
 	if cmd.WSMan == nil {
 		return healthCheck{label, checkUnavailable, skipWSMANRequired}
@@ -1144,7 +1215,7 @@ func (cmd *StatusCmd) featurePolicyCheck(result *StatusResult, redirection redir
 	return healthCheck{label, state, strings.Join(parts, ", ")}
 }
 
-func (cmd *StatusCmd) remoteManageabilityCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) remoteManageabilityCheck(result *statusResult) healthCheck {
 	const label = "Management endpoint reachability"
 
 	target := ""
@@ -1191,7 +1262,7 @@ func (cmd *StatusCmd) remoteManageabilityCheck(result *StatusResult) healthCheck
 	return healthCheck{label, checkFail, source + " unreachable from device at " + target}
 }
 
-func (cmd *StatusCmd) ciraConfigCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) ciraConfigCheck(result *statusResult) healthCheck {
 	const label = "CIRA configuration"
 
 	if cmd.WSMan == nil {
@@ -1228,7 +1299,7 @@ func (cmd *StatusCmd) ciraConfigCheck(result *StatusResult) healthCheck {
 	return healthCheck{label, checkWarn, "no CIRA policy/MPS mapping found"}
 }
 
-func (cmd *StatusCmd) ciraConnectionCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) ciraConnectionCheck(result *statusResult) healthCheck {
 	const label = "CIRA connected"
 
 	if result.ConnectionMode != connectionModeCIRA {
@@ -1246,7 +1317,7 @@ func (cmd *StatusCmd) ciraConnectionCheck(result *StatusResult) healthCheck {
 	return healthCheck{label, checkFail, "CIRA tunnel not active — device unreachable via CIRA"}
 }
 
-func (cmd *StatusCmd) ciraPrerequisitesCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) ciraPrerequisitesCheck(result *statusResult) healthCheck {
 	const label = "CIRA prerequisites"
 
 	if cmd.WSMan == nil {
@@ -1268,12 +1339,12 @@ func (cmd *StatusCmd) ciraPrerequisitesCheck(result *StatusResult) healthCheck {
 	return healthCheck{label, checkWarn, "environment detection not configured"}
 }
 
-func (cmd *StatusCmd) ocrBIOSCheck(result *StatusResult) healthCheck {
+func (cmd *StatusCmd) ocrBIOSCheck(result *statusResult) healthCheck {
 	const label = "OCR enabled in BIOS"
 
-	if strings.Contains(result.DeviceType, "Intel Standard Manageability") {
-		notSupported := false
-		result.OCRBIOSVerified = &notSupported
+	if isISMDevice(result.DeviceType) {
+		// Left nil rather than false: the feature is absent on this SKU, not disabled.
+		result.OCRBIOSVerified = nil
 
 		return healthCheck{label, checkPass, "OCR not supported, ISM Device"}
 	}
@@ -1308,28 +1379,16 @@ func isOCREnabled(bootSettings wsmanboot.Response) bool {
 	return b.UEFIHTTPSBootEnabled || b.UEFILocalPBABootEnabled || b.WinREBootEnabled
 }
 
-func (cmd *StatusCmd) monitorCheck(result *StatusResult) healthCheck {
-	const label = "Monitor connected for KVM"
-
-	connected := statusDetectMonitorConnected()
-	result.MonitorConnected = connected
-
-	if connected == nil {
-		return healthCheck{label, checkSkip, "could not determine monitor state"}
-	}
-
-	if *connected {
-		// physical display detected via OS DRM subsystem (/sys/class/drm)
-		return healthCheck{label, checkPass, "physical display detected"}
-	}
-
-	return healthCheck{label, checkWarn, "no physical display detected"}
+// detectMonitorState records whether a physical display is attached (via the OS
+// DRM subsystem on Linux). It feeds kvmCheck rather than producing its own row.
+func (cmd *StatusCmd) detectMonitorState(result *statusResult) {
+	result.MonitorConnected = statusDetectMonitorConnected()
 }
 
-func (cmd *StatusCmd) kvmCheck(result *StatusResult, redirection redirectionSnapshot) healthCheck {
+func (cmd *StatusCmd) kvmCheck(result *statusResult, redirection redirectionSnapshot) healthCheck {
 	const label = "KVM enabled"
 
-	if strings.Contains(result.DeviceType, "Intel Standard Manageability") {
+	if isISMDevice(result.DeviceType) {
 		result.KVMEnabled = nil
 
 		return healthCheck{label, checkPass, "KVM not supported, ISM Device"}
@@ -1364,7 +1423,7 @@ func (cmd *StatusCmd) kvmCheck(result *StatusResult, redirection redirectionSnap
 // return reports whether a host was provided (and therefore a check produced).
 // Reachability gates manageability, not provisioning, so an unreachable host
 // is a warning rather than a failure.
-func (cmd *StatusCmd) hostCheck(result *StatusResult) (healthCheck, bool) {
+func (cmd *StatusCmd) hostCheck(result *statusResult) (healthCheck, bool) {
 	if strings.TrimSpace(cmd.Host) == "" {
 		return healthCheck{}, false
 	}
@@ -1462,7 +1521,7 @@ func formatUserConsent(optInRequired uint32) string {
 // renderStatus writes the human-readable readiness report. Labels are padded
 // to a common width (measured, not forced via lipgloss Width which would wrap
 // long labels) so the detail column lines up.
-func renderStatus(w io.Writer, result StatusResult, checks []healthCheck) {
+func renderStatus(w io.Writer, result statusResult, checks []healthCheck) {
 	var b strings.Builder
 
 	postActivation := isPostActivationSelected(result.SelectedCheckSet)
@@ -1507,9 +1566,11 @@ func renderStatus(w io.Writer, result StatusResult, checks []healthCheck) {
 		b.WriteString("Not verified\n")
 
 		for _, c := range notVerified {
-			line := c.detail
-			if strings.TrimSpace(line) == "" {
-				line = c.label
+			// Not-verified details are often the same generic reason for several
+			// checks, so prefix the label to keep the rows distinguishable.
+			line := c.label
+			if strings.TrimSpace(c.detail) != "" {
+				line += ": " + c.detail
 			}
 
 			b.WriteString(infoIndent + c.state.symbol() + " " + line + "\n")
@@ -1548,7 +1609,7 @@ func filterChecksByState(checks []healthCheck, state checkState) []healthCheck {
 func fallbackValue(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return "<unavailable>"
+		return "Not detected"
 	}
 
 	return v
@@ -1578,58 +1639,193 @@ func interfaceNameForMAC(mac string) string {
 	return ""
 }
 
+// pciAdapterNames returns the wired and wireless network adapter product names
+// reported by the OS. Results are cached because the lookup shells out.
 func pciAdapterNames() (string, string) {
-	if runtime.GOOS != "linux" {
-		return "", ""
-	}
-
 	statusPCIControllersOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, "lspci")
-
-		out, err := cmd.Output()
-		if err != nil {
-			return
-		}
-
-		lines := strings.Split(string(out), "\n")
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-
-			lower := strings.ToLower(trimmed)
-			if statusWiredPCIName == "" && strings.Contains(lower, "ethernet controller") {
-				statusWiredPCIName = pciDeviceLabel(trimmed)
-			}
-
-			if statusWirelessPCIName == "" && strings.Contains(lower, "network controller") {
-				statusWirelessPCIName = pciDeviceLabel(trimmed)
-			}
-
-			if statusWiredPCIName != "" && statusWirelessPCIName != "" {
-				break
-			}
+		switch runtime.GOOS {
+		case "linux":
+			statusWiredPCIName, statusWirelessPCIName = linuxPCIAdapterNames()
+		case osWindows:
+			statusWiredPCIName, statusWirelessPCIName = windowsPCIAdapterNames()
 		}
 	})
 
 	return statusWiredPCIName, statusWirelessPCIName
 }
 
+// runAdapterQuery executes an adapter-enumeration helper. The status command
+// commonly runs elevated, so the binary is resolved against a fixed list of
+// system directories instead of the caller's PATH, and the child is given the
+// same fixed PATH. Setting cmd.Env alone would not be enough: exec resolves the
+// program name with the parent's PATH before cmd.Env is ever applied.
+func runAdapterQuery(name string, args ...string) (string, error) {
+	binary, err := resolveTrustedBinary(name)
+	if err != nil {
+		log.Debugf("status: %s not found in trusted paths: %v", name, err)
+
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), adapterQueryTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binary, args...)
+
+	cmd.Env = append(os.Environ(), "PATH="+strings.Join(trustedExecDirs(), string(os.PathListSeparator)))
+
+	out, err := cmd.Output()
+	if err != nil {
+		log.Debugf("status: %s adapter query failed: %v", name, err)
+
+		return "", err
+	}
+
+	return string(out), nil
+}
+
+// resolveTrustedBinary finds name in the trusted system directories and returns
+// its absolute path, rejecting anything that is not a regular executable file.
+func resolveTrustedBinary(name string) (string, error) {
+	if strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("adapter query binary %q must be a bare name", name)
+	}
+
+	for _, dir := range trustedExecDirs() {
+		candidate := filepath.Join(dir, name)
+
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+
+		if runtime.GOOS != osWindows && info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+
+		return candidate, nil
+	}
+
+	return "", fmt.Errorf("%q not found in trusted system directories", name)
+}
+
+func trustedExecDirs() []string {
+	if runtime.GOOS == osWindows {
+		systemRoot := os.Getenv("SystemRoot")
+		if strings.TrimSpace(systemRoot) == "" {
+			systemRoot = `C:\Windows`
+		}
+
+		return []string{
+			filepath.Join(systemRoot, "System32"),
+			filepath.Join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
+		}
+	}
+
+	return []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+}
+
+func linuxPCIAdapterNames() (wired, wireless string) {
+	out, err := runAdapterQuery("lspci")
+	if err != nil {
+		return "", ""
+	}
+
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		lower := strings.ToLower(trimmed)
+		if wired == "" && strings.Contains(lower, "ethernet controller") {
+			wired = pciDeviceLabel(trimmed)
+		}
+
+		if wireless == "" && strings.Contains(lower, "network controller") {
+			wireless = pciDeviceLabel(trimmed)
+		}
+
+		if wired != "" && wireless != "" {
+			break
+		}
+	}
+
+	return wired, wireless
+}
+
+// windowsPCIAdapterNames enumerates physical network adapters via PowerShell.
+// The emitted lines are "<Name>|<InterfaceDescription>|<MediaType>".
+func windowsPCIAdapterNames() (wired, wireless string) {
+	const script = "Get-NetAdapter -Physical | ForEach-Object { \"$($_.Name)|$($_.InterfaceDescription)|$($_.PhysicalMediaType)\" }"
+
+	out, err := runAdapterQuery("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return "", ""
+	}
+
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "|")
+		if len(fields) < 3 {
+			continue
+		}
+
+		description := strings.TrimSpace(fields[1])
+		combined := strings.ToLower(strings.TrimSpace(fields[0]) + " " + description + " " + strings.TrimSpace(fields[2]))
+
+		if strings.Contains(combined, "wi-fi") || strings.Contains(combined, "wifi") ||
+			strings.Contains(combined, "wireless") || strings.Contains(combined, "802.11") {
+			if wireless == "" {
+				wireless = description
+			}
+
+			continue
+		}
+
+		if wired == "" {
+			wired = description
+		}
+	}
+
+	return wired, wireless
+}
+
 func pciDeviceLabel(line string) string {
 	parts := strings.SplitN(line, ": ", 3)
-	if len(parts) == 3 {
-		return strings.TrimSpace(parts[2])
+
+	label := strings.TrimSpace(line)
+	if len(parts) >= 2 {
+		label = strings.TrimSpace(parts[len(parts)-1])
 	}
 
-	if len(parts) == 2 {
-		return strings.TrimSpace(parts[1])
+	// lspci appends a silicon revision that adds no value to the report.
+	if idx := strings.LastIndex(label, " (rev "); idx != -1 && strings.HasSuffix(label, ")") {
+		label = strings.TrimSpace(label[:idx])
 	}
 
-	return strings.TrimSpace(line)
+	return label
+}
+
+// osWirelessInterfaceName returns the OS name of the first 802.11 interface.
+// It backstops the PCI/MAC lookups, which come up empty when AMT reports no
+// wireless MAC (for example when the wireless interface is not AMT-provisioned).
+func osWirelessInterfaceName() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		if _, err := os.Stat(filepath.Join("/sys/class/net", entry.Name(), "phy80211")); err == nil {
+			return entry.Name()
+		}
+	}
+
+	return ""
 }
 
 func anyCheckWarn(checks []healthCheck, label string) bool {
@@ -1690,7 +1886,7 @@ func onlyCCMBypassWarnings(checks []healthCheck) bool {
 	return true
 }
 
-func finalSummary(result StatusResult, checks []healthCheck) (string, string, string) {
+func finalSummary(result statusResult, checks []healthCheck) (string, string, string) {
 	stats := summarizeChecks(checks)
 	postActivation := isPostActivationSelected(result.SelectedCheckSet)
 
@@ -1710,9 +1906,7 @@ func finalSummary(result StatusResult, checks []healthCheck) (string, string, st
 	ccmProfile := result.SelectedCheckSet == checkSetPreActivationCCM
 
 	// Non-vPro: device type identified but platform is ineligible.
-	if result.DeviceType != "" &&
-		!strings.Contains(result.DeviceType, "AMT Pro") &&
-		!strings.Contains(result.DeviceType, "Intel Standard Manageability") {
+	if !isEligiblePlatform(result.DeviceType) {
 		return "✗", "Device is not eligible for ACM activation.", "Perform manual platform validation with Intel guidance."
 	}
 
@@ -1792,7 +1986,7 @@ const (
 //   - not provisionable: missing a network link;
 //   - provisionable but --host unreachable: can provision, but not manage;
 //   - ready.
-func verdictColor(result StatusResult, elevated, amtCapable bool) (lipgloss.Color, string) {
+func verdictColor(result statusResult, elevated, amtCapable bool) (lipgloss.Color, string) {
 	hostUnreachable := result.HostReachable != nil && !*result.HostReachable
 	postActivation := isPostActivationSelected(result.SelectedCheckSet)
 
@@ -1818,7 +2012,7 @@ func verdictColor(result StatusResult, elevated, amtCapable bool) (lipgloss.Colo
 	}
 }
 
-func detectedState(result StatusResult) string {
+func detectedState(result statusResult) string {
 	if result.AlreadyActivated {
 		if strings.Contains(strings.ToLower(result.ControlMode), "admin") {
 			return "Admin Control Mode"
@@ -1840,7 +2034,7 @@ func detectedState(result StatusResult) string {
 	return "AMT unavailable"
 }
 
-func passwordContext(result StatusResult) string {
+func passwordContext(result statusResult) string {
 	if !isPostActivationSelected(result.SelectedCheckSet) {
 		return "not required"
 	}
@@ -1871,7 +2065,7 @@ func selectedChecksLabel(selected string) string {
 	}
 }
 
-func detectedStateKey(result StatusResult) string {
+func detectedStateKey(result statusResult) string {
 	switch {
 	case !result.MEIDriverPresent:
 		return "amt_unavailable"
@@ -1888,7 +2082,7 @@ func detectedStateKey(result StatusResult) string {
 	}
 }
 
-func overallResult(result StatusResult) string {
+func overallResult(result statusResult) string {
 	postActivation := isPostActivationSelected(result.SelectedCheckSet)
 
 	switch {
@@ -1958,7 +2152,7 @@ func jsonChecks(checks []healthCheck) []statusJSONCheck {
 }
 
 // outputStatusJSON writes the machine-readable status result.
-func outputStatusJSON(w io.Writer, result StatusResult, checks []healthCheck) error {
+func outputStatusJSON(w io.Writer, result statusResult, checks []healthCheck) error {
 	_, summaryText, _ := finalSummary(result, checks)
 	stats := summarizeChecks(checks)
 	vinfo := version.Get()
@@ -1975,6 +2169,7 @@ func outputStatusJSON(w io.Writer, result StatusResult, checks []healthCheck) er
 			DetectedState:          detectedStateKey(result),
 			SelectedCheckSet:       result.SelectedCheckSet,
 			PasswordContext:        passwordContext(result),
+			DeviceType:             strings.TrimSpace(result.DeviceType),
 			WiredAdapterName:       fallbackValue(strings.TrimSpace(result.WiredAdapterName)),
 			WirelessAdapterName:    fallbackValue(strings.TrimSpace(result.WirelessAdapterName)),
 			OverallResult:          overallResult(result),

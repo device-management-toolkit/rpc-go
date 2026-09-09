@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +157,7 @@ func TestStatusCmd_Gather_Ready(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -191,6 +194,7 @@ func TestStatusCmd_Gather_NoLMS_StillReady(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -227,6 +231,7 @@ func TestStatusCmd_Gather_NotReady_NoNetwork(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -255,6 +260,7 @@ func TestStatusCmd_Gather_HostUnreachable_ProvisionableNotManaged(t *testing.T) 
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -291,6 +297,7 @@ func TestStatusCmd_Run_TextProvisionableNotManaged(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -410,7 +417,7 @@ func TestStatusCmd_MEICheck_MissingDriverErrorDoesNotPass(t *testing.T) {
 	cmd.HECIAvailable = false
 	cmd.HECIError = "open /dev/mei0: no such file or directory"
 
-	var result StatusResult
+	var result statusResult
 
 	check := cmd.meiCheck(&result)
 
@@ -431,6 +438,7 @@ func TestStatusCmd_Run_JSON(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -470,6 +478,7 @@ func TestStatusCmd_Run_JSON_IncludesADRContract(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up", IPAddress: "192.168.1.10"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -511,6 +520,7 @@ func TestStatusCmd_Run_TextReady(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -541,6 +551,7 @@ func TestStatusCmd_Run_TextReadyNoLMS(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).
 		Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).
@@ -571,6 +582,7 @@ func TestStatusCmd_Gather_AlreadyActivated(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
@@ -606,6 +618,7 @@ func TestStatusCmd_Run_TextAlreadyActivated(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
@@ -644,6 +657,7 @@ func TestStatusCmd_Run_JSON_PostActivationPartialWithoutPassword(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("corp.local", nil)
@@ -683,6 +697,8 @@ func TestStatusCmd_Gather_PostActivationManageableWithWSMAN(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
 
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
@@ -763,25 +779,25 @@ func TestVerdictColor(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		result     StatusResult
+		result     statusResult
 		elevated   bool
 		amtCapable bool
 		wantMsg    string
 	}{
-		{"no MEI, x86, elevated -> no AMT", StatusResult{MEIDriverPresent: false}, true, true, verdictNoAMT},
-		{"no MEI, x86, unelevated -> unknown", StatusResult{MEIDriverPresent: false}, false, true, verdictUnknownPriv},
-		{"no MEI, ARM, unelevated -> no AMT", StatusResult{MEIDriverPresent: false}, false, false, verdictNoAMT},
-		{"no MEI, ARM, elevated -> no AMT", StatusResult{MEIDriverPresent: false}, true, false, verdictNoAMT},
-		{"activated", StatusResult{MEIDriverPresent: true, AlreadyActivated: true}, true, true, verdictAlreadyActive},
-		{"no network -> cannot", StatusResult{MEIDriverPresent: true, ReadyToProvision: false}, true, true, verdictCannotProvision},
+		{"no MEI, x86, elevated -> no AMT", statusResult{MEIDriverPresent: false}, true, true, verdictNoAMT},
+		{"no MEI, x86, unelevated -> unknown", statusResult{MEIDriverPresent: false}, false, true, verdictUnknownPriv},
+		{"no MEI, ARM, unelevated -> no AMT", statusResult{MEIDriverPresent: false}, false, false, verdictNoAMT},
+		{"no MEI, ARM, elevated -> no AMT", statusResult{MEIDriverPresent: false}, true, false, verdictNoAMT},
+		{"activated", statusResult{MEIDriverPresent: true, AlreadyActivated: true}, true, true, verdictAlreadyActive},
+		{"no network -> cannot", statusResult{MEIDriverPresent: true, ReadyToProvision: false}, true, true, verdictCannotProvision},
 		{
 			"ready but host unreachable -> not managed",
-			StatusResult{MEIDriverPresent: true, ReadyToProvision: true, HostReachable: boolPtr(false)},
+			statusResult{MEIDriverPresent: true, ReadyToProvision: true, HostReachable: boolPtr(false)},
 			true,
 			true,
 			verdictNotManaged,
 		},
-		{"ready", StatusResult{MEIDriverPresent: true, ReadyToProvision: true}, true, true, verdictReady},
+		{"ready", statusResult{MEIDriverPresent: true, ReadyToProvision: true}, true, true, verdictReady},
 	}
 
 	for _, tt := range tests {
@@ -794,7 +810,7 @@ func TestVerdictColor(t *testing.T) {
 }
 
 func TestFinalSummary_PreActivationDNSWarningMentionsCCM(t *testing.T) {
-	result := StatusResult{SelectedCheckSet: checkSetPreActivation}
+	result := statusResult{SelectedCheckSet: checkSetPreActivation}
 	checks := []healthCheck{{
 		label:  "DNS suffix (AMT vs OS)",
 		state:  checkWarn,
@@ -811,7 +827,7 @@ func TestFinalSummary_PreActivationDNSWarningMentionsCCM(t *testing.T) {
 }
 
 func TestFinalSummary_PreActivationACMDNSWarningMentionsACM(t *testing.T) {
-	result := StatusResult{SelectedCheckSet: checkSetPreActivationACM}
+	result := statusResult{SelectedCheckSet: checkSetPreActivationACM}
 	checks := []healthCheck{{
 		label:  "DNS suffix (AMT vs OS)",
 		state:  checkWarn,
@@ -828,7 +844,7 @@ func TestFinalSummary_PreActivationACMDNSWarningMentionsACM(t *testing.T) {
 }
 
 func TestFinalSummary_PreActivationACMOnlyFailuresMentionsCCMPath(t *testing.T) {
-	result := StatusResult{SelectedCheckSet: checkSetPreActivation}
+	result := statusResult{SelectedCheckSet: checkSetPreActivation}
 	checks := []healthCheck{
 		{label: "DNS suffix (AMT vs OS)", state: checkFail, detail: "DNS suffix not configured - cannot activate to ACM"},
 		{label: "AMT wired/wireless link", state: checkFail, detail: "Wired link down and no AMT DNS suffix"},
@@ -843,7 +859,7 @@ func TestFinalSummary_PreActivationACMOnlyFailuresMentionsCCMPath(t *testing.T) 
 }
 
 func TestFinalSummary_PreActivationCCMBypassWarningsProceeds(t *testing.T) {
-	result := StatusResult{SelectedCheckSet: checkSetPreActivationCCM}
+	result := statusResult{SelectedCheckSet: checkSetPreActivationCCM}
 	checks := []healthCheck{
 		{label: "DNS suffix (AMT vs OS)", state: checkWarn, detail: "DNS suffix not configured - cannot activate to ACM (ACM-only blocker; CCM can still proceed)"},
 		{label: "AMT wired/wireless link", state: checkWarn, detail: "No AMT network link detected (ACM would require wired link; CCM can still proceed locally)"},
@@ -869,7 +885,7 @@ func TestStatusCmd_DNSSuffixCheck_NoHECI(t *testing.T) {
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = false
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{}, &result)
 
@@ -882,13 +898,14 @@ func TestStatusCmd_DNSSuffixCheck_Match(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("corp.example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("CORP.EXAMPLE.COM", nil) // case-insensitive
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -897,18 +914,64 @@ func TestStatusCmd_DNSSuffixCheck_Match(t *testing.T) {
 	assert.Contains(t, c.detail, "corp.example.com")
 }
 
+func TestStatusCmd_AMTEnabledInBIOSCheck(t *testing.T) {
+	// Bit 7 marks the ME 16.1+ interface, bit 1 marks AMT enabled.
+	const (
+		newInterfaceDisabled = amt.ChangeEnabledResponse(0x80)
+		newInterfaceEnabled  = amt.ChangeEnabledResponse(0x82)
+		legacyInterface      = amt.ChangeEnabledResponse(0x00)
+	)
+
+	tests := []struct {
+		name          string
+		heciAvailable bool
+		state         amt.ChangeEnabledResponse
+		stateErr      error
+		expectState   checkState
+		expectEnabled bool
+	}{
+		{"no MEI access", false, legacyInterface, nil, checkFail, false},
+		{"AMT disabled in MEBx", true, newInterfaceDisabled, nil, checkFail, false},
+		{"AMT enabled in MEBx", true, newInterfaceEnabled, nil, checkPass, true},
+		{"legacy firmware falls back to HECI", true, legacyInterface, nil, checkPass, true},
+		{"query error falls back to HECI", true, newInterfaceDisabled, errors.New("heci error"), checkPass, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().GetChangeEnabled().Return(tt.state, tt.stateErr).AnyTimes()
+
+			cmd := &StatusCmd{}
+			cmd.HECIAvailable = tt.heciAvailable
+
+			var result statusResult
+
+			c := cmd.amtEnabledInBIOSCheck(&Context{AMTCommand: mockAMT}, &result)
+
+			assert.Equal(t, tt.expectState, c.state)
+			require.NotNil(t, result.AMTEnabledInBIOS)
+			assert.Equal(t, tt.expectEnabled, *result.AMTEnabledInBIOS)
+		})
+	}
+}
+
 func TestStatusCmd_DNSSuffixCheck_Mismatch(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -924,12 +987,13 @@ func TestStatusCmd_DNSSuffixCheck_AMTSuffixError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("", errors.New("heci read error"))
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -942,13 +1006,14 @@ func TestStatusCmd_DNSSuffixCheck_AMTSuffixEmpty(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -961,14 +1026,15 @@ func TestStatusCmd_DNSSuffixCheckForProfile_MissingSuffixWarnsForAutoAndCCM(t *t
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil).Times(2)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil).Times(2)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	autoCheck := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &StatusResult{}, statusProfileAuto)
-	ccmCheck := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &StatusResult{}, statusProfileCCM)
+	autoCheck := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &statusResult{}, statusProfileAuto)
+	ccmCheck := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &statusResult{}, statusProfileCCM)
 
 	assert.Equal(t, checkWarn, autoCheck.state)
 	assert.Contains(t, autoCheck.detail, "ACM-only blocker")
@@ -981,13 +1047,14 @@ func TestStatusCmd_DNSSuffixCheckForProfile_MissingSuffixRemainsFailForACM(t *te
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	check := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &StatusResult{}, statusProfileACM)
+	check := cmd.dnsSuffixCheckForProfile(&Context{AMTCommand: mockAMT}, &statusResult{}, statusProfileACM)
 
 	assert.Equal(t, checkFail, check.state)
 	assert.NotContains(t, check.detail, "CCM can still proceed")
@@ -998,13 +1065,14 @@ func TestStatusCmd_DNSSuffixCheck_AMTSuffixEmptyWithOSSuffixPresent(t *testing.T
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("corp.example.com", nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1017,13 +1085,14 @@ func TestStatusCmd_DNSSuffixCheck_OSSuffixUnknown(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetDNSSuffix().Return("corp.example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil) // empty — not joined to domain
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.dnsSuffixCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1037,13 +1106,14 @@ func TestStatusCmd_LinkReadiness_WirelessUpStillFails(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	result := StatusResult{AMTDNSSuffix: "corp.example.com"}
+	result := statusResult{AMTDNSSuffix: "corp.example.com"}
 
 	c := cmd.linkReadinessCheck(&Context{AMTCommand: mockAMT}, &result, statusProfileACM)
 
@@ -1058,13 +1128,14 @@ func TestStatusCmd_LinkReadiness_CCMProfile_DoesNotFailWhenNoLink(t *testing.T) 
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	result := StatusResult{}
+	result := statusResult{}
 
 	c := cmd.linkReadinessCheck(&Context{AMTCommand: mockAMT}, &result, statusProfileCCM)
 
@@ -1077,6 +1148,7 @@ func TestStatusCmd_Gather_CCMProfile_DoesNotBlockOnACMChecks(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
@@ -1107,6 +1179,7 @@ func TestStatusCmd_Gather_AutoProfile_AllowsCCMWhenOnlyACMChecksFail(t *testing.
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
@@ -1137,6 +1210,7 @@ func TestStatusCmd_Gather_ACMProfile_BlocksOnACMChecks(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("", nil)
@@ -1180,6 +1254,7 @@ func TestStatusCmd_ConnectionModeCheck_DirectModeDoesNotSetCIRAConnected(t *test
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 		NetworkStatus: "direct connect",
 		RemoteStatus:  "connected",
@@ -1188,7 +1263,7 @@ func TestStatusCmd_ConnectionModeCheck_DirectModeDoesNotSetCIRAConnected(t *test
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.connectionModeCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1201,7 +1276,7 @@ func TestStatusCmd_RemoteManageabilityCheck_UserHostNotOverriddenByCIRA(t *testi
 	stubDial(t, map[string]bool{}) // all dials fail
 
 	cmd := &StatusCmd{Host: "console.example.com:443"}
-	result := &StatusResult{
+	result := &statusResult{
 		ConnectionMode: "CIRA",
 		CIRAConnected:  ptrBool(true),
 		MPSHostname:    "mps.example.com",
@@ -1219,7 +1294,7 @@ func TestStatusCmd_RemoteManageabilityCheck_UserHostNotOverriddenByCIRA(t *testi
 func TestStatusCmd_ModeAlignmentCheck_PostActivationCCMMismatchFails(t *testing.T) {
 	cmd := &StatusCmd{}
 
-	check := cmd.modeAlignmentCheck(statusProfileCCM, StatusResult{ControlMode: "admin control mode"})
+	check := cmd.modeAlignmentCheck(statusProfileCCM, statusResult{ControlMode: "admin control mode"})
 
 	assert.Equal(t, checkFail, check.state)
 	assert.Contains(t, check.detail, "--ccm/--cm requested")
@@ -1242,7 +1317,7 @@ func TestStatusCmd_DeviceTypeCheck_NoHECI(t *testing.T) {
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = false
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.deviceTypeCheck(&Context{}, &result)
 
@@ -1255,6 +1330,7 @@ func TestStatusCmd_DeviceTypeCheck_VPro(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	// SKU 0x8 sets bit 3 → "AMT Pro" for AMT v5+
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
@@ -1262,7 +1338,7 @@ func TestStatusCmd_DeviceTypeCheck_VPro(t *testing.T) {
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1276,6 +1352,7 @@ func TestStatusCmd_DeviceTypeCheck_ISM(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	// SKU 0x10 sets bit 4 → "Intel Standard Manageability" for AMT v5+
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("16", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
@@ -1283,7 +1360,7 @@ func TestStatusCmd_DeviceTypeCheck_ISM(t *testing.T) {
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1297,12 +1374,13 @@ func TestStatusCmd_DeviceTypeCheck_SKUError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("", errors.New("heci error"))
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
 
@@ -1315,16 +1393,165 @@ func TestStatusCmd_DeviceTypeCheck_VersionError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("8", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("", errors.New("heci error"))
 
 	cmd := &StatusCmd{}
 	cmd.HECIAvailable = true
 
-	var result StatusResult
+	var result statusResult
 
 	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
 
 	assert.Equal(t, checkWarn, c.state)
 	assert.Empty(t, result.DeviceType)
+}
+
+func TestRunCheckSteps(t *testing.T) {
+	step := func(label string, state checkState) func() healthCheck {
+		return func() healthCheck { return healthCheck{label, state, label + " detail"} }
+	}
+
+	t.Run("runs every step in table order", func(t *testing.T) {
+		checks, stopped := runCheckSteps([]statusCheckStep{
+			{run: step("first", checkPass)},
+			{run: step("second", checkWarn)},
+			{run: step("third", checkPass)},
+		})
+
+		assert.False(t, stopped)
+		require.Len(t, checks, 3)
+		assert.Equal(t, []string{"first", "second", "third"}, []string{checks[0].label, checks[1].label, checks[2].label})
+	})
+
+	t.Run("stopOnFail aborts remaining steps", func(t *testing.T) {
+		ran := false
+
+		checks, stopped := runCheckSteps([]statusCheckStep{
+			{run: step("blocker", checkFail), stopOnFail: true},
+			{run: func() healthCheck {
+				ran = true
+
+				return healthCheck{}
+			}},
+		})
+
+		assert.True(t, stopped)
+		assert.False(t, ran)
+		require.Len(t, checks, 1)
+	})
+
+	t.Run("stopOnFail does not abort on warn", func(t *testing.T) {
+		checks, stopped := runCheckSteps([]statusCheckStep{
+			{run: step("warned", checkWarn), stopOnFail: true},
+			{run: step("next", checkPass)},
+		})
+
+		assert.False(t, stopped)
+		require.Len(t, checks, 2)
+	})
+
+	t.Run("skip omits the row entirely", func(t *testing.T) {
+		checks, stopped := runCheckSteps([]statusCheckStep{
+			{skip: func() bool { return true }, run: step("skipped", checkPass)},
+			{run: step("kept", checkPass)},
+		})
+
+		assert.False(t, stopped)
+		require.Len(t, checks, 1)
+		assert.Equal(t, "kept", checks[0].label)
+	})
+
+	t.Run("stopAfter keeps the row then aborts", func(t *testing.T) {
+		checks, stopped := runCheckSteps([]statusCheckStep{
+			{run: step("ineligible", checkPass), stopAfter: func() bool { return true }},
+			{run: step("never", checkPass)},
+		})
+
+		assert.True(t, stopped)
+		require.Len(t, checks, 1)
+		assert.Equal(t, "ineligible", checks[0].label)
+	})
+}
+
+func TestRenderStatus_NotVerifiedRowsAreLabeled(t *testing.T) {
+	var b strings.Builder
+
+	renderStatus(&b, statusResult{SelectedCheckSet: checkSetPostActivation}, []healthCheck{
+		{labelTLSTrust, checkUnavailable, skipWSMANRequired},
+		{"OCR enabled in BIOS", checkUnavailable, skipWSMANRequired},
+	})
+
+	out := b.String()
+
+	// Several checks share the same generic reason, so the label must disambiguate them.
+	assert.Contains(t, out, labelTLSTrust+": "+skipWSMANRequired)
+	assert.Contains(t, out, "OCR enabled in BIOS: "+skipWSMANRequired)
+}
+
+func TestResolveTrustedBinary(t *testing.T) {
+	t.Run("rejects path separators", func(t *testing.T) {
+		_, err := resolveTrustedBinary("../../tmp/lspci")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bare name")
+	})
+
+	t.Run("rejects a binary outside the trusted directories", func(t *testing.T) {
+		// A binary planted in a caller-controlled directory must not be picked up,
+		// even if it is first on the caller's PATH.
+		dir := t.TempDir()
+		planted := filepath.Join(dir, "rpc-go-fake-lspci")
+
+		require.NoError(t, os.WriteFile(planted, []byte("#!/bin/sh\n"), 0o755))
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		_, err := resolveTrustedBinary("rpc-go-fake-lspci")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "trusted system directories")
+	})
+
+	t.Run("resolves a trusted binary to an absolute path", func(t *testing.T) {
+		if runtime.GOOS != "linux" {
+			t.Skip("trusted directory layout is linux-specific")
+		}
+
+		resolved, err := resolveTrustedBinary("sh")
+
+		require.NoError(t, err)
+		assert.True(t, filepath.IsAbs(resolved))
+		assert.Contains(t, trustedExecDirs(), filepath.Dir(resolved))
+	})
+}
+
+func TestPCIDeviceLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			"strips slot and revision",
+			"00:14.3 Network controller: Intel Corporation Device 7e40 (rev 20)",
+			"Intel Corporation Device 7e40",
+		},
+		{
+			"keeps a resolved product name",
+			"56:00.0 Ethernet controller: Intel Corporation Ethernet Controller I225-V (rev 04)",
+			"Intel Corporation Ethernet Controller I225-V",
+		},
+		{
+			"handles a line without a revision",
+			"00:1f.6 Ethernet controller: Intel Corporation Ethernet Connection (17) I219-LM",
+			"Intel Corporation Ethernet Connection (17) I219-LM",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, pciDeviceLabel(tt.line))
+		})
+	}
 }

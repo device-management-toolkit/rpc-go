@@ -10,10 +10,14 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -284,4 +288,84 @@ func TestProbeLMS_DoesNotOverrunBudget(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, elapsed, budget+slack,
 		"probe overran its budget by a full dial timeout; per-attempt timeout is not clamped to the remaining budget")
+}
+
+// roundTripFunc adapts a function to http.RoundTripper so the wsman client can
+// be exercised without a live AMT device or LMS.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func newTestGoWSMANMessages(rt http.RoundTripper) *GoWSMANMessages {
+	g := NewGoWSMANMessages("127.0.0.1")
+	g.wsmanMessages = wsman.NewMessages(client.Parameters{Target: "127.0.0.1", Transport: rt})
+
+	return g
+}
+
+func soapResponse(body string) *http.Response {
+	envelope := `<?xml version="1.0" encoding="UTF-8"?>` +
+		`<a:Envelope xmlns:a="http://www.w3.org/2003/05/soap-envelope" xmlns:g="http://intel.com/wbem/wscim/1/amt-schema/1/AMT_BootSettingData">` +
+		`<a:Body>` + body + `</a:Body></a:Envelope>`
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/soap+xml"}},
+		Body:       io.NopCloser(strings.NewReader(envelope)),
+	}
+}
+
+func TestGetBootSettingData_Success(t *testing.T) {
+	var gotBody string
+
+	g := newTestGoWSMANMessages(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		gotBody = string(raw)
+
+		return soapResponse(`<g:AMT_BootSettingData>` +
+			`<g:InstanceID>Intel(r) AMT:BootSettingData 0</g:InstanceID>` +
+			`<g:ElementName>Intel(r) AMT Boot Configuration Settings</g:ElementName>` +
+			`<g:UEFIHTTPSBootEnabled>true</g:UEFIHTTPSBootEnabled>` +
+			`<g:WinREBootEnabled>false</g:WinREBootEnabled>` +
+			`</g:AMT_BootSettingData>`), nil
+	}))
+
+	response, err := g.GetBootSettingData()
+
+	require.NoError(t, err)
+	assert.Equal(t, "Intel(r) AMT:BootSettingData 0", response.Body.BootSettingDataGetResponse.InstanceID)
+	assert.True(t, response.Body.BootSettingDataGetResponse.UEFIHTTPSBootEnabled)
+	assert.False(t, response.Body.BootSettingDataGetResponse.WinREBootEnabled)
+	// The request must target AMT_BootSettingData with a WS-Man Get action.
+	assert.Contains(t, gotBody, "AMT_BootSettingData")
+	assert.Contains(t, gotBody, "transfer/Get")
+}
+
+func TestGetBootSettingData_TransportError(t *testing.T) {
+	wantErr := errors.New("connection refused")
+
+	g := newTestGoWSMANMessages(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, wantErr
+	}))
+
+	_, err := g.GetBootSettingData()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), wantErr.Error())
+}
+
+func TestGetBootSettingData_UnauthorizedResponse(t *testing.T) {
+	g := newTestGoWSMANMessages(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	}))
+
+	_, err := g.GetBootSettingData()
+
+	require.Error(t, err)
 }
