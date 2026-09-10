@@ -367,6 +367,8 @@ type InfoService struct {
 	skipAMTCertCheck bool
 	wsman            interfaces.WSMANer
 	heciAvailable    bool
+	// autoRegister controls whether a sync that 404s creates the device.
+	autoRegister bool
 }
 
 // InfoServiceOption mutates InfoService construction parameters.
@@ -383,6 +385,7 @@ func NewInfoService(amtCommand amt.Interface, opts ...InfoServiceOption) *InfoSe
 		skipAMTCertCheck: false,
 		wsman:            nil,
 		heciAvailable:    true,
+		autoRegister:     true,
 	}
 
 	for _, opt := range opts {
@@ -433,6 +436,15 @@ func WithWSMANClient(wsman interfaces.WSMANer) InfoServiceOption {
 func WithHECIAvailable(available bool) InfoServiceOption {
 	return func(s *InfoService) {
 		s.heciAvailable = available
+	}
+}
+
+// WithAutoRegister controls whether a sync that 404s registers the device.
+// Disable it when the device is about to be removed, so the sync does not
+// recreate a record the caller then deletes.
+func WithAutoRegister(enabled bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.autoRegister = enabled
 	}
 }
 
@@ -542,7 +554,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
 
 	// Try PATCH request
-	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken)
+	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken, ctx.TenantID)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
@@ -552,6 +564,12 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	if resp.StatusCode == http.StatusNotFound {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
+
+		if !s.autoRegister {
+			log.Debugf("device %s not found (HTTP 404); skipping registration", result.UUID)
+
+			return nil
+		}
 
 		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
 
@@ -563,7 +581,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			discovered = &autoDiscovered
 		}
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken, discovered, now); err != nil {
+		if err := s.createDevice(httpClient, endpoint, result, authToken, ctx.TenantID, discovered, now); err != nil {
 			log.Debugf("device registration (POST) failed: %v", err)
 
 			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
@@ -572,7 +590,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
 
 		// Retry PATCH without discovered field (updates don't change discovered)
-		if err := s.doPatchRequest(httpClient, endpoint, body, authToken); err != nil {
+		if err := s.doPatchRequest(httpClient, endpoint, body, authToken, ctx.TenantID); err != nil {
 			log.Debugf("retry PATCH after registration failed: %v", err)
 
 			return err
@@ -637,7 +655,7 @@ func (s *InfoService) getAuthToken(endpoint string, auth *ServerAuthFlags, skipC
 }
 
 // doHTTPRequest performs an HTTP request and returns the response
-func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string, body []byte, authToken string) (*http.Response, error) {
+func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string, body []byte, authToken, tenantID string) (*http.Response, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
 	defer cancel()
 
@@ -650,6 +668,10 @@ func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string
 
 	if authToken != "" {
 		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	if tenantID != "" {
+		req.Header.Set("x-tenant-id", tenantID)
 	}
 
 	resp, err := client.Do(req)
@@ -666,10 +688,10 @@ func isHTTPSuccess(statusCode int) bool {
 }
 
 // doPatchRequest performs a PATCH request with the given body and auth token
-func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken string) error {
+func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken, tenantID string) error {
 	log.Debugf("updating device info (PATCH) to %s", endpoint)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken)
+	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken, tenantID)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
@@ -693,7 +715,7 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
 // The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
 // syncedAt is the sync timestamp, reused so the created record matches the retried PATCH.
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken string, discovered *bool, syncedAt time.Time) error {
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken, tenantID string, discovered *bool, syncedAt time.Time) error {
 	body, hostname, err := s.buildDeviceCreatePayload(result, discovered, syncedAt)
 	if err != nil {
 		return err
@@ -701,7 +723,7 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 
 	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken)
+	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken, tenantID)
 	if err != nil {
 		log.Debugf("device registration (POST) request failed: %v", err)
 
@@ -817,7 +839,7 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 }
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
-func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string) error {
+func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string, opts ...InfoServiceOption) error {
 	log.Debug("Starting device info collection for sync")
 
 	infoCmd := &AmtInfoCmd{
@@ -832,12 +854,13 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 
 	log.Debug("Initializing info service for sync")
 
-	service := NewInfoService(
-		ctx.AMTCommand,
+	serviceOpts := append([]InfoServiceOption{
 		WithLocalTLSEnforced(baseCmd.LocalTLSEnforced),
 		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
 		WithHECIAvailable(baseCmd.HECIAvailable),
-	)
+	}, opts...)
+
+	service := NewInfoService(ctx.AMTCommand, serviceOpts...)
 
 	log.Debug("Collecting AMT device information")
 
@@ -1407,12 +1430,15 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 		if !utils.IsElevated() {
 			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
-				"Not running as administrator \u2014 AMT data unavailable"))
+				"Not running as administrator \u2014 AMT data unavailable",
+			))
 			fmt.Fprintln(w, infoIndent+infoDimStyle.Render(
-				"Showing OS-level information only"))
+				"Showing OS-level information only",
+			))
 		} else {
 			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
-				"MEI/HECI driver not detected \u2014 AMT may not be available on this device"))
+				"MEI/HECI driver not detected \u2014 AMT may not be available on this device",
+			))
 		}
 	}
 
@@ -1664,12 +1690,15 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 	if !s.heciAvailable {
 		if !utils.IsElevated() {
 			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
-				"Not running as administrator \u2014 AMT data unavailable") + "\n")
+				"Not running as administrator \u2014 AMT data unavailable",
+			) + "\n")
 			b.WriteString(infoIndent + infoDimStyle.Render(
-				"Showing OS-level information only") + "\n")
+				"Showing OS-level information only",
+			) + "\n")
 		} else {
 			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
-				"MEI/HECI driver not detected \u2014 AMT may not be available on this device") + "\n")
+				"MEI/HECI driver not detected \u2014 AMT may not be available on this device",
+			) + "\n")
 		}
 	}
 

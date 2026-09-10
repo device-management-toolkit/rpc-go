@@ -448,7 +448,7 @@ func TestAmtInfoCmd_Run_WithSync_404_PostFallback(t *testing.T) {
 
 func TestInfoService_SyncDeviceInfo_404_PostFallback_ExplicitlyProvisioned(t *testing.T) {
 	service := NewInfoService(nil)
-	ctx := &Context{SkipCertCheck: true}
+	ctx := &Context{SkipCertCheck: true, TenantID: "tenant-a"}
 	result := &InfoResult{UUID: "12345678-1234-1234-1234-123456789ABC"}
 	explicitlyProvisioned := false
 
@@ -458,6 +458,8 @@ func TestInfoService_SyncDeviceInfo_404_PostFallback_ExplicitlyProvisioned(t *te
 	)
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "tenant-a", r.Header.Get("x-tenant-id"))
+
 		switch r.Method {
 		case http.MethodPatch:
 			defer r.Body.Close()
