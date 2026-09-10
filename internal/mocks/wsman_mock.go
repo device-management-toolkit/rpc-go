@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	authorization "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	boot "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	environmentdetection "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	ethernetport "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	general "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -166,6 +167,21 @@ func (m *MockWSMANer) AddTrustedRootCert(caCert string) (string, error) {
 func (mr *MockWSMANerMockRecorder) AddTrustedRootCert(caCert any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddTrustedRootCert", reflect.TypeOf((*MockWSMANer)(nil).AddTrustedRootCert), caCert)
+}
+
+// GetBootSettingData mocks base method.
+func (m *MockWSMANer) GetBootSettingData() (boot.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBootSettingData")
+	ret0, _ := ret[0].(boot.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBootSettingData indicates an expected call of GetBootSettingData.
+func (mr *MockWSMANerMockRecorder) GetBootSettingData() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBootSettingData", reflect.TypeOf((*MockWSMANer)(nil).GetBootSettingData))
 }
 
 // AddWiFiSettings mocks base method.
