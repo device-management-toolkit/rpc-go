@@ -6,22 +6,6 @@ go 1.27.0
 // replace github.com/device-management-toolkit/go-wsman-messages/v2 => ../go-wsman-messages
 
 require (
-	github.com/alecthomas/kong v1.16.1
-	github.com/alecthomas/kong-yaml v0.2.0
-	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.3
-	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
-	github.com/hirochachacha/go-smb2 v1.1.0
-	github.com/muesli/termenv v0.16.0
-	github.com/shirou/gopsutil/v4 v4.26.8
-	github.com/sirupsen/logrus v1.10.2
-	github.com/stretchr/testify v1.12.1
-	go.uber.org/mock v0.6.0
-	golang.org/x/sys v0.47.0
-)
-
-require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
@@ -49,6 +33,19 @@ require (
 )
 
 require (
+	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong-yaml v0.2.0
+	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.3
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
+	github.com/hirochachacha/go-smb2 v1.1.0
+	github.com/muesli/termenv v0.16.0
+	github.com/shirou/gopsutil/v4 v4.26.8
+	github.com/sirupsen/logrus v1.10.2
+	github.com/stretchr/testify v1.12.1
+	go.uber.org/mock v0.6.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.3
