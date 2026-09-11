@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -98,61 +96,11 @@ func (a *ServerAuthFlags) AfterApply() error {
 // instead of environment variables. Credentials passed on the command line are visible
 // in process listings (ps, htop, /proc/<pid>/cmdline), which is a security risk.
 func (a *ServerAuthFlags) WarnIfInsecure() {
-	// Check if credentials are present (from any source)
-	hasToken := strings.TrimSpace(a.AuthToken) != ""
-	hasUsername := strings.TrimSpace(a.AuthUsername) != ""
-	hasPassword := strings.TrimSpace(a.AuthPassword) != ""
-
-	if !hasToken && !hasUsername && !hasPassword {
-		return // No credentials, no warning needed
-	}
-
-	// Helper to detect if a flag was explicitly passed on the command line
-	flagPresent := func(name string) bool {
-		prefix := name + "="
-		for _, arg := range os.Args[1:] {
-			if arg == name || strings.HasPrefix(arg, prefix) {
-				return true
-			}
-		}
-
-		return false
-	}
-
-	// Detect whether credentials were explicitly passed via CLI flags
-	var cliFlags []string
-
-	if hasToken && flagPresent("--auth-token") {
-		cliFlags = append(cliFlags, "--auth-token")
-	}
-
-	if hasUsername && flagPresent("--auth-username") {
-		cliFlags = append(cliFlags, "--auth-username")
-	}
-
-	if hasPassword && flagPresent("--auth-password") {
-		cliFlags = append(cliFlags, "--auth-password")
-	}
-
-	if len(cliFlags) > 0 {
-		const separator = "-------------------------------------------------------------------"
-
-		logrus.Warnf(separator)
-		logrus.Warnf("SECURITY WARNING: Credentials passed via CLI flags (%s)", strings.Join(cliFlags, ", "))
-		logrus.Warn("These are visible in process listings and may be captured in system logs.")
-		logrus.Warn("Use environment variables instead:")
-
-		if flagPresent("--auth-token") {
-			logrus.Warn("  AUTH_TOKEN=<your-token>")
-		}
-
-		if flagPresent("--auth-username") || flagPresent("--auth-password") {
-			logrus.Warn("  AUTH_USERNAME=<username>")
-			logrus.Warn("  AUTH_PASSWORD=<password>")
-		}
-
-		logrus.Warnf(separator)
-	}
+	WarnIfCredentialsOnCLI(
+		CredentialCLI{Value: a.AuthToken, EnvVar: "AUTH_TOKEN", FlagName: []string{"auth-token"}},
+		CredentialCLI{Value: a.AuthUsername, EnvVar: "AUTH_USERNAME", FlagName: []string{"auth-username"}},
+		CredentialCLI{Value: a.AuthPassword, EnvVar: "AUTH_PASSWORD", FlagName: []string{"auth-password"}},
+	)
 }
 
 // ApplyToRequest sets the appropriate Authorization header on the request if any auth is provided.
