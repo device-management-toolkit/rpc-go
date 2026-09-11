@@ -143,6 +143,12 @@ configure:
     oswifisync: true         # true|false - sync AMT WiFi profiles with OS profiles
     uefiwifisync: true       # true|false - enable UEFI WiFi profile share (if supported)
 
+# ------------------------- diagnostics (subcommands) -------------------------
+diagnostics:
+  # --- Diagnostics Bundle ---
+  bundle:
+    output: ""              # Output ZIP path (default: timestamped diagnostics bundle)
+
 ################################################################################
 # End of sample configuration.
 # Invoke with: rpc --config config.yaml <command> ...
