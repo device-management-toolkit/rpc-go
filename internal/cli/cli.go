@@ -143,7 +143,13 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 
 	defer commands.SetParsedCLIArgs(parseArgs)()
 
+	// Batch security warnings so credentials found across Globals, ServerAuthFlags,
+	// and any subcommand flags are reported in a single consolidated banner.
+	commands.BeginCredentialWarningBatch()
+
 	ctx, perr := parser.Parse(parseArgs)
+
+	commands.EndCredentialWarningBatch()
 
 	// Log config file presence after parsing (logging is configured by AfterApply at this point)
 	if _, statErr := os.Stat(configFilePath); statErr == nil {

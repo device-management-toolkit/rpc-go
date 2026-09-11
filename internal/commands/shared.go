@@ -85,9 +85,58 @@ func SetParsedCLIArgs(args []string) func() {
 	}
 }
 
+var (
+	credentialWarningMu    sync.Mutex
+	credentialWarningBatch bool
+	batchedCredentials     []CredentialCLI
+)
+
+// BeginCredentialWarningBatch causes subsequent WarnIfCredentialsOnCLI calls to buffer
+// their credentials instead of warning immediately, so that all credentials detected
+// while parsing a single command (across Globals, ServerAuthFlags, and any subcommand
+// flags) are reported in one consolidated banner. Call EndCredentialWarningBatch to
+// flush the buffer and resume immediate warnings.
+func BeginCredentialWarningBatch() {
+	credentialWarningMu.Lock()
+	defer credentialWarningMu.Unlock()
+
+	credentialWarningBatch = true
+	batchedCredentials = nil
+}
+
+// EndCredentialWarningBatch flushes any credentials buffered since BeginCredentialWarningBatch
+// as a single warning banner, then stops batching.
+func EndCredentialWarningBatch() {
+	credentialWarningMu.Lock()
+	credentialWarningBatch = false
+	pending := batchedCredentials
+	batchedCredentials = nil
+	credentialWarningMu.Unlock()
+
+	if len(pending) > 0 {
+		emitCredentialWarning(pending...)
+	}
+}
+
 // WarnIfCredentialsOnCLI prints one warning for all non-empty credentials passed
-// via command-line flags. EnvVar is suggested when it is provided.
+// via command-line flags. EnvVar is suggested when it is provided. When called
+// between BeginCredentialWarningBatch/EndCredentialWarningBatch, the credentials
+// are buffered and reported together instead of warning immediately.
 func WarnIfCredentialsOnCLI(credentials ...CredentialCLI) {
+	credentialWarningMu.Lock()
+	if credentialWarningBatch {
+		batchedCredentials = append(batchedCredentials, credentials...)
+		credentialWarningMu.Unlock()
+
+		return
+	}
+	credentialWarningMu.Unlock()
+
+	emitCredentialWarning(credentials...)
+}
+
+// emitCredentialWarning does the actual flag matching and warning for a batch of credentials.
+func emitCredentialWarning(credentials ...CredentialCLI) {
 	var cliFlags []string
 
 	var envLines []string
