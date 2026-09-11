@@ -840,14 +840,20 @@ func (cmd *ActivateCmd) postActivationSync(ctx *commands.Context, consoleBaseURL
 
 	endpoint := commands.BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
 
-	// Sync deviceInfo fields (FW version, OS info, discovery data)
-	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
-		log.Warnf("Post-activation deviceInfo sync failed: %v", err)
-	}
-
 	// Update TLS connection settings which may have changed during activation
 	if err := cmd.updateTLSSettingsAfterActivation(ctx, consoleBaseURL, token, guid); err != nil {
 		log.Warnf("Post-activation TLS settings update failed: %v", err)
+	}
+
+	// Reuse the WSMAN client regardless of whether the Console TLS update above
+	// succeeded: EnsureWSMAN may have established a usable connection even if the
+	// subsequent Console PATCH failed, and that connection is still valid for
+	// collecting TLS/802.1x discovery fields below.
+	syncWSMAN := cmd.GetWSManClient()
+
+	// Sync deviceInfo fields (FW version, OS info, discovery data)
+	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, syncWSMAN, endpoint, token, guid); err != nil {
+		log.Warnf("Post-activation deviceInfo sync failed: %v", err)
 	}
 }
 
