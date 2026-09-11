@@ -6,6 +6,7 @@
 package diagnostics
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +29,10 @@ type CIRACmd struct {
 	DiagnosticsBaseCmd
 
 	Output string `help:"Output file path for the CIRA log text data" short:"o"`
+}
+
+var createCIRAOutputFile = func(name string) (io.WriteCloser, error) {
+	return os.Create(name)
 }
 
 // Run executes the CIRA diagnostics command.
@@ -58,21 +63,33 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 	}
 
 	// Create output file
-	file, err := os.Create(cmd.Output)
+	file, err := createCIRAOutputFile(cmd.Output)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
 
 	// Write CIRA log data to file
-	outputCiraLogText(file, result)
+	writeErr := outputCiraLogText(file, result)
+	closeErr := file.Close()
+
+	if writeErr != nil {
+		if closeErr != nil {
+			return fmt.Errorf("failed to write CIRA log file: %w", errors.Join(writeErr, closeErr))
+		}
+
+		return fmt.Errorf("failed to write CIRA log file: %w", writeErr)
+	}
+
+	if closeErr != nil {
+		return fmt.Errorf("failed to close output file: %w", closeErr)
+	}
 
 	fmt.Printf("CIRA Log successfully retrieved\nOutput file: %s\n", cmd.Output)
 
 	return nil
 }
 
-func outputCiraLogText(w io.Writer, result pthi.GetCiraLogResponse) {
+func outputCiraLogText(w io.Writer, result pthi.GetCiraLogResponse) error {
 	t := template.New("ciraLog").Funcs(template.FuncMap{
 		"getConnectionStateString":      getConnectionStateString,
 		"formatTimestamp":               formatTimestamp,
@@ -106,15 +123,14 @@ func outputCiraLogText(w io.Writer, result pthi.GetCiraLogResponse) {
 
 	t, err := t.Parse(ciraLogTemplate)
 	if err != nil {
-		fmt.Fprintf(w, "Error parsing template: %v\n", err)
-
-		return
+		return fmt.Errorf("failed to parse CIRA log template: %w", err)
 	}
 
-	err = t.Execute(w, result)
-	if err != nil {
-		fmt.Fprintf(w, "Error executing template: %v\n", err)
+	if err := t.Execute(w, result); err != nil {
+		return fmt.Errorf("failed to execute CIRA log template: %w", err)
 	}
+
+	return nil
 }
 
 const ciraLogTemplate = `Status = {{printf "%d" .Header.Status}} ({{.Header.Status}})
