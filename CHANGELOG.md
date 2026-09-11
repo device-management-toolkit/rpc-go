@@ -1,3 +1,10 @@
+# [3.0.0-beta.54](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.53...v3.0.0-beta.54) (2026-09-11)
+
+
+### Features
+
+* send additional device export fields as required for device export ([#1529](https://github.com/device-management-toolkit/rpc-go/issues/1529)) ([752595b](https://github.com/device-management-toolkit/rpc-go/commit/752595b1a2a5a0cd472baa32dcdfbd9ded154035)), closes [#1513](https://github.com/device-management-toolkit/rpc-go/issues/1513)
+
 # [3.0.0-beta.53](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.52...v3.0.0-beta.53) (2026-09-01)
 
 # [3.0.0-beta.52](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.51...v3.0.0-beta.52) (2026-08-31)
