@@ -1,3 +1,11 @@
+# [3.0.0-beta.55](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.54...v3.0.0-beta.55) (2026-09-14)
+
+
+### Bug Fixes
+
+* Add the support on the connection to /dev/mei1 to /dev/mei0 ([3b77c9c](https://github.com/device-management-toolkit/rpc-go/commit/3b77c9c3cc8f4df95a77b395efeebe29ffe36a6a))
+* Instead of hardcode to /dev/mei0 update to support /dev/mei1 to /dev/mei3 ([9f85db7](https://github.com/device-management-toolkit/rpc-go/commit/9f85db7d48a05b295fcdcf279568b2367240e7e4))
+
 # [3.0.0-beta.54](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.53...v3.0.0-beta.54) (2026-09-11)
 
 
