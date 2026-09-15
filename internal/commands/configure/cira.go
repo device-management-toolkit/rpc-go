@@ -14,6 +14,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -28,6 +29,17 @@ type CIRACmd struct {
 	MPSCert                string   `help:"MPS Root Public Certificate" env:"MPS_CERT" name:"mpscert" kong:"required"`
 	EnvironmentDetection   []string `help:"Environment Detection (comma separated)" env:"ENVIRONMENT_DETECTION" name:"envdetection"`
 	GenerateRandomPassword bool     `help:"Generate Random Password for connection with MPS" env:"GENERATE_RANDOM_PASSWORD" name:"generateRandomPassword"`
+}
+
+// AfterApply runs AMT setup before printing a warning for an MPS password supplied on the CLI.
+func (cmd *CIRACmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MPSPassword, EnvVar: "MPS_PASSWORD", FlagName: []string{"mpspassword"}})
+
+	return nil
 }
 
 // BeforeApply validates the CIRA configuration command before execution

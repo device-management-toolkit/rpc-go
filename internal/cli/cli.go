@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/alecthomas/kong"
 	kongyaml "github.com/alecthomas/kong-yaml"
@@ -35,6 +36,8 @@ const (
 	commandDiagnostics = "diagnostics"
 	commandDiag        = "diag"
 )
+
+var parseMu sync.Mutex
 
 // Global flags that apply to all commands
 type Globals struct {
@@ -104,11 +107,18 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 		lipgloss.SetColorProfile(termenv.ColorProfile())
 	}
 
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{
+		Value: g.AMTPassword, EnvVar: "AMT_PASSWORD", FlagName: []string{"password"},
+	})
+
 	return nil
 }
 
 // Parse creates a new Kong parser and parses the command line
 func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error) {
+	parseMu.Lock()
+	defer parseMu.Unlock()
+
 	var cli CLI
 
 	helpOpts := kong.HelpOptions{Compact: true}
@@ -137,7 +147,15 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 		parseArgs = []string{}
 	}
 
+	defer commands.SetParsedCLIArgs(parseArgs)()
+
+	// Batch security warnings so credentials found across Globals, ServerAuthFlags,
+	// and any subcommand flags are reported in a single consolidated banner.
+	commands.BeginCredentialWarningBatch()
+
 	ctx, perr := parser.Parse(parseArgs)
+
+	commands.EndCredentialWarningBatch()
 
 	// Log config file presence after parsing (logging is configured by AfterApply at this point)
 	if _, statErr := os.Stat(configFilePath); statErr == nil {

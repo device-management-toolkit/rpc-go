@@ -21,6 +21,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -60,6 +61,22 @@ type ActivateCmd struct {
 	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+}
+
+// AfterApply prints CLI credential warnings and runs the embedded AMT setup hook.
+func (cmd *ActivateCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(
+		commands.CredentialCLI{Value: cmd.ProvisioningCert, EnvVar: "PROVISIONING_CERT", FlagName: []string{"provisioningCert"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, EnvVar: "PROVISIONING_CERT_PASSWORD", FlagName: []string{"provisioningCertPwd"}},
+		commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}},
+		commands.CredentialCLI{Value: cmd.Key, EnvVar: "CONFIG_ENCRYPTION_KEY", FlagName: []string{"key", "k"}},
+	)
+
+	return nil
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
