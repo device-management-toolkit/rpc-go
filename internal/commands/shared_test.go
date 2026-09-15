@@ -60,6 +60,12 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 			value:      "prompted-value",
 			wantNotice: false,
 		},
+		{
+			name:       "short equals empty value",
+			args:       []string{"rpc", "activate", "-k="},
+			value:      "prompted-value",
+			wantNotice: false,
+		},
 	}
 
 	for _, tt := range tests {

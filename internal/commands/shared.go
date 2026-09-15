@@ -199,7 +199,9 @@ func flagHasValueOnCLI(flag string) bool {
 
 		// Support short flags with an attached value, e.g. -kVALUE
 		if len(flag) == 2 && strings.HasPrefix(flag, "-") && !strings.HasPrefix(flag, "--") && strings.HasPrefix(arg, flag) {
-			return strings.TrimSpace(strings.TrimPrefix(arg, flag)) != ""
+			value := strings.TrimPrefix(arg, flag)
+
+			return strings.TrimSpace(strings.TrimPrefix(value, "=")) != ""
 		}
 	}
 
