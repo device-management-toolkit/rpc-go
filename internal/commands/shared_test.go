@@ -51,7 +51,13 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 		{
 			name:       "empty value",
 			args:       []string{"rpc", "configure", "tls", "--eaPassword", ""},
-			value:      " ",
+			value:      "prompted-value",
+			wantNotice: false,
+		},
+		{
+			name:       "equals empty value",
+			args:       []string{"rpc", "configure", "tls", "--eaPassword="},
+			value:      "prompted-value",
 			wantNotice: false,
 		},
 	}

@@ -158,7 +158,7 @@ func emitCredentialWarning(credentials ...CredentialCLI) {
 				}
 			}
 
-			if flagPresentOnCLI(flag) {
+			if flagHasValueOnCLI(flag) {
 				matched = flag
 
 				break
@@ -180,23 +180,26 @@ func emitCredentialWarning(credentials ...CredentialCLI) {
 	}
 }
 
-// flagPresentOnCLI reports whether flag was explicitly passed as a command-line argument
-// (as opposed to being populated from an environment variable or config file default).
-func flagPresentOnCLI(flag string) bool {
+// flagHasValueOnCLI reports whether flag was explicitly passed with a non-empty value.
+func flagHasValueOnCLI(flag string) bool {
 	parsedCLIArgsMu.RLock()
 
 	args := append([]string(nil), parsedCLIArgs...)
 
 	parsedCLIArgsMu.RUnlock()
 
-	for _, arg := range args {
-		if arg == flag || strings.HasPrefix(arg, flag+"=") {
-			return true
+	for index, arg := range args {
+		if strings.HasPrefix(arg, flag+"=") {
+			return strings.TrimSpace(strings.TrimPrefix(arg, flag+"=")) != ""
+		}
+
+		if arg == flag {
+			return index+1 < len(args) && strings.TrimSpace(args[index+1]) != ""
 		}
 
 		// Support short flags with an attached value, e.g. -kVALUE
 		if len(flag) == 2 && strings.HasPrefix(flag, "-") && !strings.HasPrefix(flag, "--") && strings.HasPrefix(arg, flag) {
-			return true
+			return strings.TrimSpace(strings.TrimPrefix(arg, flag)) != ""
 		}
 	}
 
