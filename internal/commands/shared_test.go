@@ -92,3 +92,45 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 		})
 	}
 }
+
+func TestCredentialWarningBatch(t *testing.T) {
+	oldOutput := logrus.StandardLogger().Out
+	oldLevel := logrus.GetLevel()
+	restoreArgs := SetParsedCLIArgs([]string{
+		"configure", "wired",
+		"--eaPassword", "ea-secret",
+		"--ieee8021xPassword", "wireless-secret",
+	})
+
+	defer func() {
+		restoreArgs()
+
+		logrus.SetOutput(oldOutput)
+		logrus.SetLevel(oldLevel)
+	}()
+
+	var output bytes.Buffer
+
+	logrus.SetOutput(&output)
+	logrus.SetLevel(logrus.WarnLevel)
+
+	BeginCredentialWarningBatch()
+	WarnIfCredentialsOnCLI(CredentialCLI{
+		Value:    "ea-secret",
+		EnvVar:   "EA_PASSWORD",
+		FlagName: []string{"eaPassword"},
+	})
+	WarnIfCredentialsOnCLI(CredentialCLI{
+		Value:    "wireless-secret",
+		EnvVar:   "IEEE8021X_PASSWORD",
+		FlagName: []string{"ieee8021xPassword"},
+	})
+
+	require.Empty(t, output.String())
+
+	EndCredentialWarningBatch()
+
+	require.Contains(t, output.String(), "--eaPassword, --ieee8021xPassword")
+	require.Contains(t, output.String(), "EA_PASSWORD=<value>")
+	require.Contains(t, output.String(), "IEEE8021X_PASSWORD=<value>")
+}
