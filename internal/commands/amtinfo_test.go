@@ -23,6 +23,7 @@ import (
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2141,7 +2142,9 @@ func TestInfoService_hasNoFlagsSet_AllCombinations(t *testing.T) {
 		{"Bld", &AmtInfoCmd{Bld: true}},
 		{"Sku", &AmtInfoCmd{Sku: true}},
 		{"UUID", &AmtInfoCmd{UUID: true}},
+		{"UPID", &AmtInfoCmd{UPID: true}},
 		{"Mode", &AmtInfoCmd{Mode: true}},
+		{"ProvState", &AmtInfoCmd{ProvState: true}},
 		{"DNS", &AmtInfoCmd{DNS: true}},
 		{"Cert", &AmtInfoCmd{Cert: true}},
 		{"UserCert", &AmtInfoCmd{UserCert: true}},
@@ -2220,4 +2223,85 @@ func TestInfoService_getOSIPAddress_CompleteScenarios(t *testing.T) {
 			assert.Equal(t, notFoundIP, result)
 		})
 	}
+}
+
+func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(&upid.UPID{HWSerialNum: []uint8{0x12, 0x34}, OEMPlatformID: []uint8{0x56, 0x78}, PlatformIdType: 0}, nil)
+	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{
+		{Name: "Cert1", Hash: "16af57a9f676b0ab126095aa5ebadef22ab31119d644ac95cd4b93dbf3f26aeb"},
+	}, nil)
+
+	var gotBody syncPayload
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+
+		err := json.NewDecoder(r.Body).Decode(&gotBody)
+		assert.NoError(t, err)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := &Context{
+		AMTCommand:    mockAMT,
+		SkipCertCheck: true,
+	}
+	baseCmd := &AMTBaseCmd{HECIAvailable: true}
+
+	err := SyncDeviceInfoHelper(ctx, baseCmd, nil, server.URL+"/api/v1/devices", "token-123", "12345678-1234-1234-1234-123456789ABC")
+	require.NoError(t, err)
+
+	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	require.NotNil(t, gotBody.DeviceInfo.UPID)
+	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.CSMEId)
+	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.OEMId)
+	assert.Equal(t, []string{"16af57a9f676b0ab126095aa5ebadef22ab31119d644ac95cd4b93dbf3f26aeb"}, gotBody.DeviceInfo.CertHashes)
+}
+
+func TestSyncDeviceInfoHelper_HECIUnavailable_HandlesGracefully(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available"))
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
+
+	var gotBody syncPayload
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := &Context{
+		AMTCommand:    mockAMT,
+		SkipCertCheck: true,
+	}
+	baseCmd := &AMTBaseCmd{HECIAvailable: false}
+
+	err := SyncDeviceInfoHelper(ctx, baseCmd, nil, server.URL+"/api/v1/devices", "token-123", "12345678-1234-1234-1234-123456789ABC")
+	require.NoError(t, err)
+
+	assert.Nil(t, gotBody.DeviceInfo.UPID)
+	assert.Empty(t, gotBody.DeviceInfo.CertHashes)
 }

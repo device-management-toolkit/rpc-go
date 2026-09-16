@@ -843,9 +843,11 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WS
 		Bld:        true,
 		Sku:        true,
 		UUID:       true,
+		UPID:       true,
 		Mode:       true,
 		Lan:        true,
 		DNS:        true,
+		Cert:       true,
 	}
 
 	log.Debug("Initializing info service for sync")

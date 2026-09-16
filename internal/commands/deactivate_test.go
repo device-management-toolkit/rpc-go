@@ -722,6 +722,7 @@ func TestExecuteHttpConsoleDeactivate_PostDeactivationSync(t *testing.T) {
 
 	mockAMT := mock.NewMockInterface(ctrl)
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
@@ -775,6 +776,7 @@ func TestExecuteHttpConsoleDeactivate_CustomDevicesEndpoint(t *testing.T) {
 
 	mockAMT := mock.NewMockInterface(ctrl)
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
