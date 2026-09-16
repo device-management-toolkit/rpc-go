@@ -856,7 +856,8 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 }
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
-func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, guid string, opts ...InfoServiceOption) error {
+func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WSMANer, endpoint, token, guid string,
+	opts ...InfoServiceOption) error {
 	log.Debug("Starting device info collection for sync")
 
 	infoCmd := &AmtInfoCmd{
@@ -876,6 +877,7 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, endpoint, token, gu
 		WithLocalTLSEnforced(baseCmd.LocalTLSEnforced),
 		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
 		WithHECIAvailable(baseCmd.HECIAvailable),
+		WithWSMANClient(wsman),
 	}, opts...)
 
 	service := NewInfoService(ctx.AMTCommand, serviceOpts...)
