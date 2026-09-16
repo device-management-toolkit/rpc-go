@@ -14,6 +14,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -28,8 +29,8 @@ type WirelessCmd struct {
 	IEEE8021xPassword               string `help:"802.1x password" env:"IEEE8021X_PASSWORD" name:"ieee8021xPassword"`
 	IEEE8021xAuthenticationProtocol int    `help:"802.1x authentication protocol (0=EAP-TLS, 2=PEAPv0/EAP-MSCHAPv2)" alias:"authenticationprotocol" enum:"0,2" default:"0" name:"ieee8021xAuthenticationProtocol"`
 	IEEE8021xPrivateKey             string `help:"802.1x private key (PEM format)" env:"IEEE8021X_PRIVATE_KEY" alias:"privatekey" name:"ieee8021xPrivateKey"`
-	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" alias:"clientcert" name:"ieee8021xClientCert"`
-	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" alias:"cacert" name:"ieee8021xCACert"`
+	IEEE8021xClientCert             string `help:"802.1x client certificate (PEM format)" env:"IEEE8021X_CLIENT_CERT" alias:"clientcert" name:"ieee8021xClientCert"`
+	IEEE8021xCACert                 string `help:"802.1x CA certificate (PEM format)" env:"IEEE8021X_CA_CERT" alias:"cacert" name:"ieee8021xCACert"`
 
 	// WiFi configuration
 	ProfileName          string `help:"WiFi profile name" name:"profileName"`
@@ -40,6 +41,23 @@ type WirelessCmd struct {
 	PSKPassphrase        string `help:"WPA/WPA2 passphrase" env:"PSK_PASSPHRASE" name:"pskPassphrase"`
 	// Maintenance
 	Purge bool `help:"Purge all existing AMT wireless profiles and exit" name:"purge"`
+}
+
+// AfterApply prints security warnings if sensitive values were passed via CLI flags.
+func (cmd *WirelessCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(
+		commands.CredentialCLI{Value: cmd.IEEE8021xPassword, EnvVar: "IEEE8021X_PASSWORD", FlagName: []string{"ieee8021xPassword"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xPrivateKey, EnvVar: "IEEE8021X_PRIVATE_KEY", FlagName: []string{"ieee8021xPrivateKey", "privatekey"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xClientCert, EnvVar: "IEEE8021X_CLIENT_CERT", FlagName: []string{"ieee8021xClientCert", "clientcert"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xCACert, EnvVar: "IEEE8021X_CA_CERT", FlagName: []string{"ieee8021xCACert", "cacert"}},
+		commands.CredentialCLI{Value: cmd.PSKPassphrase, EnvVar: "PSK_PASSPHRASE", FlagName: []string{"pskPassphrase"}},
+	)
+
+	return nil
 }
 
 // Validate implements Kong's Validate interface for wireless command validation

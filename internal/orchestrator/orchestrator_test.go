@@ -952,6 +952,42 @@ func TestExecuteCIRAConfiguration_UsesCorrectFlagNames(t *testing.T) {
 	}
 }
 
+func TestExecuteWirelessProfile_PassesCertificatesThroughEnv(t *testing.T) {
+	po := NewProfileOrchestrator(config.Configuration{}, "amt-pwd", "", false)
+	mock := newMockExecutor()
+	po.executor = mock
+
+	err := po.executeWirelessProfile(config.WirelessProfile{
+		ProfileName:          "wireless-profile",
+		SSID:                 "wireless-ssid",
+		AuthenticationMethod: "WPA2IEEE8021X",
+		EncryptionMethod:     "CCMP",
+		IEEE8021x: &config.IEEE8021x{
+			ClientCert: "client-cert-data",
+			CACert:     "ca-cert-data",
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeWirelessProfile() error = %v", err)
+	}
+
+	args := mock.executedArgs[0]
+	for _, leaked := range []string{"--ieee8021xClientCert", "client-cert-data", "--ieee8021xCACert", "ca-cert-data"} {
+		if slices.Contains(args, leaked) {
+			t.Errorf("certificate data must not appear in args, got: %s", strings.Join(args, " "))
+		}
+	}
+
+	env := mock.executedEnv[0]
+	if env[envIEEE8021xClientCert] != "client-cert-data" {
+		t.Errorf("expected %s env var to contain client certificate data", envIEEE8021xClientCert)
+	}
+
+	if env[envIEEE8021xCACert] != "ca-cert-data" {
+		t.Errorf("expected %s env var to contain CA certificate data", envIEEE8021xCACert)
+	}
+}
+
 func TestExecuteCIRAConfiguration_WithEnvDetection(t *testing.T) {
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"

@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -315,12 +314,8 @@ func TestServerAuthFlags_WarnIfInsecure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore os.Args
-			oldArgs := os.Args
-			defer func() { os.Args = oldArgs }()
-
-			// Set os.Args to simulate CLI invocation
-			os.Args = tt.cliArgs
+			restoreArgs := SetParsedCLIArgs(tt.cliArgs[1:])
+			defer restoreArgs()
 
 			// Capture log output
 			var logBuf bytes.Buffer
@@ -359,12 +354,8 @@ func TestServerAuthFlags_WarnIfInsecure(t *testing.T) {
 }
 
 func TestServerAuthFlags_AfterApply(t *testing.T) {
-	// Save and restore os.Args
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	// Simulate CLI with auth token
-	os.Args = []string{"rpc", "version", "--auth-token", "test-token"}
+	restoreArgs := SetParsedCLIArgs([]string{"version", "--auth-token", "test-token"})
+	defer restoreArgs()
 
 	// Test that AfterApply calls WarnIfInsecure
 	flags := ServerAuthFlags{

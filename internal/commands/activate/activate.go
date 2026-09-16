@@ -21,6 +21,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -60,6 +61,22 @@ type ActivateCmd struct {
 	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+}
+
+// AfterApply prints CLI credential warnings and runs the embedded AMT setup hook.
+func (cmd *ActivateCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(
+		commands.CredentialCLI{Value: cmd.ProvisioningCert, EnvVar: "PROVISIONING_CERT", FlagName: []string{"provisioningCert"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, EnvVar: "PROVISIONING_CERT_PASSWORD", FlagName: []string{"provisioningCertPwd"}},
+		commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}},
+		commands.CredentialCLI{Value: cmd.Key, EnvVar: "CONFIG_ENCRYPTION_KEY", FlagName: []string{"key", "k"}},
+	)
+
+	return nil
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password
@@ -840,14 +857,20 @@ func (cmd *ActivateCmd) postActivationSync(ctx *commands.Context, consoleBaseURL
 
 	endpoint := commands.BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
 
-	// Sync deviceInfo fields (FW version, OS info, discovery data)
-	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
-		log.Warnf("Post-activation deviceInfo sync failed: %v", err)
-	}
-
 	// Update TLS connection settings which may have changed during activation
 	if err := cmd.updateTLSSettingsAfterActivation(ctx, consoleBaseURL, token, guid); err != nil {
 		log.Warnf("Post-activation TLS settings update failed: %v", err)
+	}
+
+	// Reuse the WSMAN client regardless of whether the Console TLS update above
+	// succeeded: EnsureWSMAN may have established a usable connection even if the
+	// subsequent Console PATCH failed, and that connection is still valid for
+	// collecting TLS/802.1x discovery fields below.
+	syncWSMAN := cmd.GetWSManClient()
+
+	// Sync deviceInfo fields (FW version, OS info, discovery data)
+	if err := commands.SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, syncWSMAN, endpoint, token, guid); err != nil {
+		log.Warnf("Post-activation deviceInfo sync failed: %v", err)
 	}
 }
 

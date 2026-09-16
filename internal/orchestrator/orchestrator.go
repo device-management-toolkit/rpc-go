@@ -37,6 +37,8 @@ const (
 	envPSKPassphrase       = "PSK_PASSPHRASE"
 	envIEEE8021xPassword   = "IEEE8021X_PASSWORD"
 	envIEEE8021xPrivKey    = "IEEE8021X_PRIVATE_KEY"
+	envIEEE8021xClientCert = "IEEE8021X_CLIENT_CERT"
+	envIEEE8021xCACert     = "IEEE8021X_CA_CERT"
 	envEAPassword          = "EA_PASSWORD"
 
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
@@ -726,11 +728,11 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 		}
 
 		if ieee.ClientCert != "" {
-			args = append(args, "--ieee8021xClientCert", ieee.ClientCert)
+			extraEnv[envIEEE8021xClientCert] = ieee.ClientCert
 		}
 
 		if ieee.CACert != "" {
-			args = append(args, "--ieee8021xCACert", ieee.CACert)
+			extraEnv[envIEEE8021xCACert] = ieee.CACert
 		}
 	}
 

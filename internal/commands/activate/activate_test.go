@@ -1029,6 +1029,8 @@ func TestPostActivationSync_SendsPatch(t *testing.T) {
 	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 
 	deviceInfoPatchCalled := 0
 
@@ -1103,6 +1105,8 @@ func TestRunLocalActivation_Failure_StillAttemptsPostActivationSync(t *testing.T
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 
 	patchCalled := 0
 

@@ -257,7 +257,7 @@ func (cmd *DeactivateCmd) postDeactivationSync(ctx *Context, consoleBaseURL, tok
 
 	endpoint := BuildDevicesEndpoint(ctx.DevicesEndpoint, consoleBaseURL)
 
-	if err := SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, endpoint, token, guid); err != nil {
+	if err := SyncDeviceInfoHelper(ctx, &cmd.AMTBaseCmd, nil, endpoint, token, guid); err != nil {
 		log.Warnf("Post-deactivation sync failed: %v", err)
 	}
 }
