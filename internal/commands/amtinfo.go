@@ -6,7 +6,6 @@
 package commands
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -28,6 +27,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
@@ -571,7 +571,10 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
 
 	// Try PATCH request
-	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken, ctx.TenantID)
+	requestCtx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+	defer cancel()
+
+	resp, err := device.DoJSONRequest(requestCtx, httpClient, http.MethodPatch, endpoint, authToken, ctx.TenantID, body)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
@@ -671,34 +674,6 @@ func (s *InfoService) getAuthToken(endpoint string, auth *ServerAuthFlags, skipC
 	return token, nil
 }
 
-// doHTTPRequest performs an HTTP request and returns the response
-func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string, body []byte, authToken, tenantID string) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create %s request: %w", method, err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	if tenantID != "" {
-		req.Header.Set("x-tenant-id", tenantID)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	return resp, nil
-}
-
 // isHTTPSuccess checks if the response status code indicates success (2xx)
 func isHTTPSuccess(statusCode int) bool {
 	return statusCode >= 200 && statusCode < 300
@@ -708,7 +683,10 @@ func isHTTPSuccess(statusCode int) bool {
 func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken, tenantID string) error {
 	log.Debugf("updating device info (PATCH) to %s", endpoint)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken, tenantID)
+	requestCtx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+	defer cancel()
+
+	resp, err := device.DoJSONRequest(requestCtx, client, http.MethodPatch, endpoint, authToken, tenantID, body)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
@@ -740,7 +718,10 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 
 	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken, tenantID)
+	requestCtx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
+	defer cancel()
+
+	resp, err := device.DoJSONRequest(requestCtx, client, http.MethodPost, endpoint, authToken, tenantID, body)
 	if err != nil {
 		log.Debugf("device registration (POST) request failed: %v", err)
 

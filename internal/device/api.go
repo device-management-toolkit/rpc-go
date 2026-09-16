@@ -63,25 +63,17 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("request failed with status %s", e.Status)
 }
 
-// doJSONRequest executes an HTTP request; returns *StatusError for non-2xx responses.
-func doJSONRequest(method, requestURL, token, tenantID string, body []byte, skipCertCheck bool) error {
-	httpClient := &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: skipCertCheck, //nolint:gosec // user-controlled flag for self-signed certs
-			},
-		},
-	}
-
+// DoJSONRequest sends an authenticated JSON request and returns the raw response.
+// Callers own response-body closure and status-code interpretation.
+func DoJSONRequest(ctx context.Context, client *http.Client, method, requestURL, token, tenantID string, body []byte) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, requestURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, bodyReader)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if body != nil {
@@ -96,21 +88,23 @@ func doJSONRequest(method, requestURL, token, tenantID string, body []byte, skip
 		req.Header.Set(tenantHeaderName, tenantID)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StatusError{
-			StatusCode: resp.StatusCode,
-			Status:     resp.Status,
-			Detail:     readErrorBody(resp.Body),
-		}
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	return nil
+	return resp, nil
+}
+
+func newDeviceHTTPClient(skipCertCheck bool) *http.Client {
+	return &http.Client{
+		Timeout: requestTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: skipCertCheck, //nolint:gosec // user-controlled flag for self-signed certs
+			},
+		},
+	}
 }
 
 func sendDeviceJSONRequest(method, endpoint, token, tenantID string, payload interface{}, skipCertCheck bool, errContext string) error {
@@ -125,8 +119,18 @@ func sendDeviceJSONRequest(method, endpoint, token, tenantID string, payload int
 		body = encoded
 	}
 
-	if err := doJSONRequest(method, endpoint, token, tenantID, body, skipCertCheck); err != nil {
+	resp, err := DoJSONRequest(context.Background(), newDeviceHTTPClient(skipCertCheck), method, endpoint, token, tenantID, body)
+	if err != nil {
 		return fmt.Errorf("%s: %w", errContext, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s: %w", errContext, &StatusError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Detail:     readErrorBody(resp.Body),
+		})
 	}
 
 	return nil
