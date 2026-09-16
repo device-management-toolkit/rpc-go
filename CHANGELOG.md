@@ -1,3 +1,10 @@
+# [3.0.0-beta.58](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.57...v3.0.0-beta.58) (2026-09-16)
+
+
+### Bug Fixes
+
+* collect UPID and cert hashes during post-activation sync ([#1555](https://github.com/device-management-toolkit/rpc-go/issues/1555)) ([0ea20c5](https://github.com/device-management-toolkit/rpc-go/commit/0ea20c569e1e96300479d263ab05bc04c8b700af)), closes [#1549](https://github.com/device-management-toolkit/rpc-go/issues/1549)
+
 # [3.0.0-beta.57](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.56...v3.0.0-beta.57) (2026-09-16)
 
 
