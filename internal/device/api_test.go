@@ -66,6 +66,7 @@ func TestAddDevice_Success(t *testing.T) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/v1/devices", r.URL.Path)
 		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "tenant-a", r.Header.Get(tenantHeaderName))
 
 		body, _ := io.ReadAll(r.Body)
 
@@ -84,7 +85,7 @@ func TestAddDevice_Success(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := AddDevice(server.URL, "test-token", payload, false, "")
+	err := AddDevice(server.URL, "test-token", "tenant-a", payload, false, "")
 	assert.NoError(t, err)
 }
 
@@ -101,7 +102,7 @@ func TestAddDevice_Failure(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := AddDevice(server.URL, "test-token", payload, false, "")
+	err := AddDevice(server.URL, "test-token", "", payload, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "409")
 }
@@ -111,6 +112,7 @@ func TestUpdateDevice_Success(t *testing.T) {
 		assert.Equal(t, http.MethodPatch, r.Method)
 		assert.Equal(t, "/api/v1/devices", r.URL.Path)
 		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "tenant-a", r.Header.Get(tenantHeaderName))
 
 		body, _ := io.ReadAll(r.Body)
 
@@ -131,7 +133,7 @@ func TestUpdateDevice_Success(t *testing.T) {
 		MPSPassword: "MPS-Pass1!",
 	}
 
-	err := UpdateDevice(server.URL, "test-token", payload, false, "")
+	err := UpdateDevice(server.URL, "test-token", "tenant-a", payload, false, "")
 	assert.NoError(t, err)
 }
 
@@ -148,9 +150,42 @@ func TestUpdateDevice_NotFound(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := UpdateDevice(server.URL, "test-token", payload, false, "")
+	err := UpdateDevice(server.URL, "test-token", "", payload, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
+}
+
+func TestUpdateDeviceTLSSettings_SendsTenantHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v1/devices", r.URL.Path)
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "tenant-a", r.Header.Get(tenantHeaderName))
+
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+
+		var payload deviceTLSPatchPayload
+		require.NoError(t, json.Unmarshal(body, &payload))
+		assert.Equal(t, "guid-123", payload.GUID)
+		assert.True(t, payload.UseTLS)
+		assert.True(t, payload.AllowSelfSigned)
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := UpdateDeviceTLSSettings(TLSSettingsUpdate{
+		ConsoleBaseURL:  server.URL,
+		Token:           "test-token",
+		TenantID:        "tenant-a",
+		GUID:            "guid-123",
+		Hostname:        "host",
+		Username:        "admin",
+		UseTLS:          true,
+		AllowSelfSigned: true,
+	})
+	require.NoError(t, err)
 }
 
 func TestClearDeviceMPSPassword_Success(t *testing.T) {
@@ -159,6 +194,7 @@ func TestClearDeviceMPSPassword_Success(t *testing.T) {
 		assert.Equal(t, "/api/v1/devices", r.URL.Path)
 		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "tenant-a", r.Header.Get(tenantHeaderName))
 
 		body, _ := io.ReadAll(r.Body)
 
@@ -171,7 +207,7 @@ func TestClearDeviceMPSPassword_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "tenant-a", "guid-123", false, "")
 	assert.NoError(t, err)
 }
 
@@ -181,7 +217,7 @@ func TestClearDeviceMPSPassword_Failure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, "")
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "", "guid-123", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }
@@ -191,12 +227,13 @@ func TestDeleteDevice_Success(t *testing.T) {
 		assert.Equal(t, http.MethodDelete, r.Method)
 		assert.Equal(t, "/api/v1/devices/guid-123", r.URL.Path)
 		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "tenant-a", r.Header.Get(tenantHeaderName))
 
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
-	err := DeleteDevice(server.URL, "test-token", "guid-123", false, "")
+	err := DeleteDevice(server.URL, "test-token", "tenant-a", "guid-123", false, "")
 	assert.NoError(t, err)
 }
 
@@ -206,7 +243,7 @@ func TestDeleteDevice_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := DeleteDevice(server.URL, "test-token", "guid-123", false, "")
+	err := DeleteDevice(server.URL, "test-token", "", "guid-123", false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }
@@ -245,7 +282,7 @@ func TestAddDevice_CustomEndpoint(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := AddDevice(server.URL, "test-token", payload, false, server.URL+"/custom/v2/devices")
+	err := AddDevice(server.URL, "test-token", "", payload, false, server.URL+"/custom/v2/devices")
 	assert.NoError(t, err)
 }
 
@@ -265,7 +302,7 @@ func TestUpdateDevice_CustomEndpoint(t *testing.T) {
 		MPSUsername: "admin",
 	}
 
-	err := UpdateDevice(server.URL, "test-token", payload, false, server.URL+"/custom/v2/devices")
+	err := UpdateDevice(server.URL, "test-token", "", payload, false, server.URL+"/custom/v2/devices")
 	assert.NoError(t, err)
 }
 
@@ -278,7 +315,7 @@ func TestClearDeviceMPSPassword_CustomEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := ClearDeviceMPSPassword(server.URL, "test-token", "guid-123", false, server.URL+"/custom/v2/devices")
+	err := ClearDeviceMPSPassword(server.URL, "test-token", "", "guid-123", false, server.URL+"/custom/v2/devices")
 	assert.NoError(t, err)
 }
 
@@ -291,6 +328,6 @@ func TestDeleteDevice_CustomEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := DeleteDevice(server.URL, "test-token", "guid-123", false, server.URL+"/custom/v2/devices")
+	err := DeleteDevice(server.URL, "test-token", "", "guid-123", false, server.URL+"/custom/v2/devices")
 	assert.NoError(t, err)
 }

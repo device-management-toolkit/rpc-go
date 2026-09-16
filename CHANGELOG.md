@@ -1,3 +1,24 @@
+# [3.0.0-beta.58](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.57...v3.0.0-beta.58) (2026-09-16)
+
+
+### Bug Fixes
+
+* collect UPID and cert hashes during post-activation sync ([#1555](https://github.com/device-management-toolkit/rpc-go/issues/1555)) ([0ea20c5](https://github.com/device-management-toolkit/rpc-go/commit/0ea20c569e1e96300479d263ab05bc04c8b700af)), closes [#1549](https://github.com/device-management-toolkit/rpc-go/issues/1549)
+
+# [3.0.0-beta.57](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.56...v3.0.0-beta.57) (2026-09-16)
+
+
+### Features
+
+* **internal:** forward tenant header and fix deactivation sync ([#1533](https://github.com/device-management-toolkit/rpc-go/issues/1533)) ([8daa112](https://github.com/device-management-toolkit/rpc-go/commit/8daa112c0992ba6cff2377f5214c83a6d94788da))
+
+# [3.0.0-beta.56](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.55...v3.0.0-beta.56) (2026-09-16)
+
+
+### Features
+
+* warn when credentials are passed via CLI flags for remaining flags ([#1543](https://github.com/device-management-toolkit/rpc-go/issues/1543)) ([7303adf](https://github.com/device-management-toolkit/rpc-go/commit/7303adff4700435a97df4c9467deb2875c324b39))
+
 # [3.0.0-beta.55](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.54...v3.0.0-beta.55) (2026-09-14)
 
 
