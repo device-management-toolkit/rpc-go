@@ -119,11 +119,13 @@ func (po *ProfileOrchestrator) baseArgs() []string {
 	// AMT password is no longer passed via --password flag for security.
 	// It's now passed via AMT_PASSWORD environment variable per-subprocess.
 
-	// Only propagate verbose logging to subprocesses when the parent is already
-	// at debug/trace; forcing -v unconditionally would clobber the operator's
-	// chosen log level and can leak extra detail into the output.
-	if log.IsLevelEnabled(log.DebugLevel) {
+	// Preserve the parent log level in subprocesses. The verbose flag forces
+	// TraceLevel, so it must not be used when the parent only requested debug.
+	switch log.GetLevel() {
+	case log.TraceLevel:
 		args = append(args, "-v")
+	case log.DebugLevel:
+		args = append(args, "--log-level", "debug")
 	}
 
 	return args

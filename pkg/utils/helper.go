@@ -25,7 +25,27 @@ const amtFeatureIQST = "iQST"
 
 const unknown = "unknown"
 
+const amt22CertificatePolicyVersion = 22
+
+type CertificatePolicy struct {
+	HashAlgorithm string
+	KeySize       int
+}
+
 var ErrUnsupportedCertAlgorithm = errors.New("unsupported certificate algorithm")
+
+func CertificatePolicyForAMTVersion(version string) (CertificatePolicy, error) {
+	amtMajor, err := parseAMTVersion(version)
+	if err != nil {
+		return CertificatePolicy{}, fmt.Errorf("parse AMT version %q: %w", version, err)
+	}
+
+	if amtMajor >= amt22CertificatePolicyVersion {
+		return CertificatePolicy{HashAlgorithm: "SHA384", KeySize: 3072}, nil
+	}
+
+	return CertificatePolicy{HashAlgorithm: "SHA256", KeySize: 2048}, nil
+}
 
 func InterpretControlMode(mode int) string {
 	switch mode {

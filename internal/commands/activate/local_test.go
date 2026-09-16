@@ -231,6 +231,7 @@ type MockAMTCommand struct {
 	upidErr          error
 	upidCalls        int
 	stopConfigStatus string
+	amtVersion       string
 	// provisioningState is what GetProvisioningState reports: 0 pre, 1 in
 	// provisioning, 2 post. Tests that expect a completed activation must set
 	// this to provisioningStatePostProvisioning.
@@ -306,7 +307,11 @@ func (m *MockAMTCommand) Initialize() error {
 
 // Stub methods to satisfy the interface
 func (m *MockAMTCommand) GetVersionDataFromME(key string, amtTimeout time.Duration) (string, error) {
-	return "", nil
+	if m.amtVersion != "" {
+		return m.amtVersion, nil
+	}
+
+	return "16.1.35", nil
 }
 
 func (m *MockAMTCommand) GetUUID() (string, error) {
@@ -1377,49 +1382,64 @@ func TestLocalActivateCmd_Validate_EdgeCases(t *testing.T) {
 // Test for startSecureHostBasedConfiguration with different certificate algorithms
 func TestLocalActivationService_startSecureHostBasedConfiguration(t *testing.T) {
 	tests := []struct {
-		name      string
-		certAlgo  x509.SignatureAlgorithm
-		wantErr   bool
-		errSubstr string
+		name       string
+		certAlgo   x509.SignatureAlgorithm
+		amtVersion string
+		keySize    int
+		wantErr    bool
+		errSubstr  string
 	}{
 		{
-			name:     "SHA256 algorithm - should succeed",
-			certAlgo: x509.SHA256WithRSA,
-			wantErr:  false,
+			name:       "SHA256 algorithm - should succeed",
+			certAlgo:   x509.SHA256WithRSA,
+			amtVersion: "16.1.35",
+			keySize:    2048,
+			wantErr:    false,
 		},
 		{
-			name:     "SHA384 algorithm - should succeed",
-			certAlgo: x509.SHA384WithRSA,
-			wantErr:  false,
+			name:       "SHA384 algorithm - should succeed",
+			certAlgo:   x509.SHA384WithRSA,
+			amtVersion: "22.0.0",
+			keySize:    3072,
+			wantErr:    false,
 		},
 		{
-			name:      "SHA512 algorithm - should succeed with case 3",
-			certAlgo:  x509.SHA512WithRSA,
-			wantErr:   true,
-			errSubstr: "unsupported certificate algorithm",
+			name:       "SHA512 algorithm - should fail with unsupported algorithm",
+			certAlgo:   x509.SHA512WithRSA,
+			amtVersion: "16.1.35",
+			keySize:    2048,
+			wantErr:    true,
+			errSubstr:  "unsupported certificate algorithm",
 		},
 		{
-			name:      "SHA1 algorithm - should fail",
-			certAlgo:  x509.SHA1WithRSA,
-			wantErr:   true,
-			errSubstr: "unsupported certificate algorithm",
+			name:       "SHA1 algorithm - should fail with policy mismatch",
+			certAlgo:   x509.SHA1WithRSA,
+			amtVersion: "16.1.35",
+			keySize:    2048,
+			wantErr:    true,
+			errSubstr:  "unsupported certificate algorithm",
 		},
 		{
-			name:      "MD5 algorithm - should fail",
-			certAlgo:  x509.MD5WithRSA,
-			wantErr:   true,
-			errSubstr: "unsupported certificate algorithm",
+			name:       "MD5 algorithm - should fail with policy mismatch",
+			certAlgo:   x509.MD5WithRSA,
+			amtVersion: "16.1.35",
+			keySize:    2048,
+			wantErr:    true,
+			errSubstr:  "unsupported certificate algorithm",
 		},
 		{
-			name:     "Unknown algorithm - should fail",
-			certAlgo: x509.UnknownSignatureAlgorithm,
-			wantErr:  true,
+			name:       "Unknown algorithm - should fail",
+			certAlgo:   x509.UnknownSignatureAlgorithm,
+			amtVersion: "16.1.35",
+			keySize:    2048,
+			wantErr:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAMT := &MockAMTCommand{}
+			mockAMT.amtVersion = tt.amtVersion
 			service := &LocalActivationService{
 				amtCommand: mockAMT,
 			}
@@ -1427,6 +1447,7 @@ func TestLocalActivationService_startSecureHostBasedConfiguration(t *testing.T) 
 			cert := &x509.Certificate{
 				SignatureAlgorithm: tt.certAlgo,
 				Raw:                []byte("test-cert-data"),
+				PublicKey:          &rsa.PublicKey{N: new(big.Int).Lsh(big.NewInt(1), uint(tt.keySize-1))},
 			}
 			certsAndKeys := CertsAndKeys{
 				certs: []*x509.Certificate{cert},
@@ -1529,6 +1550,7 @@ func TestLocalActivationService_runStartHBCWithRetry(t *testing.T) {
 			cert := &x509.Certificate{
 				SignatureAlgorithm: x509.SHA256WithRSA,
 				Raw:                []byte("test-cert-data"),
+				PublicKey:          &rsa.PublicKey{N: new(big.Int).Lsh(big.NewInt(1), 2047)},
 			}
 			certsAndKeys := CertsAndKeys{
 				certs: []*x509.Certificate{cert},

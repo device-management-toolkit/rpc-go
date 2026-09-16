@@ -583,6 +583,8 @@ type ProvisioningCertObj struct {
 func (service *LocalActivationService) setupACMTLSConfig() (*tls.Config, error) {
 	tlsConfig := &tls.Config{}
 
+	log.Debugf("ACM TLS setup: localTLSEnforced=%t controlMode=%d provisioningCertSet=%t", service.localTLSEnforced, service.config.ControlMode, service.config.ProvisioningCert != "")
+
 	if service.localTLSEnforced {
 		// Convert certificate for TLS
 		certsAndKeys, err := service.convertPfxToObject(service.config.ProvisioningCert, service.config.ProvisioningCertPwd)
@@ -1042,6 +1044,21 @@ func (service *LocalActivationService) runStartHBCWithRetry(certsAndKeys CertsAn
 
 // startSecureHostBasedConfiguration starts secure host-based configuration
 func (service *LocalActivationService) startSecureHostBasedConfiguration(certsAndKeys CertsAndKeys) (amt.SecureHBasedResponse, error) {
+	expectedHashAlgorithm := "unknown"
+	expectedKeySize := 0
+
+	amtVersion, versionErr := service.amtCommand.GetVersionDataFromME("AMT", 2*time.Minute)
+
+	if versionErr != nil {
+		log.Debugf("unable to select AMT certificate policy for logging: %v", versionErr)
+	} else if policy, policyErr := utils.CertificatePolicyForAMTVersion(amtVersion); policyErr != nil {
+		log.Debugf("unable to select AMT certificate policy for version %s: %v", amtVersion, policyErr)
+	} else {
+		expectedHashAlgorithm = policy.HashAlgorithm
+		expectedKeySize = policy.KeySize
+		log.Debugf("selected AMT certificate policy: version=%s hash_algorithm=%s rsa_key_size=%d", amtVersion, policy.HashAlgorithm, policy.KeySize)
+	}
+
 	// Create leaf certificate hash
 	var certHashByteArray [64]byte
 
@@ -1049,6 +1066,24 @@ func (service *LocalActivationService) startSecureHostBasedConfiguration(certsAn
 	if err != nil {
 		return amt.SecureHBasedResponse{}, utils.ActivationFailedCertHash
 	}
+
+	if certAlgo != 2 && certAlgo != 3 {
+		return amt.SecureHBasedResponse{}, fmt.Errorf("unsupported certificate algorithm for activation: %d", certAlgo)
+	}
+
+	actualKeySize := 0
+	if publicKey, ok := certsAndKeys.certs[0].PublicKey.(*rsa.PublicKey); ok {
+		actualKeySize = publicKey.N.BitLen()
+	}
+
+	log.Debugf(
+		"AMT certificate policy: expected_hash_algorithm=%s expected_rsa_key_size=%d actual_signature_algorithm=%s actual_rsa_key_size=%d",
+		expectedHashAlgorithm,
+		expectedKeySize,
+		certsAndKeys.certs[0].SignatureAlgorithm,
+		actualKeySize,
+	)
+
 	// Generate hash based on certificate algorithm
 	switch certAlgo {
 	case 2: // SHA256

@@ -221,6 +221,32 @@ func TestCheckCertificateAlgorithmSupported(t *testing.T) {
 	}
 }
 
+func TestCertificatePolicyForAMTVersion(t *testing.T) {
+	tests := []struct {
+		name        string
+		version     string
+		expected    CertificatePolicy
+		expectError bool
+	}{
+		{name: "legacy AMT", version: "11.8.50", expected: CertificatePolicy{HashAlgorithm: "SHA256", KeySize: 2048}},
+		{name: "AMT 22", version: "22.0.0", expected: CertificatePolicy{HashAlgorithm: "SHA384", KeySize: 3072}},
+		{name: "malformed version", version: "unknown", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy, err := CertificatePolicyForAMTVersion(tt.version)
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, policy)
+		})
+	}
+}
+
 func TestCleanPEM(t *testing.T) {
 	tests := []struct {
 		name     string

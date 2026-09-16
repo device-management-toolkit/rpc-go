@@ -14,6 +14,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 // mockExecutor records executed commands for verification
@@ -93,6 +94,28 @@ func TestNewProfileOrchestrator_TrimSpaces(t *testing.T) {
 
 	if po.mebxPassword != "mebx" {
 		t.Errorf("mebxPassword = %q, want %q", po.mebxPassword, "mebx")
+	}
+}
+
+func TestProfileOrchestrator_baseArgsPreservesLogLevel(t *testing.T) {
+	originalLevel := log.GetLevel()
+	defer log.SetLevel(originalLevel)
+
+	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
+
+	log.SetLevel(log.DebugLevel)
+	debugArgs := po.baseArgs()
+	if slices.Contains(debugArgs, "-v") {
+		t.Fatal("debug logging must not propagate verbose trace logging")
+	}
+	if !slices.Contains(debugArgs, "debug") {
+		t.Fatalf("debug logging args = %v, want --log-level debug", debugArgs)
+	}
+
+	log.SetLevel(log.TraceLevel)
+	traceArgs := po.baseArgs()
+	if !slices.Contains(traceArgs, "-v") {
+		t.Fatalf("trace logging args = %v, want -v", traceArgs)
 	}
 }
 
