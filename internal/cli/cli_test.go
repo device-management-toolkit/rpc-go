@@ -6,11 +6,15 @@
 package cli
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -79,6 +83,39 @@ func TestParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseBatchesCredentialWarnings(t *testing.T) {
+	oldOutput := logrus.StandardLogger().Out
+	oldLevel := logrus.GetLevel()
+
+	defer func() {
+		logrus.SetOutput(oldOutput)
+		logrus.SetLevel(oldLevel)
+	}()
+
+	var output bytes.Buffer
+
+	logrus.SetOutput(&output)
+	logrus.SetLevel(logrus.WarnLevel)
+
+	_, _, err := Parse([]string{
+		"rpc", "version",
+		"--password", "amt-password",
+		"--auth-token", "auth-token",
+	}, nil)
+	require.NoError(t, err)
+
+	logOutput := output.String()
+	assert.Equal(t, 1, strings.Count(logOutput, "SECURITY WARNING"))
+	assert.Contains(t, logOutput, "--password, --auth-token")
+
+	output.Reset()
+	t.Setenv("AUTH_TOKEN", "env-token")
+
+	_, _, err = Parse([]string{"rpc", "version"}, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, output.String(), "SECURITY WARNING")
 }
 
 func TestParse_WSManCommandAliases(t *testing.T) {

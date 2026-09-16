@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,6 +20,17 @@ type MEBxCmd struct {
 
 	// MEBx password
 	MEBxPassword string `help:"MEBx password" env:"MEBX_PASSWORD" name:"mebxpassword"`
+}
+
+// AfterApply prints a security warning if the MEBx password was passed via CLI flag.
+func (cmd *MEBxCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}})
+
+	return nil
 }
 
 // Validate implements Kong's Validate interface for MEBx command validation
