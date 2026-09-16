@@ -1,3 +1,10 @@
+# [3.0.0-beta.57](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.56...v3.0.0-beta.57) (2026-09-16)
+
+
+### Features
+
+* **internal:** forward tenant header and fix deactivation sync ([#1533](https://github.com/device-management-toolkit/rpc-go/issues/1533)) ([8daa112](https://github.com/device-management-toolkit/rpc-go/commit/8daa112c0992ba6cff2377f5214c83a6d94788da))
+
 # [3.0.0-beta.56](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.55...v3.0.0-beta.56) (2026-09-16)
 
 
