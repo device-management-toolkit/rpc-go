@@ -1,3 +1,10 @@
+# [3.0.0-beta.56](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.55...v3.0.0-beta.56) (2026-09-16)
+
+
+### Features
+
+* warn when credentials are passed via CLI flags for remaining flags ([#1543](https://github.com/device-management-toolkit/rpc-go/issues/1543)) ([7303adf](https://github.com/device-management-toolkit/rpc-go/commit/7303adff4700435a97df4c9467deb2875c324b39))
+
 # [3.0.0-beta.55](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.54...v3.0.0-beta.55) (2026-09-14)
 
 
