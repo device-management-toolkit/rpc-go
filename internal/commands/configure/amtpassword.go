@@ -13,6 +13,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -22,6 +23,17 @@ type AMTPasswordCmd struct {
 	ConfigureBaseCmd
 
 	NewPassword string `help:"New AMT password" name:"newamtpassword" env:"NEW_AMT_PASSWORD"`
+}
+
+// AfterApply prints a security warning if the new AMT password was passed via CLI flag.
+func (cmd *AMTPasswordCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.NewPassword, EnvVar: "NEW_AMT_PASSWORD", FlagName: []string{"newamtpassword"}})
+
+	return nil
 }
 
 // BeforeApply validates the AMT password change command before execution

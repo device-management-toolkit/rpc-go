@@ -126,6 +126,17 @@ type TLSCmd struct {
 	Delay int    `help:"Delay time in seconds after putting remote TLS settings" default:"3" name:"delay"`
 }
 
+// AfterApply prints a security warning if the Enterprise Assistant password was passed via CLI flag.
+func (cmd *TLSCmd) AfterApply(amtCommand amt.Interface) error {
+	if err := cmd.AMTBaseCmd.AfterApply(amtCommand); err != nil {
+		return err
+	}
+
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.EAPassword, EnvVar: "EA_PASSWORD", FlagName: []string{"eaPassword"}})
+
+	return nil
+}
+
 // Validate implements Kong's Validate interface for MEBx command validation
 func (cmd *TLSCmd) Validate() error {
 	// First call the base Validate to handle password validation
