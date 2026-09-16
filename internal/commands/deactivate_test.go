@@ -823,6 +823,7 @@ func TestExecuteHttpConsoleDeactivate_MissingDeviceIsNotRecreated(t *testing.T) 
 
 	mockAMT := mock.NewMockInterface(ctrl)
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
 
 	mockWSMAN := mock.NewMockWSMANer(ctrl)
 
