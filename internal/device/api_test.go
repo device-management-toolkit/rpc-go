@@ -61,6 +61,27 @@ func TestDevicePayload_JSON_WithoutPasswords(t *testing.T) {
 	assert.False(t, hasMPS, "mpspassword should be omitted when empty")
 }
 
+func TestDevicePayload_JSON_ConnectionType(t *testing.T) {
+	data, err := json.Marshal(DevicePayload{GUID: "test-guid", ConnectionType: ConnectionTypeCIRA})
+	require.NoError(t, err)
+
+	var m map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &m))
+
+	// Wire key must match the Console dto.Device contract (json:"connectionType").
+	assert.Equal(t, "CIRA", m["connectionType"])
+
+	// omitempty: absent when unset.
+	data, err = json.Marshal(DevicePayload{GUID: "test-guid"})
+	require.NoError(t, err)
+
+	var empty map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &empty))
+
+	_, hasConnectionType := empty["connectionType"]
+	assert.False(t, hasConnectionType, "connectionType should be omitted when empty")
+}
+
 func TestAddDevice_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)

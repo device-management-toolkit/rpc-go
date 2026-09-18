@@ -37,6 +37,12 @@ const (
 	tenantHeaderName   = "x-tenant-id"
 )
 
+// Console connectionType values: how the device reaches Console.
+const (
+	ConnectionTypeCIRA   = "CIRA"
+	ConnectionTypeDirect = "Direct"
+)
+
 // resolveDevicesEndpoint returns the full devices API base URL.
 // If devicesEndpoint is non-empty, it is used directly; otherwise consoleBaseURL + DefaultDevicesPath.
 func resolveDevicesEndpoint(consoleBaseURL, devicesEndpoint string) string {
@@ -145,6 +151,7 @@ type DevicePayload struct {
 	MPSPassword     string      `json:"mpspassword,omitempty"`
 	UseTLS          bool        `json:"useTLS"`
 	AllowSelfSigned bool        `json:"allowSelfSigned"`
+	ConnectionType  string      `json:"connectionType,omitempty"` // CIRA or Direct
 	DeviceInfo      *DeviceInfo `json:"deviceInfo,omitempty"`
 }
 

@@ -516,9 +516,11 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	if hasCIRA {
 		payload.MPSUsername = utils.AMTUserName
 		payload.MPSPassword = mpsPassword
+		payload.ConnectionType = device.ConnectionTypeCIRA
 	} else {
 		payload.MPSUsername = ""
 		payload.MPSPassword = ""
+		payload.ConnectionType = device.ConnectionTypeDirect
 	}
 
 	err := device.AddDevice(consoleBaseURL, token, ctx.TenantID, payload, ctx.SkipCertCheck, ctx.DevicesEndpoint)
