@@ -9,6 +9,7 @@ import (
 	cryptotls "crypto/tls"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -38,6 +39,7 @@ type WSMANer interface {
 	Close() error
 	Unprovision(int) (setupandconfiguration.Response, error)
 	PartialUnprovision() (setupandconfiguration.Response, error)
+	GetBootSettingData() (boot.Response, error)
 	GetGeneralSettings() (general.Response, error)
 	PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error)
 	HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error)
