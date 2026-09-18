@@ -7,6 +7,7 @@ package diagnostics
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+type failingCIRAWriter struct{}
+
+func (failingCIRAWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+type closeFailingCIRAFile struct {
+	io.Writer
+}
+
+func (closeFailingCIRAFile) Close() error {
+	return errors.New("close failed")
+}
 
 func TestCIRACommand_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -132,6 +147,33 @@ func TestCIRACommand_GetCiraLogError(t *testing.T) {
 	err := cmd.Run(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to retrieve CIRA log")
+}
+
+func TestCIRACommand_WriteError(t *testing.T) {
+	err := outputCiraLogText(failingCIRAWriter{}, pthi.GetCiraLogResponse{})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to execute CIRA log template")
+}
+
+func TestCIRACommand_CloseError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	originalCreateCIRAOutputFile := createCIRAOutputFile
+
+	createCIRAOutputFile = func(string) (io.WriteCloser, error) {
+		return closeFailingCIRAFile{Writer: io.Discard}, nil
+	}
+	defer func() { createCIRAOutputFile = originalCreateCIRAOutputFile }()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetCiraLog().Return(pthi.GetCiraLogResponse{}, nil)
+
+	err := (&CIRACmd{Output: filepath.Join(t.TempDir(), "test_cira.txt")}).Run(&commands.Context{AMTCommand: mockAMT})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to close output file")
 }
 
 func TestCIRACommand_UnsupportedFirmware(t *testing.T) {
