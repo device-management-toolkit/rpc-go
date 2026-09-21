@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -17,10 +18,23 @@ import (
 // SyncClockCmd represents clock synchronization
 type SyncClockCmd struct {
 	ConfigureBaseCmd
+	URL string `help:"Server URL for remote time synchronization" short:"u"`
 }
+
+// executeRemoteSyncClock is a seam over rps.ExecuteCommand so tests can
+// intercept the remote execution path without a live RPS connection.
+var executeRemoteSyncClock = rps.ExecuteCommand
 
 // Run executes the sync clock command
 func (cmd *SyncClockCmd) Run(ctx *commands.Context) error {
+	if cmd.URL != "" {
+		if err := cmd.EnsureAMTPassword(ctx, cmd); err != nil {
+			return err
+		}
+
+		return executeRemoteSyncClock(newRemoteSyncClockRequest(cmd, ctx))
+	}
+
 	// Ensure runtime initialization (password + WSMAN client)
 	if err := cmd.EnsureRuntime(ctx); err != nil {
 		return err
@@ -53,6 +67,23 @@ func (cmd *SyncClockCmd) Run(ctx *commands.Context) error {
 	log.Info("synchronizing time completed successfully")
 
 	return nil
+}
+
+func newRemoteSyncClockRequest(cmd *SyncClockCmd, ctx *commands.Context) *rps.Request {
+	return &rps.Request{
+		Command:          utils.CommandMaintenance,
+		SubCommand:       utils.SubCommandSyncClock,
+		URL:              cmd.URL,
+		Password:         ctx.AMTPassword,
+		LogLevel:         ctx.LogLevel,
+		JsonOutput:       ctx.JsonOutput,
+		Verbose:          ctx.Verbose,
+		SkipCertCheck:    ctx.SkipCertCheck,
+		SkipAmtCertCheck: ctx.SkipAMTCertCheck,
+		TenantID:         ctx.TenantID,
+		LocalTlsEnforced: cmd.LocalTLSEnforced,
+		ControlMode:      cmd.ControlMode,
+	}
 }
 
 // Helper methods for clock synchronization
