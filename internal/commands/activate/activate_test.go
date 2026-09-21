@@ -23,6 +23,7 @@ import (
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1026,11 +1027,13 @@ func TestPostActivationSync_SendsPatch(t *testing.T) {
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("device-uuid-from-amt", nil)
+	mockAMT.EXPECT().GetUPID().Return(&upid.UPID{HWSerialNum: []uint8{0x12, 0x34}, OEMPlatformID: []uint8{0x56, 0x78}, PlatformIdType: 0}, nil)
 	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
-	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{{Name: "Cert1", Hash: "abcdef123456"}}, nil)
 
 	deviceInfoPatchCalled := 0
 
@@ -1049,7 +1052,11 @@ func TestPostActivationSync_SendsPatch(t *testing.T) {
 			deviceInfoPatchCalled++
 
 			assert.Equal(t, "admin control mode", strings.ToLower(deviceInfo["currentMode"].(string)))
-			assert.Equal(t, "10.49.76.154", deviceInfo["ipAddress"].(string))
+			assert.Equal(t, "192.168.1.100", deviceInfo["ipAddress"].(string))
+			assert.Equal(t, []interface{}{"abcdef123456"}, deviceInfo["certHashes"])
+			upidMap, ok := deviceInfo["upid"].(map[string]interface{})
+			require.True(t, ok)
+			assert.NotEmpty(t, upidMap["csmeId"])
 		}
 
 		// TLS PATCH must include hostname so it cannot be cleared by zero-value payload fields.
@@ -1102,11 +1109,13 @@ func TestRunLocalActivation_Failure_StillAttemptsPostActivationSync(t *testing.T
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
 	mockAMT.EXPECT().GetUUID().Return("test-guid", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
-	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "10.49.76.154"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
 	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
 	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
 	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
 
 	patchCalled := 0
 
