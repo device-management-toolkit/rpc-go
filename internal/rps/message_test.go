@@ -181,6 +181,26 @@ func TestCreateActivationRequestNoDNSSuffixProvided(t *testing.T) {
 	assert.Equal(t, utils.ProjectVersion, result.AppVersion)
 }
 
+func TestCreateMessageRequestIncludesLMSAvailability(t *testing.T) {
+	tests := []bool{true, false}
+
+	for _, lmsAvailable := range tests {
+		t.Run(map[bool]string{true: "available", false: "fallback"}[lmsAvailable], func(t *testing.T) {
+			payload := Payload{AMT: MockAMT{}, LMSAvailable: lmsAvailable}
+			result, err := payload.CreateMessageRequest(Request{Command: "method"})
+			assert.NoError(t, err)
+
+			encodedPayload, err := base64.StdEncoding.DecodeString(result.Payload)
+			assert.NoError(t, err)
+
+			var messagePayload MessagePayload
+			assert.NoError(t, json.Unmarshal(encodedPayload, &messagePayload))
+			assert.Equal(t, lmsAvailable, messagePayload.LMSAvailable)
+			assert.Contains(t, string(encodedPayload), `"lmsAvailable":`)
+		})
+	}
+}
+
 func TestCreateActivationRequestRequiresPasswordInConfiguredMode(t *testing.T) {
 	controlMode = 1
 	// No password provided -> should return MissingOrIncorrectPassword

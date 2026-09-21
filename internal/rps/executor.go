@@ -95,6 +95,7 @@ type Executor struct {
 	server          AMTActivationServer
 	localManagement lm.LocalMananger
 	isLME           bool
+	lmsAvailable    bool
 	payload         Payload
 	data            chan []byte
 	errors          chan error
@@ -132,6 +133,19 @@ type ExecutorConfig struct {
 	TLSTunnel        bool
 }
 
+type lmeConnection interface {
+	lm.LocalMananger
+	SetPort(uint32)
+}
+
+var newLMSConnection = func(address, port string, useTLS bool, data chan []byte, errors chan error, mode int, skipCertCheck bool) lm.LocalMananger {
+	return lm.NewLMSConnection(address, port, useTLS, data, errors, mode, skipCertCheck)
+}
+
+var newLMEConnection = func(data chan []byte, errors chan error, wg *sync.WaitGroup) lmeConnection {
+	return lm.NewLMEConnection(data, errors, wg)
+}
+
 func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// these are closed in the close function for each lm implementation
 	lmDataChannel := make(chan []byte)
@@ -144,7 +158,8 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 
 	client := Executor{
 		server:          NewAMTActivationServer(config.URL, config.Proxy),
-		localManagement: lm.NewLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
+		localManagement: newLMSConnection(utils.LMSAddress, port, config.LocalTlsEnforced, lmDataChannel, lmErrorChannel, config.ControlMode, config.SkipAmtCertCheck),
+		lmsAvailable:    true,
 		data:            lmDataChannel,
 		errors:          lmErrorChannel,
 		waitGroup:       &sync.WaitGroup{},
@@ -156,7 +171,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	if err != nil {
 		log.Tracef("LMS dial failed (%v); falling back to LME (in-band HECI/APF)", err)
 
-		lme := lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
+		lme := newLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
 		// On TLS-enforced AMT the active local port is 16993; aim the first
 		// CHANNEL_OPEN there so RPS doesn't have to issue a port_switch just
 		// to get past the activation handshake.
@@ -167,6 +182,8 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 		client.localManagement = lme
 
 		client.isLME = true
+		client.lmsAvailable = false
+
 		if err := client.localManagement.Initialize(); err != nil {
 			return Executor{}, fmt.Errorf("failed to initialize LME connection: %w", err)
 		}

@@ -146,7 +146,7 @@ func TestSetCommandMethodMaintenanceChangePassword(t *testing.T) {
 }
 
 func TestPrepareInitialMessage(t *testing.T) {
-	payload, payload1 := PrepareInitialMessage(testReq)
+	payload, payload1 := PrepareInitialMessage(testReq, true)
 	assert.NotEqual(t, payload, payload1)
 }
 

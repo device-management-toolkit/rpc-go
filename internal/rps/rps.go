@@ -28,11 +28,6 @@ type AMTActivationServer struct {
 func ExecuteCommand(req *Request) error {
 	setCommandMethod(req)
 
-	startMessage, err := PrepareInitialMessage(req)
-	if err != nil {
-		return err
-	}
-
 	config := ExecutorConfig{
 		URL:              req.URL,
 		Proxy:            req.Proxy,
@@ -45,6 +40,14 @@ func ExecuteCommand(req *Request) error {
 
 	executor, err := NewExecutor(config)
 	if err != nil {
+		return err
+	}
+
+	startMessage, err := PrepareInitialMessage(req, executor.lmsAvailable)
+	if err != nil {
+		_ = executor.server.Close()
+		_ = executor.localManagement.Close()
+
 		return err
 	}
 
@@ -86,8 +89,8 @@ func NewAMTActivationServer(URL, proxy string) AMTActivationServer {
 	return amtactivationserver
 }
 
-func PrepareInitialMessage(flags *Request) (Message, error) {
-	payload := NewPayload()
+func PrepareInitialMessage(flags *Request, lmsAvailable bool) (Message, error) {
+	payload := NewPayload(lmsAvailable)
 
 	return payload.CreateMessageRequest(*flags)
 }

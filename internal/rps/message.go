@@ -17,7 +17,8 @@ import (
 )
 
 type Payload struct {
-	AMT amt.Interface
+	AMT          amt.Interface
+	LMSAvailable bool
 }
 
 // Message is used for tranferring messages between RPS and RPC
@@ -61,6 +62,7 @@ type MessagePayload struct {
 	TLSEnforced       bool            `json:"tlsEnforced,omitempty"`
 	TLSTunnel         bool            `json:"tlsTunnel,omitempty"`
 	LMSInstalled      bool            `json:"lmsInstalled,omitempty"`
+	LMSAvailable      bool            `json:"lmsAvailable"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -84,9 +86,10 @@ type PortSwitchPayload struct {
 	Delay    int    `json:"delay"`
 }
 
-func NewPayload() Payload {
+func NewPayload(lmsAvailable bool) Payload {
 	return Payload{
-		AMT: amt.NewAMTCommand(),
+		AMT:          amt.NewAMTCommand(),
+		LMSAvailable: lmsAvailable,
 	}
 }
 
@@ -226,6 +229,8 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	payload.TLSEnforced = req.LocalTlsEnforced
 	payload.TLSTunnel = req.TLSTunnel
 	payload.LMSInstalled = utils.DetectLMS(req.LocalTlsEnforced)
+	payload.LMSAvailable = p.LMSAvailable
+	log.Debugf("sending lmsAvailable=%v in initial payload to RPS", payload.LMSAvailable)
 
 	// convert struct to json
 	data, err := json.Marshal(payload)
