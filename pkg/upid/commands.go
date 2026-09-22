@@ -76,43 +76,18 @@ func (c *Command) setFeatureState(enable bool) error {
 
 	log.Tracef("Setting UPID feature state to %v (value=%d)", enable, featureEnabled)
 
-	var requestBuffer bytes.Buffer
-
-	err := binary.Write(&requestBuffer, binary.LittleEndian, &request)
+	response, err := c.call(&request)
 	if err != nil {
-		return fmt.Errorf("failed to serialize feature state request: %w", err)
+		return fmt.Errorf("feature state set: %w", err)
 	}
 
-	requestBytes := requestBuffer.Bytes()
-	requestSize := uint32(len(requestBytes))
-
-	_, err = c.Heci.SendMessage(requestBytes, &requestSize)
+	status, err := parseResponseHeader(response, CommandFeatureStateSet)
 	if err != nil {
-		return fmt.Errorf("failed to send feature state command: %w", err)
+		return fmt.Errorf("feature state set: %w", err)
 	}
 
-	// Read response
-	bufferSize := c.Heci.GetBufferSize()
-	responseBuffer := make([]byte, bufferSize)
-
-	bytesRead, err := c.Heci.ReceiveMessage(responseBuffer, &bufferSize)
-	if err != nil {
-		return fmt.Errorf("failed to receive feature state response: %w", err)
-	}
-
-	if bytesRead < 8 {
-		return fmt.Errorf("feature state response too short: %d bytes", bytesRead)
-	}
-
-	var response PlatformIDFeatureStateSetResponse
-
-	err = binary.Read(bytes.NewBuffer(responseBuffer[:8]), binary.LittleEndian, &response)
-	if err != nil {
-		return fmt.Errorf("failed to parse feature state response: %w", err)
-	}
-
-	if response.Status != uint32(StatusSuccess) {
-		return fmt.Errorf("feature state set failed with status: %d", response.Status)
+	if status != uint32(StatusSuccess) {
+		return fmt.Errorf("feature state set: %w", mapStatusError(status))
 	}
 
 	log.Tracef("UPID feature state set successfully to %v", enable)
@@ -122,27 +97,32 @@ func (c *Command) setFeatureState(enable bool) error {
 
 // getPlatformID sends the UPID_PLATFORM_ID_GET command and parses the response
 func (c *Command) getPlatformID() (*UPID, error) {
-	// Prepare the UPID_PLATFORM_ID_GET request according to Intel UPID SDK
 	request := PlatformIDGetRequest{
 		Header: UPIDHECIHeader{
-			Feature:   CommandFeaturePlatformID, // 0
-			Command:   CommandPlatformIDGet,     // 5
-			ByteCount: 0,                        // No data after header
+			Feature:   CommandFeaturePlatformID,
+			Command:   CommandPlatformIDGet,
+			ByteCount: 0, // No data after header
 		},
 	}
 
-	log.Tracef("Sending UPID_PLATFORM_ID_GET request: Feature=%d Command=%d ByteCount=%d",
-		request.Header.Feature, request.Header.Command, request.Header.ByteCount)
+	response, err := c.call(&request)
+	if err != nil {
+		return nil, err
+	}
 
-	// Serialize request
+	return parseGetPlatformIDResponse(response)
+}
+
+// call serializes request, sends it to the UPID MEI client and returns the
+// raw response. Parsing the response is left to the caller.
+func (c *Command) call(request any) ([]byte, error) {
 	var requestBuffer bytes.Buffer
 
-	err := binary.Write(&requestBuffer, binary.LittleEndian, &request)
+	err := binary.Write(&requestBuffer, binary.LittleEndian, request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize UPID request: %w", err)
 	}
 
-	// Send the command
 	requestBytes := requestBuffer.Bytes()
 	requestSize := uint32(len(requestBytes))
 
@@ -150,65 +130,63 @@ func (c *Command) getPlatformID() (*UPID, error) {
 
 	bytesWritten, err := c.Heci.SendMessage(requestBytes, &requestSize)
 	if err != nil {
-		log.Tracef("Failed to send UPID command: %v", err)
-
-		return nil, ErrCommandFailed
+		return nil, fmt.Errorf("%w: send: %w", ErrCommandFailed, err)
 	}
 
 	if bytesWritten != len(requestBytes) {
-		return nil, fmt.Errorf("incomplete UPID request sent: %d/%d bytes", bytesWritten, len(requestBytes))
+		return nil, fmt.Errorf("%w: incomplete request sent: %d/%d bytes", ErrCommandFailed, bytesWritten, len(requestBytes))
 	}
 
-	// Receive the response
 	bufferSize := c.Heci.GetBufferSize()
 	responseBuffer := make([]byte, bufferSize)
 
 	bytesRead, err := c.Heci.ReceiveMessage(responseBuffer, &bufferSize)
 	if err != nil {
-		log.Tracef("Failed to receive UPID response: %v", err)
-
-		return nil, ErrCommandFailed
+		return nil, fmt.Errorf("%w: receive: %w", ErrCommandFailed, err)
 	}
 
 	if bytesRead == 0 {
-		return nil, fmt.Errorf("empty response from UPID MEI client")
+		return nil, fmt.Errorf("%w: empty response", ErrInvalidResponse)
 	}
 
-	log.Tracef("UPID response: %d bytes received", bytesRead)
-	log.Tracef("UPID response data: %x", responseBuffer[:bytesRead])
+	log.Tracef("UPID response: %d bytes: %x", bytesRead, responseBuffer[:bytesRead])
 
-	return parseGetPlatformIDResponse(responseBuffer, bytesRead)
+	return responseBuffer[:bytesRead], nil
+}
+
+// parseResponseHeader decodes the header and UINT32 status that start every
+// UPID response and verifies the response belongs to the expected command.
+func parseResponseHeader(response []byte, command uint8) (uint32, error) {
+	if len(response) < minResponseSize {
+		return 0, fmt.Errorf("%w: response too short: %d bytes (expected at least %d)", ErrInvalidResponse, len(response), minResponseSize)
+	}
+
+	var header UPIDHECIHeader
+
+	err := binary.Read(bytes.NewReader(response[:headerSize]), binary.LittleEndian, &header)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse UPID response header: %w", err)
+	}
+
+	status := binary.LittleEndian.Uint32(response[headerSize:minResponseSize])
+
+	log.Tracef("UPID header: Feature=%d Command=%d ByteCount=%d Status=%d",
+		header.Feature, header.Command, header.ByteCount, status)
+
+	if header.Command != command {
+		return 0, fmt.Errorf("%w: unexpected command in response: %d (expected %d)", ErrInvalidResponse, header.Command, command)
+	}
+
+	return status, nil
 }
 
 // parseGetPlatformIDResponse decodes the raw HECI response for a PlatformIDGet command.
-func parseGetPlatformIDResponse(responseBuffer []byte, bytesRead int) (*UPID, error) {
-	// Check minimum response size (header is 4 bytes + status is 4 bytes = 8 bytes minimum)
-	const minResponseSize = 8
-	if bytesRead < minResponseSize {
-		return nil, fmt.Errorf("UPID response too short: %d bytes (expected at least %d)", bytesRead, minResponseSize)
-	}
+func parseGetPlatformIDResponse(responseBuffer []byte) (*UPID, error) {
+	bytesRead := len(responseBuffer)
 
-	// Parse header and status (8 bytes minimum)
-	var heciHeader UPIDHECIHeader
-
-	err := binary.Read(bytes.NewBuffer(responseBuffer[:4]), binary.LittleEndian, &heciHeader)
+	status, err := parseResponseHeader(responseBuffer, CommandPlatformIDGet)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse UPID response header: %w", err)
-	}
-
-	var status uint32
-
-	err = binary.Read(bytes.NewBuffer(responseBuffer[4:8]), binary.LittleEndian, &status)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse UPID response status: %w", err)
-	}
-
-	log.Tracef("UPID header: Feature=%d Command=%d ByteCount=%d Status=%d",
-		heciHeader.Feature, heciHeader.Command, heciHeader.ByteCount, status)
-
-	// Verify command matches
-	if heciHeader.Command != CommandPlatformIDGet {
-		return nil, fmt.Errorf("unexpected command in response: %d (expected %d)", heciHeader.Command, CommandPlatformIDGet)
+		return nil, err
 	}
 
 	// Check response status using official Intel UPID status codes
