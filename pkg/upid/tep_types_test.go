@@ -44,7 +44,7 @@ func TestTEPBinaryVoucherRequestLayout(t *testing.T) {
 		VoucherID:     id,
 		Assertion:     TEPAssertionVettedClaimed,
 		HashAlgorithm: TEPHashSHA384,
-		Features:      [TEPMaxVoucherFeatures]TEPFeature{TEPFeatureAMT},
+		Features:      [TEPMaxVoucherFeatures]TEPOID{TEPFeatureAMT.OID()},
 	}
 
 	buf, err := binary.Append(nil, binary.LittleEndian, &req)
@@ -56,8 +56,8 @@ func TestTEPBinaryVoucherRequestLayout(t *testing.T) {
 	assert.Equal(t, uint32(TEPAssertionVettedClaimed), binary.LittleEndian.Uint32(buf[44:48]))
 	// format+version+id+assertion+owner+metadata+created+expires+upid+credtype = 416
 	assert.Equal(t, uint32(TEPHashSHA384), binary.LittleEndian.Uint32(buf[416:420]))
-	// features are the last 40 bytes
-	assert.Equal(t, uint32(TEPFeatureAMT), binary.LittleEndian.Uint32(buf[524:528]))
+	// features are the last 40 bytes, as INTEL_TEP_OID {x=5, y=101}
+	assert.Equal(t, []byte{5, 0, 101, 0}, buf[524:528])
 }
 
 func TestTEPStatusErr(t *testing.T) {
@@ -158,4 +158,14 @@ func TestCSMESignatureCertificateChain(t *testing.T) {
 		_, err := bad.CertificateChain()
 		require.ErrorIs(t, err, ErrInvalidCertChain)
 	})
+}
+
+func TestTEPFeatureOID(t *testing.T) {
+	oid := TEPFeatureAMT.OID()
+
+	assert.Equal(t, TEPOID{X: 5, Y: 101}, oid)
+	assert.Equal(t, "2.16.840.1.113741.1.2.5.101", oid.String())
+	assert.Equal(t, 4, binary.Size(oid))
+	assert.False(t, oid.IsZero())
+	assert.True(t, TEPOID{}.IsZero())
 }

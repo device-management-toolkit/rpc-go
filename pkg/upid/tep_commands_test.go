@@ -6,8 +6,14 @@
 package upid
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha512"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -55,18 +61,9 @@ func testContext() TEPOwnershipContext {
 		VoucherID:       id,
 		Assertion:       TEPAssertionVettedClaimed,
 		HashAlgorithm:   TEPHashSHA384,
-		Features:        [TEPMaxVoucherFeatures]TEPFeature{TEPFeatureAMT},
+		Features:        [TEPMaxVoucherFeatures]TEPOID{TEPFeatureAMT.OID()},
 		OEMID:           0x8086,
 	}
-}
-
-func testSignature() CSMESignature {
-	sig := CSMESignature{Timestamp: 1_700_000_000, SignatureMechanism: TEPSignatureECDSA384SHA384}
-	sig.Signature[0] = 0xAA
-	sig.LengthOfCertificates[0] = 3
-	copy(sig.Certificates[:], []byte{0x30, 0x01, 0x00})
-
-	return sig
 }
 
 func TestTEPCall(t *testing.T) {
@@ -82,7 +79,7 @@ func TestTEPCall(t *testing.T) {
 	t.Run("rejects platform ID feature in response", func(t *testing.T) {
 		var sent []byte
 
-		resp := tepResponse(TEPCommandGetCapabilities, TEPStatusSuccess, make([]byte, 33))
+		resp := tepResponse(TEPCommandGetCapabilities, TEPStatusSuccess, []byte{3, 1, 0x65})
 		resp[0] = CommandFeaturePlatformID
 
 		cmd := &Command{Heci: tepMock(resp, &sent)}
@@ -109,11 +106,41 @@ func TestTEPCall(t *testing.T) {
 	})
 }
 
+// signCSME returns a CSME_SIGNATURE over Status(0) || data made the way PTL
+// CSME 21 signs (SHA-384 over ... || mechanism || timestamp, raw big-endian
+// r || s), using a throwaway P-384 key with a self-signed leaf certificate.
+func signCSME(t *testing.T, data []byte, timestamp uint32) CSMESignature {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	sig := CSMESignature{Timestamp: timestamp, SignatureMechanism: TEPSignatureECDSA384SHA384}
+	sig.LengthOfCertificates[0] = uint16(len(der))
+	copy(sig.Certificates[:], der)
+
+	signed := binary.LittleEndian.AppendUint32(nil, uint32(TEPStatusSuccess))
+	signed = append(signed, data...)
+	signed = binary.LittleEndian.AppendUint32(signed, uint32(sig.SignatureMechanism))
+	signed = binary.LittleEndian.AppendUint32(signed, sig.Timestamp)
+
+	digest := sha512.Sum384(signed)
+	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])
+	require.NoError(t, err)
+
+	r.FillBytes(sig.Signature[:p384ScalarSize])
+	s.FillBytes(sig.Signature[p384ScalarSize : 2*p384ScalarSize])
+
+	return sig
+}
+
 func TestTEPGetCapabilities(t *testing.T) {
-	payload := make([]byte, 1+OEMPlatformIDSize+20)
-	payload[0] = 1
-	payload[1] = 0xEE
-	payload[1+OEMPlatformIDSize] = byte(TEPFeatureAMT)
+	// Response captured from PTL CSME 21: max_vouchers=3, num_features=2, [101, 150], pad.
+	payload := []byte{0x03, 0x02, 0x65, 0x96, 0x00}
 
 	var sent []byte
 
@@ -123,13 +150,18 @@ func TestTEPGetCapabilities(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []byte{CommandFeatureTEP, TEPCommandGetCapabilities, 0, 0}, sent)
-	assert.Equal(t, []TEPFeature{TEPFeatureAMT}, caps.Features)
+	assert.Equal(t, 3, caps.MaxVouchers)
+	assert.Equal(t, []TEPFeature{TEPFeatureAMT, TEPFeatureOEM1}, caps.Features)
 	assert.True(t, caps.Supports(TEPFeatureAMT))
-	assert.False(t, caps.Supports(TEPFeatureOEM1))
-	assert.Equal(t, byte(0xEE), caps.OEMPlatformID[0])
+	assert.False(t, caps.Supports(TEPFeature(1)))
 
 	t.Run("num_features exceeds list", func(t *testing.T) {
-		_, err := parseTEPCapabilities(append([]byte{2}, make([]byte, OEMPlatformIDSize+1)...))
+		_, err := parseTEPCapabilities([]byte{3, 2, 0x65})
+		require.ErrorIs(t, err, ErrInvalidResponse)
+	})
+
+	t.Run("too short", func(t *testing.T) {
+		_, err := parseTEPCapabilities([]byte{3})
 		require.ErrorIs(t, err, ErrInvalidResponse)
 	})
 }
@@ -186,7 +218,8 @@ func TestTEPGetVoucherStateByFeature(t *testing.T) {
 	state, err := cmd.TEPGetVoucherStateByFeature(TEPFeatureAMT)
 	require.NoError(t, err)
 
-	assert.Equal(t, []byte{CommandFeatureTEP, TEPCommandGetVoucherStateByFeature, 4, 0, 101, 0, 0, 0}, sent)
+	// Feature is sent as INTEL_TEP_OID {x=5, y=101}.
+	assert.Equal(t, []byte{CommandFeatureTEP, TEPCommandGetVoucherStateByFeature, 4, 0, 5, 0, 101, 0}, sent)
 	assert.Equal(t, uint32(7), state.VoucherVersion)
 	assert.Equal(t, ctx, state.Context)
 
@@ -198,69 +231,60 @@ func TestTEPGetVoucherStateByFeature(t *testing.T) {
 
 func TestTEPGetOwnershipState(t *testing.T) {
 	ctx := testContext()
-	sig := testSignature()
-	sigBytes := encode(t, &sig)
 	ctxBytes := encode(t, &ctx)
-
 	id := ctx.VoucherID
 
-	for _, tc := range []struct {
-		name    string
-		padding int
-	}{
-		{"packed", 0},
-		{"aligned", tepOwnershipContextPadding},
-	} {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			payload := append([]byte(nil), testReqID[:]...)
-			payload = append(payload, ctxBytes...)
-			payload = append(payload, make([]byte, tc.padding)...)
-			payload = append(payload, sigBytes...)
-			payload = append(payload, make([]byte, tc.padding)...)
+	data := append(append([]byte(nil), testReqID[:]...), ctxBytes...)
+	sig := signCSME(t, data, 1_700_000_000)
 
-			var sent []byte
+	payload := append(append([]byte(nil), data...), encode(t, &sig)...)
 
-			cmd := &Command{Heci: tepMock(tepResponse(TEPCommandGetOwnershipState, TEPStatusSuccess, payload), &sent)}
+	var sent []byte
 
-			state, err := cmd.TEPGetOwnershipState(testReqID, id)
-			require.NoError(t, err)
+	cmd := &Command{Heci: tepMock(tepResponse(TEPCommandGetOwnershipState, TEPStatusSuccess, payload), &sent)}
 
-			require.Len(t, sent, headerSize+TEPNonceSize+TEPVoucherIDSize)
-			assert.Equal(t, []byte{CommandFeatureTEP, TEPCommandGetOwnershipState, 56, 0}, sent[:headerSize])
-			assert.Equal(t, testReqID[:], sent[headerSize:headerSize+TEPNonceSize])
-			assert.Equal(t, id[:], sent[headerSize+TEPNonceSize:])
+	state, err := cmd.TEPGetOwnershipState(testReqID, id)
+	require.NoError(t, err)
 
-			assert.Equal(t, ctx, state.Context)
-			assert.Equal(t, sig, state.Signature)
+	require.Len(t, sent, headerSize+TEPNonceSize+TEPVoucherIDSize)
+	assert.Equal(t, []byte{CommandFeatureTEP, TEPCommandGetOwnershipState, 56, 0}, sent[:headerSize])
+	assert.Equal(t, testReqID[:], sent[headerSize:headerSize+TEPNonceSize])
+	assert.Equal(t, id[:], sent[headerSize+TEPNonceSize:])
 
-			sigOffset := TEPNonceSize + tepOwnershipContextSize + tc.padding
-			wantSigned := append([]byte{0, 0, 0, 0}, payload[:sigOffset]...)
-			wantSigned = append(wantSigned, sigBytes[:csmeSignatureSignedFieldsSize]...)
-			assert.Equal(t, wantSigned, state.SignedData)
-		})
-	}
+	assert.Equal(t, ctx, state.Context)
+	assert.Equal(t, sig, state.Signature)
+	require.NoError(t, state.Signature.Verify(state.SignedData))
 
 	t.Run("request ID mismatch", func(t *testing.T) {
-		payload := make([]byte, TEPNonceSize+tepOwnershipContextSize+len(sigBytes))
+		bad := append([]byte(nil), payload...)
+		bad[0] ^= 0xFF
 
 		var sent []byte
 
-		cmd := &Command{Heci: tepMock(tepResponse(TEPCommandGetOwnershipState, TEPStatusSuccess, payload), &sent)}
+		cmd := &Command{Heci: tepMock(tepResponse(TEPCommandGetOwnershipState, TEPStatusSuccess, bad), &sent)}
 
 		_, err := cmd.TEPGetOwnershipState(testReqID, id)
 		require.ErrorIs(t, err, ErrTEPRequestIDMismatch)
 	})
+
+	t.Run("tampered context fails verification", func(t *testing.T) {
+		tampered := append([]byte(nil), payload...)
+		tampered[TEPNonceSize] ^= 0xFF
+
+		got, err := parseTEPOwnershipState(tampered, testReqID)
+		require.NoError(t, err)
+		require.ErrorIs(t, got.Signature.Verify(got.SignedData), ErrCSMESignatureInvalid)
+	})
 }
 
 func TestTEPGetTimeSyncNonce(t *testing.T) {
-	sig := testSignature()
-	sigBytes := encode(t, &sig)
 	csmeNonce := TEPNonce{0xC5}
+	data := append(append([]byte(nil), testReqID[:]...), csmeNonce[:]...)
 
-	payload := append([]byte(nil), testReqID[:]...)
-	payload = append(payload, csmeNonce[:]...)
-	payload = append(payload, sigBytes...)
+	// Timestamp 0 (TEP time not set), as seen on hardware before time sync.
+	sig := signCSME(t, data, 0)
+	sigBytes := encode(t, &sig)
+	payload := append(append([]byte(nil), data...), sigBytes...)
 
 	var sent []byte
 
@@ -272,25 +296,51 @@ func TestTEPGetTimeSyncNonce(t *testing.T) {
 	assert.Equal(t, append([]byte{CommandFeatureTEP, TEPCommandGetTimeSyncNonce, 20, 0}, testReqID[:]...), sent)
 	assert.Equal(t, csmeNonce, nonce.CSMENonce)
 	assert.Equal(t, sig, nonce.Signature)
+	require.NoError(t, nonce.Signature.Verify(nonce.SignedData))
 
-	chain, err := nonce.Signature.CertificateChain()
-	require.NoError(t, err)
-	assert.Equal(t, [][]byte{{0x30, 0x01, 0x00}}, chain)
-
-	wantSigned := append([]byte{0, 0, 0, 0}, payload[:2*TEPNonceSize]...)
-	wantSigned = append(wantSigned, sigBytes[:csmeSignatureSignedFieldsSize]...)
-	assert.Equal(t, wantSigned, nonce.SignedData)
+	// SignedData ends with mechanism then timestamp, the reverse of the struct order.
+	tail := nonce.SignedData[len(nonce.SignedData)-2*uint32Size:]
+	assert.Equal(t, []byte{3, 0, 0, 0, 0, 0, 0, 0}, tail)
 
 	t.Run("trimmed certificate buffer is accepted", func(t *testing.T) {
-		trimmed := payload[:2*TEPNonceSize+csmeSignatureFixedSize+3]
+		certLen := int(sig.LengthOfCertificates[0])
+		trimmed := payload[:2*TEPNonceSize+csmeSignatureFixedSize+certLen]
 
 		got, err := parseTEPTimeSyncNonce(trimmed, testReqID)
 		require.NoError(t, err)
 		assert.Equal(t, sig, got.Signature)
+		require.NoError(t, got.Signature.Verify(got.SignedData))
 	})
 
 	t.Run("signature fixed fields missing", func(t *testing.T) {
 		_, err := parseTEPTimeSyncNonce(payload[:2*TEPNonceSize+10], testReqID)
 		require.ErrorIs(t, err, ErrInvalidResponse)
+	})
+}
+
+func TestCSMESignatureVerify(t *testing.T) {
+	data := []byte("signed payload")
+	sig := signCSME(t, data, 42)
+	signed := append(binary.LittleEndian.AppendUint32(nil, 0), data...)
+	signed = append(signed, 3, 0, 0, 0, 42, 0, 0, 0)
+
+	require.NoError(t, sig.Verify(signed))
+
+	t.Run("struct order (timestamp first) does not verify", func(t *testing.T) {
+		wrong := append(binary.LittleEndian.AppendUint32(nil, 0), data...)
+		wrong = append(wrong, 42, 0, 0, 0, 3, 0, 0, 0)
+		require.ErrorIs(t, sig.Verify(wrong), ErrCSMESignatureInvalid)
+	})
+
+	t.Run("unsupported mechanism", func(t *testing.T) {
+		bad := sig
+		bad.SignatureMechanism = 0
+		require.ErrorIs(t, bad.Verify(signed), ErrCSMESignatureInvalid)
+	})
+
+	t.Run("no certificates", func(t *testing.T) {
+		bad := sig
+		bad.LengthOfCertificates = [CSMESignatureMaxCerts]uint16{}
+		require.ErrorIs(t, bad.Verify(signed), ErrCSMESignatureInvalid)
 	})
 }

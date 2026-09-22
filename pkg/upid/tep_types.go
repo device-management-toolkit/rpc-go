@@ -6,10 +6,14 @@
 package upid
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/google/uuid"
@@ -242,16 +246,46 @@ func (s TEPOwnershipStatus) String() string {
 // TEPSignatureMechanism identifies the algorithm of a CSME_SIGNATURE.
 type TEPSignatureMechanism uint32
 
-// TEPSignatureECDSA384SHA384 is the only mechanism used on Panther Lake.
-const TEPSignatureECDSA384SHA384 TEPSignatureMechanism = 0
+// TEPSignatureECDSA384SHA384 is the mechanism PTL CSME 21 reports in TEP
+// responses. The UPID SDK documents 0 for UPID_PLATFORM_ID_SIGN, but TEP
+// responses carry 3 (observed on hardware).
+const TEPSignatureECDSA384SHA384 TEPSignatureMechanism = 3
 
-// TEPFeature identifies a platform feature that can be provisioned via TEP.
-type TEPFeature uint32
+// TEPFeature is TEP_ENUM_FEATURES, the UINT8 feature ID used in the
+// TEP_GET_CAPABILITIES_CMD feature list.
+type TEPFeature uint8
 
 const (
 	TEPFeatureAMT  TEPFeature = 101
 	TEPFeatureOEM1 TEPFeature = 150
 )
+
+// tepFeatureOIDArc is x in 2.16.840.1.113741.1.2.x.y for TEP feature OIDs.
+const tepFeatureOIDArc = 5
+
+// OID returns the feature's OID (2.16.840.1.113741.1.2.5.<feature>) as carried
+// in vouchers and TEP_GET_VOUCHER_STATE_BY_FEATURE_CMD.
+func (f TEPFeature) OID() TEPOID {
+	return TEPOID{X: tepFeatureOIDArc, Y: uint16(f)}
+}
+
+// TEPOID is INTEL_TEP_OID: Intel OID 2.16.840.1.113741.1.2.X.Y encoded as two
+// UINT16s. Feature lists and certificate policies use this encoding (sending
+// the bare feature number to TEP_GET_VOUCHER_STATE_BY_FEATURE_CMD is rejected
+// with TEP_INVALID_PARAMETER on PTL CSME 21).
+type TEPOID struct {
+	X uint16
+	Y uint16
+}
+
+// IsZero reports whether the OID slot is unused.
+func (o TEPOID) IsZero() bool {
+	return o == TEPOID{}
+}
+
+func (o TEPOID) String() string {
+	return fmt.Sprintf("2.16.840.1.113741.1.2.%d.%d", o.X, o.Y)
+}
 
 // TEPVersion is the voucher version: major in the low 16 bits, minor in the high 16 bits.
 type TEPVersion struct {
@@ -311,7 +345,7 @@ type TEPBinaryVoucherRequest struct {
 	OwnerCredentialHash   [TEPCredentialHashSize]byte
 	OwnershipExpiresOnUTC uint32
 	PrevVoucherID         TEPVoucherID
-	Features              [TEPMaxVoucherFeatures]TEPFeature
+	Features              [TEPMaxVoucherFeatures]TEPOID
 }
 
 // TEPOwnershipContext is TEP_OWNERSHIP_CONTEXT as returned by
@@ -331,19 +365,23 @@ type TEPOwnershipContext struct {
 	OwnerCredentialHash      [TEPCredentialHashSize]byte
 	OwnershipExpiresOnUTC    uint32
 	PrevVoucherID            TEPVoucherID
-	Features                 [TEPMaxVoucherFeatures]TEPFeature
+	Features                 [TEPMaxVoucherFeatures]TEPOID
 	IssuerSubjectDN          [TEPDistinguishedNameSize]byte
 	CertSerialNumber         [TEPCertSerialNumberSize]byte
 	CertSubjectDN            [TEPDistinguishedNameSize]byte
 	X520OrgName              [TEPOrganizationNameSize]byte
-	CertPolicies             [TEPMaxCertPolicies]uint32
+	CertPolicies             [TEPMaxCertPolicies]TEPOID
 	OEMID                    uint16
 }
 
-// CSMESignature is CSME_SIGNATURE. The signature covers
-// [response data] || Timestamp || SignatureMechanism, and is made with the
-// CSME TEP IDevID key whose chain (leaf first) is in Certificates.
-// A Timestamp of 0 means TEP time has not been set yet.
+// CSMESignature is CSME_SIGNATURE. A Timestamp of 0 means TEP time has not
+// been set yet.
+//
+// As verified on PTL CSME 21, the signature is ECDSA P-384 over the SHA-384
+// digest of Status || [response data] || SignatureMechanism || Timestamp
+// (note: mechanism before timestamp, the reverse of the struct order), stored
+// as raw big-endian r || s in the first 96 bytes of Signature. It is made with
+// the CSME TEP IDevID key, the leaf of the chain in Certificates.
 type CSMESignature struct {
 	Timestamp            uint32
 	SignatureMechanism   TEPSignatureMechanism
@@ -360,6 +398,50 @@ func (s *CSMESignature) CertificateChain() ([][]byte, error) {
 
 // ErrInvalidCertChain is returned when certificate lengths overrun their buffer.
 var ErrInvalidCertChain = errors.New("invalid TEP certificate chain")
+
+// ErrCSMESignatureInvalid is returned when a CSME_SIGNATURE does not verify.
+var ErrCSMESignatureInvalid = errors.New("CSME signature is invalid")
+
+// p384ScalarSize is the size of an ECDSA P-384 r or s value.
+const p384ScalarSize = 48
+
+// Verify checks the signature over signedData against the leaf certificate
+// of the signature's own chain. It does not validate that chain up to an
+// Intel root; the server receiving the response must do that.
+func (s *CSMESignature) Verify(signedData []byte) error {
+	if s.SignatureMechanism != TEPSignatureECDSA384SHA384 {
+		return fmt.Errorf("%w: unsupported signature mechanism %d", ErrCSMESignatureInvalid, s.SignatureMechanism)
+	}
+
+	chain, err := s.CertificateChain()
+	if err != nil {
+		return err
+	}
+
+	if len(chain) == 0 {
+		return fmt.Errorf("%w: no certificates", ErrCSMESignatureInvalid)
+	}
+
+	leaf, err := x509.ParseCertificate(chain[0])
+	if err != nil {
+		return fmt.Errorf("%w: leaf certificate: %w", ErrCSMESignatureInvalid, err)
+	}
+
+	pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok || pub.Curve != elliptic.P384() {
+		return fmt.Errorf("%w: leaf key is not ECDSA P-384", ErrCSMESignatureInvalid)
+	}
+
+	digest := sha512.Sum384(signedData)
+	r := new(big.Int).SetBytes(s.Signature[:p384ScalarSize])
+	sv := new(big.Int).SetBytes(s.Signature[p384ScalarSize : 2*p384ScalarSize])
+
+	if !ecdsa.Verify(pub, digest[:], r, sv) {
+		return ErrCSMESignatureInvalid
+	}
+
+	return nil
+}
 
 // splitChain slices buf into consecutive entries of the given lengths,
 // stopping at the first zero length.

@@ -16,14 +16,10 @@
 package upid
 
 import (
-	"crypto/ecdsa"
 	"crypto/rand"
-	"crypto/sha512"
 	"crypto/x509"
 	"encoding/hex"
 	"errors"
-	"math/big"
-	"slices"
 	"testing"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -109,8 +105,7 @@ func TestHWTEPGetCapabilities(t *testing.T) {
 	caps, err := hwCommand(t).TEPGetCapabilities()
 	require.NoError(t, err)
 
-	t.Logf("TEP features: %v", caps.Features)
-	t.Logf("OEM platform ID: %s", hex.EncodeToString(caps.OEMPlatformID[:]))
+	t.Logf("TEP max vouchers: %d, features: %v", caps.MaxVouchers, caps.Features)
 
 	assert.True(t, caps.Supports(TEPFeatureAMT), "AMT (101) not listed as a TEP feature")
 }
@@ -192,18 +187,14 @@ func logContext(t *testing.T, c *TEPOwnershipContext) {
 	t.Logf("  features=%v OEM_ID=0x%04x prev=%s", c.Features, c.OEMID, c.PrevVoucherID)
 }
 
-// verifyCSMESignature checks an ECDSA-P384/SHA-384 CSME_SIGNATURE against the
-// leaf certificate in its own chain. The encoding of the 512-byte signature
-// field is not documented, so DER and raw r||s (big- and little-endian) are
-// all tried and the one that verifies is logged.
+// verifyCSMESignature logs the CSME certificate chain and verifies the
+// signature against its leaf. A valid signature also confirms that the
+// response was parsed at the right offsets.
 func verifyCSMESignature(t *testing.T, sig *CSMESignature, signed []byte) {
 	t.Helper()
 
-	require.Equal(t, TEPSignatureECDSA384SHA384, sig.SignatureMechanism)
-
 	chain, err := sig.CertificateChain()
 	require.NoError(t, err)
-	require.NotEmpty(t, chain, "CSME_SIGNATURE has no certificates")
 
 	for i, der := range chain {
 		cert, err := x509.ParseCertificate(der)
@@ -211,54 +202,7 @@ func verifyCSMESignature(t *testing.T, sig *CSMESignature, signed []byte) {
 		t.Logf("  cert[%d]: %s (issuer %s)", i, cert.Subject, cert.Issuer)
 	}
 
-	leaf, _ := x509.ParseCertificate(chain[0])
-	pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
-	require.True(t, ok, "leaf key is %T, want ECDSA", leaf.PublicKey)
-
-	digest := sha512.Sum384(signed)
-
-	const half = 48 // P-384 scalar size
-
-	raw := sig.Signature[:2*half]
-	reversed := func(b []byte) []byte {
-		r := slices.Clone(b)
-		slices.Reverse(r)
-
-		return r
-	}
-
-	encodings := []struct {
-		name   string
-		verify func() bool
-	}{
-		{"DER", func() bool { return ecdsa.VerifyASN1(pub, digest[:], trimDER(sig.Signature[:])) }},
-		{"raw r||s big-endian", func() bool {
-			return ecdsa.Verify(pub, digest[:], new(big.Int).SetBytes(raw[:half]), new(big.Int).SetBytes(raw[half:]))
-		}},
-		{"raw r||s little-endian", func() bool {
-			return ecdsa.Verify(pub, digest[:], new(big.Int).SetBytes(reversed(raw[:half])), new(big.Int).SetBytes(reversed(raw[half:])))
-		}},
-	}
-
-	for _, e := range encodings {
-		if e.verify() {
-			t.Logf("CSME signature verified (%s encoding, %d signed bytes)", e.name, len(signed))
-
-			return
-		}
-	}
-
-	t.Errorf("CSME signature did not verify with any known encoding; signed data %d bytes, signature %s",
-		len(signed), hex.EncodeToString(sig.Signature[:2*half+8]))
-}
-
-// trimDER returns the DER SEQUENCE at the start of b without trailing padding.
-func trimDER(b []byte) []byte {
-	const shortFormMax = 0x80
-
-	if len(b) < 2 || b[0] != 0x30 || b[1] >= shortFormMax {
-		return b
-	}
-
-	return b[:2+int(b[1])]
+	require.NoError(t, sig.Verify(signed), "mechanism=%d timestamp=%d signed=%d bytes",
+		sig.SignatureMechanism, sig.Timestamp, len(signed))
+	t.Logf("CSME signature verified (%d signed bytes)", len(signed))
 }

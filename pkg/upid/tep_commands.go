@@ -40,8 +40,9 @@ var ErrTEPRequestIDMismatch = errors.New("TEP response request ID does not match
 
 // TEPCapabilities is the parsed TEP_GET_CAPABILITIES_CMD response.
 type TEPCapabilities struct {
-	OEMPlatformID [OEMPlatformIDSize]byte
-	Features      []TEPFeature
+	// MaxVouchers is the number of ownership vouchers CSME can hold.
+	MaxVouchers int
+	Features    []TEPFeature
 }
 
 // Supports reports whether feature can be provisioned via TEP.
@@ -65,7 +66,7 @@ type TEPVoucherState struct {
 type TEPOwnershipState struct {
 	Context   TEPOwnershipContext
 	Signature CSMESignature
-	// SignedData is Status || Req_id || OwnershipState || Timestamp || SignatureMechanism
+	// SignedData is Status || Req_id || OwnershipState || SignatureMechanism || Timestamp
 	// as received, for verifying Signature.
 	SignedData []byte
 }
@@ -75,7 +76,7 @@ type TEPTimeSyncNonce struct {
 	// CSMENonce is valid for 10 minutes; CSME returns the same nonce while it is valid.
 	CSMENonce TEPNonce
 	Signature CSMESignature
-	// SignedData is Status || Req_id || CSME_nonce || Timestamp || SignatureMechanism
+	// SignedData is Status || Req_id || CSME_nonce || SignatureMechanism || Timestamp
 	// as received, for verifying Signature.
 	SignedData []byte
 }
@@ -87,7 +88,7 @@ type (
 	}
 	tepFeatureRequest struct {
 		Header  UPIDHECIHeader
-		Feature TEPFeature
+		Feature TEPOID
 	}
 	tepReqIDRequest struct {
 		Header UPIDHECIHeader
@@ -103,12 +104,8 @@ type (
 const (
 	// csmeSignatureFixedSize is CSME_SIGNATURE up to (not including) the certificate buffer
 	csmeSignatureFixedSize = 4 + 4 + CSMESignatureSize + 2*CSMESignatureMaxCerts
-	// csmeSignatureSignedFieldsSize is Timestamp + SignatureMechanism, which are included in the signature
-	csmeSignatureSignedFieldsSize = 8
-	// tepOwnershipContextSize is the packed size of TEP_OWNERSHIP_CONTEXT
+	// tepOwnershipContextSize is the size of TEP_OWNERSHIP_CONTEXT (firmware sends structs packed)
 	tepOwnershipContextSize = 1138
-	// tepOwnershipContextPadding is the tail padding if firmware aligns TEP_OWNERSHIP_CONTEXT to 4 bytes
-	tepOwnershipContextPadding = 2
 	// uint32Size is the size of a UINT32 field
 	uint32Size = 4
 )
@@ -188,9 +185,11 @@ func (c *Command) tepGetVoucherIDs(command uint8) ([]TEPVoucherID, error) {
 	return parseTEPVoucherIDs(payload)
 }
 
-// TEPGetVoucherStateByFeature sends TEP_GET_VOUCHER_STATE_BY_FEATURE_CMD.
+// TEPGetVoucherStateByFeature sends TEP_GET_VOUCHER_STATE_BY_FEATURE_CMD. The
+// feature is sent as its INTEL_TEP_OID. With no voucher for the feature, PTL
+// CSME 21 answers TEP_INVALID_VOUCHER (ErrTEPInvalidVoucher).
 func (c *Command) TEPGetVoucherStateByFeature(feature TEPFeature) (*TEPVoucherState, error) {
-	req := tepFeatureRequest{Feature: feature}
+	req := tepFeatureRequest{Feature: feature.OID()}
 	req.Header = tepHeader(TEPCommandGetVoucherStateByFeature, &req)
 
 	payload, err := c.tepCall(TEPCommandGetVoucherStateByFeature, &req)
@@ -233,23 +232,27 @@ func errShortPayload(what string, got, want int) error {
 	return fmt.Errorf("%w: %s payload is %d bytes, need %d", ErrInvalidResponse, what, got, want)
 }
 
-// parseTEPCapabilities decodes num_features u8, OEMPlatformId[32], features_list u8[].
+// parseTEPCapabilities decodes max_vouchers u8, num_features u8,
+// features_list u8[]. This is the FAS layout, which PTL CSME 21 uses; the
+// UPID SDK's num_features/OEMPlatformId[32] layout does not match hardware.
 func parseTEPCapabilities(payload []byte) (*TEPCapabilities, error) {
-	const fixed = 1 + OEMPlatformIDSize
+	const fixed = 2
 
 	if len(payload) < fixed {
 		return nil, errShortPayload("capabilities", len(payload), fixed)
 	}
 
-	numFeatures := int(payload[0])
+	numFeatures := int(payload[1])
 	list := payload[fixed:]
 
 	if numFeatures > len(list) {
 		return nil, errShortPayload("capabilities", len(payload), fixed+numFeatures)
 	}
 
-	caps := &TEPCapabilities{Features: make([]TEPFeature, 0, numFeatures)}
-	copy(caps.OEMPlatformID[:], payload[1:fixed])
+	caps := &TEPCapabilities{
+		MaxVouchers: int(payload[0]),
+		Features:    make([]TEPFeature, 0, numFeatures),
+	}
 
 	for _, f := range list[:numFeatures] {
 		caps.Features = append(caps.Features, TEPFeature(f))
@@ -300,15 +303,7 @@ func parseTEPOwnershipState(payload []byte, reqID TEPNonce) (*TEPOwnershipState,
 		return nil, err
 	}
 
-	// Whether firmware pads TEP_OWNERSHIP_CONTEXT to a 4-byte boundary is
-	// unconfirmed. A padded response is 2 bytes (plus CSME_SIGNATURE's own
-	// tail padding) longer, so pick the layout from the payload length.
-	sigOffset := TEPNonceSize + tepOwnershipContextSize
-	if len(payload) >= sigOffset+tepOwnershipContextPadding+binary.Size(CSMESignature{})+tepOwnershipContextPadding {
-		sigOffset += tepOwnershipContextPadding
-	}
-
-	log.Tracef("TEP ownership state: %d-byte payload, CSME_SIGNATURE at offset %d", len(payload), sigOffset)
+	const sigOffset = TEPNonceSize + tepOwnershipContextSize
 
 	if len(payload) < sigOffset+csmeSignatureFixedSize {
 		return nil, errShortPayload("ownership state", len(payload), sigOffset+csmeSignatureFixedSize)
@@ -370,14 +365,19 @@ func checkReqID(payload []byte, reqID TEPNonce) error {
 	return nil
 }
 
-// signedData rebuilds Status || <payload up to the signature> || Timestamp ||
-// SignatureMechanism. Status is always TEP_SUCCESS here, since tepCall rejects
-// any other status.
+// signedData rebuilds Status || <payload up to the signature> ||
+// SignatureMechanism || Timestamp, the order CSME signs in (the reverse of
+// the CSME_SIGNATURE field order). Status is always TEP_SUCCESS here, since
+// tepCall rejects any other status.
 func signedData(payload []byte, sigOffset int) []byte {
+	timestamp := payload[sigOffset : sigOffset+uint32Size]
+	mechanism := payload[sigOffset+uint32Size : sigOffset+2*uint32Size]
+
 	data := binary.LittleEndian.AppendUint32(nil, uint32(TEPStatusSuccess))
 	data = append(data, payload[:sigOffset]...)
+	data = append(data, mechanism...)
 
-	return append(data, payload[sigOffset:sigOffset+csmeSignatureSignedFieldsSize]...)
+	return append(data, timestamp...)
 }
 
 // decodeCSMESignature decodes a CSME_SIGNATURE. Firmware may omit unused
