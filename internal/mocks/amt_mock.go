@@ -339,6 +339,96 @@ func (mr *MockInterfaceMockRecorder) StopConfiguration() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopConfiguration", reflect.TypeOf((*MockInterface)(nil).StopConfiguration))
 }
 
+// TEPGetAllVoucherIDs mocks base method.
+func (m *MockInterface) TEPGetAllVoucherIDs() ([]upid.TEPVoucherID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetAllVoucherIDs")
+	ret0, _ := ret[0].([]upid.TEPVoucherID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetAllVoucherIDs indicates an expected call of TEPGetAllVoucherIDs.
+func (mr *MockInterfaceMockRecorder) TEPGetAllVoucherIDs() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetAllVoucherIDs", reflect.TypeOf((*MockInterface)(nil).TEPGetAllVoucherIDs))
+}
+
+// TEPGetCapabilities mocks base method.
+func (m *MockInterface) TEPGetCapabilities() (*upid.TEPCapabilities, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetCapabilities")
+	ret0, _ := ret[0].(*upid.TEPCapabilities)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetCapabilities indicates an expected call of TEPGetCapabilities.
+func (mr *MockInterfaceMockRecorder) TEPGetCapabilities() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetCapabilities", reflect.TypeOf((*MockInterface)(nil).TEPGetCapabilities))
+}
+
+// TEPGetOwnershipState mocks base method.
+func (m *MockInterface) TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.TEPVoucherID) (*upid.TEPOwnershipState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetOwnershipState", reqID, voucherID)
+	ret0, _ := ret[0].(*upid.TEPOwnershipState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetOwnershipState indicates an expected call of TEPGetOwnershipState.
+func (mr *MockInterfaceMockRecorder) TEPGetOwnershipState(reqID, voucherID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetOwnershipState", reflect.TypeOf((*MockInterface)(nil).TEPGetOwnershipState), reqID, voucherID)
+}
+
+// TEPGetTimeSyncNonce mocks base method.
+func (m *MockInterface) TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetTimeSyncNonce", reqID)
+	ret0, _ := ret[0].(*upid.TEPTimeSyncNonce)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetTimeSyncNonce indicates an expected call of TEPGetTimeSyncNonce.
+func (mr *MockInterfaceMockRecorder) TEPGetTimeSyncNonce(reqID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetTimeSyncNonce", reflect.TypeOf((*MockInterface)(nil).TEPGetTimeSyncNonce), reqID)
+}
+
+// TEPGetVoucherStateByFeature mocks base method.
+func (m *MockInterface) TEPGetVoucherStateByFeature(feature upid.TEPFeature) (*upid.TEPVoucherState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetVoucherStateByFeature", feature)
+	ret0, _ := ret[0].(*upid.TEPVoucherState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetVoucherStateByFeature indicates an expected call of TEPGetVoucherStateByFeature.
+func (mr *MockInterfaceMockRecorder) TEPGetVoucherStateByFeature(feature any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetVoucherStateByFeature", reflect.TypeOf((*MockInterface)(nil).TEPGetVoucherStateByFeature), feature)
+}
+
+// TEPGetVouchers mocks base method.
+func (m *MockInterface) TEPGetVouchers() ([]upid.TEPVoucherID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPGetVouchers")
+	ret0, _ := ret[0].([]upid.TEPVoucherID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPGetVouchers indicates an expected call of TEPGetVouchers.
+func (mr *MockInterfaceMockRecorder) TEPGetVouchers() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetVouchers", reflect.TypeOf((*MockInterface)(nil).TEPGetVouchers))
+}
+
 // Unprovision mocks base method.
 func (m *MockInterface) Unprovision() (int, error) {
 	m.ctrl.T.Helper()
