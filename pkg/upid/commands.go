@@ -81,7 +81,7 @@ func (c *Command) setFeatureState(enable bool) error {
 		return fmt.Errorf("feature state set: %w", err)
 	}
 
-	status, err := parseResponseHeader(response, CommandFeatureStateSet)
+	status, err := parseResponseHeader(response, CommandFeaturePlatformID, CommandFeatureStateSet)
 	if err != nil {
 		return fmt.Errorf("feature state set: %w", err)
 	}
@@ -155,8 +155,9 @@ func (c *Command) call(request any) ([]byte, error) {
 }
 
 // parseResponseHeader decodes the header and UINT32 status that start every
-// UPID response and verifies the response belongs to the expected command.
-func parseResponseHeader(response []byte, command uint8) (uint32, error) {
+// UPID response and verifies the response belongs to the expected feature
+// and command.
+func parseResponseHeader(response []byte, feature, command uint8) (uint32, error) {
 	if len(response) < minResponseSize {
 		return 0, fmt.Errorf("%w: response too short: %d bytes (expected at least %d)", ErrInvalidResponse, len(response), minResponseSize)
 	}
@@ -173,8 +174,8 @@ func parseResponseHeader(response []byte, command uint8) (uint32, error) {
 	log.Tracef("UPID header: Feature=%d Command=%d ByteCount=%d Status=%d",
 		header.Feature, header.Command, header.ByteCount, status)
 
-	if header.Command != command {
-		return 0, fmt.Errorf("%w: unexpected command in response: %d (expected %d)", ErrInvalidResponse, header.Command, command)
+	if header.Feature != feature || header.Command != command {
+		return 0, fmt.Errorf("%w: unexpected feature/command in response: %d/%d (expected %d/%d)", ErrInvalidResponse, header.Feature, header.Command, feature, command)
 	}
 
 	return status, nil
@@ -184,7 +185,7 @@ func parseResponseHeader(response []byte, command uint8) (uint32, error) {
 func parseGetPlatformIDResponse(responseBuffer []byte) (*UPID, error) {
 	bytesRead := len(responseBuffer)
 
-	status, err := parseResponseHeader(responseBuffer, CommandPlatformIDGet)
+	status, err := parseResponseHeader(responseBuffer, CommandFeaturePlatformID, CommandPlatformIDGet)
 	if err != nil {
 		return nil, err
 	}

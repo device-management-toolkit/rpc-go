@@ -434,6 +434,7 @@ type MockHECI struct {
 	initWithGUIDFunc   func(guid interface{}) error
 	sendMessageFunc    func(buffer []byte, done *uint32) (int, error)
 	receiveMessageFunc func(buffer []byte, done *uint32) (int, error)
+	bufferSize         uint32
 	closed             bool
 }
 
@@ -454,6 +455,10 @@ func (m *MockHECI) InitHOTHAM() error {
 }
 
 func (m *MockHECI) GetBufferSize() uint32 {
+	if m.bufferSize != 0 {
+		return m.bufferSize
+	}
+
 	return 5120
 }
 

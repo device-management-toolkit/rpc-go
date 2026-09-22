@@ -104,18 +104,23 @@ func TestParseResponseHeader(t *testing.T) {
 	binary.LittleEndian.PutUint32(response[headerSize:], uint32(StatusInvalidState))
 
 	t.Run("returns status", func(t *testing.T) {
-		status, err := parseResponseHeader(response, CommandPlatformIDGet)
+		status, err := parseResponseHeader(response, CommandFeaturePlatformID, CommandPlatformIDGet)
 		require.NoError(t, err)
 		assert.Equal(t, uint32(StatusInvalidState), status)
 	})
 
 	t.Run("too short", func(t *testing.T) {
-		_, err := parseResponseHeader(response[:minResponseSize-1], CommandPlatformIDGet)
+		_, err := parseResponseHeader(response[:minResponseSize-1], CommandFeaturePlatformID, CommandPlatformIDGet)
 		require.ErrorIs(t, err, ErrInvalidResponse)
 	})
 
 	t.Run("wrong command", func(t *testing.T) {
-		_, err := parseResponseHeader(response, CommandFeatureStateSet)
+		_, err := parseResponseHeader(response, CommandFeaturePlatformID, CommandFeatureStateSet)
+		require.ErrorIs(t, err, ErrInvalidResponse)
+	})
+
+	t.Run("wrong feature", func(t *testing.T) {
+		_, err := parseResponseHeader(response, CommandFeatureTEP, CommandPlatformIDGet)
 		require.ErrorIs(t, err, ErrInvalidResponse)
 	})
 }
