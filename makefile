@@ -6,7 +6,7 @@ test-amt: ### run hardware tests against real AMT/CSME (requires elevated shell;
 
 mock: ### run mockgen
 	mockgen -source ./internal/interfaces/wsman.go -destination ./internal/mocks/wsman_mock.go -package=mock
-	mockgen -source ./internal/amt/commands.go -destination ./internal/mocks/amt_mock.go -package=mock
+	mockgen -source ./pkg/amt/commands.go -destination ./internal/mocks/amt_mock.go -package=mock
 
 fuzz: ### run fuzz tests for extended duration (5 minutes per test)
 	@echo "Running fuzz tests for 5 minutes each..."
