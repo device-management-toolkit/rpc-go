@@ -1,6 +1,9 @@
 build:
 	go build ./cmd/rpc
 
+test-amt: ### run hardware tests against real AMT/CSME (requires elevated shell; not run in CI)
+	go test -tags amt -count=1 -v -run ^TestHW ./pkg/...
+
 mock: ### run mockgen
 	mockgen -source ./internal/interfaces/wsman.go -destination ./internal/mocks/wsman_mock.go -package=mock
 	mockgen -source ./internal/amt/commands.go -destination ./internal/mocks/amt_mock.go -package=mock
