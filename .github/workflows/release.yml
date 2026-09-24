@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# Every branch's release pushes the shared refs/notes/semantic-release ref, so runs must not overlap.
+concurrency:
+  group: semantic-release
+  cancel-in-progress: false
+
 jobs:
   release:
     permissions:
