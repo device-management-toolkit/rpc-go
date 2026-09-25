@@ -1,3 +1,16 @@
+# [3.0.0-beta.61](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.60...v3.0.0-beta.61) (2026-09-25)
+
+
+### Bug Fixes
+
+* **cli:** let environment variables override config.yaml values ([#1574](https://github.com/device-management-toolkit/rpc-go/issues/1574)) ([eb4276e](https://github.com/device-management-toolkit/rpc-go/commit/eb4276e5e52f2f9afde1315fb6c341ab9697d5ad))
+
+# [3.0.0-beta.60](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.59...v3.0.0-beta.60) (2026-09-24)
+
+# [3.0.0-beta.60](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.59...v3.0.0-beta.60) (2026-09-24)
+
+# [3.0.0-beta.59](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.58...v3.0.0-beta.59) (2026-09-21)
+
 # [3.0.0-beta.58](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.57...v3.0.0-beta.58) (2026-09-16)
 
 

@@ -8,6 +8,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -134,7 +135,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 		kong.UsageOnError(),
 		kong.DefaultEnvars("RPC"),
 		kong.ConfigureHelp(helpOpts),
-		kong.Configuration(kongyaml.Loader, configFilePath),
+		kong.Configuration(envAwareYAMLLoader, configFilePath),
 		kong.BindToProvider(func() amt.Interface { return amtCommand }),
 	}
 
@@ -293,4 +294,22 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 	}
 
 	return kctx.Run(appCtx)
+}
+
+// envAwareYAMLLoader wraps kongyaml.Loader so env vars win over config.yaml values.
+func envAwareYAMLLoader(r io.Reader) (kong.Resolver, error) {
+	yamlResolver, err := kongyaml.Loader(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return kong.ResolverFunc(func(ctx *kong.Context, parent *kong.Path, flag *kong.Flag) (any, error) {
+		for _, env := range flag.Envs {
+			if _, set := os.LookupEnv(env); set {
+				return nil, nil
+			}
+		}
+
+		return yamlResolver.Resolve(ctx, parent, flag)
+	}), nil
 }
