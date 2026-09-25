@@ -690,14 +690,14 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 		return fmt.Errorf("invalid authentication method: %s", profile.AuthenticationMethod)
 	}
 
-	args = append(args, "--authenticationMethod", strconv.Itoa((int)(method)))
+	args = append(args, "--authenticationMethod", strconv.Itoa(int(method)))
 
 	encryptionMethod, success := wifi.ParseEncryptionMethod(profile.EncryptionMethod)
 	if !success {
 		return fmt.Errorf("invalid encryption method: %s", profile.EncryptionMethod)
 	}
 
-	args = append(args, "--encryptionMethod", strconv.Itoa((int)(encryptionMethod)))
+	args = append(args, "--encryptionMethod", strconv.Itoa(int(encryptionMethod)))
 
 	// Add PSK passphrase if provided
 	extraEnv := map[string]string{}

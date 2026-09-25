@@ -857,7 +857,8 @@ func BuildDevicesEndpoint(devicesEndpoint, consoleBaseURL string) string {
 
 // SyncDeviceInfoHelper is a shared helper for post-lifecycle device sync
 func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WSMANer, endpoint, token, guid string,
-	opts ...InfoServiceOption) error {
+	opts ...InfoServiceOption,
+) error {
 	log.Debug("Starting device info collection for sync")
 
 	infoCmd := &AmtInfoCmd{
@@ -1044,7 +1045,8 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 		monitorConnected = strconv.FormatBool(*info.MonitorConnected)
 	}
 
-	log.Debugf("Collected OS-level discovery information: os_name=%q os_version=%q os_distro=%q cpu_model=%q os_ip=%q ethernet_adapter_count=%d monitor_connected=%s",
+	log.Debugf(
+		"Collected OS-level discovery information: os_name=%q os_version=%q os_distro=%q cpu_model=%q os_ip=%q ethernet_adapter_count=%d monitor_connected=%s",
 		info.OSName,
 		info.OSVersion,
 		info.OSDistro,
