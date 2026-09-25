@@ -7,6 +7,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -255,4 +257,60 @@ func TestHasFlag(t *testing.T) {
 	assert.True(t, hasFlag([]string{"rpc", "-h"}, "--help", "-h"))
 	assert.False(t, hasFlag([]string{"rpc", "amtinfo"}, "--help", "-h"))
 	assert.True(t, hasFlag([]string{"rpc", "amtinfo", "--help"}, "--help", "-h"))
+}
+
+func TestParse_EnvOverridesConfigFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		env      map[string]string
+		args     []string
+		expected string
+	}{
+		{
+			name:     "config value applies when env unset",
+			yaml:     "password: from-yaml\n",
+			args:     []string{"rpc", "version"},
+			expected: "from-yaml",
+		},
+		{
+			name:     "env beats non-empty config value",
+			yaml:     "password: from-yaml\n",
+			env:      map[string]string{"AMT_PASSWORD": "from-env"},
+			args:     []string{"rpc", "version"},
+			expected: "from-env",
+		},
+		{
+			name:     "env beats empty config value",
+			yaml:     "password: \"\"\n",
+			env:      map[string]string{"AMT_PASSWORD": "from-env"},
+			args:     []string{"rpc", "version"},
+			expected: "from-env",
+		},
+		{
+			name:     "cli flag beats env and config",
+			yaml:     "password: from-yaml\n",
+			env:      map[string]string{"AMT_PASSWORD": "from-env"},
+			args:     []string{"rpc", "--password", "from-cli", "version"},
+			expected: "from-cli",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, configFilePath), []byte(tt.yaml), 0o600))
+			t.Chdir(dir)
+
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			_, cli, err := Parse(tt.args, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cli.AMTPassword)
+		})
+	}
 }
