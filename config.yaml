@@ -134,6 +134,7 @@ configure:
 
   # --- Sync Clock ---
   sync-clock:
+    url: ""                 # Remote RPS URL for remote time sync ex. "wss://<host>/activate"; local sync used when blank
 
   # --- Sync Hostname ---
   sync-hostname:

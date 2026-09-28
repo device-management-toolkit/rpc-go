@@ -226,6 +226,7 @@ func (p Payload) CreateMessageRequest(req Request) (Message, error) {
 	payload.TLSEnforced = req.LocalTlsEnforced
 	payload.TLSTunnel = req.TLSTunnel
 	payload.LMSInstalled = utils.DetectLMS(req.LocalTlsEnforced)
+	log.Debugf("sending lmsInstalled=%v in initial payload to RPS", payload.LMSInstalled)
 
 	// convert struct to json
 	data, err := json.Marshal(payload)
