@@ -97,7 +97,7 @@ func (pthi Command) Call(command []byte, commandSize int) (result []byte, err er
 }
 
 func (cmd Command) Send(command []byte) (err error) {
-	commandSize := (uint32)(len(command))
+	commandSize := uint32(len(command))
 
 	bytesWritten, err := cmd.Heci.SendMessage(command, &commandSize)
 	if err != nil {

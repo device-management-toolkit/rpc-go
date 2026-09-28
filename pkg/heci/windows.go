@@ -163,7 +163,7 @@ func (heci *Driver) FindDevices() error {
 	}
 
 	interfaceData := setupapi.SpDevInterfaceData{}
-	interfaceData.CbSize = (uint32)(unsafe.Sizeof(interfaceData))
+	interfaceData.CbSize = uint32(unsafe.Sizeof(interfaceData))
 
 	edi, err := setupapi.SetupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
 	if err != nil {
@@ -236,7 +236,7 @@ func (heci *Driver) GetHeciVersion() error {
 	packedVersion := HeciVersionPacked{}
 	versionSize := unsafe.Sizeof(packedVersion)
 
-	err := heci.doIoctl(ctl_code(FILE_DEVICE_HECI, 0x800, METHOD_BUFFERED, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE), nil, 0, (*byte)(unsafe.Pointer(&packedVersion.packed)), (uint32)(versionSize))
+	err := heci.doIoctl(ctl_code(FILE_DEVICE_HECI, 0x800, METHOD_BUFFERED, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE), nil, 0, (*byte)(unsafe.Pointer(&packedVersion.packed)), uint32(versionSize))
 	if err != nil {
 		return err
 	}
@@ -259,9 +259,9 @@ func (heci *Driver) ConnectHeciClient() error {
 	err := heci.doIoctl(
 		ctl_code(FILE_DEVICE_HECI, 0x801, METHOD_BUFFERED, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE),
 		(*byte)(unsafe.Pointer(heci.clientGUID)),
-		(uint32)(guidSize),
+		uint32(guidSize),
 		(*byte)(unsafe.Pointer(&propertiesPacked.data)),
-		(uint32)(propertiesSize),
+		uint32(propertiesSize),
 	)
 	if err != nil {
 		log.Tracef("ConnectHeciClient: IOCTL failed: %v", err)
