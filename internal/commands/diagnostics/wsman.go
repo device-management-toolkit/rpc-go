@@ -62,7 +62,9 @@ type WSManGetCmd struct {
 	Format string   `help:"Output format" name:"format" short:"f" enum:"json,xml,table" default:"json"`
 	All    bool     `help:"Retrieve data for all available WSMAN classes" name:"all" short:"a"`
 
-	wsmanUsername string `kong:"-"`
+	wsmanUsername string                        `kong:"-"`
+	fetchFailures int                           `kong:"-"`
+	runOverride   func(*commands.Context) error `kong:"-"`
 }
 
 type classFetcher func(messages wsman.Messages) (any, error)
@@ -148,6 +150,12 @@ var wsmanClassFetchers = map[string]classFetcher{
 
 // Run executes the WSMAN get command.
 func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
+	if cmd.runOverride != nil {
+		return cmd.runOverride(ctx)
+	}
+
+	cmd.fetchFailures = 0
+
 	selectedClasses, err := cmd.resolveClasses()
 	if err != nil {
 		return err
@@ -181,6 +189,9 @@ func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
 			}
 
 			log.Warnf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+
+			cmd.fetchFailures++
+
 			results = append(results, classResult{Class: className, Data: classFetchErrorData{
 				Class:   className,
 				Status:  "fetch_failed",
