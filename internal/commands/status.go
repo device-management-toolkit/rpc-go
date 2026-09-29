@@ -435,10 +435,15 @@ func isISMDevice(deviceType string) bool {
 	return strings.Contains(deviceType, deviceTypeISM)
 }
 
-// isEligiblePlatform reports whether the detected SKU can be provisioned at all.
-// An empty device type means detection did not run, which is not a disqualifier.
+// isEligiblePlatform reports whether a device should proceed with remaining checks.
+// Returns true for: empty/indeterminate platform type, vPro, ISM
+// Returns false only for: definitely non-vPro devices
 func isEligiblePlatform(deviceType string) bool {
 	if deviceType == "" {
+		return true
+	}
+
+	if strings.Contains(deviceType, "Invalid") || strings.Contains(deviceType, "Unknown") {
 		return true
 	}
 
@@ -542,9 +547,21 @@ func (cmd *StatusCmd) gatherPostActivation(ctx *Context, result statusResult, pr
 		return result, checks
 	}
 
-	// Direct mode: WSMAN availability proves connectivity; CIRA/TLS gates are not applicable.
+	// Direct mode: still requires TLS, redirection, and KVM to be properly configured
 	if result.ConnectionMode == connectionModeDirect {
 		result.ManageableInProduction = !hasBlockingFailure(checks)
+
+		if tlsTrust, ok := findCheck(checks, labelTLSTrust); ok && tlsTrust.state != checkPass {
+			result.ManageableInProduction = false
+		}
+
+		if featurePolicy, ok := findCheck(checks, labelFeaturePolicy); ok && featurePolicy.state != checkPass {
+			result.ManageableInProduction = false
+		}
+
+		if result.KVMEnabled != nil && !*result.KVMEnabled {
+			result.ManageableInProduction = false
+		}
 
 		return result, checks
 	}
@@ -665,18 +682,29 @@ func (cmd *StatusCmd) activatedStateCheck(result *statusResult) healthCheck {
 func (cmd *StatusCmd) wsmanAccessCheck(result *statusResult) healthCheck {
 	const label = labelLocalWSMANSession
 
-	available := cmd.WSMan != nil
+	available := false
 	result.WSMANAvailable = &available
 
-	if available {
-		return healthCheck{label, checkPass, "Local WSMAN session available"}
+	if cmd.WSMan == nil {
+		if cmd.wsmanStatusDetail != "" {
+			return healthCheck{label, checkUnavailable, cmd.wsmanStatusDetail}
+		}
+
+		return healthCheck{label, checkUnavailable, "WSMAN-based checks unavailable"}
 	}
 
-	if cmd.wsmanStatusDetail != "" {
-		return healthCheck{label, checkUnavailable, cmd.wsmanStatusDetail}
+	// Verify authentication with an authenticated WSMAN call
+	_, err := cmd.WSMan.GetGeneralSettings()
+	if err != nil {
+		log.Debugf("WSMAN authentication verification failed: %v", err)
+
+		return healthCheck{label, checkFail, "WSMAN client initialized but authentication failed: verify AMT password"}
 	}
 
-	return healthCheck{label, checkUnavailable, "WSMAN-based checks unavailable"}
+	available = true
+	result.WSMANAvailable = &available
+
+	return healthCheck{label, checkPass, "Local WSMAN session available"}
 }
 
 func (cmd *StatusCmd) adminCheck() healthCheck {
@@ -922,6 +950,11 @@ func (cmd *StatusCmd) deviceTypeCheck(ctx *Context, result *statusResult) health
 	features := utils.DecodeAMTFeatures(ver, sku)
 	result.DeviceType = features
 
+	// Continue if SKU cannot be parsed; don't block remaining checks
+	if strings.Contains(features, "Invalid") || strings.Contains(features, "Unknown") {
+		return healthCheck{label, checkWarn, "Platform type could not be determined"}
+	}
+
 	switch {
 	case strings.Contains(features, "AMT Pro"):
 		return healthCheck{label, checkPass, "Platform type: vPro"}
@@ -977,8 +1010,8 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *statusResult, pro
 		log.Debugf("failed to read wireless LAN interface settings: %v", wirelessErr)
 	}
 
-	result.WiredSupported = wired.IsEnabled || wired.LinkStatus != "" || wired.MACAddress != "" || wired.IPAddress != "" || wired.OsIPAddress != ""
-	result.WirelessSupported = wireless.IsEnabled || wireless.LinkStatus != "" || wireless.MACAddress != "" || wireless.IPAddress != "" || wireless.OsIPAddress != ""
+	result.WiredSupported = wired.IsEnabled || (wired.MACAddress != "" && wired.MACAddress != "00:00:00:00:00:00")
+	result.WirelessSupported = wireless.IsEnabled || (wireless.MACAddress != "" && wireless.MACAddress != "00:00:00:00:00:00")
 	wiredPCIName, wirelessPCIName := pciAdapterNames()
 	result.WiredAdapterName = wiredPCIName
 
@@ -1010,8 +1043,17 @@ func (cmd *StatusCmd) linkReadinessCheck(ctx *Context, result *statusResult, pro
 		return healthCheck{label, checkPass, "AMT network link available for ACM checks"}
 	}
 
+	// For already-activated devices, wired link down is not an ACM blocker
+	if result.AlreadyActivated && strings.Contains(strings.ToLower(result.ControlMode), "admin") {
+		if result.WirelessLinkUp {
+			return healthCheck{label, checkWarn, "Wired link down (device already in Admin Control Mode); wireless link available"}
+		}
+
+		return healthCheck{label, checkWarn, "Wired link down (device already in Admin Control Mode)"}
+	}
+
 	if result.WirelessLinkUp {
-		return healthCheck{label, checkFail, "Wired link is down. ACM activation cannot be done"}
+		return healthCheck{label, checkFail, "Wired link is down. ACM activation requires wired link; wireless link detected"}
 	}
 
 	if strings.TrimSpace(result.AMTDNSSuffix) == "" {
@@ -1711,14 +1753,23 @@ func resolveTrustedBinary(name string) (string, error) {
 
 func trustedExecDirs() []string {
 	if runtime.GOOS == osWindows {
+		// Safely use SystemRoot env var by validating it points to actual Windows directory
+		// This prevents privilege escalation while supporting non-standard installations
 		systemRoot := os.Getenv("SystemRoot")
-		if strings.TrimSpace(systemRoot) == "" {
-			systemRoot = `C:\Windows`
+		if systemRoot != "" {
+			// Verify directory exists and has System32 subdirectory
+			if _, err := os.Stat(filepath.Join(systemRoot, "System32")); err == nil {
+				return []string{
+					filepath.Join(systemRoot, "System32"),
+					filepath.Join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
+				}
+			}
 		}
 
+		// Fallback to standard location if env var is invalid/missing
 		return []string{
-			filepath.Join(systemRoot, "System32"),
-			filepath.Join(systemRoot, "System32", "WindowsPowerShell", "v1.0"),
+			`C:\Windows\System32`,
+			`C:\Windows\System32\WindowsPowerShell\v1.0`,
 		}
 	}
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	wsmanboot "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/publickey"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
 	wsmantls "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
@@ -721,6 +722,10 @@ func TestStatusCmd_Gather_PostActivationManageableWithWSMAN(t *testing.T) {
 		},
 	}
 
+	// WSMAN authentication verification call
+	mockWSMAN.EXPECT().GetGeneralSettings().Return(general.Response{
+		Body: general.Body{GetResponse: general.GeneralSettingsResponse{DigestRealm: "Digest Realm"}},
+	}, nil)
 	mockWSMAN.EXPECT().EnumerateTLSSettingData().Return(wsmantls.Response{
 		Body: wsmantls.Body{EnumerateResponse: common.EnumerateResponse{EnumerationContext: "tls-context"}},
 	}, nil)
@@ -1143,6 +1148,36 @@ func TestStatusCmd_LinkReadiness_CCMProfile_DoesNotFailWhenNoLink(t *testing.T) 
 	assert.Contains(t, c.detail, "CCM can still proceed locally")
 }
 
+func TestStatusCmd_LinkReadiness_AlreadyActivatedACM_WiredDownWirelessUp(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	// Device already activated in Admin Control Mode
+	result := statusResult{
+		AlreadyActivated: true,
+		ControlMode:      "Admin Control Mode",
+		AMTDNSSuffix:     "corp.example.com",
+	}
+
+	c := cmd.linkReadinessCheck(&Context{AMTCommand: mockAMT}, &result, statusProfileACM)
+
+	// Should be a warning, not a failure, since device is already activated
+	assert.Equal(t, checkWarn, c.state)
+	// Message should reflect that device is already in ACM mode
+	assert.Contains(t, c.detail, "already in Admin Control Mode")
+	assert.Contains(t, c.detail, "wireless link available")
+	assert.False(t, result.WiredLinkUp)
+	assert.True(t, result.WirelessLinkUp)
+}
+
 func TestStatusCmd_Gather_CCMProfile_DoesNotBlockOnACMChecks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1247,6 +1282,26 @@ func TestStatusCmd_PreparePostActivationWSMAN_ClearsClientOnSetupError(t *testin
 
 	assert.Nil(t, cmd.WSMan)
 	assert.Equal(t, "could not initialize WSMAN client", cmd.wsmanStatusDetail)
+}
+
+func TestStatusCmd_WSMANAccessCheck_FailsOnAuthenticationError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockWSMAN := mock.NewMockWSMANer(ctrl)
+	// Simulate authentication failure when trying to make an authenticated WSMAN call
+	mockWSMAN.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("401 Unauthorized - invalid password"))
+
+	cmd := &StatusCmd{}
+	cmd.WSMan = mockWSMAN
+	result := statusResult{}
+
+	check := cmd.wsmanAccessCheck(&result)
+
+	// Should report WSMAN session as failed due to auth error, not available
+	assert.Equal(t, checkFail, check.state)
+	assert.Contains(t, check.detail, "authentication failed")
+	assert.Equal(t, false, *result.WSMANAvailable)
 }
 
 func TestStatusCmd_ConnectionModeCheck_DirectModeDoesNotSetCIRAConnected(t *testing.T) {
@@ -1406,6 +1461,31 @@ func TestStatusCmd_DeviceTypeCheck_VersionError(t *testing.T) {
 
 	assert.Equal(t, checkWarn, c.state)
 	assert.Empty(t, result.DeviceType)
+}
+
+func TestStatusCmd_DeviceTypeCheck_InvalidSKU_Continues(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+	// Invalid SKU that cannot be parsed
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", meVersionTimeout).Return("XYZ", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", meVersionTimeout).Return("16.1.0.0", nil)
+
+	cmd := &StatusCmd{}
+	cmd.HECIAvailable = true
+
+	var result statusResult
+
+	c := cmd.deviceTypeCheck(&Context{AMTCommand: mockAMT}, &result)
+
+	// Should warn, not fail - so remaining checks can continue
+	assert.Equal(t, checkWarn, c.state)
+	// Message should indicate platform type couldn't be determined
+	assert.Contains(t, c.detail, "could not be determined")
+	// result.DeviceType should contain the Invalid SKU marker
+	assert.Contains(t, result.DeviceType, "Invalid")
 }
 
 func TestRunCheckSteps(t *testing.T) {

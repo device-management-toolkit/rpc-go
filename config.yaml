@@ -38,6 +38,12 @@ amtinfo:
   sync: false               # Sync device info to server (requires url + auth)
   url: ""                  # Server endpoint for sync
 
+# ------------------------- status Command (health check) ----------------------
+status:
+  acm: false                # Run ACM-specific health checks
+  ccm: false                # Run CCM-specific health checks (alias: cm)
+  host: ""                  # Host[:port] to test network reachability (default: 443)
+
 # ------------------------- activate Command -----------------------------------
 activate:
   local: false              # Force local activation

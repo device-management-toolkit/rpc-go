@@ -189,6 +189,7 @@ func TestIsPermanentHECIError(t *testing.T) {
 	}{
 		{"inappropriate ioctl (non-vPro hardware)", errors.New("inappropriate ioctl for device"), true},
 		{"no such file (MEI driver missing)", errors.New("open /dev/mei0: no such file or directory"), true},
+		{"no such file (MEI driver missing mei3)", errors.New("open /dev/mei3: no such file or directory"), true},
 		{"windows HECI device missing", errors.New("open \\\\.\\HECI: The system cannot find the file specified."), true},
 		{"explicit HECI driver missing", errors.New("HECI driver not found"), true},
 		{"HECIDriverNotDetected sentinel", utils.HECIDriverNotDetected, true},
