@@ -183,6 +183,21 @@ func TestWirelessCmd_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "802.1x PEAP authentication with missing username",
+			cmd: &WirelessCmd{
+				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				IEEE8021xProfileName:            "8021xprofile",
+				ProfileName:                     "testprofile",
+				SSID:                            "testssid",
+				Priority:                        1,
+				AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
+				EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
+				IEEE8021xAuthenticationProtocol: 2,
+				IEEE8021xPassword:               "testpassword",
+			},
+			wantErr: true,
+		},
+		{
 			name: "802.1x PEAP authentication with missing password",
 			cmd: &WirelessCmd{
 				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
@@ -193,8 +208,25 @@ func TestWirelessCmd_Validate(t *testing.T) {
 				AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
 				EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
 				IEEE8021xAuthenticationProtocol: 2,
+				IEEE8021xUsername:               "testuser",
 			},
 			wantErr: true,
+		},
+		{
+			name: "valid 802.1x PEAP authentication",
+			cmd: &WirelessCmd{
+				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				IEEE8021xProfileName:            "8021xprofile",
+				ProfileName:                     "testprofile",
+				SSID:                            "testssid",
+				Priority:                        1,
+				AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
+				EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
+				IEEE8021xAuthenticationProtocol: 2,
+				IEEE8021xUsername:               "testuser",
+				IEEE8021xPassword:               "testpassword",
+			},
+			wantErr: false,
 		},
 		{
 			name: "unsupported authentication method",
