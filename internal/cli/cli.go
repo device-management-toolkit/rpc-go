@@ -272,8 +272,6 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		return nil
 	}
 
-	commands.DefaultSkipAMTCertCheck = cli.SkipAMTCertCheck
-
 	appCtx := &commands.Context{
 		AMTCommand:       amtCommand,
 		LogLevel:         cli.LogLevel,
