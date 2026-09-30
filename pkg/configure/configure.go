@@ -1,0 +1,52 @@
+/*********************************************************************
+ * Copyright (c) Intel Corporation 2026
+ * SPDX-License-Identifier: Apache-2.0
+ **********************************************************************/
+
+// Package configure provides a public API for AMT configuration operations.
+package configure
+
+import (
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+)
+
+// BaseOptions holds options shared by all configure subcommands.
+type BaseOptions struct {
+	// AMTPassword is the admin password for the AMT device.
+	// Required for commands that need WSMAN access.
+	// If empty, the user will be prompted on stdin.
+	AMTPassword string
+	// SkipAMTCertCheck skips TLS certificate verification when connecting to AMT.
+	SkipAMTCertCheck bool
+}
+
+// runner is any internal configure command that can be run through Kong's hooks.
+type runner interface {
+	Validate() error
+	AfterApply(amt.Interface) error
+	Run(*commands.Context) error
+}
+
+// run calls the command's hooks in Kong's order: Validate, AfterApply, then Run.
+func run(cmd runner, opts BaseOptions) error {
+	commands.DefaultSkipAMTCertCheck = opts.SkipAMTCertCheck
+
+	if err := cmd.Validate(); err != nil {
+		return err
+	}
+
+	amtCommand := amt.NewAMTCommand()
+
+	if err := cmd.AfterApply(&amtCommand); err != nil {
+		return err
+	}
+
+	ctx := &commands.Context{
+		AMTCommand:       &amtCommand,
+		AMTPassword:      opts.AMTPassword,
+		SkipAMTCertCheck: opts.SkipAMTCertCheck,
+	}
+
+	return cmd.Run(ctx)
+}
