@@ -80,7 +80,7 @@ func TestSendMessage(t *testing.T) {
 	err := h.Init(false, false)
 	defer h.Close()
 	assert.NoError(t, err)
-	commandSize := (uint32)(12) //(uint32)(unsafe.Sizeof(GetUUIDRequest{}))
+	commandSize := uint32(12) //(uint32)(unsafe.Sizeof(GetUUIDRequest{}))
 	command := GetUUIDRequest{
 		Header: MessageHeader{
 			Version: Version{
@@ -107,7 +107,7 @@ func TestReceiveMessage(t *testing.T) {
 	defer h.Close()
 	assert.NoError(t, err)
 	// send a message so we can receieve it
-	commandSize := (uint32)(12) //(uint32)(unsafe.Sizeof(GetUUIDRequest{}))
+	commandSize := uint32(12) //(uint32)(unsafe.Sizeof(GetUUIDRequest{}))
 	command := GetUUIDRequest{
 		Header: MessageHeader{
 			Version: Version{
