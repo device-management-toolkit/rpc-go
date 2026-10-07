@@ -27,10 +27,12 @@ import (
 	tls0 "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
 	userinitiatedconnection "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	wifiportconfiguration "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
+	associatedpower "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/associatedpower"
 	concrete "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	credential "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	kvm "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	models "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
+	power "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/power"
 	wifi "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	hostbasedsetup "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
 	http "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
@@ -537,6 +539,21 @@ func (mr *MockWSMANerMockRecorder) GetMPSSAP() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMPSSAP", reflect.TypeOf((*MockWSMANer)(nil).GetMPSSAP))
 }
 
+// GetPowerState mocks base method.
+func (m *MockWSMANer) GetPowerState() ([]associatedpower.CIM_AssociatedPowerManagementService, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPowerState")
+	ret0, _ := ret[0].([]associatedpower.CIM_AssociatedPowerManagementService)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPowerState indicates an expected call of GetPowerState.
+func (mr *MockWSMANerMockRecorder) GetPowerState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPowerState", reflect.TypeOf((*MockWSMANer)(nil).GetPowerState))
+}
+
 // GetPublicKeyCerts mocks base method.
 func (m *MockWSMANer) GetPublicKeyCerts() ([]publickey.RefinedPublicKeyCertificateResponse, error) {
 	m.ctrl.T.Helper()
@@ -863,6 +880,21 @@ func (m *MockWSMANer) RequestKVMStateChange(requestedState kvm.KVMRedirectionSAP
 func (mr *MockWSMANerMockRecorder) RequestKVMStateChange(requestedState any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestKVMStateChange", reflect.TypeOf((*MockWSMANer)(nil).RequestKVMStateChange), requestedState)
+}
+
+// RequestPowerStateChange mocks base method.
+func (m *MockWSMANer) RequestPowerStateChange(powerState power.PowerState) (power.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestPowerStateChange", powerState)
+	ret0, _ := ret[0].(power.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RequestPowerStateChange indicates an expected call of RequestPowerStateChange.
+func (mr *MockWSMANerMockRecorder) RequestPowerStateChange(powerState any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestPowerStateChange", reflect.TypeOf((*MockWSMANer)(nil).RequestPowerStateChange), powerState)
 }
 
 // RequestRedirectionStateChange mocks base method.

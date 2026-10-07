@@ -12,3 +12,4 @@ coverage
 .nextVersion
 *.yaml
 !config.yaml
+rpc-mcp

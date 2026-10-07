@@ -32,10 +32,12 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/associatedpower"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/power"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
@@ -852,4 +854,24 @@ func (g *GoWSMANMessages) AddHTTPProxyAccessPoint(accessInfo string, infoFormat,
 	}
 
 	return g.wsmanMessages.IPS.HTTPProxyService.AddProxyAccessPoint(accessInfo, fmtEnum, port, networkDnsSuffix)
+}
+
+// GetPowerState returns the CIM_AssociatedPowerManagementService instances, which carry
+// the current power state and the power states AMT will accept in RequestPowerStateChange.
+func (g *GoWSMANMessages) GetPowerState() ([]associatedpower.CIM_AssociatedPowerManagementService, error) {
+	response, err := g.wsmanMessages.CIM.AssociatedPowerManagementService.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	response, err = g.wsmanMessages.CIM.AssociatedPowerManagementService.Pull(response.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Body.PullResponse.AssociatedPowerManagementServiceItems, nil
+}
+
+func (g *GoWSMANMessages) RequestPowerStateChange(powerState power.PowerState) (power.Response, error) {
+	return g.wsmanMessages.CIM.PowerManagementService.RequestPowerStateChange(powerState)
 }

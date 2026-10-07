@@ -36,6 +36,7 @@ const (
 	commandConfigure   = "configure"
 	commandDiagnostics = "diagnostics"
 	commandDiag        = "diag"
+	commandPower       = "power"
 )
 
 var parseMu sync.Mutex
@@ -69,6 +70,7 @@ type CLI struct {
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
 	Configure   configure.ConfigureCmd     `cmd:"configure" help:"Configure AMT settings including ethernet, wireless, TLS, and other features"`
 	Diagnostics diagnostics.DiagnosticsCmd `cmd:"diagnostics" aliases:"diag" help:"Collect firmware-level diagnostics"`
+	Power       commands.PowerCmd          `cmd:"power" help:"Query or change the power state of the local device through AMT"`
 }
 
 // AfterApply sets up the context and applies global settings after flags are parsed
@@ -194,6 +196,7 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 var knownCommands = map[string]bool{
 	commandAmtInfo: true, commandVersion: true, commandActivate: true,
 	commandDeactivate: true, commandConfigure: true, commandDiagnostics: true, commandDiag: true,
+	commandPower: true,
 }
 
 // hasCommand checks if args contain a recognized command name.
