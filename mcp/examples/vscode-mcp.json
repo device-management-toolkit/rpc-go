@@ -1,0 +1,23 @@
+{
+  "inputs": [
+    {
+      "id": "amtPassword",
+      "type": "promptString",
+      "description": "Intel AMT admin password",
+      "password": true
+    }
+  ],
+  "servers": {
+    "rpc": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\rpc\\rpc-mcp.exe",
+      "args": [
+        "--rpc-path",
+        "C:\\Program Files\\rpc\\rpc.exe"
+      ],
+      "env": {
+        "AMT_PASSWORD": "${input:amtPassword}"
+      }
+    }
+  }
+}

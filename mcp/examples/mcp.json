@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "rpc": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\rpc\\rpc-mcp.exe",
+      "args": [
+        "--rpc-path",
+        "C:\\Program Files\\rpc\\rpc.exe"
+      ],
+      "env": {
+        "AMT_PASSWORD": "${AMT_PASSWORD:-}",
+        "RPC_MCP_DEVICES_URL": "${RPC_MCP_DEVICES_URL:-}",
+        "AUTH_TOKEN": "${RPC_CONSOLE_TOKEN:-}"
+      }
+    }
+  }
+}

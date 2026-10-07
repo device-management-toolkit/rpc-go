@@ -10,6 +10,8 @@ AI agent / MCP client ──stdio or local HTTP──> rpc-mcp ──exec "rpc .
 
 The design rationale is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+**New here?** Follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). It walks through building rpc and rpc-mcp for Windows and Linux, deploying them, running them, and connecting Claude Code, GitHub Copilot (VS Code and CLI) or Claude Desktop. Ready-to-copy agent configs are in [examples/](examples/).
+
 ## Capabilities
 
 | Tool | What it does | rpc command | Kind | Needs AMT password |
@@ -65,7 +67,7 @@ Run with `--read-only` (or `RPC_MCP_READ_ONLY=true`) to remove `power_action` en
 
 ## Build
 
-rpc-mcp is a separate Go module (`./mcp/go.mod`). The root rpc module, its `go build ./...` / `go test ./...`, and its release scripts are not affected.
+rpc-mcp is a separate Go module (`./mcp/go.mod`). The root rpc module, its `go build ./...` / `go test ./...`, and its release scripts are not affected. For versioned Windows and Linux x64 builds into `dist/`, see [Getting started, section 2](docs/GETTING_STARTED.md#2-build).
 
 ```sh
 # from the rpc-go repo root
@@ -98,6 +100,15 @@ rpc inherits rpc-mcp's environment, so the usual rpc variables apply:
 rpc also reads `config.yaml` from its working directory (the directory rpc-mcp was started from). Keep stray config files out of that directory.
 
 ## Connecting to an AI agent
+
+Ready-to-copy templates for every client are in [examples/](examples/), and the step-by-step setup is in [Getting started, section 6](docs/GETTING_STARTED.md#6-connect-an-ai-agent):
+
+| Template | Client |
+|---|---|
+| `mcp.json`, `mcp-http.json` | Claude Code and GitHub Copilot CLI: project `.mcp.json` |
+| `copilot-cli-mcp-config.json` | GitHub Copilot CLI: `~/.copilot/mcp-config.json` |
+| `vscode-mcp.json`, `vscode-mcp-http.json` | VS Code + Copilot agent mode: `.vscode/mcp.json` |
+| `claude_desktop_config.json` | Claude Desktop |
 
 Replace the paths below with your own. On Windows, use `C:\\path\\to\\rpc-mcp.exe` in JSON files.
 

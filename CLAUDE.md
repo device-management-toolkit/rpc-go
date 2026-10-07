@@ -296,6 +296,10 @@ The library exports `rpcExec(Input, **Output, **ErrOutput) int` and `rpcCheckAcc
 - **Don't write directly to `os.Stdout` from command code** if you want the lib build to capture it — go through the existing logger or output helpers.
 - **Keep `cli.Execute` and `cli.ExecuteWithAMT` parallel.** `Execute` is the executable entry point and wires self-elevation; `ExecuteWithAMT` is the lib entry point and skips elevation (the host process is responsible). New top-level behaviour added to `Execute` must be reflected (or explicitly *not* reflected, deliberately) in `ExecuteWithAMT`.
 
+### MCP server (`mcp/`)
+
+`mcp/` is **rpc-mcp**, an MCP server that exposes rpc to AI agents. It is a **separate nested Go module** that runs the `rpc` binary with `--json` and never imports rpc-go packages, so root `go build ./...` / `go test ./...` don't include it. Before changing `mcp/`, or adding an rpc command for it, follow the agent skill [`.claude/skills/rpc-mcp-architecture/SKILL.md`](.claude/skills/rpc-mcp-architecture/SKILL.md) (design invariants, workflows, review checklist). The design record is [`mcp/docs/ARCHITECTURE.md`](mcp/docs/ARCHITECTURE.md).
+
 ## Implementation guidelines (non-negotiable)
 
 - **Never hand-author WSMAN XML.** All WSMAN goes through `github.com/device-management-toolkit/go-wsman-messages/v2`. Use the existing `internal/interfaces/WSMANer` seam and `internal/local/amt` adapter. If a needed message isn't in `go-wsman-messages`, **fix it upstream** rather than crafting raw XML here — `go-wsman-messages` is a sibling repo in the device-management-toolkit org and accepts contributions.

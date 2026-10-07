@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "rpc": {
+      "command": "C:\\Program Files\\rpc\\rpc-mcp.exe",
+      "args": [
+        "--rpc-path",
+        "C:\\Program Files\\rpc\\rpc.exe"
+      ],
+      "env": {
+        "AMT_PASSWORD": "<amt-password>"
+      }
+    }
+  }
+}
