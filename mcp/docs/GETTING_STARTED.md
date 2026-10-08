@@ -121,14 +121,21 @@ rpc amtinfo --ver --mode --lan --json  # selected fields
 
 # Power (AMT must be activated; password from --password or AMT_PASSWORD)
 export AMT_PASSWORD='<amt-password>'   # PowerShell: $env:AMT_PASSWORD = '<amt-password>'
-rpc power state --json                 # current state + availableActions
-rpc power action --state reset --json  # !! restarts this machine
+rpc power state --json                 # {"powerState":2,"osPowerSavingState":2}
+rpc power capabilities --json          # supportedActions + Console capability codes
+rpc power action --action reset --json # !! restarts this machine
 
 # Discovery: register / sync this device with Console
 rpc amtinfo --discover --url https://console.example.com/api/v1/devices --auth-token '<token>' --json
 ```
 
-Actions for `rpc power action --state`: `off`, `soft-off`, `reset`, `graceful-reset`, `cycle`, `sleep`, `hibernate`, `nmi`. AMT accepts only the actions listed in `power state`'s `availableActions`.
+Actions for `rpc power action --action` use **Console's names and codes**: `power_on` (2), `sleep` (4), `power_cycle` (5), `hibernate` (7), `power_off` (8), `power_off_soft` (9), `reset` (10), `soft_off` (12), `soft_reset` (14), `os_to_full_power` (500), `os_to_power_saving` (501).
+
+Everything runs locally against this device's AMT, through LMS on `127.0.0.1` or HECI. **No Console is needed.** If AMT isn't activated yet, activate it locally first:
+
+```sh
+rpc activate --local --ccm --password '<new-amt-password>'   # client control mode, no Console/RPS
+```
 
 ## 5. Run rpc-mcp
 
@@ -139,7 +146,7 @@ You rarely start rpc-mcp by hand in stdio mode. The AI agent launches it (sectio
 | `--rpc-path` | `RPC_PATH` | `rpc` on PATH | Path to the rpc binary |
 | `--devices-url` | `RPC_MCP_DEVICES_URL` | unset | Console devices API; enables the `register_device` tool |
 | `--read-only` | `RPC_MCP_READ_ONLY=true` | false | Hide the `power_action` tool |
-| `--http` | | stdio | Serve streamable HTTP on a loopback address, e.g. `127.0.0.1:8090` |
+| `--http` | | stdio | Serve MCP over HTTP on a loopback address, e.g. `127.0.0.1:8090`: **streamable HTTP at `/`** and **legacy SSE at `/sse`** |
 
 rpc inherits rpc-mcp's environment: `AMT_PASSWORD`, plus `AUTH_TOKEN` or `AUTH_USERNAME`/`AUTH_PASSWORD` for Console.
 
@@ -149,7 +156,7 @@ The agent starts `rpc-mcp --rpc-path <rpc>` and talks MCP over stdin/stdout. rpc
 
 ### 5.2 Local HTTP mode (elevated server, unelevated agent)
 
-Run rpc-mcp elevated once, and point any agent at `http://127.0.0.1:8090`. Only loopback addresses are accepted, because the endpoint has no authentication.
+Run rpc-mcp elevated once, and point any agent at `http://127.0.0.1:8090` (streamable HTTP) or `http://127.0.0.1:8090/sse` (legacy SSE, section 5.3). Only loopback addresses are accepted, because the endpoint has no authentication.
 
 ```powershell
 # Windows: elevated PowerShell ("Run as administrator")
@@ -195,15 +202,41 @@ curl -s -X POST http://127.0.0.1:8090 -H "Content-Type: application/json" \
 # -> data: {... "serverInfo":{"name":"rpc-mcp", ...}}
 ```
 
+### 5.3 Legacy SSE endpoint (`/sse`)
+
+For agents written against the older MCP **HTTP+SSE** transport (spec 2024-11-05), the same `--http` listener also serves `http://127.0.0.1:8090/sse`. No extra flag or port is needed. The handshake is:
+
+1. `GET /sse` (with `Accept: text/event-stream`) opens a long-lived event stream.
+2. The first event is `event: endpoint` with `data: /sse?sessionid=<id>`.
+3. The agent POSTs each JSON-RPC message (`initialize`, `tools/list`, `tools/call`, …) to that session URL.
+4. Responses arrive as `event: message` on the GET stream.
+
+```sh
+curl -N -H "Accept: text/event-stream" http://127.0.0.1:8090/sse
+# event: endpoint
+# data: /sse?sessionid=XY7LINIAVM2NYYNYZO3ZKW5QDD
+```
+
+Client configuration is just the URL with transport type `sse`:
+
+```sh
+claude mcp add --transport sse rpc http://127.0.0.1:8090/sse
+```
+
+Templates: [`mcp-sse.json`](../examples/mcp-sse.json) for a `.mcp.json` / `mcpServers` client, and [`vscode-mcp-sse.json`](../examples/vscode-mcp-sse.json) for VS Code. A custom agent built on an MCP SDK uses that SDK's SSE client transport pointed at `/sse` (for example `mcp.SSEClientTransport{Endpoint: "http://127.0.0.1:8090/sse"}` in Go, or `sse_client("http://127.0.0.1:8090/sse")` in the Python SDK).
+
+The tools, the `confirm` gate, loopback-only binding and DNS-rebinding protection (non-localhost `Host` headers get `403`) are the same as for streamable HTTP. The MCP spec deprecates HTTP+SSE, so prefer `/` for any client that supports streamable HTTP.
+
 ## 6. Connect an AI agent
 
 Ready-made config files are in [`mcp/examples/`](../examples/). They use the Windows paths from section 3; on Linux, replace them with `/opt/rpc/rpc-mcp` and `/opt/rpc/rpc`.
 
 | Agent | Template | Copy to |
 |---|---|---|
-| Claude Code and GitHub Copilot CLI (project) | [`mcp.json`](../examples/mcp.json) (stdio) / [`mcp-http.json`](../examples/mcp-http.json) | `<project>/.mcp.json` |
+| Claude Code and GitHub Copilot CLI (project) | [`mcp.json`](../examples/mcp.json) (stdio) / [`mcp-http.json`](../examples/mcp-http.json) (HTTP) / [`mcp-sse.json`](../examples/mcp-sse.json) (SSE) | `<project>/.mcp.json` |
 | GitHub Copilot CLI (user) | [`copilot-cli-mcp-config.json`](../examples/copilot-cli-mcp-config.json) | `~/.copilot/mcp-config.json` |
-| VS Code + GitHub Copilot agent mode | [`vscode-mcp.json`](../examples/vscode-mcp.json) (stdio) / [`vscode-mcp-http.json`](../examples/vscode-mcp-http.json) | `<workspace>/.vscode/mcp.json` |
+| VS Code + GitHub Copilot agent mode | [`vscode-mcp.json`](../examples/vscode-mcp.json) (stdio) / [`vscode-mcp-http.json`](../examples/vscode-mcp-http.json) (HTTP) / [`vscode-mcp-sse.json`](../examples/vscode-mcp-sse.json) (SSE) | `<workspace>/.vscode/mcp.json` |
+| Custom / SSE-only agent | [`mcp-sse.json`](../examples/mcp-sse.json) | Point the agent's SSE transport at `http://127.0.0.1:8090/sse` (section 5.3) |
 | Claude Desktop | [`claude_desktop_config.json`](../examples/claude_desktop_config.json) | Windows `%APPDATA%\Claude\claude_desktop_config.json`, macOS `~/Library/Application Support/Claude/claude_desktop_config.json` |
 
 The templates contain **no secrets**:
@@ -270,10 +303,11 @@ Example prompts:
 |---|---|
 | "What version of AMT is on this device, and is it activated?" | `get_device_info` (`version`, `controlMode`) |
 | "Show the IP and MAC address of the AMT wired interface." | `get_device_info` (`lan`) |
-| "What is the current power state? Which power actions are allowed?" | `get_power_state` |
+| "What is the current power state?" | `power_get_state` |
+| "Which power actions does this device support?" | `power_get_capabilities` |
 | "Register this device with Console." | `register_device` (only when `--devices-url` is set) |
 | "Read AMT_GeneralSettings." | `wsman_get` |
-| "Restart this machine through AMT." | `get_power_state`, then asks you, then `power_action` with `confirm: true` |
+| "Restart this machine through AMT." | `power_get_capabilities`, then asks you, then `power_action` `{"action":"reset","confirm":true}` |
 
 **Power actions run on the machine the agent is on.** A reset or power-off ends the agent session. The agent is told to ask you first, and rpc-mcp refuses to act without `confirm: true`. To remove the tool entirely, start rpc-mcp with `--read-only` (or add `"RPC_MCP_READ_ONLY": "true"` to the template's `env`).
 
@@ -283,6 +317,6 @@ Example prompts:
 2. `rpc amtinfo --mode` (elevated) shows the control mode; it must be activated for power and WSMAN.
 3. The agent lists the rpc tools: `claude mcp list`, VS Code **MCP: List Servers**, `copilot mcp list`, or Inspector.
 4. `get_rpc_version` succeeds from the agent, which proves the agent → rpc-mcp → rpc path works.
-5. `get_power_state` succeeds, which proves elevation and `AMT_PASSWORD` are correct.
+5. `power_get_state` succeeds, which proves elevation, activation and `AMT_PASSWORD` are correct.
 
 For error messages (`IncorrectPermissions`, `DeviceNotActivated`, `AMTAuthenticationFailed`, …), see the [README troubleshooting table](../README.md#troubleshooting).

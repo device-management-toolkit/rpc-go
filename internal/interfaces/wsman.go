@@ -9,6 +9,7 @@ import (
 	cryptotls "crypto/tls"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -22,17 +23,19 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
-	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/associatedpower"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/power"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/service"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/software"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
+	ipspower "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/power"
 )
 
 type WSMANer interface {
@@ -106,6 +109,10 @@ type WSMANer interface {
 	GetRedirectionService() (response redirection.Response, err error)
 	GetIpsOptInService() (response optin.Response, err error)
 	PutIpsOptInService(request optin.OptInServiceRequest) (response optin.Response, err error)
-	GetPowerState() ([]associatedpower.CIM_AssociatedPowerManagementService, error)
+	GetPowerState() ([]service.CIM_AssociatedPowerManagementService, error)
 	RequestPowerStateChange(powerState power.PowerState) (response power.Response, err error)
+	GetOSPowerSavingState() (ipspower.OSPowerSavingState, error)
+	RequestOSPowerSavingStateChange(state ipspower.OSPowerSavingState) (ipspower.PowerActionResponse, error)
+	GetBootCapabilities() (boot.BootCapabilitiesResponse, error)
+	GetAMTVersion() ([]software.SoftwareIdentity, error)
 }

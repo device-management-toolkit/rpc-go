@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	authorization "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	boot "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	environmentdetection "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	ethernetport "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	general "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -27,17 +28,19 @@ import (
 	tls0 "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
 	userinitiatedconnection "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	wifiportconfiguration "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
-	associatedpower "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/associatedpower"
 	concrete "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	credential "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	kvm "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	models "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	power "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/power"
+	service "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/service"
+	software "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/software"
 	wifi "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	hostbasedsetup "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
 	http "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	ieee8021x "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	optin "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
+	power0 "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/power"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -359,6 +362,36 @@ func (mr *MockWSMANerMockRecorder) GeneratePKCS10RequestEx(keyPair, nullSignedCe
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GeneratePKCS10RequestEx", reflect.TypeOf((*MockWSMANer)(nil).GeneratePKCS10RequestEx), keyPair, nullSignedCertificateRequest, signingAlgorithm)
 }
 
+// GetAMTVersion mocks base method.
+func (m *MockWSMANer) GetAMTVersion() ([]software.SoftwareIdentity, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAMTVersion")
+	ret0, _ := ret[0].([]software.SoftwareIdentity)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAMTVersion indicates an expected call of GetAMTVersion.
+func (mr *MockWSMANerMockRecorder) GetAMTVersion() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAMTVersion", reflect.TypeOf((*MockWSMANer)(nil).GetAMTVersion))
+}
+
+// GetBootCapabilities mocks base method.
+func (m *MockWSMANer) GetBootCapabilities() (boot.BootCapabilitiesResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBootCapabilities")
+	ret0, _ := ret[0].(boot.BootCapabilitiesResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBootCapabilities indicates an expected call of GetBootCapabilities.
+func (mr *MockWSMANerMockRecorder) GetBootCapabilities() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBootCapabilities", reflect.TypeOf((*MockWSMANer)(nil).GetBootCapabilities))
+}
+
 // GetConcreteDependencies mocks base method.
 func (m *MockWSMANer) GetConcreteDependencies() ([]concrete.ConcreteDependency, error) {
 	m.ctrl.T.Helper()
@@ -539,11 +572,26 @@ func (mr *MockWSMANerMockRecorder) GetMPSSAP() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMPSSAP", reflect.TypeOf((*MockWSMANer)(nil).GetMPSSAP))
 }
 
+// GetOSPowerSavingState mocks base method.
+func (m *MockWSMANer) GetOSPowerSavingState() (power0.OSPowerSavingState, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOSPowerSavingState")
+	ret0, _ := ret[0].(power0.OSPowerSavingState)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOSPowerSavingState indicates an expected call of GetOSPowerSavingState.
+func (mr *MockWSMANerMockRecorder) GetOSPowerSavingState() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOSPowerSavingState", reflect.TypeOf((*MockWSMANer)(nil).GetOSPowerSavingState))
+}
+
 // GetPowerState mocks base method.
-func (m *MockWSMANer) GetPowerState() ([]associatedpower.CIM_AssociatedPowerManagementService, error) {
+func (m *MockWSMANer) GetPowerState() ([]service.CIM_AssociatedPowerManagementService, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetPowerState")
-	ret0, _ := ret[0].([]associatedpower.CIM_AssociatedPowerManagementService)
+	ret0, _ := ret[0].([]service.CIM_AssociatedPowerManagementService)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -880,6 +928,21 @@ func (m *MockWSMANer) RequestKVMStateChange(requestedState kvm.KVMRedirectionSAP
 func (mr *MockWSMANerMockRecorder) RequestKVMStateChange(requestedState any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestKVMStateChange", reflect.TypeOf((*MockWSMANer)(nil).RequestKVMStateChange), requestedState)
+}
+
+// RequestOSPowerSavingStateChange mocks base method.
+func (m *MockWSMANer) RequestOSPowerSavingStateChange(state power0.OSPowerSavingState) (power0.PowerActionResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RequestOSPowerSavingStateChange", state)
+	ret0, _ := ret[0].(power0.PowerActionResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RequestOSPowerSavingStateChange indicates an expected call of RequestOSPowerSavingStateChange.
+func (mr *MockWSMANerMockRecorder) RequestOSPowerSavingStateChange(state any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestOSPowerSavingStateChange", reflect.TypeOf((*MockWSMANer)(nil).RequestOSPowerSavingStateChange), state)
 }
 
 // RequestPowerStateChange mocks base method.

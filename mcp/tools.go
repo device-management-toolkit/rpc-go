@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -42,8 +43,12 @@ var amtinfoFields = map[string]string{
 	"proxy":             "--proxy",
 }
 
-// powerActions must match the --state enum of `rpc power action`.
-var powerActions = []string{"off", "soft-off", "reset", "graceful-reset", "cycle", "sleep", "hibernate", "nmi"}
+// powerActions must match the --action enum of `rpc power action`, which uses Console's
+// power_action names (console/internal/controller/mcp/power_actions.go).
+var powerActions = []string{
+	"hibernate", "os_to_full_power", "os_to_power_saving", "power_cycle", "power_off", "power_off_soft",
+	"power_on", "reset", "sleep", "soft_off", "soft_reset",
+}
 
 var errConfirmRequired = errors.New("power_action was not executed: set confirm=true after the user has explicitly approved this power action")
 
@@ -64,7 +69,7 @@ type DeviceInfoInput struct {
 
 // PowerActionInput is the input of power_action.
 type PowerActionInput struct {
-	Action  string `json:"action" jsonschema:"power action: off, soft-off, reset, graceful-reset, cycle, sleep, hibernate or nmi"`
+	Action  string `json:"action" jsonschema:"power action name as in Console: power_on, power_off, power_off_soft, soft_off, reset, soft_reset, power_cycle, sleep, hibernate, os_to_full_power or os_to_power_saving"`
 	Confirm bool   `json:"confirm" jsonschema:"must be true; only set it after the user explicitly approved this action"`
 }
 
@@ -104,13 +109,25 @@ func registerTools(server *mcp.Server, runner *Runner, cfg Config) {
 		return result(runner.Run(ctx, shortTimeout, "version"))
 	})
 
+	// The power tools mirror Console's MCP power tools (power_get_state, power_get_capabilities,
+	// power_action) but act on this device through the local AMT instead of a Console device GUID.
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "get_power_state",
-		Description: "Get the current power state of this device from Intel AMT, and the power actions AMT will accept " +
-			"right now (availableActions). Requires AMT to be activated and the AMT password configured on the server.",
+		Name: "power_get_state",
+		Description: "Get the current power state of this device from Intel AMT, including its OS power-saving state. " +
+			"powerState is the CIM power state (2 = on, 3/4 = sleep, 6/8 = off, 7 = hibernate); osPowerSavingState is " +
+			"0 unknown, 1 unsupported, 2 full power, 3 OS power saving. Requires AMT to be activated and the AMT password configured on the server.",
 		Annotations: readOnly,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, any, error) {
 		return result(runner.Run(ctx, shortTimeout, "power", "state"))
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "power_get_capabilities",
+		Description: "List the power actions this device supports (supportedActions) and Console's power capability codes. " +
+			"Call this before power_action to discover valid action names for the device.",
+		Annotations: readOnly,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ noInput) (*mcp.CallToolResult, any, error) {
+		return result(runner.Run(ctx, shortTimeout, "power", "capabilities"))
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -145,10 +162,11 @@ func registerTools(server *mcp.Server, runner *Runner, cfg Config) {
 	if cfg.AllowPowerActions {
 		mcp.AddTool(server, &mcp.Tool{
 			Name: "power_action",
-			Description: "Change the power state of THIS device through Intel AMT (off, soft-off, reset, graceful-reset, " +
-				"cycle, sleep, hibernate, nmi). The MCP server runs on the same device, so most actions end this session " +
-				"and in-flight work on the device is lost. Call get_power_state first to see availableActions, ask the user " +
-				"to explicitly approve the action, then call with confirm=true.",
+			Description: "Perform a power action on THIS device through its local Intel AMT, with the same action names and " +
+				"behavior as Console's power_action. WARNING: the MCP server runs on the same machine, so power_off, reset, " +
+				"power_cycle, soft_off, soft_reset, sleep and hibernate end this session and can interrupt the running OS. " +
+				"Call power_get_capabilities first, ask the user to explicitly approve the action, then call with confirm=true. " +
+				"Valid actions: " + strings.Join(powerActions, ", ") + ".",
 			Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, in PowerActionInput) (*mcp.CallToolResult, any, error) {
 			if !slices.Contains(powerActions, in.Action) {
@@ -159,7 +177,7 @@ func registerTools(server *mcp.Server, runner *Runner, cfg Config) {
 				return nil, nil, errConfirmRequired
 			}
 
-			return result(runner.Run(ctx, actionTimeout, "power", "action", "--state", in.Action))
+			return result(runner.Run(ctx, actionTimeout, "power", "action", "--action", in.Action))
 		})
 	}
 }

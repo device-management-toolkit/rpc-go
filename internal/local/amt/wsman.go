@@ -19,6 +19,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/authorization"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/boot"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/environmentdetection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -32,18 +33,20 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/tls"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/userinitiatedconnection"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/wifiportconfiguration"
-	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/associatedpower"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/concrete"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/credential"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/models"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/power"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/service"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/software"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/client"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/hostbasedsetup"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
+	ipspower "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/power"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/sirupsen/logrus"
@@ -856,22 +859,63 @@ func (g *GoWSMANMessages) AddHTTPProxyAccessPoint(accessInfo string, infoFormat,
 	return g.wsmanMessages.IPS.HTTPProxyService.AddProxyAccessPoint(accessInfo, fmtEnum, port, networkDnsSuffix)
 }
 
-// GetPowerState returns the CIM_AssociatedPowerManagementService instances, which carry
-// the current power state and the power states AMT will accept in RequestPowerStateChange.
-func (g *GoWSMANMessages) GetPowerState() ([]associatedpower.CIM_AssociatedPowerManagementService, error) {
-	response, err := g.wsmanMessages.CIM.AssociatedPowerManagementService.Enumerate()
+// GetPowerState returns the CIM_AssociatedPowerManagementService instances read through
+// CIM_ServiceAvailableToElement, the same source Console uses for the device power state.
+func (g *GoWSMANMessages) GetPowerState() ([]service.CIM_AssociatedPowerManagementService, error) {
+	response, err := g.wsmanMessages.CIM.ServiceAvailableToElement.Enumerate()
 	if err != nil {
 		return nil, err
 	}
 
-	response, err = g.wsmanMessages.CIM.AssociatedPowerManagementService.Pull(response.Body.EnumerateResponse.EnumerationContext)
+	response, err = g.wsmanMessages.CIM.ServiceAvailableToElement.Pull(response.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
 		return nil, err
 	}
 
-	return response.Body.PullResponse.AssociatedPowerManagementServiceItems, nil
+	return response.Body.PullResponse.AssociatedPowerManagementService, nil
 }
 
 func (g *GoWSMANMessages) RequestPowerStateChange(powerState power.PowerState) (power.Response, error) {
 	return g.wsmanMessages.CIM.PowerManagementService.RequestPowerStateChange(powerState)
+}
+
+func (g *GoWSMANMessages) GetOSPowerSavingState() (ipspower.OSPowerSavingState, error) {
+	response, err := g.wsmanMessages.IPS.PowerManagementService.Get()
+	if err != nil {
+		return 0, err
+	}
+
+	return response.Body.GetResponse.OSPowerSavingState, nil
+}
+
+func (g *GoWSMANMessages) RequestOSPowerSavingStateChange(state ipspower.OSPowerSavingState) (ipspower.PowerActionResponse, error) {
+	response, err := g.wsmanMessages.IPS.PowerManagementService.RequestOSPowerSavingStateChange(state)
+	if err != nil {
+		return ipspower.PowerActionResponse{}, err
+	}
+
+	return response.Body.RequestOSPowerSavingStateChangeResponse, nil
+}
+
+func (g *GoWSMANMessages) GetBootCapabilities() (boot.BootCapabilitiesResponse, error) {
+	response, err := g.wsmanMessages.AMT.BootCapabilities.Get()
+	if err != nil {
+		return boot.BootCapabilitiesResponse{}, err
+	}
+
+	return response.Body.BootCapabilitiesGetResponse, nil
+}
+
+func (g *GoWSMANMessages) GetAMTVersion() ([]software.SoftwareIdentity, error) {
+	response, err := g.wsmanMessages.CIM.SoftwareIdentity.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+
+	response, err = g.wsmanMessages.CIM.SoftwareIdentity.Pull(response.Body.EnumerateResponse.EnumerationContext)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Body.PullResponse.SoftwareIdentityItems, nil
 }

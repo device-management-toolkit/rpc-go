@@ -28,6 +28,7 @@ const (
 	serverName        = "rpc-mcp"
 	serverVersion     = "0.1.0"
 	readHeaderTimeout = 10 * time.Second
+	ssePath           = "/sse"
 )
 
 func main() {
@@ -41,7 +42,7 @@ func run() error {
 	devicesURL := flag.String("devices-url", os.Getenv("RPC_MCP_DEVICES_URL"),
 		"Console devices API URL; enables register_device (env RPC_MCP_DEVICES_URL)")
 	readOnly := flag.Bool("read-only", os.Getenv("RPC_MCP_READ_ONLY") == "true", "do not expose power_action (env RPC_MCP_READ_ONLY=true)")
-	httpAddr := flag.String("http", "", "serve streamable HTTP on this address (e.g. 127.0.0.1:8090) instead of stdio")
+	httpAddr := flag.String("http", "", "serve MCP over HTTP on this loopback address (e.g. 127.0.0.1:8090) instead of stdio: streamable HTTP at /, legacy SSE at /sse")
 
 	flag.Parse()
 
@@ -77,8 +78,7 @@ func serveHTTP(ctx context.Context, server *mcp.Server, addr string) error {
 		return fmt.Errorf("--http must bind to a loopback address (127.0.0.1, ::1 or localhost), got %q", host)
 	}
 
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
-	httpServer := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
+	httpServer := &http.Server{Addr: addr, Handler: newHTTPHandler(server), ReadHeaderTimeout: readHeaderTimeout}
 
 	go func() {
 		<-ctx.Done()
@@ -86,13 +86,30 @@ func serveHTTP(ctx context.Context, server *mcp.Server, addr string) error {
 		_ = httpServer.Close()
 	}()
 
-	log.Printf("%s listening on http://%s", serverName, addr)
+	log.Printf("%s listening on http://%s (streamable HTTP) and http://%s%s (legacy SSE)", serverName, addr, addr, ssePath)
 
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 
 	return nil
+}
+
+// newHTTPHandler serves both MCP HTTP transports from one listener:
+//   - "/"    streamable HTTP (MCP 2025-03-26+), used by current clients;
+//   - "/sse" legacy HTTP+SSE (MCP 2024-11-05) for agents that only speak SSE: GET /sse opens
+//     the event stream, whose first "endpoint" event names /sse?sessionid=... for the POSTs.
+//
+// Both handlers keep the SDK's default DNS-rebinding protection (non-localhost Host headers
+// are rejected), on top of the loopback-only bind enforced by serveHTTP.
+func newHTTPHandler(server *mcp.Server) http.Handler {
+	getServer := func(*http.Request) *mcp.Server { return server }
+
+	mux := http.NewServeMux()
+	mux.Handle(ssePath, mcp.NewSSEHandler(getServer, nil))
+	mux.Handle("/", mcp.NewStreamableHTTPHandler(getServer, nil))
+
+	return mux
 }
 
 func envOr(key, fallback string) string {

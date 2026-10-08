@@ -6,7 +6,7 @@ These are candidate enhancements, each with the constraints that apply to it. An
 
 | Enhancement | rpc side | MCP side | Notes |
 |---|---|---|---|
-| Boot options / one-time boot (PXE, HDD, IDE-R) | New `rpc boot` command using go-wsman-messages `amt/boot` and `cim/boot` | Read-only `get_boot_options`; destructive `set_next_boot` behind the confirm gate | Usually combined with `power_action reset`; document the two-step flow in the tool description |
+| Boot-target power actions (BIOS 100/101, PXE 400/401, diagnostics 300/301, IDE-R 200–203) | New `rpc power boot --action <name>` porting Console's `SetBootOptions`: AMT_BootSettingData Get, then Put; CIM_BootConfigSetting.ChangeBootOrder; CIM_BootService.SetBootConfigRole(1); then RequestPowerStateChange(10 or 2) (D9) | `power_get_boot_sources` (read-only) and `power_boot_action` (destructive, confirm gate), with Console names | IDE-R needs a redirection session, so it is of limited use locally. BIOS and PXE are the useful local cases |
 | CIRA / remote access status | Already in `amtinfo --ras` | Covered by `get_device_info` `fields: ["remoteAccess"]` | Prefer documenting the existing field over adding a tool |
 | AMT event and audit logs | `diagnostics wsman get --class AMT_AuditLog` / `AMT_EventLogEntry` exist | Use `wsman_get`, or a dedicated tool with a friendlier output | A dedicated tool needs an rpc command that has a stable JSON shape |
 | Configure actions (sync clock, sync hostname, TLS, CIRA) | Existing `rpc configure <sub>` | Destructive or state-changing tools with confirm gate | Check that each subcommand's `--json` output is an object; several print logs only, so add `--json` output in a separate rpc PR first |

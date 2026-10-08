@@ -18,42 +18,62 @@ The design rationale is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 |---|---|---|---|---|
 | `get_device_info` | AMT version, build, SKU, UUID, UPID, control mode, provisioning state, DNS suffix, hostname, wired/wireless LAN settings, remote access (CIRA) status, operational state, certificate hashes, user certificates, proxy settings. Optional `fields` selects a subset. | `amtinfo --all` or `amtinfo --<flag>...` | read-only | no (only for `userCertificates` / `proxy`) |
 | `get_rpc_version` | Version of the rpc binary in use. | `version` | read-only | no |
-| `get_power_state` | Current power state, last requested state, and the power actions AMT accepts right now (`availableActions`). | `power state` | read-only | yes |
+| `power_get_state` | AMT power state (`powerState`, CIM value) and the OS power-saving state (`osPowerSavingState`). Same output as Console's `power_get_state`. | `power state` | read-only | yes |
+| `power_get_capabilities` | Power actions this device supports (`supportedActions`), plus Console's capability codes. Same logic as Console's `power_get_capabilities`. | `power capabilities` | read-only | yes |
 | `wsman_get` | Raw read of one or more AMT WSMAN classes (diagnostics), e.g. `AMT_GeneralSettings`. | `diagnostics wsman get --class ...` | read-only | yes |
 | `register_device` | Discovers this device and registers or syncs its inventory with Console. Only listed when `--devices-url` is configured. | `amtinfo --discover --url <devices-url>` | writes to Console | no |
-| `power_action` | Changes the device power state: `off`, `soft-off`, `reset`, `graceful-reset`, `cycle`, `sleep`, `hibernate`, `nmi`. Requires `confirm: true`. Not listed with `--read-only`. | `power action --state <action>` | **destructive** | yes |
+| `power_action` | Performs a power action with Console's action names and behavior: `power_on`, `power_off`, `power_off_soft`, `soft_off`, `reset`, `soft_reset`, `power_cycle`, `sleep`, `hibernate`, `os_to_full_power`, `os_to_power_saving`. Requires `confirm: true`. Not listed with `--read-only`. | `power action --action <name>` | **destructive** | yes |
+
+All power tools run **locally**: rpc sends WSMAN to this device's own AMT firmware through LMS on `127.0.0.1`, or through HECI when LMS isn't installed. No Console is involved. The action names, codes and behavior are copied from Console (`console/internal/usecase/devices/power.go`), so the agent gets the same results it would get through Console. See [ARCHITECTURE.md D9](docs/ARCHITECTURE.md#d9-power-behavior-mirrors-console-executed-locally).
 
 ### Tool inputs
 
 - `get_device_info`: `{"fields": ["version", "controlMode", "lan"]}`. All fields are optional. The supported names are `version`, `build`, `sku`, `uuid`, `upid`, `controlMode`, `provisioningState`, `dnsSuffix`, `hostname`, `lan`, `remoteAccess`, `operationalState`, `certificateHashes`, `userCertificates` and `proxy`.
 - `wsman_get`: `{"classes": ["AMT_GeneralSettings", "CIM_SoftwareIdentity"]}`
 - `power_action`: `{"action": "reset", "confirm": true}`
-- `get_rpc_version`, `get_power_state` and `register_device` take no input.
+- `get_rpc_version`, `power_get_state`, `power_get_capabilities` and `register_device` take no input.
 
 ### Tool output
 
-Each tool returns the JSON that `rpc ... --json` prints. It is sent both as MCP *structured content* and as a text content block. For example, `get_power_state` returns:
+Each tool returns the JSON that `rpc ... --json` prints. It is sent both as MCP *structured content* and as a text content block. For example:
 
-```json
+```jsonc
+// power_get_state
+{ "powerState": 2, "osPowerSavingState": 2 }
+
+// power_get_capabilities (AMT 16 with BIOS setup support)
 {
-  "powerState": { "value": 2, "name": "On" },
-  "requestedPowerState": { "value": 2, "name": "On" },
-  "availableRequestedPowerStates": [
-    { "value": 5, "name": "PowerCycleSoft", "action": "cycle" },
-    { "value": 8, "name": "OffSoft", "action": "off" },
-    { "value": 10, "name": "MasterBusReset", "action": "reset" }
-  ],
-  "availableActions": ["cycle", "off", "reset"]
+  "supportedActions": ["hibernate", "power_cycle", "power_off", "power_on", "reset", "sleep", "soft_off", "soft_reset"],
+  "capabilities": { "Power up": 2, "Power cycle": 5, "Power down": 8, "Reset": 10, "Soft-off": 12, "Soft-reset": 14,
+                    "Sleep": 4, "Hibernate": 7, "Power up to BIOS": 100, "Reset to BIOS": 101, "Reset to PXE": 400, "...": "..." }
 }
+
+// power_action {"action": "reset", "confirm": true}
+{ "action": "reset", "code": 10, "returnValue": 0 }
 ```
 
-The `name` fields are the DMTF CIM names. AMT's behavior for some values differs from those names (for example, 8 is a hard power off on AMT), so go by `action` / `availableActions`.
+- **`powerState`** is the DMTF CIM value: 2 on, 3/4 sleep, 6/8 off, 7 hibernate.
+- **`osPowerSavingState`** is 0 unknown, 1 unsupported, 2 full power, 3 OS power saving.
+- **`capabilities`** uses Console's keys and codes. The boot-target entries (BIOS, PXE, IDE-R, diagnostics, secure erase, codes 100–401) are informational. As in Console's MCP server, they need the separate boot-options flow and aren't accepted by `power_action`.
 
 If rpc fails, the tool returns an MCP tool error (`isError: true`). The text contains the rpc exit code, the error that rpc logged, and a hint where one is known (for example "run the MCP server elevated").
 
 ### Power actions: important
 
-The MCP server runs on the device it controls. `off`, `soft-off`, `reset`, `graceful-reset`, `cycle`, `sleep` and `hibernate` stop or restart the machine that is running the agent session, so **the session ends**. AMT acknowledges the request before acting, so the tool result is still returned first. The tool description tells the agent to call `get_power_state` first and ask the user for explicit approval. The server refuses to run any action unless `confirm` is `true`. `on` is not offered because the host is already running.
+Action codes and behavior are the same as Console's `power_action`:
+
+| Action | Code | What rpc sends |
+|---|---|---|
+| `power_on` | 2 | IPS `RequestOSPowerSavingStateChange(full power)` if the OS is in power saving, then CIM `RequestPowerStateChange(2)` |
+| `sleep` / `hibernate` | 4 / 7 | CIM `RequestPowerStateChange` |
+| `power_cycle` | 5 | CIM `RequestPowerStateChange` |
+| `power_off` / `power_off_soft` / `soft_off` | 8 / 9 / 12 | CIM `RequestPowerStateChange` |
+| `reset` / `soft_reset` | 10 / 14 | CIM `RequestPowerStateChange` |
+| `os_to_full_power` / `os_to_power_saving` | 500 / 501 | IPS `RequestOSPowerSavingStateChange` only (no-op if already in that state) |
+
+Like Console, rpc doesn't pre-check the current power state. AMT itself rejects a transition it can't make (for example `ReturnValue` 4097, invalid state transition), and rpc reports that as a `WSMANMessageError`.
+
+The MCP server runs on the device it controls. Every action except `power_on` and `os_to_full_power` stops, restarts or suspends the machine running the agent session, so **the session ends**. AMT acknowledges the request before acting, so the tool result is still returned first. The tool description tells the agent to call `power_get_capabilities` first and ask the user for explicit approval. The server refuses to run any action unless `confirm` is `true`.
 
 Run with `--read-only` (or `RPC_MCP_READ_ONLY=true`) to remove `power_action` entirely.
 
@@ -61,7 +81,7 @@ Run with `--read-only` (or `RPC_MCP_READ_ONLY=true`) to remove `power_action` en
 
 - **rpc binary** built from this repo, version with the `power` command (`rpc power --help`). Build it with `go build -o rpc ./cmd/rpc` (or `rpc.exe` on Windows).
 - **Administrator / root.** rpc talks to the Intel MEI/HECI driver, which needs elevation. Without it, `get_device_info` returns OS-level data only and the other tools fail with `IncorrectPermissions`. See [Running elevated](#running-elevated).
-- **AMT activated** (CCM or ACM) for `get_power_state`, `power_action` and `wsman_get`.
+- **AMT activated** (CCM or ACM) for the power tools and `wsman_get`. Console isn't required: you can activate locally with `rpc activate --local --ccm --password <pw>`.
 - **AMT admin password** in the `AMT_PASSWORD` environment variable of the rpc-mcp process, for the tools that need it.
 - Go 1.25+ to build rpc-mcp.
 
@@ -86,7 +106,7 @@ cd mcp && go test ./...                 # unit tests (no AMT hardware needed)
 | `--rpc-path` | `RPC_PATH` | `rpc` on `PATH` | Path to the rpc binary. |
 | `--devices-url` | `RPC_MCP_DEVICES_URL` | *(unset)* | Console devices API (e.g. `https://console.example.com/api/v1/devices`). Enables `register_device`. |
 | `--read-only` | `RPC_MCP_READ_ONLY=true` | `false` | Do not expose `power_action`. |
-| `--http` | | *(stdio)* | Serve MCP streamable HTTP on a **loopback** address, e.g. `127.0.0.1:8090`. Non-loopback addresses are rejected because the endpoint has no authentication. |
+| `--http` | | *(stdio)* | Serve MCP over HTTP on a **loopback** address, e.g. `127.0.0.1:8090`: streamable HTTP at `/` and legacy SSE at `/sse`. Non-loopback addresses are rejected because the endpoints have no authentication. |
 
 rpc inherits rpc-mcp's environment, so the usual rpc variables apply:
 
@@ -105,9 +125,9 @@ Ready-to-copy templates for every client are in [examples/](examples/), and the 
 
 | Template | Client |
 |---|---|
-| `mcp.json`, `mcp-http.json` | Claude Code and GitHub Copilot CLI: project `.mcp.json` |
+| `mcp.json`, `mcp-http.json`, `mcp-sse.json` | Claude Code and GitHub Copilot CLI: project `.mcp.json` (stdio / HTTP / SSE) |
 | `copilot-cli-mcp-config.json` | GitHub Copilot CLI: `~/.copilot/mcp-config.json` |
-| `vscode-mcp.json`, `vscode-mcp-http.json` | VS Code + Copilot agent mode: `.vscode/mcp.json` |
+| `vscode-mcp.json`, `vscode-mcp-http.json`, `vscode-mcp-sse.json` | VS Code + Copilot agent mode: `.vscode/mcp.json` (stdio / HTTP / SSE) |
 | `claude_desktop_config.json` | Claude Desktop |
 
 Replace the paths below with your own. On Windows, use `C:\\path\\to\\rpc-mcp.exe` in JSON files.
@@ -177,6 +197,8 @@ claude mcp add --transport http rpc http://127.0.0.1:8090
 { "servers": { "rpc": { "type": "http", "url": "http://127.0.0.1:8090" } } }
 ```
 
+For agents that only support the legacy **SSE** transport, use `http://127.0.0.1:8090/sse` on the same listener (`claude mcp add --transport sse rpc http://127.0.0.1:8090/sse`, or `"type": "sse"`). The handshake details are in [Getting started, section 5.3](docs/GETTING_STARTED.md#53-legacy-sse-endpoint-sse).
+
 ### MCP Inspector (manual testing)
 
 ```sh
@@ -195,7 +217,7 @@ rpc-mcp never prompts: rpc runs without stdin, so a missing password or elevatio
 - The agent can't choose where device data is sent. The Console URL for `register_device` comes only from server configuration.
 - Secrets (AMT password, Console credentials) are passed through the environment and never appear in rpc's command line or in tool inputs. Prefer client features that prompt for secrets (VS Code `inputs`) over storing them in plain-text config files.
 - `power_action` is marked `destructiveHint: true`, so well-behaved clients ask for approval. The server also enforces `confirm: true`. Use `--read-only` where power control isn't wanted.
-- HTTP mode only binds to loopback and has no authentication: anything on the device that can reach the port can call the tools.
+- HTTP mode (both `/` and `/sse`) only binds to loopback and has no authentication: anything on the device that can reach the port can call the tools. The SDK's DNS-rebinding protection rejects requests whose `Host` header isn't localhost.
 
 ## Troubleshooting
 
@@ -205,7 +227,7 @@ rpc-mcp never prompts: rpc runs without stdin, so a missing password or elevatio
 | `HECIDriverNotDetected` (2) / `AmtNotDetected` (3) | No Intel MEI driver or AMT on this machine. |
 | `MissingOrIncorrectPassword` (23) / `AMTAuthenticationFailed` (100) | Set or correct `AMT_PASSWORD`. |
 | `DeviceNotActivated` (115) | Activate AMT first (`rpc activate ...`). Power and WSMAN tools need CCM or ACM. |
-| `InvalidUserInput` (36) from `power_action` | The action isn't in the device's current `availableActions`. |
+| `WSMANMessageError` (101) from `power_action` with `InvalidStateTransition (4097)` | AMT can't make that transition from the current state (for example `sleep` while the OS is already sleeping). Check `power_get_state` and `power_get_capabilities`. |
 | `WSMANMessageError` (101) | AMT rejected the WSMAN request. Check the detail text, then rerun `rpc <command> --log-level debug` by hand. |
 | `rpc binary not found` at startup | Set `--rpc-path` or `RPC_PATH`. |
 | `... timed out after ...` | HECI or LMS busy. `amtinfo` retries for up to ~16s, so try again. |

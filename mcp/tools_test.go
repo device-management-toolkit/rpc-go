@@ -82,12 +82,12 @@ func toolNames(t *testing.T, session *mcp.ClientSession) []string {
 
 func TestToolRegistration(t *testing.T) {
 	all := connect(t, &fakeRPC{}, Config{DevicesURL: "https://console/api/v1/devices", AllowPowerActions: true})
-	if got, want := toolNames(t, all), []string{"get_device_info", "get_power_state", "get_rpc_version", "power_action", "register_device", "wsman_get"}; !slices.Equal(got, want) {
+	if got, want := toolNames(t, all), []string{"get_device_info", "get_rpc_version", "power_action", "power_get_capabilities", "power_get_state", "register_device", "wsman_get"}; !slices.Equal(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}
 
 	readOnly := connect(t, &fakeRPC{}, Config{})
-	if got, want := toolNames(t, readOnly), []string{"get_device_info", "get_power_state", "get_rpc_version", "wsman_get"}; !slices.Equal(got, want) {
+	if got, want := toolNames(t, readOnly), []string{"get_device_info", "get_rpc_version", "power_get_capabilities", "power_get_state", "wsman_get"}; !slices.Equal(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}
 }
@@ -138,7 +138,26 @@ func TestPowerAction(t *testing.T) {
 		t.Fatalf("unexpected tool error: %s", toolText(res))
 	}
 
-	if want := []string{"power", "action", "--state", "reset", "--json"}; !slices.Equal(f.args, want) {
+	if want := []string{"power", "action", "--action", "reset", "--json"}; !slices.Equal(f.args, want) {
+		t.Errorf("args = %v, want %v", f.args, want)
+	}
+
+	// Old (pre-Console-alignment) names are rejected.
+	f.args = nil
+	if res := callTool(t, session, "power_action", map[string]any{"action": "graceful-reset", "confirm": true}); !res.IsError || f.args != nil {
+		t.Fatal("legacy action name must be rejected")
+	}
+}
+
+func TestPowerGetCapabilities(t *testing.T) {
+	f := &fakeRPC{stdout: `{"supportedActions":["power_cycle","power_off","power_on","reset"]}`}
+	session := connect(t, f, Config{})
+
+	if res := callTool(t, session, "power_get_capabilities", nil); res.IsError {
+		t.Fatalf("unexpected tool error: %s", toolText(res))
+	}
+
+	if want := []string{"power", "capabilities", "--json"}; !slices.Equal(f.args, want) {
 		t.Errorf("args = %v, want %v", f.args, want)
 	}
 }
@@ -158,7 +177,7 @@ func TestRPCFailureIsToolError(t *testing.T) {
 	f := &fakeRPC{exitCode: 10, stderr: `{"level":"error","msg":"Error 1: IncorrectPermissions"}`}
 	session := connect(t, f, Config{})
 
-	res := callTool(t, session, "get_power_state", nil)
+	res := callTool(t, session, "power_get_state", nil)
 	if !res.IsError || !strings.Contains(toolText(res), "IncorrectPermissions") || !strings.Contains(toolText(res), "elevated") {
 		t.Errorf("expected tool error, got %+v", res)
 	}
