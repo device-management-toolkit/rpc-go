@@ -10,7 +10,7 @@ AI agent / MCP client ──stdio or local HTTP──> rpc-mcp ──exec "rpc .
 
 The design rationale is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**New here?** Follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). It walks through building rpc and rpc-mcp for Windows and Linux, deploying them, running them, and connecting Claude Code, GitHub Copilot (VS Code and CLI) or Claude Desktop. Ready-to-copy agent configs are in [examples/](examples/).
+**New here?** Follow [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md). It walks through building rpc and rpc-mcp for Windows and Linux, deploying them, running them, and connecting Claude Code, GitHub Copilot (VS Code and CLI) or Claude Desktop. Ready-to-copy agent configs are in [examples/](examples/). To test the server by hand on the target, without an agent, use [docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md).
 
 ## Capabilities
 
