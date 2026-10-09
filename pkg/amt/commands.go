@@ -221,11 +221,7 @@ func (amt AMTCommand) Initialize() error {
 	// initialize HECI interface
 	err := amt.PTHI.Open(false)
 	if err != nil {
-		if err.Error() == "The handle is invalid." {
-			return utils.HECIDriverNotDetected //, errors.New("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-		} else {
-			return utils.HECIDriverNotDetected //, errors.New("unable to initialize")
-		}
+		return fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, err)
 	}
 
 	defer amt.PTHI.Close()

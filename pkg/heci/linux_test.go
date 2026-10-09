@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -168,6 +169,7 @@ func TestOpenAndConnectNoDevices(t *testing.T) {
 	err := h.openAndConnect(&data, heciConnectAttempts, true)
 
 	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrDeviceNotFound)
 	assert.ErrorIs(t, err, fs.ErrNotExist)
 	assert.Nil(t, h.meiDevice)
 }
@@ -189,6 +191,8 @@ func TestOpenAndConnectSkipsNonClientDevice(t *testing.T) {
 	err := h.openAndConnect(&data, guidConnectAttempts, false)
 
 	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnsupportedDevice)
+	assert.ErrorIs(t, err, syscall.ENOTTY)
 	assert.Nil(t, h.meiDevice)
 }
 

@@ -120,7 +120,7 @@ func (heci *Driver) openMEIDevicePath(path string) error {
 			log.Debugf("cannot open %s: %v", path, err)
 		}
 
-		return err
+		return classifyLinuxError(err)
 	}
 
 	heci.meiDevice = dev
@@ -157,7 +157,22 @@ func (heci *Driver) connectClient(data *CMEIConnectClientData, attempts int, ram
 		time.Sleep(time.Duration(i+1) * utils.HeciConnectRetryBackoff * time.Millisecond)
 	}
 
-	return err
+	return classifyLinuxError(err)
+}
+
+func classifyLinuxError(err error) error {
+	if err == nil || errors.Is(err, ErrDeviceNotFound) || errors.Is(err, ErrUnsupportedDevice) || errors.Is(err, ErrPermissionDenied) {
+		return err
+	}
+
+	switch {
+	case errors.Is(err, fs.ErrPermission):
+		return wrapError(ErrPermissionDenied, err)
+	case errors.Is(err, syscall.ENOTTY):
+		return wrapError(ErrUnsupportedDevice, err)
+	default:
+		return err
+	}
 }
 
 // openAndConnect probes meiDevicePaths in order, mirroring the LMS client. For
@@ -207,6 +222,8 @@ func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ra
 
 	if lastErr != nil && errors.Is(lastErr, fs.ErrNotExist) {
 		log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+
+		return wrapError(ErrDeviceNotFound, lastErr)
 	}
 
 	return lastErr
