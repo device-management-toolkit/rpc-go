@@ -13,6 +13,8 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/timesynchronization"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/rps"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -50,6 +52,95 @@ func TestSyncClockCmd_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewRemoteSyncClockRequest(t *testing.T) {
+	cmd := &SyncClockCmd{
+		URL: "ws://rps.example.com/activate",
+		ConfigureBaseCmd: ConfigureBaseCmd{
+			AMTBaseCmd: commands.AMTBaseCmd{
+				ControlMode:      2,
+				LocalTLSEnforced: true,
+			},
+		},
+	}
+	ctx := &commands.Context{
+		AMTPassword:      "test-pass",
+		LogLevel:         "debug",
+		JsonOutput:       true,
+		Verbose:          true,
+		SkipCertCheck:    true,
+		SkipAMTCertCheck: true,
+		TenantID:         "tenant-1",
+	}
+
+	req := newRemoteSyncClockRequest(cmd, ctx)
+
+	assert.Equal(t, utils.CommandMaintenance, req.Command)
+	assert.Equal(t, utils.SubCommandSyncClock, req.SubCommand)
+	assert.Equal(t, cmd.URL, req.URL)
+	assert.Equal(t, ctx.AMTPassword, req.Password)
+	assert.Equal(t, ctx.TenantID, req.TenantID)
+	assert.True(t, req.LocalTlsEnforced)
+	assert.True(t, req.SkipCertCheck)
+	assert.True(t, req.SkipAmtCertCheck)
+}
+
+func TestSyncClockCmd_Run_RemoteExecutesViaRPS(t *testing.T) {
+	originalExec := executeRemoteSyncClock
+
+	t.Cleanup(func() { executeRemoteSyncClock = originalExec })
+
+	var capturedReq *rps.Request
+
+	executeRemoteSyncClock = func(req *rps.Request) error {
+		capturedReq = req
+
+		return nil
+	}
+
+	cmd := &SyncClockCmd{
+		URL: "wss://rps.example.com/activate",
+		ConfigureBaseCmd: ConfigureBaseCmd{
+			AMTBaseCmd: commands.AMTBaseCmd{
+				ControlMode: 2,
+			},
+		},
+	}
+	ctx := &commands.Context{AMTPassword: "test-pass"}
+
+	err := cmd.Run(ctx)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, capturedReq)
+	assert.Equal(t, cmd.URL, capturedReq.URL)
+	assert.Equal(t, utils.CommandMaintenance, capturedReq.Command)
+	assert.Equal(t, utils.SubCommandSyncClock, capturedReq.SubCommand)
+}
+
+func TestSyncClockCmd_Run_RemoteReturnsRPSError(t *testing.T) {
+	originalExec := executeRemoteSyncClock
+
+	t.Cleanup(func() { executeRemoteSyncClock = originalExec })
+
+	executeRemoteSyncClock = func(req *rps.Request) error {
+		return errors.New("rps connection failed")
+	}
+
+	cmd := &SyncClockCmd{
+		URL: "wss://rps.example.com/activate",
+		ConfigureBaseCmd: ConfigureBaseCmd{
+			AMTBaseCmd: commands.AMTBaseCmd{
+				ControlMode: 2,
+			},
+		},
+	}
+	ctx := &commands.Context{AMTPassword: "test-pass"}
+
+	err := cmd.Run(ctx)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "rps connection failed")
 }
 
 func TestSyncClockCmd_Run(t *testing.T) {

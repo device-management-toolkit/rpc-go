@@ -86,6 +86,12 @@ See `config.sample.yaml` for a fully documented example containing every command
 rpc --config config.yaml configure sync-clock
 ```
 
+`configure sync-clock` synchronizes the clock locally by default. Pass `-u`/`--url` to synchronize via a remote RPS server instead:
+
+```shell
+rpc configure sync-clock -u wss://<rps-host>/activate --password <AMT_PASSWORD>
+```
+
 CLI flags and environment variables always override values loaded from the file.
 
 Sensitive values (passwords, tokens) can also be provided via environment variables (see flag `env:` tags in code) instead of storing in plaintext YAML.
