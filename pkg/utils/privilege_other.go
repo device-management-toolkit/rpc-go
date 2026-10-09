@@ -9,9 +9,9 @@ package utils
 
 import "fmt"
 
-// IsElevated returns false on unsupported platforms.
+// IsElevated returns true on platforms without a HECI driver, where elevation cannot unlock AMT access.
 func IsElevated() bool {
-	return false
+	return true
 }
 
 // SelfElevate is not supported on this platform.
