@@ -8,11 +8,22 @@ package diagnostics
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestWSManFetchError(t *testing.T) {
+	last := errors.New("connection refused")
+	err := &wsmanFetchError{failed: 2, total: 52, last: last}
+
+	assert.Equal(t, "2 of 52 WSMAN class(es) failed to retrieve: connection refused", err.Error())
+	assert.ErrorIs(t, err, last)
+	assert.NoError(t, fetchFailureOrNil(nil))
+	assert.Same(t, err, fetchFailureOrNil(err))
+}
 
 type testXMLPayload struct {
 	XMLName xml.Name `xml:"Payload"`

@@ -11,10 +11,10 @@ import (
 	cryptotls "crypto/tls"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -63,6 +63,21 @@ type WSManGetCmd struct {
 	All    bool     `help:"Retrieve data for all available WSMAN classes" name:"all" short:"a"`
 
 	wsmanUsername string `kong:"-"`
+}
+
+// wsmanFetchError reports classes that failed to retrieve; the output is still written.
+type wsmanFetchError struct {
+	failed int
+	total  int
+	last   error
+}
+
+func (err *wsmanFetchError) Error() string {
+	return fmt.Sprintf("%d of %d WSMAN class(es) failed to retrieve: %v", err.failed, err.total, err.last)
+}
+
+func (err *wsmanFetchError) Unwrap() error {
+	return err.last
 }
 
 type classFetcher func(messages wsman.Messages) (any, error)
@@ -148,6 +163,19 @@ var wsmanClassFetchers = map[string]classFetcher{
 
 // Run executes the WSMAN get command.
 func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
+	err := cmd.collect(ctx)
+
+	// Per-class failures are already recorded in the rendered output.
+	var fetchErr *wsmanFetchError
+	if errors.As(err, &fetchErr) {
+		return nil
+	}
+
+	return err
+}
+
+// collect writes the selected classes and returns *wsmanFetchError when any class fails.
+func (cmd *WSManGetCmd) collect(ctx *commands.Context) error {
 	selectedClasses, err := cmd.resolveClasses()
 	if err != nil {
 		return err
@@ -171,6 +199,9 @@ func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
 	}
 
 	results := make([]classResult, 0, len(selectedClasses))
+
+	var fetchFailure *wsmanFetchError
+
 	for _, className := range selectedClasses {
 		fetcher := wsmanClassFetchers[className]
 
@@ -180,7 +211,19 @@ func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
 				return fmt.Errorf("failed to retrieve WSMAN class %s: %w", className, fetchErr)
 			}
 
-			log.Warnf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+			if cmd.quiet {
+				log.Debugf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+			} else {
+				log.Warnf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+			}
+
+			if fetchFailure == nil {
+				fetchFailure = &wsmanFetchError{total: len(selectedClasses)}
+			}
+
+			fetchFailure.failed++
+			fetchFailure.last = fetchErr
+
 			results = append(results, classResult{Class: className, Data: classFetchErrorData{
 				Class:   className,
 				Status:  "fetch_failed",
@@ -201,25 +244,33 @@ func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
 	if strings.EqualFold(strings.TrimSpace(cmd.Output), "stdout") {
 		fmt.Println(string(rendered))
 
-		return nil
+		return fetchFailureOrNil(fetchFailure)
 	}
 
 	outputPath := strings.TrimSpace(cmd.Output)
 
-	outputDir := filepath.Dir(outputPath)
-	if outputDir != "." && outputDir != "" {
-		if mkErr := os.MkdirAll(outputDir, 0o755); mkErr != nil {
-			return fmt.Errorf("failed to create output directory: %w", mkErr)
-		}
+	if err := ensureParentDir(outputPath); err != nil {
+		return err
 	}
 
 	if writeErr := os.WriteFile(outputPath, rendered, 0o644); writeErr != nil {
 		return fmt.Errorf("failed to write output file: %w", writeErr)
 	}
 
-	fmt.Printf("WSMAN class data written to %s\n", outputPath)
+	if !cmd.quiet {
+		fmt.Printf("WSMAN class data written to %s\n", outputPath)
+	}
 
-	return nil
+	return fetchFailureOrNil(fetchFailure)
+}
+
+// fetchFailureOrNil avoids returning a typed nil pointer as a non-nil error.
+func fetchFailureOrNil(fetchFailure *wsmanFetchError) error {
+	if fetchFailure == nil {
+		return nil
+	}
+
+	return fetchFailure
 }
 
 func (cmd *WSManGetCmd) resolveClasses() ([]string, error) {
