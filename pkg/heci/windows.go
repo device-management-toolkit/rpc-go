@@ -33,6 +33,12 @@ const (
 	METHOD_BUFFERED  = 0
 )
 
+var (
+	setupDiGetClassDevs          = setupapi.SetupDiGetClassDevs
+	setupDiEnumDeviceInterfaces  = setupapi.SetupDiEnumDeviceInterfaces
+	setupDiDestroyDeviceInfoList = setupapi.SetupDiDestroyDeviceInfoList
+)
+
 func ctl_code(device_type, function, method, access uint32) uint32 {
 	return (device_type << 16) | (access << 14) | (function << 2) | method
 }
@@ -128,6 +134,7 @@ func (heci *Driver) InitHOTHAM() error {
 	heci.HOTHAMGUID, err = windows.GUIDFromString("{082EE5A7-7C25-470A-9643-0C06F0466EA1}")
 	if err != nil {
 		log.Errorf("InitHOTHAM: Failed to parse HOTHAM GUID: %v", err)
+
 		return err
 	}
 
@@ -136,6 +143,7 @@ func (heci *Driver) InitHOTHAM() error {
 	err = heci.FindDevices()
 	if err != nil {
 		log.Errorf("InitHOTHAM: Failed to find devices: %v", err)
+
 		return err
 	}
 
@@ -145,16 +153,22 @@ func (heci *Driver) InitHOTHAM() error {
 	return nil
 }
 
-func (heci *Driver) FindDevices() error {
+func (heci *Driver) FindDevices() (resultErr error) {
+	defer func() {
+		resultErr = classifyWindowsError(resultErr)
+	}()
+
 	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
 	if err != nil {
 		log.Errorf("FindDevices: Failed to parse device GUID: %v", err)
+
 		return err
 	}
 
-	deviceInfo, err := setupapi.SetupDiGetClassDevs(&deviceGUID, nil, 0, setupapi.DIGCF_PRESENT|setupapi.DIGCF_DEVICEINTERFACE)
+	deviceInfo, err := setupDiGetClassDevs(&deviceGUID, nil, 0, setupapi.DIGCF_PRESENT|setupapi.DIGCF_DEVICEINTERFACE)
 	if err != nil {
 		log.Errorf("FindDevices: SetupDiGetClassDevs failed: %v", err)
+
 		return err
 	}
 
@@ -165,21 +179,20 @@ func (heci *Driver) FindDevices() error {
 	interfaceData := setupapi.SpDevInterfaceData{}
 	interfaceData.CbSize = uint32(unsafe.Sizeof(interfaceData))
 
-	edi, err := setupapi.SetupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
+	_, err = setupDiEnumDeviceInterfaces(deviceInfo, nil, &deviceGUID, 0, &interfaceData)
 	if err != nil {
 		// Clean up device info before returning
-		setupapi.SetupDiDestroyDeviceInfoList(deviceInfo)
+		setupDiDestroyDeviceInfoList(deviceInfo)
 		// Check if this is a "no devices found" error (ERROR_NO_MORE_ITEMS = 259)
-		if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(259) {
+		if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
 			log.Error("MEI/HECI driver not found or no Intel ME devices present")
-			return errors.New("MEI/HECI driver not found. Please ensure the Intel Management Engine Interface driver is installed")
-		}
-		log.Errorf("FindDevices: SetupDiEnumDeviceInterfaces failed: %v", err)
-		return err
-	}
 
-	if edi == syscall.InvalidHandle {
-		return errors.New("invalid handle")
+			return fmt.Errorf("MEI/HECI driver not found. Please ensure the Intel Management Engine Interface driver is installed: %w", err)
+		}
+
+		log.Errorf("FindDevices: SetupDiEnumDeviceInterfaces failed: %v", err)
+
+		return err
 	}
 
 	err = setupapi.SetupDiGetDeviceInterfaceDetail(deviceInfo, &interfaceData, nil, 0, &heci.bufferSize, nil)
@@ -202,7 +215,7 @@ func (heci *Driver) FindDevices() error {
 		l++
 	}
 
-	err = setupapi.SetupDiDestroyDeviceInfoList(deviceInfo)
+	err = setupDiDestroyDeviceInfoList(deviceInfo)
 	if err != nil {
 		return err
 	}
@@ -215,16 +228,35 @@ func (heci *Driver) FindDevices() error {
 	err = heci.GetHeciVersion()
 	if err != nil {
 		heci.meiDevice = 0
+
 		return err
 	}
 
 	err = heci.ConnectHeciClient()
 	if err != nil {
 		heci.meiDevice = 0
+
 		return err
 	}
 
 	return nil
+}
+
+func classifyWindowsError(err error) error {
+	if err == nil || errors.Is(err, ErrDeviceNotFound) || errors.Is(err, ErrUnsupportedDevice) || errors.Is(err, ErrPermissionDenied) {
+		return err
+	}
+
+	switch {
+	case errors.Is(err, windows.ERROR_NO_MORE_ITEMS):
+		return wrapError(ErrDeviceNotFound, err)
+	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
+		return wrapError(ErrPermissionDenied, err)
+	case errors.Is(err, windows.ERROR_NOT_SUPPORTED), errors.Is(err, windows.ERROR_INVALID_FUNCTION):
+		return wrapError(ErrUnsupportedDevice, err)
+	default:
+		return err
+	}
 }
 
 func (heci *Driver) GetBufferSize() uint32 {
@@ -265,6 +297,7 @@ func (heci *Driver) ConnectHeciClient() error {
 	)
 	if err != nil {
 		log.Tracef("ConnectHeciClient: IOCTL failed: %v", err)
+
 		return err
 	}
 
@@ -295,7 +328,7 @@ func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, out
 	// Any other error means the kernel rejected the request and the event will never fire,
 	// so bail out before we wait on it.
 	if ioctlErr := windows.DeviceIoControl(heci.meiDevice, controlCode, inBuf, intsize, outBuf, outsize, &bytesRead, &overlapped); !isOverlappedPending(ioctlErr) {
-		return fmt.Errorf("DeviceIoControl failed: %w", ioctlErr)
+		return fmt.Errorf("DeviceIoControl failed: %w", classifyWindowsError(ioctlErr))
 	}
 
 	// Bounded wait mirrors SendMessage/ReceiveMessage so a stuck IOCTL surfaces as an error
@@ -320,7 +353,7 @@ func (heci *Driver) doIoctl(controlCode uint32, inBuf *byte, intsize uint32, out
 
 	err = windows.GetOverlappedResult(heci.meiDevice, &overlapped, &bytesRead, true)
 	if err != nil {
-		return err
+		return classifyWindowsError(err)
 	}
 
 	return nil
