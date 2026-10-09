@@ -175,6 +175,14 @@ func TestAMTBaseCmd_RequiresAMTPassword(t *testing.T) {
 
 // GetPassword removed with context-based password; test replaced by EnsureAMTPassword coverage.
 
+func TestAMTBaseCmd_AMTTLSConfig_FollowsContextSkipAMTCertCheck(t *testing.T) {
+	// ACM: the TLS config verifies AMT's certificate unless the caller skips it.
+	cmd := &AMTBaseCmd{ControlMode: 2}
+
+	assert.True(t, cmd.amtTLSConfig(&Context{SkipAMTCertCheck: true}).InsecureSkipVerify)
+	assert.False(t, cmd.amtTLSConfig(&Context{SkipAMTCertCheck: false}).InsecureSkipVerify)
+}
+
 func TestAMTBaseCmd_GetWSManClient(t *testing.T) {
 	cmd := &AMTBaseCmd{}
 	// Initially should be nil
