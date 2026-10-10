@@ -35,6 +35,18 @@ func (cmd *EnableAMTCmd) Run(ctx *commands.Context) error {
 		return utils.AMTConnectionFailed
 	}
 
+	log.Debugf(
+		"AMT state independence change-enabled response: rawResponse=0x%02X Enabled=%d CurrentOperationalState=%d Reserved=%d WeakAlgorithmsRemoved=%t CIRAPeriodicTimerFix=%d TlsOnLocalPorts=%d IsNewInterfaceVersion=%d",
+		uint8(changeEnabled),
+		uint8(changeEnabled)&0x01,
+		(uint8(changeEnabled)>>1)&0x01,
+		(uint8(changeEnabled)>>2)&0x03,
+		changeEnabled.AreWeakAlgorithmsRemoved(),
+		(uint8(changeEnabled)>>5)&0x01,
+		(uint8(changeEnabled)>>6)&0x01,
+		(uint8(changeEnabled)>>7)&0x01,
+	)
+
 	// Log diagnostic information
 	operationalStateLabel := "Disabled"
 	if changeEnabled.IsAMTEnabled() {

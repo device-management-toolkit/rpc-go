@@ -61,6 +61,10 @@ type MessagePayload struct {
 	TLSEnforced       bool            `json:"tlsEnforced,omitempty"`
 	TLSTunnel         bool            `json:"tlsTunnel,omitempty"`
 	LMSInstalled      bool            `json:"lmsInstalled,omitempty"`
+	// WeakAlgorithmsRemoved reports whether the firmware has dropped AES-128,
+	// SHA-256, RSA-2K and ECC-256. RPS selects its certificate crypto policy
+	// from this rather than inferring it from the AMT version.
+	WeakAlgorithmsRemoved bool `json:"weakAlgorithmsRemoved,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -135,6 +139,32 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 	payload.CurrentMode, err = p.AMT.GetControlMode()
 	if err != nil {
 		return payload, err
+	}
+
+	// Capability probe, not a provisioning prerequisite: a failure here must not
+	// abort activation. Falling through leaves the flag false, which is also
+	// what every pre-hardening platform reports.
+	if changeEnabled, cerr := p.AMT.GetChangeEnabled(); cerr != nil {
+		log.Warnf("AMT crypto capability: query failed (%v), assuming weak algorithms present", cerr)
+	} else {
+		payload.WeakAlgorithmsRemoved = changeEnabled.AreWeakAlgorithmsRemoved()
+
+		state := "present"
+		if payload.WeakAlgorithmsRemoved {
+			state = "removed"
+		}
+
+		// A clear bit on firmware that predates the field is not a report. The
+		// value is used either way - the hardening can be backported to an older
+		// platform, so a set bit is always believed - but the distinction matters
+		// when reading this log.
+		source := "reported"
+		if !payload.WeakAlgorithmsRemoved && !changeEnabled.IsNewInterfaceVersion() {
+			source = "assumed"
+		}
+
+		log.Infof("AMT crypto capability (0x%02X): weak algorithms %s, %s",
+			uint8(changeEnabled), state, source)
 	}
 
 	lsa, err := p.AMT.GetLocalSystemAccount()
