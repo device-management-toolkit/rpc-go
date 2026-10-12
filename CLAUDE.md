@@ -111,7 +111,7 @@ make mock
 The `make mock` target encodes the canonical `mockgen -source <interface> -destination …` invocations:
 
 - `internal/interfaces/wsman.go` → `internal/mocks/wsman_mock.go`
-- `internal/amt/commands.go` → `internal/mocks/amt_mock.go` (note: the legacy `internal/amt/` path comes from v2 layout and is still referenced by the Makefile — confirm before editing)
+- `pkg/amt/commands.go` → `internal/mocks/amt_mock.go`
 
 Commit the regenerated mocks in the same PR as the interface change. Stale mocks are a top cause of "passes locally, fails CI."
 

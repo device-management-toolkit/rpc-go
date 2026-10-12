@@ -21,6 +21,14 @@ const (
 	UPIDGUID = "{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}"
 )
 
+// HECI message framing sizes
+const (
+	// headerSize is the size of UPIDHECIHeader on the wire
+	headerSize = 4
+	// minResponseSize is a header followed by a UINT32 status
+	minResponseSize = headerSize + 4
+)
+
 // UPID Command Feature Codes (from Intel UPID Attestation SDK)
 const (
 	CommandFeaturePlatformID uint8 = 0 // UPID_COMMAND_FEATURE_PLATFORM_ID
