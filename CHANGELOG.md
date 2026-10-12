@@ -1,3 +1,10 @@
+# [3.0.0-beta.63](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.62...v3.0.0-beta.63) (2026-10-12)
+
+
+### Features
+
+* add public pkg/deactivate API ([#1583](https://github.com/device-management-toolkit/rpc-go/issues/1583)) ([ad078b9](https://github.com/device-management-toolkit/rpc-go/commit/ad078b9f2ac4fa37e7aacc80f80d7a967fa0861d))
+
 # [3.0.0-beta.62](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.61...v3.0.0-beta.62) (2026-10-12)
 
 
