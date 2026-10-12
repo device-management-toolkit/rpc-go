@@ -7,10 +7,17 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // MockPasswordReader for testing password prompting
@@ -195,17 +202,186 @@ func TestIsPermanentHECIError(t *testing.T) {
 		err      error
 		expected bool
 	}{
-		{"inappropriate ioctl (non-vPro hardware)", errors.New("inappropriate ioctl for device"), true},
-		{"no such file (MEI driver missing)", errors.New("open /dev/mei0: no such file or directory"), true},
+		{"device not found", heci.ErrDeviceNotFound, true},
+		{"wrapped device not found", fmt.Errorf("open failed: %w", heci.ErrDeviceNotFound), true},
+		{"unsupported HECI operation", heci.ErrUnsupportedDevice, true},
 		{"HECIDriverNotDetected sentinel", utils.HECIDriverNotDetected, true},
-		{"transient no such device", errors.New("no such device"), false},
-		{"transient device not connected", errors.New("The device is not connected."), false},
+		{"permission denied", heci.ErrPermissionDenied, true},
+		{"transient error", errors.New("temporary ME busy"), false},
 		{"generic error", errors.New("some other error"), false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, isPermanentHECIError(tt.err))
+		})
+	}
+}
+
+func TestAMTBaseCmd_AfterApplySuccess(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	amtCommand.EXPECT().Close().Return(nil)
+	amtCommand.EXPECT().GetControlMode().Return(2, nil)
+	amtCommand.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
+
+	cmd := &AMTBaseCmd{}
+	err := cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) {})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, cmd.ControlMode)
+	assert.True(t, cmd.HECIAvailable)
+	assert.True(t, cmd.afterApplied)
+}
+
+func TestAMTBaseCmd_AfterApplyUnprivileged(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantErr     error
+		wantCause   error
+		wantApplied bool
+	}{
+		{name: "missing device", err: heci.ErrDeviceNotFound, wantErr: utils.HECIDriverNotDetected, wantCause: heci.ErrDeviceNotFound},
+		{name: "unsupported device", err: heci.ErrUnsupportedDevice, wantErr: utils.AmtNotDetected, wantCause: heci.ErrUnsupportedDevice},
+		{name: "permission denied", err: heci.ErrPermissionDenied, wantErr: utils.IncorrectPermissions, wantCause: heci.ErrPermissionDenied},
+		{name: "transient failure requests elevation", err: errors.New("ME busy"), wantErr: utils.IncorrectPermissions},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			amtCommand := mock.NewMockInterface(ctrl)
+			amtCommand.EXPECT().Close().Return(nil)
+			amtCommand.EXPECT().GetControlMode().Return(0, tt.err)
+
+			cmd := &AMTBaseCmd{}
+			err := cmd.afterApply(amtCommand, false, "amd64", func(time.Duration) {})
+
+			assert.ErrorIs(t, err, tt.wantErr)
+
+			if tt.wantCause != nil {
+				assert.ErrorIs(t, err, tt.wantCause)
+			}
+
+			assert.Equal(t, tt.wantApplied, cmd.afterApplied)
+		})
+	}
+}
+
+func TestAMTBaseCmd_AfterApplyAmtInfoDegradedPath(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	amtCommand.EXPECT().Close().Return(nil)
+
+	cmd := &AMTBaseCmd{SkipWSMANSetup: true}
+	err := cmd.afterApply(amtCommand, false, "amd64", func(time.Duration) {})
+
+	require.NoError(t, err)
+	assert.Equal(t, -1, cmd.ControlMode)
+	assert.False(t, cmd.HECIAvailable)
+	assert.True(t, cmd.afterApplied)
+}
+
+func TestAMTBaseCmd_AfterApplyPermanentErrorsAreClassifiedWithoutRetry(t *testing.T) {
+	tests := []struct {
+		name     string
+		cause    error
+		wantCode utils.CustomError
+	}{
+		{name: "missing device", cause: heci.ErrDeviceNotFound, wantCode: utils.HECIDriverNotDetected},
+		{name: "unsupported device", cause: heci.ErrUnsupportedDevice, wantCode: utils.AmtNotDetected},
+		{name: "permission denied", cause: heci.ErrPermissionDenied, wantCode: utils.IncorrectPermissions},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			amtCommand := mock.NewMockInterface(ctrl)
+			amtCommand.EXPECT().Close().Return(nil)
+			amtCommand.EXPECT().GetControlMode().Return(0, tt.cause).Times(1)
+
+			cmd := &AMTBaseCmd{}
+			err := cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) { t.Fatal("permanent errors should not retry") })
+
+			var exitError utils.CustomError
+			require.ErrorAs(t, err, &exitError)
+			assert.Equal(t, tt.wantCode, exitError)
+			assert.ErrorIs(t, err, tt.cause)
+		})
+	}
+}
+
+func TestAMTBaseCmd_AfterApplyRetryExhaustionUsesDefaultClassification(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	amtCommand.EXPECT().Close().Return(nil)
+
+	transientErr := errors.New("ME remains busy")
+
+	amtCommand.EXPECT().GetControlMode().Return(0, transientErr).Times(4)
+
+	cmd := &AMTBaseCmd{}
+	sleeps := 0
+	err := cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) { sleeps++ })
+
+	var exitError utils.CustomError
+	require.ErrorAs(t, err, &exitError)
+	assert.Equal(t, utils.HECIDriverNotDetected, exitError)
+	assert.ErrorIs(t, err, transientErr)
+	assert.Equal(t, 3, sleeps)
+}
+
+func TestAMTBaseCmd_AfterApplyRetriesTransientError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	amtCommand.EXPECT().Close().Return(nil)
+	gomock.InOrder(
+		amtCommand.EXPECT().GetControlMode().Return(0, errors.New("ME busy")),
+		amtCommand.EXPECT().GetControlMode().Return(0, errors.New("ME busy")),
+		amtCommand.EXPECT().GetControlMode().Return(1, nil),
+	)
+	amtCommand.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
+
+	sleeps := 0
+	cmd := &AMTBaseCmd{}
+	err := cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) { sleeps++ })
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, sleeps)
+	assert.Equal(t, 1, cmd.ControlMode)
+	assert.True(t, cmd.HECIAvailable)
+}
+
+func TestAMTBaseCmd_AfterApplyUnsupportedArchitecture(t *testing.T) {
+	tests := []struct {
+		name        string
+		skipWSMAN   bool
+		wantErr     error
+		wantApplied bool
+	}{
+		{name: "AMT command reports missing driver", wantErr: utils.HECIDriverNotDetected},
+		{name: "amtinfo remains degraded", skipWSMAN: true, wantApplied: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			amtCommand := mock.NewMockInterface(ctrl)
+			amtCommand.EXPECT().Close().Return(nil)
+
+			cmd := &AMTBaseCmd{SkipWSMANSetup: tt.skipWSMAN}
+			err := cmd.afterApply(amtCommand, true, "arm64", func(time.Duration) {})
+
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tt.wantApplied, cmd.afterApplied)
+			assert.Equal(t, -1, cmd.ControlMode)
+			assert.False(t, cmd.HECIAvailable)
 		})
 	}
 }
