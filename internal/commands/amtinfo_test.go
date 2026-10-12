@@ -1768,23 +1768,101 @@ func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
 	assert.Equal(t, 0, result.RAS.MPSPort)
 }
 
+// stubElevated pins the privilege check so tests don't depend on who runs them.
+func stubElevated(t *testing.T, elevated bool) {
+	t.Helper()
+
+	orig := isElevated
+
+	t.Cleanup(func() { isElevated = orig })
+
+	isElevated = func() bool { return elevated }
+}
+
 func TestInfoService_SyncDeviceInfo_EmptyUUID_ReturnsError(t *testing.T) {
+	stubElevated(t, true)
+
 	service := NewInfoService(nil)
 	ctx := &Context{}
 	result := &InfoResult{}
 
 	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	assert.ErrorIs(t, err, ErrSyncUUIDUnavailable)
 }
 
 func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
+	stubElevated(t, true)
+
 	service := NewInfoService(nil)
 	ctx := &Context{}
 
 	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	assert.ErrorIs(t, err, ErrSyncUUIDUnavailable)
+}
+
+func TestInfoService_SyncDeviceInfo_EmptyUUID_NotElevated_ReturnsIncorrectPermissions(t *testing.T) {
+	stubElevated(t, false)
+
+	service := NewInfoService(nil)
+	ctx := &Context{}
+
+	for _, result := range []*InfoResult{nil, {}, {UUID: "   "}} {
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
+		require.Error(t, err)
+
+		var customErr utils.CustomError
+		require.ErrorAs(t, err, &customErr)
+		assert.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+		assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	}
+}
+
+// Without root on Linux neither HECI nor SMBIOS yields a UUID; the gathered info
+// must still print and the error must be one cli.Execute offers to elevate for.
+func TestAmtInfoCmd_Run_WithSync_NoUUID_NotElevated(t *testing.T) {
+	stubElevated(t, false)
+
+	origSMBIOS := getSMBIOSSystemUUID
+	defer func() { getSMBIOSSystemUUID = origSMBIOS }()
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "", errors.New("permission denied")
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("sync must not reach the server without a UUID, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available")).AnyTimes()
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
+
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: false}, Sync: true, URL: server.URL + "/api/v1/devices"}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, JsonOutput: true}
+
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+
+	os.Stdout = w
+	err := cmd.Run(ctx)
+	os.Stdout = origStdout
+
+	require.NoError(t, w.Close())
+
+	out, readErr := io.ReadAll(r)
+	require.NoError(t, readErr)
+
+	var customErr utils.CustomError
+	require.ErrorAs(t, err, &customErr)
+	assert.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+	assert.Contains(t, string(out), `"heciAvailable": false`)
 }
 
 func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
