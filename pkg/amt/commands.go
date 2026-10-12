@@ -187,6 +187,12 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	GetUPID() (*upid.UPID, error)
+	TEPGetCapabilities() (*upid.TEPCapabilities, error)
+	TEPGetVouchers() ([]upid.TEPVoucherID, error)
+	TEPGetAllVoucherIDs() ([]upid.TEPVoucherID, error)
+	TEPGetVoucherStateByFeature(feature upid.TEPFeature) (*upid.TEPVoucherState, error)
+	TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.TEPVoucherID) (*upid.TEPOwnershipState, error)
+	TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error)
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
@@ -622,6 +628,36 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 // GetUPID retrieves the Intel Unique Platform Identifier
 func (amt AMTCommand) GetUPID() (*upid.UPID, error) {
 	return amt.UPID.GetUPID()
+}
+
+// TEPGetCapabilities returns the features that can be provisioned via Intel TEP.
+func (amt AMTCommand) TEPGetCapabilities() (*upid.TEPCapabilities, error) {
+	return amt.UPID.TEPGetCapabilities()
+}
+
+// TEPGetVouchers returns the IDs of the TEP ownership vouchers stored in CSME.
+func (amt AMTCommand) TEPGetVouchers() ([]upid.TEPVoucherID, error) {
+	return amt.UPID.TEPGetVouchers()
+}
+
+// TEPGetAllVoucherIDs returns the IDs of all TEP ownership vouchers stored in CSME.
+func (amt AMTCommand) TEPGetAllVoucherIDs() ([]upid.TEPVoucherID, error) {
+	return amt.UPID.TEPGetAllVoucherIDs()
+}
+
+// TEPGetVoucherStateByFeature returns the TEP ownership context for a feature.
+func (amt AMTCommand) TEPGetVoucherStateByFeature(feature upid.TEPFeature) (*upid.TEPVoucherState, error) {
+	return amt.UPID.TEPGetVoucherStateByFeature(feature)
+}
+
+// TEPGetOwnershipState returns the CSME-signed TEP ownership context for a voucher.
+func (amt AMTCommand) TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.TEPVoucherID) (*upid.TEPOwnershipState, error) {
+	return amt.UPID.TEPGetOwnershipState(reqID, voucherID)
+}
+
+// TEPGetTimeSyncNonce returns a CSME-signed nonce for TEP time sync / OCSP requests.
+func (amt AMTCommand) TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error) {
+	return amt.UPID.TEPGetTimeSyncNonce(reqID)
 }
 
 // GetFlog retrieves the CSME Flash Log (FLOG)

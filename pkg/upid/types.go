@@ -143,6 +143,8 @@ type Interface interface {
 	// Returns the UPID struct or an error if not supported/enabled
 	// Automatically checks support and manages resource cleanup
 	GetUPID() (*UPID, error)
+	// TEPInterface is the Intel TEP command set on the same MEI client
+	TEPInterface
 }
 
 // NewUPID creates a new UPID structure from raw 64-byte data and platform ID type
