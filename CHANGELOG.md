@@ -1,3 +1,10 @@
+# [3.0.0-beta.62](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.61...v3.0.0-beta.62) (2026-10-12)
+
+
+### Features
+
+* **utils:** support non-AMT device discovery on macOS ([#1585](https://github.com/device-management-toolkit/rpc-go/issues/1585)) ([01362c2](https://github.com/device-management-toolkit/rpc-go/commit/01362c2008eca284f7232c467bdca98f57a237cf)), closes [#1355](https://github.com/device-management-toolkit/rpc-go/issues/1355)
+
 # [3.0.0-beta.61](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.60...v3.0.0-beta.61) (2026-09-25)
 
 
