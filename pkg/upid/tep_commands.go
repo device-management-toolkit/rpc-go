@@ -239,24 +239,22 @@ func errShortPayload(what string, got, want int) error {
 }
 
 // parseTEPCapabilities decodes max_vouchers u8, num_features u8,
-// features_list u8[TEPMaxCapabilityFeatures], tpp_state u8.
+// features_list u8[TEPMaxCapabilityFeatures], tpp_state u8. The feature list
+// is fixed-size and must be complete. The trailing tpp_state was added in a
+// later firmware revision, so it is optional and reads as zero when absent.
 func parseTEPCapabilities(payload []byte) (*TEPCapabilities, error) {
 	const (
 		listOffset  = 2
 		stateOffset = listOffset + TEPMaxCapabilityFeatures
 	)
 
-	if len(payload) < listOffset {
-		return nil, errShortPayload("capabilities", len(payload), listOffset)
+	if len(payload) < stateOffset {
+		return nil, errShortPayload("capabilities", len(payload), stateOffset)
 	}
 
 	numFeatures := int(payload[1])
 	if numFeatures > TEPMaxCapabilityFeatures {
 		return nil, fmt.Errorf("%w: capabilities report %d features, at most %d", ErrInvalidResponse, numFeatures, TEPMaxCapabilityFeatures)
-	}
-
-	if len(payload) < listOffset+numFeatures {
-		return nil, errShortPayload("capabilities", len(payload), listOffset+numFeatures)
 	}
 
 	caps := &TEPCapabilities{
@@ -408,7 +406,8 @@ func signedData(payload []byte, sigOffset int) []byte {
 
 // decodeCSMESignature decodes a CSME_SIGNATURE. Firmware may omit unused
 // trailing certificate bytes, so a short buffer is zero-padded as long as
-// the fixed fields are present.
+// the fixed fields and every certificate byte the length table declares
+// were actually received.
 func decodeCSMESignature(b []byte) (CSMESignature, error) {
 	var sig CSMESignature
 
@@ -421,6 +420,15 @@ func decodeCSMESignature(b []byte) (CSMESignature, error) {
 
 	if err := decodeLE(full, &sig); err != nil {
 		return sig, err
+	}
+
+	declared := 0
+	for _, l := range sig.LengthOfCertificates {
+		declared += int(l)
+	}
+
+	if received := len(b) - csmeSignatureFixedSize; declared > received {
+		return sig, fmt.Errorf("%w: CSME_SIGNATURE declares %d certificate bytes but only %d were received", ErrInvalidResponse, declared, received)
 	}
 
 	return sig, nil

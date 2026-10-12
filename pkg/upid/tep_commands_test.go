@@ -169,14 +169,18 @@ func TestTEPGetCapabilities(t *testing.T) {
 		require.ErrorIs(t, err, ErrInvalidResponse)
 	})
 
-	t.Run("num_features exceeds list", func(t *testing.T) {
-		_, err := parseTEPCapabilities([]byte{3, 2, 0x65})
-		require.ErrorIs(t, err, ErrInvalidResponse)
+	t.Run("without tpp_state (earlier firmware)", func(t *testing.T) {
+		got, err := parseTEPCapabilities([]byte{3, 1, 0x65, 0})
+		require.NoError(t, err)
+		assert.Equal(t, []TEPFeature{TEPFeatureAMT}, got.Features)
+		assert.Zero(t, got.AdditionalCapabilities)
 	})
 
-	t.Run("too short", func(t *testing.T) {
-		_, err := parseTEPCapabilities([]byte{3})
-		require.ErrorIs(t, err, ErrInvalidResponse)
+	t.Run("incomplete feature list", func(t *testing.T) {
+		for _, payload := range [][]byte{{3}, {3, 0}, {3, 2, 0x65}} {
+			_, err := parseTEPCapabilities(payload)
+			require.ErrorIs(t, err, ErrInvalidResponse, "payload %v", payload)
+		}
 	})
 }
 
@@ -335,6 +339,14 @@ func TestTEPGetTimeSyncNonce(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, sig, got.Signature)
 		require.NoError(t, got.Signature.Verify(got.SignedData))
+	})
+
+	t.Run("truncated certificate data is rejected", func(t *testing.T) {
+		certLen := int(sig.LengthOfCertificates[0])
+		truncated := payload[:2*TEPNonceSize+csmeSignatureFixedSize+certLen-1]
+
+		_, err := parseTEPTimeSyncNonce(truncated, testReqID)
+		require.ErrorIs(t, err, ErrInvalidResponse)
 	})
 
 	t.Run("signature fixed fields missing", func(t *testing.T) {
