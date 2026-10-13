@@ -143,8 +143,8 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 	}
 
 	// Capability probe, not a provisioning prerequisite: a failure here must not
-	// abort activation. Falling through leaves the flag false, which is also
-	// what every pre-hardening platform reports.
+	// abort activation. Leaving WeakAlgorithmsRemoved nil omits the field, which
+	// RPS interprets as weak algorithms being present.
 	if changeEnabled, cerr := p.AMT.GetChangeEnabled(); cerr != nil {
 		log.Warnf("AMT crypto capability: query failed (%v), assuming weak algorithms present", cerr)
 	} else {
