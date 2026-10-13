@@ -488,6 +488,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	}
 
 	discovered := false
+	isElevated := utils.IsElevated()
+	heciAvailable := cmd.HECIAvailable
 
 	payload := device.DevicePayload{
 		GUID:            guid,
@@ -501,6 +503,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		AllowSelfSigned: allowSelfSigned,
 		DeviceInfo: &device.DeviceInfo{
 			Discovered:           &discovered,
+			IsElevated:           &isElevated,
+			HECIAvailable:        &heciAvailable,
 			LMSInstalled:         &isLMSAvailable,
 			LMSVersion:           lmsVersion,
 			OSName:               osInfo.Name,

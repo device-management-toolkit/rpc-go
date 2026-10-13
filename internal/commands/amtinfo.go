@@ -105,6 +105,9 @@ var (
 // test seam for SMBIOS UUID fallback in GetAMTInfo.
 var getSMBIOSSystemUUID = utils.GetSMBIOSSystemUUID
 
+// test seam for privilege checking.
+var isElevated = utils.IsElevated
+
 func renderInfoHeader(title string) string {
 	return "\n" + infoIndent + infoHeaderStyle.Render(title) + "\n" + infoIndent +
 		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n"
@@ -311,7 +314,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	// Signal to Execute() that elevation would unlock more data
-	if !cmd.HECIAvailable && !utils.IsElevated() {
+	if !cmd.HECIAvailable && !isElevated() {
 		return utils.IncorrectPermissions
 	}
 
@@ -482,6 +485,8 @@ type syncDeviceInfo struct {
 	EthernetAdapterCount int                      `json:"ethernetAdapterCount,omitempty"`
 	MonitorConnected     *bool                    `json:"monitorConnected,omitempty"`
 	IEEE8021xEnabled     *bool                    `json:"ieee8021xEnabled,omitempty"`
+	IsElevated           *bool                    `json:"isElevated,omitempty"`
+	HECIAvailable        *bool                    `json:"heciAvailable,omitempty"`
 	MENetwork            *syncMENetwork           `json:"meNetwork,omitempty"`
 	OSNetwork            *utils.OSNetworkAdapters `json:"osNetwork,omitempty"`
 	PlatformAdapters     *utils.PlatformAdapters  `json:"platformAdapters,omitempty"`
@@ -732,6 +737,8 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 		Discovered      *bool      `json:"discovered,omitempty"`
 		FirstDiscovered *time.Time `json:"firstDiscovered,omitempty"`
 		LastSynced      *time.Time `json:"lastSynced,omitempty"`
+		IsElevated      *bool      `json:"isElevated,omitempty"`
+		HECIAvailable   *bool      `json:"heciAvailable,omitempty"`
 	}
 
 	createPayload := struct {
@@ -743,13 +750,24 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 		Hostname: hostname,
 	}
 
+	elevated := isElevated()
+	heci := s.heciAvailable
+
+	if result != nil && result.HECIAvailable != nil {
+		heci = *result.HECIAvailable
+	}
+
+	createPayload.DeviceInfo = &deviceInfoCreate{
+		IsElevated:    &elevated,
+		HECIAvailable: &heci,
+	}
+
 	if discovered != nil {
 		// lastSynced advances on every sync; firstDiscovered is only stamped for a
 		// genuine discovery (discovered=true) and is immutable thereafter.
-		createPayload.DeviceInfo = &deviceInfoCreate{
-			Discovered: discovered,
-			LastSynced: &syncedAt,
-		}
+		createPayload.DeviceInfo.Discovered = discovered
+
+		createPayload.DeviceInfo.LastSynced = &syncedAt
 		if *discovered {
 			createPayload.DeviceInfo.FirstDiscovered = &syncedAt
 		}
@@ -886,6 +904,16 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WS
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.
 func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *InfoResult) {
 	log.Debug("Starting discovery fields population")
+
+	elevated := isElevated()
+	info.IsElevated = &elevated
+
+	if result != nil && result.HECIAvailable != nil {
+		info.HECIAvailable = result.HECIAvailable
+	} else {
+		heci := s.heciAvailable
+		info.HECIAvailable = &heci
+	}
 
 	// UPID
 	if result.UPID != nil {
@@ -1475,7 +1503,7 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 	if !s.heciAvailable {
 		fmt.Fprintln(w)
 
-		if !utils.IsElevated() {
+		if !isElevated() {
 			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable",
 			))
@@ -1735,7 +1763,7 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 	var b strings.Builder
 
 	if !s.heciAvailable {
-		if !utils.IsElevated() {
+		if !isElevated() {
 			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable",
 			) + "\n")

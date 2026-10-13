@@ -515,12 +515,19 @@ func TestAddDeviceToConsole_Success(t *testing.T) {
 		require.NotNil(t, p.DeviceInfo)
 		require.NotNil(t, p.DeviceInfo.Discovered)
 		assert.False(t, *p.DeviceInfo.Discovered)
+		require.NotNil(t, p.DeviceInfo.IsElevated)
+		require.NotNil(t, p.DeviceInfo.HECIAvailable)
+		assert.True(t, *p.DeviceInfo.HECIAvailable)
 
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer server.Close()
 
-	cmd := &ActivateCmd{Hostname: "test-host", FriendlyName: "my-device"}
+	cmd := &ActivateCmd{
+		Hostname:     "test-host",
+		FriendlyName: "my-device",
+		AMTBaseCmd:   commands.AMTBaseCmd{HECIAvailable: true},
+	}
 	ctx := &commands.Context{}
 	cfg := &config.Configuration{}
 

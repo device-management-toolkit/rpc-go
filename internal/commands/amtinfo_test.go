@@ -2306,4 +2306,157 @@ func TestSyncDeviceInfoHelper_HECIUnavailable_HandlesGracefully(t *testing.T) {
 
 	assert.Nil(t, gotBody.DeviceInfo.UPID)
 	assert.Empty(t, gotBody.DeviceInfo.CertHashes)
+	require.NotNil(t, gotBody.DeviceInfo.HECIAvailable)
+	assert.False(t, *gotBody.DeviceInfo.HECIAvailable)
+	require.NotNil(t, gotBody.DeviceInfo.IsElevated)
+}
+
+func TestSyncDeviceInfoHelper_ElevationAndHECI(t *testing.T) {
+	tests := []struct {
+		name          string
+		isElevated    bool
+		heciAvailable bool
+	}{
+		{
+			name:          "elevated with HECI available",
+			isElevated:    true,
+			heciAvailable: true,
+		},
+		{
+			name:          "unprivileged without HECI",
+			isElevated:    false,
+			heciAvailable: false,
+		},
+		{
+			name:          "elevated without HECI",
+			isElevated:    true,
+			heciAvailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origIsElevated := isElevated
+			defer func() { isElevated = origIsElevated }()
+
+			isElevated = func() bool { return tt.isElevated }
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			if tt.heciAvailable {
+				mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+				mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+				mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+				mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				mockAMT.EXPECT().GetUPID().Return(nil, nil)
+				mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
+				mockAMT.EXPECT().GetLANInterfaceSettings(gomock.Any()).Return(amt.InterfaceSettings{}, nil).AnyTimes()
+				mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+				mockAMT.EXPECT().GetCertificateHashes().Return(nil, nil)
+			} else {
+				mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available"))
+			}
+
+			mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil).AnyTimes()
+
+			var gotBody syncPayload
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPatch, r.Method)
+				_ = json.NewDecoder(r.Body).Decode(&gotBody)
+
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			ctx := &Context{
+				AMTCommand:    mockAMT,
+				SkipCertCheck: true,
+			}
+			baseCmd := &AMTBaseCmd{HECIAvailable: tt.heciAvailable}
+
+			err := SyncDeviceInfoHelper(ctx, baseCmd, nil, server.URL+"/api/v1/devices", "token-123", "12345678-1234-1234-1234-123456789ABC")
+			require.NoError(t, err)
+
+			require.NotNil(t, gotBody.DeviceInfo.IsElevated)
+			assert.Equal(t, tt.isElevated, *gotBody.DeviceInfo.IsElevated)
+			require.NotNil(t, gotBody.DeviceInfo.HECIAvailable)
+			assert.Equal(t, tt.heciAvailable, *gotBody.DeviceInfo.HECIAvailable)
+		})
+	}
+}
+
+func TestInfoService_SyncDeviceInfo_404_AutoRegister_ElevationAndHECI(t *testing.T) {
+	tests := []struct {
+		name          string
+		isElevated    bool
+		heciAvailable bool
+	}{
+		{
+			name:          "elevated with HECI available",
+			isElevated:    true,
+			heciAvailable: true,
+		},
+		{
+			name:          "unprivileged without HECI",
+			isElevated:    false,
+			heciAvailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origIsElevated := isElevated
+			defer func() { isElevated = origIsElevated }()
+
+			isElevated = func() bool { return tt.isElevated }
+
+			service := NewInfoService(nil)
+			service.heciAvailable = tt.heciAvailable
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{
+				UUID:          "12345678-1234-1234-1234-123456789ABC",
+				HECIAvailable: &tt.heciAvailable,
+			}
+			discovered := true
+
+			var (
+				patchCount int
+				postBody   map[string]interface{}
+			)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodPatch:
+					patchCount++
+					if patchCount == 1 {
+						w.WriteHeader(http.StatusNotFound)
+					} else {
+						w.WriteHeader(http.StatusOK)
+					}
+				case http.MethodPost:
+					defer r.Body.Close()
+
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+					w.WriteHeader(http.StatusCreated)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &discovered)
+			require.NoError(t, err)
+			assert.Equal(t, 2, patchCount)
+
+			deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+			require.True(t, ok, "deviceInfo should be present in POST body")
+			require.NotNil(t, deviceInfo["isElevated"])
+			assert.Equal(t, tt.isElevated, deviceInfo["isElevated"])
+			require.NotNil(t, deviceInfo["heciAvailable"])
+			assert.Equal(t, tt.heciAvailable, deviceInfo["heciAvailable"])
+		})
+	}
 }
