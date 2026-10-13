@@ -379,6 +379,79 @@ func TestCreateMessageRequestTLSTunnelFields(t *testing.T) {
 	assert.True(t, msgPayload.TLSTunnel)
 }
 
+// MockAMTChangeEnabled returns a chosen STATE_INDEPENDENCE_IsChangeToAMTEnabled
+// response, or an error, from GetChangeEnabled.
+type MockAMTChangeEnabled struct {
+	MockAMT
+	value uint8
+	err   error
+}
+
+func (c MockAMTChangeEnabled) GetChangeEnabled() (amt.ChangeEnabledResponse, error) {
+	return amt.ChangeEnabledResponse(c.value), c.err
+}
+
+func TestCreatePayloadWeakAlgorithmsRemoved(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    uint8
+		expected bool
+	}{
+		{name: "AMT 22 reports hardened crypto", value: 0xF2, expected: true},
+		{name: "AMT 21 does not", value: 0xE2, expected: false},
+		{name: "AMT 11 does not", value: 0x01, expected: false},
+		// An older platform updated to hardened firmware still reports an old
+		// AMT version, so the bit is the only signal and is forwarded as-is.
+		{name: "older platform updated to hardened firmware", value: 0x12, expected: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := Payload{AMT: MockAMTChangeEnabled{value: tt.value}}
+			result, err := payload.createPayload("vprodemo.com", "", 0)
+			assert.NoError(t, err)
+			assert.NotNil(t, result.WeakAlgorithmsRemoved)
+			assert.Equal(t, tt.expected, *result.WeakAlgorithmsRemoved)
+		})
+	}
+}
+
+// A failed capability probe must not fail activation.
+func TestCreatePayloadChangeEnabledErrorIsNotFatal(t *testing.T) {
+	payload := Payload{AMT: MockAMTChangeEnabled{value: 0xF2, err: errors.New("HECI unavailable")}}
+	result, err := payload.createPayload("vprodemo.com", "", 0)
+	assert.NoError(t, err)
+	assert.Nil(t, result.WeakAlgorithmsRemoved)
+}
+
+func TestCreateMessageRequestWeakAlgorithmsRemovedReported(t *testing.T) {
+	for _, tc := range []struct {
+		value    uint8
+		expected bool
+	}{{value: 0xF2, expected: true}, {value: 0xE2, expected: false}} {
+		payload := Payload{AMT: MockAMTChangeEnabled{value: tc.value}}
+		result, err := payload.CreateMessageRequest(Request{})
+		assert.NoError(t, err)
+
+		decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+		assert.NoError(t, decodeErr)
+		var serializedPayload map[string]any
+		assert.NoError(t, json.Unmarshal(decodedBytes, &serializedPayload))
+		assert.Equal(t, tc.expected, serializedPayload["weakAlgorithmsRemoved"])
+	}
+}
+
+func TestCreateMessageRequestOmitsWeakAlgorithmsRemovedWhenProbeFails(t *testing.T) {
+	payload := Payload{AMT: MockAMTChangeEnabled{err: errors.New("HECI unavailable")}}
+	result, err := payload.CreateMessageRequest(Request{})
+	assert.NoError(t, err)
+
+	decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
+	assert.NoError(t, decodeErr)
+	var serializedPayload map[string]any
+	assert.NoError(t, json.Unmarshal(decodedBytes, &serializedPayload))
+	assert.NotContains(t, serializedPayload, "weakAlgorithmsRemoved")
+}
+
 type MockAMTInvalidUUID struct {
 	MockAMT
 }
