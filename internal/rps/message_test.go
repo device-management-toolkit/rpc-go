@@ -434,6 +434,7 @@ func TestCreateMessageRequestWeakAlgorithmsRemovedReported(t *testing.T) {
 
 		decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
 		assert.NoError(t, decodeErr)
+
 		var serializedPayload map[string]any
 		assert.NoError(t, json.Unmarshal(decodedBytes, &serializedPayload))
 		assert.Equal(t, tc.expected, serializedPayload["weakAlgorithmsRemoved"])
@@ -447,6 +448,7 @@ func TestCreateMessageRequestOmitsWeakAlgorithmsRemovedWhenProbeFails(t *testing
 
 	decodedBytes, decodeErr := base64.StdEncoding.DecodeString(result.Payload)
 	assert.NoError(t, decodeErr)
+
 	var serializedPayload map[string]any
 	assert.NoError(t, json.Unmarshal(decodedBytes, &serializedPayload))
 	assert.NotContains(t, serializedPayload, "weakAlgorithmsRemoved")
