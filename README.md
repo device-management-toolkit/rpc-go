@@ -62,7 +62,7 @@ CGO_ENABLED=1 go build -buildmode=c-shared -o librpc.so ./cmd/rpc
 ### Docker image
 
 ```bash
-docker build -t rpc-go:latest .
+DOCKER_BUILDKIT=1 docker build -t rpc-go:latest .
 ```
 
 ## Run

@@ -1,3 +1,37 @@
+# [3.0.0-beta.63](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.62...v3.0.0-beta.63) (2026-10-12)
+
+
+### Features
+
+* add public pkg/deactivate API ([#1583](https://github.com/device-management-toolkit/rpc-go/issues/1583)) ([ad078b9](https://github.com/device-management-toolkit/rpc-go/commit/ad078b9f2ac4fa37e7aacc80f80d7a967fa0861d))
+
+# [3.0.0-beta.62](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.61...v3.0.0-beta.62) (2026-10-12)
+
+
+### Features
+
+* **utils:** support non-AMT device discovery on macOS ([#1585](https://github.com/device-management-toolkit/rpc-go/issues/1585)) ([01362c2](https://github.com/device-management-toolkit/rpc-go/commit/01362c2008eca284f7232c467bdca98f57a237cf)), closes [#1355](https://github.com/device-management-toolkit/rpc-go/issues/1355)
+
+# [3.0.0-beta.61](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.60...v3.0.0-beta.61) (2026-09-25)
+
+
+### Bug Fixes
+
+* **cli:** let environment variables override config.yaml values ([#1574](https://github.com/device-management-toolkit/rpc-go/issues/1574)) ([eb4276e](https://github.com/device-management-toolkit/rpc-go/commit/eb4276e5e52f2f9afde1315fb6c341ab9697d5ad))
+
+# [3.0.0-beta.60](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.59...v3.0.0-beta.60) (2026-09-24)
+
+# [3.0.0-beta.60](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.59...v3.0.0-beta.60) (2026-09-24)
+
+# [3.0.0-beta.59](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.58...v3.0.0-beta.59) (2026-09-21)
+
+# [3.0.0-beta.58](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.57...v3.0.0-beta.58) (2026-09-16)
+
+
+### Bug Fixes
+
+* collect UPID and cert hashes during post-activation sync ([#1555](https://github.com/device-management-toolkit/rpc-go/issues/1555)) ([0ea20c5](https://github.com/device-management-toolkit/rpc-go/commit/0ea20c569e1e96300479d263ab05bc04c8b700af)), closes [#1549](https://github.com/device-management-toolkit/rpc-go/issues/1549)
+
 # [3.0.0-beta.57](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.56...v3.0.0-beta.57) (2026-09-16)
 
 
