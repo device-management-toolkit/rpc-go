@@ -7,8 +7,10 @@ package commands
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -195,17 +197,53 @@ func TestIsPermanentHECIError(t *testing.T) {
 		err      error
 		expected bool
 	}{
-		{"inappropriate ioctl (non-vPro hardware)", errors.New("inappropriate ioctl for device"), true},
-		{"no such file (MEI driver missing)", errors.New("open /dev/mei0: no such file or directory"), true},
+		{"unsupported device (non-vPro hardware)", heci.ErrUnsupportedDevice, true},
+		{"wrapped unsupported device", fmt.Errorf("mei connect: %w", heci.ErrUnsupportedDevice), true},
+		{"device not found (MEI driver missing)", heci.ErrDeviceNotFound, true},
+		{"permission denied", heci.ErrPermissionDenied, true},
 		{"HECIDriverNotDetected sentinel", utils.HECIDriverNotDetected, true},
+		{"HECIDriverNotDetected wrapping a HECI cause", fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, heci.ErrDeviceNotFound), true},
 		{"transient no such device", errors.New("no such device"), false},
 		{"transient device not connected", errors.New("The device is not connected."), false},
 		{"generic error", errors.New("some other error"), false},
+		// A failure that lost its wrap chain is no longer recognised by text and
+		// is treated as transient (retried). Every HECI probe path classifies, so
+		// this should not arise in practice.
+		{"unclassified error text", errors.New("inappropriate ioctl for device"), false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, isPermanentHECIError(tt.err))
+		})
+	}
+}
+
+func TestClassifyHECIFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode int
+	}{
+		{"permission denied", heci.ErrPermissionDenied, utils.IncorrectPermissions.Code},
+		{"unsupported device", heci.ErrUnsupportedDevice, utils.AmtNotDetected.Code},
+		{"device not found", heci.ErrDeviceNotFound, utils.HECIDriverNotDetected.Code},
+		{"unclassified failure", errors.New("boom"), utils.HECIDriverNotDetected.Code},
+		{"wrapped permission denied", fmt.Errorf("open /dev/mei0: %w", heci.ErrPermissionDenied), utils.IncorrectPermissions.Code},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyHECIFailure(tt.err)
+
+			// cmd/rpc resolves the process exit code this way; assert the same path.
+			var customErr utils.CustomError
+
+			assert.True(t, errors.As(got, &customErr))
+			assert.Equal(t, tt.wantCode, customErr.Code)
+
+			// The originating cause must survive for diagnostics.
+			assert.ErrorIs(t, got, tt.err)
 		})
 	}
 }

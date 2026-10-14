@@ -7,6 +7,7 @@ package commands
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -175,12 +177,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			return nil
 		}
 
-		log.Error("Failed to execute due to access issues. " +
-			"Please ensure that Intel ME is present, " +
-			"the MEI driver is installed, " +
-			"and the runtime has administrator or root privileges.")
-
-		return utils.HECIDriverNotDetected
+		return classifyHECIFailure(err)
 	}
 
 	cmd.ControlMode = controlMode
@@ -221,11 +218,41 @@ func (cmd *AMTBaseCmd) RequiresAMTPassword() bool {
 }
 
 // isPermanentHECIError returns true for errors that indicate HECI is structurally
-// absent and retrying will not help (non-vPro hardware or MEI driver not installed).
+// unusable and retrying will not help: the device is absent (no MEI driver), the
+// device does not expose the AMT client (non-vPro hardware), or the process lacks
+// the privileges to open it. The probe paths in pkg/heci classify every such
+// failure onto a sentinel while preserving the originating OS error, so match on
+// the sentinel rather than on platform-specific error text.
 func isPermanentHECIError(err error) bool {
-	msg := err.Error()
+	return errors.Is(err, heci.ErrDeviceNotFound) ||
+		errors.Is(err, heci.ErrUnsupportedDevice) ||
+		errors.Is(err, heci.ErrPermissionDenied) ||
+		errors.Is(err, utils.HECIDriverNotDetected)
+}
 
-	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
-		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
-		msg == utils.HECIDriverNotDetected.Error() // already-classified sentinel
+// classifyHECIFailure maps a HECI probe failure onto the RPC exit code that
+// describes it, so callers can distinguish "not vPro hardware" from "driver
+// missing" from "not elevated" instead of seeing HECIDriverNotDetected for all
+// three. The cause is wrapped so -v still shows the originating OS error, and
+// cmd/rpc resolves the exit code via errors.As.
+func classifyHECIFailure(err error) error {
+	switch {
+	case errors.Is(err, heci.ErrPermissionDenied):
+		log.Error("Permission denied accessing the MEI/HECI device. " +
+			"Run with administrator or root privileges.")
+
+		return fmt.Errorf("%w: %w", utils.IncorrectPermissions, err)
+	case errors.Is(err, heci.ErrUnsupportedDevice):
+		log.Error("The MEI device on this system does not expose the AMT (PTHI) client. " +
+			"This is typically non-vPro hardware.")
+
+		return fmt.Errorf("%w: %w", utils.AmtNotDetected, err)
+	default:
+		log.Error("Failed to execute due to access issues. " +
+			"Please ensure that Intel ME is present, " +
+			"the MEI driver is installed, " +
+			"and the runtime has administrator or root privileges.")
+
+		return fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, err)
+	}
 }
