@@ -173,7 +173,7 @@ func (heci *Driver) FindDevices() (resultErr error) {
 	}
 
 	if deviceInfo == syscall.InvalidHandle {
-		return errors.New("invalid handle")
+		return wrapError(ErrDeviceNotFound, windows.ERROR_INVALID_HANDLE)
 	}
 
 	interfaceData := setupapi.SpDevInterfaceData{}
@@ -249,6 +249,14 @@ func classifyWindowsError(err error) error {
 
 	switch {
 	case errors.Is(err, windows.ERROR_NO_MORE_ITEMS):
+		return wrapError(ErrDeviceNotFound, err)
+	// The interface path returned by SetupDiGetDeviceInterfaceDetail can go stale
+	// between enumeration and CreateFile (driver unload, device removal), which
+	// surfaces as a not-found/no-such-device errno rather than ERROR_NO_MORE_ITEMS.
+	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND),
+		errors.Is(err, windows.ERROR_PATH_NOT_FOUND),
+		errors.Is(err, windows.ERROR_NO_SUCH_DEVICE),
+		errors.Is(err, windows.ERROR_DEV_NOT_EXIST):
 		return wrapError(ErrDeviceNotFound, err)
 	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
 		return wrapError(ErrPermissionDenied, err)

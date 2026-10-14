@@ -28,6 +28,11 @@ func TestClassifyLinuxError(t *testing.T) {
 		{name: "permission denied", err: fs.ErrPermission, kind: ErrPermissionDenied},
 		{name: "unsupported operation", err: syscall.ENOTTY, kind: ErrUnsupportedDevice},
 		{name: "wrapped unsupported operation", err: fmt.Errorf("ioctl request: %w", syscall.ENOTTY), kind: ErrUnsupportedDevice},
+		{name: "device node absent", err: fs.ErrNotExist, kind: ErrDeviceNotFound},
+		{name: "errno device node absent", err: syscall.ENOENT, kind: ErrDeviceNotFound},
+		{name: "no backing device", err: syscall.ENODEV, kind: ErrDeviceNotFound},
+		{name: "no such device or address", err: syscall.ENXIO, kind: ErrDeviceNotFound},
+		{name: "wrapped missing device", err: fmt.Errorf("open /dev/mei0: %w", syscall.ENODEV), kind: ErrDeviceNotFound},
 	}
 
 	for _, tt := range tests {
@@ -44,6 +49,32 @@ func TestClassifyLinuxError(t *testing.T) {
 
 		assert.ErrorIs(t, classifyLinuxError(want), want)
 		assert.NotErrorIs(t, classifyLinuxError(want), ErrUnsupportedDevice)
+	})
+
+	// EBUSY is the retryable case the connect loop backs off on. Classifying it
+	// would make isPermanentHECIError treat a busy ME as fatal and skip retries.
+	t.Run("does not classify busy device", func(t *testing.T) {
+		classified := classifyLinuxError(syscall.EBUSY)
+
+		assert.ErrorIs(t, classified, syscall.EBUSY)
+		assert.NotErrorIs(t, classified, ErrDeviceNotFound)
+		assert.NotErrorIs(t, classified, ErrUnsupportedDevice)
+		assert.NotErrorIs(t, classified, ErrPermissionDenied)
+	})
+
+	t.Run("nil passes through", func(t *testing.T) {
+		assert.NoError(t, classifyLinuxError(nil))
+	})
+
+	// Classification is applied at both openMEIDevicePath and connectClient, so
+	// an already-classified error must not gain a second wrapper.
+	t.Run("is idempotent", func(t *testing.T) {
+		once := classifyLinuxError(syscall.ENODEV)
+		twice := classifyLinuxError(once)
+
+		assert.Equal(t, once.Error(), twice.Error())
+		assert.ErrorIs(t, twice, ErrDeviceNotFound)
+		assert.ErrorIs(t, twice, syscall.ENODEV)
 	})
 }
 
