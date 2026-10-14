@@ -122,6 +122,50 @@ func TestGetSMBIOSSystemUUID(t *testing.T) {
 		assert.GreaterOrEqual(t, callCount, 3, "should have tried powershell variants before pwsh")
 	})
 
+	t.Run("darwin reads IOPlatformUUID from ioreg", func(t *testing.T) {
+		currentGOOS = "darwin"
+
+		var gotName string
+
+		runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
+			gotName = name
+
+			return []byte("+-o J314sAP  <class IOPlatformExpertDevice, registered, matched, active>\n" +
+				"    {\n" +
+				"      \"IOPlatformSerialNumber\" = \"C02ABC123DEF\"\n" +
+				"      \"IOPlatformUUID\" = \"D83E613D-3B03-6BC0-36BD-48210B3594EC\"\n" +
+				"      \"manufacturer\" = <\"Apple Inc.\">\n" +
+				"    }\n"), nil
+		}
+
+		u, err := GetSMBIOSSystemUUID()
+		require.NoError(t, err)
+		assert.Equal(t, "d83e613d-3b03-6bc0-36bd-48210b3594ec", u)
+		assert.Equal(t, "ioreg", gotName)
+	})
+
+	t.Run("darwin ioreg failure", func(t *testing.T) {
+		currentGOOS = "darwin"
+		runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
+			return nil, errors.New("not found")
+		}
+
+		_, err := GetSMBIOSSystemUUID()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to query platform UUID on macOS")
+	})
+
+	t.Run("darwin ioreg output without IOPlatformUUID", func(t *testing.T) {
+		currentGOOS = "darwin"
+		runSMBIOSUUIDCommand = func(name string, args ...string) ([]byte, error) {
+			return []byte("+-o J314sAP  <class IOPlatformExpertDevice>\n    {\n    }\n"), nil
+		}
+
+		_, err := GetSMBIOSSystemUUID()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "IOPlatformUUID not found")
+	})
+
 	t.Run("unsupported OS", func(t *testing.T) {
 		currentGOOS = "unsupported-os"
 		readSMBIOSUUIDFile = func(_ string) ([]byte, error) {

@@ -22,7 +22,10 @@ const productUUIDPath = "/sys/class/dmi/id/product_uuid"
 const (
 	goosLinux   = "linux"
 	goosWindows = "windows"
+	goosDarwin  = "darwin"
 )
+
+const ioPlatformUUIDKey = `"IOPlatformUUID"`
 
 var (
 	readSMBIOSUUIDFile   = os.ReadFile
@@ -35,7 +38,7 @@ var (
 	}
 )
 
-// GetSMBIOSSystemUUID reads the system UUID from OS-exposed SMBIOS sources.
+// GetSMBIOSSystemUUID reads the system UUID from OS-exposed SMBIOS sources, or IOKit on macOS.
 // Returns the UUID as a lowercase RFC 4122 string.
 func GetSMBIOSSystemUUID() (string, error) {
 	switch currentGOOS {
@@ -49,6 +52,8 @@ func GetSMBIOSSystemUUID() (string, error) {
 		return normalizeUUID(raw)
 	case goosWindows:
 		return getWindowsUUID()
+	case goosDarwin:
+		return getDarwinUUID()
 	default:
 		return "", fmt.Errorf("SMBIOS UUID lookup not supported on %s", currentGOOS)
 	}
@@ -69,6 +74,25 @@ func getWindowsUUID() (string, error) {
 	}
 
 	return "", fmt.Errorf("failed to query UUID on Windows: %w", lastErr)
+}
+
+// getDarwinUUID reads IOPlatformUUID, the hardware UUID macOS exposes in place of SMBIOS.
+func getDarwinUUID() (string, error) {
+	out, err := runSMBIOSUUIDCommand("ioreg", "-rd1", "-c", "IOPlatformExpertDevice")
+	if err != nil {
+		return "", fmt.Errorf("failed to query platform UUID on macOS: %w", err)
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, found := strings.Cut(line, "=")
+		if !found || strings.TrimSpace(key) != ioPlatformUUIDKey {
+			continue
+		}
+
+		return normalizeUUID([]byte(strings.Trim(strings.TrimSpace(value), `"`)))
+	}
+
+	return "", fmt.Errorf("IOPlatformUUID not found in ioreg output")
 }
 
 func normalizeUUID(raw []byte) (string, error) {
