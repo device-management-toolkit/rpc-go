@@ -346,6 +346,29 @@ func TestBundleCommand_DefaultOutputName(t *testing.T) {
 	assert.FileExists(t, cmd.Output)
 }
 
+func TestBundleCommand_ExtensionlessOutput(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "release.v1", "diagbundle")
+	cmd := BundleCmd{
+		Output: outputPath,
+		collectors: []bundleCollector{{
+			name:     "working",
+			fileName: "working.txt",
+			collect: func(output string) error {
+				return os.WriteFile(output, []byte("diagnostic data"), 0o644)
+			},
+		}},
+	}
+
+	require.NoError(t, cmd.Run(&commands.Context{}))
+	assert.Equal(t, outputPath+".zip", cmd.Output)
+	assert.NoFileExists(t, outputPath)
+
+	archive, err := zip.OpenReader(cmd.Output)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, archive.Close()) })
+	assert.Equal(t, []byte("diagnostic data"), readZipEntry(t, archive, "working.txt"))
+}
+
 func readZipEntry(t *testing.T, archive *zip.ReadCloser, name string) []byte {
 	t.Helper()
 

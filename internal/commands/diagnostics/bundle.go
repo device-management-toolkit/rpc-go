@@ -72,6 +72,8 @@ func (cmd *BundleCmd) Run(ctx *commands.Context) error {
 	createdAt := now()
 	if cmd.Output == "" {
 		cmd.Output = fmt.Sprintf("%s_diagnostics_bundle.zip", createdAt.Format("20060102_150405"))
+	} else if filepath.Ext(cmd.Output) == "" {
+		cmd.Output += ".zip"
 	}
 
 	if err := ensureParentDir(cmd.Output); err != nil {
