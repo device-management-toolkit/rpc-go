@@ -237,9 +237,18 @@ For anything more exotic — custom mappers, alternate config loaders, hidden fl
 Almost every command that touches AMT embeds `commands.AMTBaseCmd`. Its `AfterApply(amtCommand amt.Interface) error` runs **once** per invocation and:
 
 1. Aborts early with `utils.IncorrectPermissions` when not elevated (the outer `cli.Execute` then offers to self-elevate on interactive TTYs). Commands that tolerate missing privileges set `SkipWSMANSetup = true` and get a degraded path (this is how `amtinfo` works without root).
-2. Calls `amtCommand.GetControlMode()` with retries (4 attempts, 4s backoff) so transient HECI busyness doesn't fail the whole command.
-3. Reads `GetChangeEnabled()` to detect TLS-enforced local ports (`LocalTLSEnforced`); this changes how WSMAN clients are dialed downstream.
-4. Closes the MEI handle (`defer amtCommand.Close()`) — **holding it in the parent process blocks orchestrator subprocesses on Windows**, see comment in `orchestrator.go`.
+2. Calls `amtCommand.GetControlMode()` with retries (4 attempts, 4s backoff) so transient HECI busyness doesn't fail the whole command. `isPermanentHECIError` breaks out early for failures that won't clear — matched via `errors.Is` against the `pkg/heci` sentinels, **never by error text**.
+3. On permanent failure, `classifyHECIFailure` maps the cause onto a specific exit code rather than collapsing everything into `HECIDriverNotDetected`:
+
+   | Cause | Error | Exit |
+   |---|---|---|
+   | `heci.ErrPermissionDenied` | `IncorrectPermissions` | 1 |
+   | `heci.ErrUnsupportedDevice` (non-vPro) | `AmtNotDetected` | 3 |
+   | anything else | `HECIDriverNotDetected` | 2 |
+
+   The cause is wrapped with `%w` so `-v` shows the originating OS error; `cmd/rpc` resolves the exit code via `errors.As`. Note step 1 has already guaranteed elevation, so an `ErrPermissionDenied` here means the *device* refused an elevated process — don't advise re-running as admin.
+4. Reads `GetChangeEnabled()` to detect TLS-enforced local ports (`LocalTLSEnforced`); this changes how WSMAN clients are dialed downstream.
+5. Closes the MEI handle (`defer amtCommand.Close()`) — **holding it in the parent process blocks orchestrator subprocesses on Windows**, see comment in `orchestrator.go`.
 
 `AMTBaseCmd` does **not** set up the WSMAN client during `AfterApply` (we don't have the password yet). Instead each command's `Run` calls `EnsureAMTPassword(ctx, cmd)` (which prompts if needed, with confirm-on-typo when control mode 0) and then `EnsureWSMAN(ctx)` to lazily build the WSMAN client. `ConfigureBaseCmd.EnsureRuntime` is the standard helper that runs both. **Call it at the top of every new `configure` subcommand `Run`** — don't try to set up WSMAN earlier.
 

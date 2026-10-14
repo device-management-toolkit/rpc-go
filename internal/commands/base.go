@@ -232,14 +232,22 @@ func isPermanentHECIError(err error) bool {
 
 // classifyHECIFailure maps a HECI probe failure onto the RPC exit code that
 // describes it, so callers can distinguish "not vPro hardware" from "driver
-// missing" from "not elevated" instead of seeing HECIDriverNotDetected for all
-// three. The cause is wrapped so -v still shows the originating OS error, and
-// cmd/rpc resolves the exit code via errors.As.
+// missing" from "device refused access" instead of seeing
+// HECIDriverNotDetected for all three. The cause is wrapped so -v still shows
+// the originating OS error, and cmd/rpc resolves the exit code via errors.As.
+//
+// Callers reach this only after the IsElevated check above has passed, so the
+// process is already running with administrator/root privileges. Messages here
+// must not advise re-running elevated — that is provably not the cause.
 func classifyHECIFailure(err error) error {
 	switch {
 	case errors.Is(err, heci.ErrPermissionDenied):
-		log.Error("Permission denied accessing the MEI/HECI device. " +
-			"Run with administrator or root privileges.")
+		// Elevated but the device still refused: restrictive permissions on the
+		// MEI device node, a container started without the device passed
+		// through, or an LSM policy (SELinux/AppArmor) blocking access.
+		log.Error("The MEI/HECI device refused access despite elevated privileges. " +
+			"Check the permissions on the MEI device node, and whether a container " +
+			"or security policy is blocking access to it.")
 
 		return fmt.Errorf("%w: %w", utils.IncorrectPermissions, err)
 	case errors.Is(err, heci.ErrUnsupportedDevice):
@@ -248,10 +256,8 @@ func classifyHECIFailure(err error) error {
 
 		return fmt.Errorf("%w: %w", utils.AmtNotDetected, err)
 	default:
-		log.Error("Failed to execute due to access issues. " +
-			"Please ensure that Intel ME is present, " +
-			"the MEI driver is installed, " +
-			"and the runtime has administrator or root privileges.")
+		log.Error("Failed to reach AMT over HECI. " +
+			"Please ensure that Intel ME is present and the MEI driver is installed.")
 
 		return fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, err)
 	}
