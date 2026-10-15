@@ -1,3 +1,10 @@
+# [3.0.0-beta.64](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.63...v3.0.0-beta.64) (2026-10-15)
+
+
+### Features
+
+* **rps:** report AMT crypto capabilities to RPS ([#1615](https://github.com/device-management-toolkit/rpc-go/issues/1615)) ([14b3cbc](https://github.com/device-management-toolkit/rpc-go/commit/14b3cbcc9d3d227abeb6a5123e1117a2fa322496))
+
 # [3.0.0-beta.63](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.62...v3.0.0-beta.63) (2026-10-12)
 
 

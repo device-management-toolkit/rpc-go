@@ -117,8 +117,8 @@ func rpcFree(ptr *C.char) {
 }
 
 func handleError(err error) int {
-	if customErr, ok := err.(utils.CustomError); ok {
-		log.Error(customErr.Error())
+	if customErr, ok := customErrorFrom(err); ok {
+		log.Error(err.Error())
 
 		return customErr.Code
 	} else {

@@ -105,7 +105,6 @@ type xmlResults struct {
 	Items   []classResult `xml:"Class"`
 }
 
-//nolint:goconst // class names are canonical map keys and should not be extracted as constants
 var wsmanClassFetchers = map[string]classFetcher{
 	"AMT_8021XProfile":                    fetchAMT8021XProfile,
 	"AMT_AssetTable":                      fetchAMTAssetTable,
