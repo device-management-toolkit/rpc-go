@@ -1,3 +1,10 @@
+# [3.0.0-beta.65](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.64...v3.0.0-beta.65) (2026-10-15)
+
+
+### Features
+
+* Add remote RPS support to configure sync-clock ([#1562](https://github.com/device-management-toolkit/rpc-go/issues/1562)) ([f8a6f5c](https://github.com/device-management-toolkit/rpc-go/commit/f8a6f5c00f2730ef7153366d5f7a6cd23252f07f)), closes [#1561](https://github.com/device-management-toolkit/rpc-go/issues/1561) [device-management-toolkit/rps#2905](https://github.com/device-management-toolkit/rps/issues/2905)
+
 # [3.0.0-beta.64](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.63...v3.0.0-beta.64) (2026-10-15)
 
 
