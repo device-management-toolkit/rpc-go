@@ -221,17 +221,22 @@ func SetupDiGetDeviceInstanceId(devInfoSet syscall.Handle, diData *SpDevinfoData
 
 func SetupDiEnumDeviceInterfaces(devInfoSet syscall.Handle, deviceInfoData *SpDevinfoData, class *windows.GUID, memberIndex uint32, deviceInterfaceData *SpDevInterfaceData) (idk syscall.Handle, err error) {
 	r0, _, e1 := syscall.SyscallN(procSetupDiEnumDeviceInterfaces.Addr(), uintptr(devInfoSet), uintptr(unsafe.Pointer(deviceInfoData)), uintptr(unsafe.Pointer(class)), uintptr(memberIndex), uintptr(unsafe.Pointer(deviceInterfaceData)))
-	devInfoSet = syscall.Handle(r0)
-
-	if devInfoSet == syscall.InvalidHandle {
-		if e1 != 0 {
-			err = error(e1)
-		} else {
-			err = syscall.EINVAL
-		}
-	}
+	idk = syscall.Handle(r0)
+	err = setupDiEnumDeviceInterfacesError(r0, e1)
 
 	return idk, err
+}
+
+func setupDiEnumDeviceInterfacesError(result uintptr, lastErr syscall.Errno) error {
+	if result != 0 {
+		return nil
+	}
+
+	if lastErr != 0 {
+		return lastErr
+	}
+
+	return syscall.EINVAL
 }
 
 func SetupDiGetDeviceInterfaceDetail(devInfoSet syscall.Handle, dintfdata *SpDevInterfaceData, detail *uint16, detailSize uint32, reqsize *uint32, devInfData *SpDevinfoData) (err error) {
