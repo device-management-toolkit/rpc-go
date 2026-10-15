@@ -386,3 +386,27 @@ func TestChangeEnabledResponse(t *testing.T) {
 		})
 	}
 }
+
+func TestAreWeakAlgorithmsRemoved(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    uint8
+		expected bool
+	}{
+		// Values observed on hardware. Bit 4 is set only on AMT 22.
+		{name: "AMT 11", value: 0x01, expected: false},
+		{name: "AMT 16", value: 0x02, expected: false},
+		{name: "AMT 18", value: 0xA2, expected: false},
+		{name: "AMT 20", value: 0xE2, expected: false},
+		{name: "AMT 21", value: 0xE2, expected: false},
+		{name: "AMT 22", value: 0xF2, expected: true},
+		{name: "hardened with the old interface version", value: 0x10, expected: true},
+		{name: "hardened AMT 16 after a firmware update", value: 0x12, expected: true},
+		{name: "new interface without hardening", value: 0x80, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, ChangeEnabledResponse(tt.value).AreWeakAlgorithmsRemoved())
+		})
+	}
+}
