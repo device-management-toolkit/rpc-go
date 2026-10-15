@@ -24,6 +24,11 @@ func TestClassifyWindowsError(t *testing.T) {
 		kind error
 	}{
 		{name: "device not found", err: windows.ERROR_NO_MORE_ITEMS, kind: ErrDeviceNotFound},
+		{name: "interface file missing", err: windows.ERROR_FILE_NOT_FOUND, kind: ErrDeviceNotFound},
+		{name: "interface path missing", err: windows.ERROR_PATH_NOT_FOUND, kind: ErrDeviceNotFound},
+		{name: "no such device", err: windows.ERROR_NO_SUCH_DEVICE, kind: ErrDeviceNotFound},
+		{name: "device no longer exists", err: windows.ERROR_DEV_NOT_EXIST, kind: ErrDeviceNotFound},
+		{name: "wrapped stale interface", err: fmt.Errorf("CreateFile: %w", windows.ERROR_FILE_NOT_FOUND), kind: ErrDeviceNotFound},
 		{name: "permission denied", err: windows.ERROR_ACCESS_DENIED, kind: ErrPermissionDenied},
 		{name: "unsupported operation", err: windows.ERROR_NOT_SUPPORTED, kind: ErrUnsupportedDevice},
 		{name: "wrapped unsupported operation", err: fmt.Errorf("device ioctl: %w", windows.ERROR_INVALID_FUNCTION), kind: ErrUnsupportedDevice},
@@ -62,4 +67,19 @@ func TestFindDevicesClassifiesNoInterface(t *testing.T) {
 
 	assert.ErrorIs(t, err, ErrDeviceNotFound)
 	assert.ErrorIs(t, err, windows.ERROR_NO_MORE_ITEMS)
+}
+
+func TestFindDevicesClassifiesInvalidHandle(t *testing.T) {
+	oldGetClassDevs := setupDiGetClassDevs
+
+	t.Cleanup(func() { setupDiGetClassDevs = oldGetClassDevs })
+
+	setupDiGetClassDevs = func(*windows.GUID, *uint16, syscall.Handle, uint32) (syscall.Handle, error) {
+		return syscall.InvalidHandle, nil
+	}
+
+	err := (&Driver{}).FindDevices()
+
+	assert.ErrorIs(t, err, ErrDeviceNotFound)
+	assert.ErrorIs(t, err, windows.ERROR_INVALID_HANDLE)
 }

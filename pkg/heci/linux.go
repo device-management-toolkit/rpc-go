@@ -170,6 +170,10 @@ func classifyLinuxError(err error) error {
 		return wrapError(ErrPermissionDenied, err)
 	case errors.Is(err, syscall.ENOTTY):
 		return wrapError(ErrUnsupportedDevice, err)
+	// During probing, ENODEV/ENXIO mean the node has no backing device.
+	// Mid-operation ENODEV is handled separately by the reinitialization path.
+	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENODEV), errors.Is(err, syscall.ENXIO):
+		return wrapError(ErrDeviceNotFound, err)
 	default:
 		return err
 	}
@@ -182,16 +186,10 @@ func classifyLinuxError(err error) error {
 // the probe (like LMS breaking out on TEE_BUSY) because another node won't
 // clear it. On success the connected handle is left open on the driver.
 func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ramp bool) error {
-	var (
-		lastErr error
-		permErr error
-	)
+	var lastErr error
 
 	for _, path := range meiDevicePaths {
 		if err := heci.openMEIDevicePath(path); err != nil {
-			if errors.Is(err, fs.ErrPermission) && permErr == nil {
-				permErr = err
-			}
 			// Avoid masking earlier errors (eg permission denied) with a later
 			// fs.ErrNotExist from trailing probe paths.
 			if lastErr == nil || errors.Is(lastErr, fs.ErrNotExist) {
@@ -220,10 +218,8 @@ func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ra
 		heci.meiDevice = nil
 	}
 
-	if lastErr != nil && errors.Is(lastErr, fs.ErrNotExist) {
+	if errors.Is(lastErr, ErrDeviceNotFound) {
 		log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
-
-		return wrapError(ErrDeviceNotFound, lastErr)
 	}
 
 	return lastErr

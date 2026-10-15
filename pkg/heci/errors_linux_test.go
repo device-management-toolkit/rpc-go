@@ -28,6 +28,10 @@ func TestClassifyLinuxError(t *testing.T) {
 		{name: "permission denied", err: fs.ErrPermission, kind: ErrPermissionDenied},
 		{name: "unsupported operation", err: syscall.ENOTTY, kind: ErrUnsupportedDevice},
 		{name: "wrapped unsupported operation", err: fmt.Errorf("ioctl request: %w", syscall.ENOTTY), kind: ErrUnsupportedDevice},
+		{name: "missing node", err: fs.ErrNotExist, kind: ErrDeviceNotFound},
+		{name: "detached device", err: syscall.ENODEV, kind: ErrDeviceNotFound},
+		{name: "no backing device", err: syscall.ENXIO, kind: ErrDeviceNotFound},
+		{name: "wrapped detached device", err: fmt.Errorf("connect failed: %w", syscall.ENODEV), kind: ErrDeviceNotFound},
 	}
 
 	for _, tt := range tests {
