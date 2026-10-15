@@ -204,6 +204,9 @@ func TestCheckCertificateAlgorithmSupported(t *testing.T) {
 		{"UnknownSignatureAlgorithm", x509.UnknownSignatureAlgorithm, 99, true},
 		{"MD2WithRSA", x509.MD2WithRSA, 99, true},
 		{"PureEd25519", x509.PureEd25519, 99, true},
+		{"MLDSA44", x509.MLDSA44, 99, true},
+		{"MLDSA65", x509.MLDSA65, 99, true},
+		{"MLDSA87", x509.MLDSA87, 99, true},
 	}
 
 	for _, tt := range tests {

@@ -103,6 +103,7 @@ type ChangeEnabledResponse uint8
 const (
 	changeEnabledTransitionAllowedMask uint8 = 0x01
 	changeEnabledAMTEnabledMask        uint8 = 0x02
+	changeEnabledWeakAlgsRemovedMask   uint8 = 0x10
 	changeEnabledRestrictedMask        uint8 = 0x20
 	changeEnabledTlsEnforcedMask       uint8 = 0x40
 	changeEnabledNewInterfaceMask      uint8 = 0x80
@@ -135,6 +136,22 @@ func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
 // SupportsSetAmtOperationalState checks if AMT version supports SetAmtOperationalState command (ME 16.1+)
 func (r ChangeEnabledResponse) SupportsSetAmtOperationalState() bool {
 	return r.IsNewInterfaceVersion() // Bit 7 indicates ME 16.1+ interface support
+}
+
+// AreWeakAlgorithmsRemoved indicates whether the firmware has removed the weak
+// crypto algorithms - AES-128, SHA-256, RSA-2K and ECC-256 (bit 4).
+//
+// Read on every generation, with no gate on the interface version. The hardening
+// can reach an older platform through a firmware update, and when it does the
+// device itself is the only thing that knows: the AMT version will still read
+// 11 or 16. Gating on bit 7 here would make such a device silently report that
+// it still carries the weak algorithms.
+//
+// Pre-hardening firmware leaves this bit clear - AMT 11 returns 0x01, AMT 16
+// returns 0x02, AMT 18/20/21 return 0xA2/0xE2/0xE2 - so reading it unguarded
+// costs nothing on platforms that have no answer to give.
+func (r ChangeEnabledResponse) AreWeakAlgorithmsRemoved() bool {
+	return (uint8(r) & changeEnabledWeakAlgsRemovedMask) == changeEnabledWeakAlgsRemovedMask
 }
 
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {
