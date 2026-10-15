@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/apf"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,9 +78,9 @@ func TestOpen(t *testing.T) {
 		assert.False(t, mockInitUseWDResult)
 	})
 	t.Run("expect error for Open", func(t *testing.T) {
-		mockInitErr = errors.New("test error")
+		mockInitErr = heci.ErrDeviceNotFound
 
-		assert.NotNil(t, pthi.Open(true))
+		assert.ErrorIs(t, pthi.Open(true), heci.ErrDeviceNotFound)
 
 		mockInitErr = nil
 	})

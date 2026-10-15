@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -28,12 +29,17 @@ func (c MockPTHICommands) OpenWatchdog() error {
 }
 
 var (
-	flag        bool = false
-	flag1       bool = false
-	returnError bool = false
+	flag            bool = false
+	flag1           bool = false
+	returnError     bool = false
+	initializeError error
 )
 
 func (c MockPTHICommands) Open(useLME bool) error {
+	if initializeError != nil {
+		return initializeError
+	}
+
 	if flag == true {
 		return errors.New("The handle is invalid.")
 	} else if flag1 == true {
@@ -215,9 +221,20 @@ func TestInitializeNoError(t *testing.T) {
 func TestInitializeMEIError(t *testing.T) {
 	flag = true
 	err := amt.Initialize()
-	assert.Error(t, err, utils.HECIDriverNotDetected)
+	assert.ErrorIs(t, err, utils.HECIDriverNotDetected)
 
 	flag = false
+}
+
+func TestInitializePreservesHECIError(t *testing.T) {
+	initializeError = heci.ErrDeviceNotFound
+
+	t.Cleanup(func() { initializeError = nil })
+
+	err := amt.Initialize()
+
+	assert.ErrorIs(t, err, utils.HECIDriverNotDetected)
+	assert.ErrorIs(t, err, heci.ErrDeviceNotFound)
 }
 
 func TestInitializeError(t *testing.T) {
