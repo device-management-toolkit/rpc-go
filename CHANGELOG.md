@@ -1,3 +1,10 @@
+# [3.0.0-beta.66](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.65...v3.0.0-beta.66) (2026-10-16)
+
+
+### Features
+
+* Implement diag bundle command ([#1547](https://github.com/device-management-toolkit/rpc-go/issues/1547)) ([8b1f5ff](https://github.com/device-management-toolkit/rpc-go/commit/8b1f5ffd7a06851be676ffe7c51a73b3a70a9b0b)), closes [#1544](https://github.com/device-management-toolkit/rpc-go/issues/1544)
+
 # [3.0.0-beta.65](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.64...v3.0.0-beta.65) (2026-10-15)
 
 
