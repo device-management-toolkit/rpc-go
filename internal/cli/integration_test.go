@@ -6,10 +6,15 @@
 package cli
 
 import (
+	"runtime"
 	"testing"
 
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -273,6 +278,73 @@ func TestCLIArgumentValidation(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err, tt.description)
+			}
+		})
+	}
+}
+
+func TestAMTBaseAfterApplyCommandHooks(t *testing.T) {
+	wasElevated := utils.IsElevated()
+	amtSupportedArch := runtime.GOARCH == "amd64" || runtime.GOARCH == "386"
+	tests := []struct {
+		name      string
+		skipWSMAN bool
+		run       func(amt.Interface) error
+	}{
+		{
+			name:      "amtinfo",
+			skipWSMAN: true,
+			run: func(amtCommand amt.Interface) error {
+				cmd := &commands.AmtInfoCmd{}
+				if err := cmd.BeforeApply(); err != nil {
+					return err
+				}
+
+				return cmd.AfterApply(amtCommand)
+			},
+		},
+		{
+			name: "activate",
+			run: func(amtCommand amt.Interface) error {
+				return (&activate.ActivateCmd{}).AfterApply(amtCommand)
+			},
+		},
+		{
+			name: "deactivate",
+			run: func(amtCommand amt.Interface) error {
+				return (&commands.DeactivateCmd{}).AfterApply(amtCommand)
+			},
+		},
+		{
+			name: "configure",
+			run: func(amtCommand amt.Interface) error {
+				return (&configure.MEBxCmd{}).AfterApply(amtCommand)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			amtCommand := mock.NewMockInterface(ctrl)
+			amtCommand.EXPECT().Close().Return(nil)
+
+			if amtSupportedArch {
+				if wasElevated {
+					amtCommand.EXPECT().GetControlMode().Return(1, nil)
+					amtCommand.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil)
+				} else if !tt.skipWSMAN {
+					amtCommand.EXPECT().GetControlMode().Return(0, heci.ErrPermissionDenied)
+				}
+			}
+
+			err := tt.run(amtCommand)
+			if !amtSupportedArch && !tt.skipWSMAN {
+				assert.ErrorIs(t, err, utils.HECIDriverNotDetected)
+			} else if wasElevated || tt.skipWSMAN {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, utils.IncorrectPermissions)
 			}
 		})
 	}
