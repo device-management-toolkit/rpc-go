@@ -220,6 +220,9 @@ func TestNewLocalActivationService(t *testing.T) {
 
 // Mock AMT Command for testing
 type MockAMTCommand struct {
+	// TEP commands are unused by these tests; calling one panics.
+	upid.TEPInterface
+
 	controlMode      int
 	changeEnabled    MockChangeEnabled
 	shouldErrorOn    string
