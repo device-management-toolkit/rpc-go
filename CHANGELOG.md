@@ -1,3 +1,17 @@
+# [3.0.0-beta.66](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.65...v3.0.0-beta.66) (2026-10-16)
+
+
+### Features
+
+* Implement diag bundle command ([#1547](https://github.com/device-management-toolkit/rpc-go/issues/1547)) ([8b1f5ff](https://github.com/device-management-toolkit/rpc-go/commit/8b1f5ffd7a06851be676ffe7c51a73b3a70a9b0b)), closes [#1544](https://github.com/device-management-toolkit/rpc-go/issues/1544)
+
+# [3.0.0-beta.65](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.64...v3.0.0-beta.65) (2026-10-15)
+
+
+### Features
+
+* Add remote RPS support to configure sync-clock ([#1562](https://github.com/device-management-toolkit/rpc-go/issues/1562)) ([f8a6f5c](https://github.com/device-management-toolkit/rpc-go/commit/f8a6f5c00f2730ef7153366d5f7a6cd23252f07f)), closes [#1561](https://github.com/device-management-toolkit/rpc-go/issues/1561) [device-management-toolkit/rps#2905](https://github.com/device-management-toolkit/rps/issues/2905)
+
 # [3.0.0-beta.64](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.63...v3.0.0-beta.64) (2026-10-15)
 
 

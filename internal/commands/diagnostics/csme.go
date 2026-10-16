@@ -8,7 +8,6 @@ package diagnostics
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
@@ -38,12 +37,8 @@ func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 		return fmt.Errorf("failed to retrieve flash log: %w", err)
 	}
 
-	// Ensure output directory exists
-	outputDir := filepath.Dir(cmd.Output)
-	if outputDir != "." && outputDir != "" {
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
+	if err := ensureParentDir(cmd.Output); err != nil {
+		return err
 	}
 
 	// Write the binary FLOG data to file
@@ -51,9 +46,12 @@ func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 		return fmt.Errorf("failed to write flash log file: %w", err)
 	}
 
-	fmt.Printf("CSME Flash Log (FLOG) successfully retrieved\n")
-	fmt.Printf("Output file: %s\n", cmd.Output)
-	fmt.Printf("Size: %d bytes\n", len(flogData))
+	if !cmd.quiet {
+		fmt.Printf("CSME Flash Log (FLOG) successfully retrieved\n")
+		fmt.Printf("Output file: %s\n", cmd.Output)
+		fmt.Printf("Size: %d bytes\n", len(flogData))
+	}
+
 	log.Debugf("FLOG data saved to: %s", cmd.Output)
 
 	return nil
