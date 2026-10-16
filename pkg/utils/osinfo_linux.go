@@ -32,7 +32,14 @@ var (
 
 		return strings.TrimRight(string(uname.Release[:]), "\x00")
 	}
+	readAdapterDevicePath  = os.Readlink
+	resolveLspciExecutable = findLinuxSystemExecutable
+	runLspciCommand        = func(ctx context.Context, executable string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, executable, args...).Output()
+	}
 )
+
+var linuxSystemExecutableDirs = []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin"}
 
 // GetMEIDriverVersion returns the MEI kernel module version.
 // Prefers explicit module version and falls back to module path / kernel release.
@@ -117,15 +124,20 @@ func getAdapterDHCPEnabled(interfaceName string) *bool {
 }
 
 func getAdapterDisplayName(interfaceName string) string {
-	devicePath, err := os.Readlink(filepath.Join("/sys/class/net", interfaceName, "device"))
+	devicePath, err := readAdapterDevicePath(filepath.Join("/sys/class/net", interfaceName, "device"))
 	if err != nil {
+		return ""
+	}
+
+	executable := resolveLspciExecutable("lspci")
+	if executable == "" {
 		return ""
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "lspci", "-D", "-s", filepath.Base(devicePath)).Output()
+	out, err := runLspciCommand(ctx, executable, "-D", "-s", filepath.Base(devicePath))
 	if err != nil {
 		return ""
 	}
@@ -136,4 +148,23 @@ func getAdapterDisplayName(interfaceName string) string {
 	}
 
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(out)), fields[0]))
+}
+
+func findLinuxSystemExecutable(name string) string {
+	if strings.ContainsAny(name, `/\\`) {
+		return ""
+	}
+
+	for _, dir := range linuxSystemExecutableDirs {
+		candidate := filepath.Join(dir, name)
+
+		info, err := os.Stat(candidate)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			continue
+		}
+
+		return candidate
+	}
+
+	return ""
 }

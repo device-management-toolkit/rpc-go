@@ -9,16 +9,21 @@ package utils
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	winapi "golang.org/x/sys/windows"
 )
 
 const osInfoTimeout = 10 * time.Second
 
 var (
-	lookupExecutable = exec.LookPath
-	runCommandOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	lookupExecutable          = exec.LookPath
+	getAdapterSystemDirectory = winapi.GetSystemDirectory
+	runCommandOutput          = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, name, args...).Output()
 	}
 )
@@ -68,6 +73,7 @@ func getAdapterDHCPEnabled(interfaceName string) *bool {
 
 	name := escapePowerShellSingleQuotedString(interfaceName)
 	script := "$idx = (Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -eq '" + name + "' -or $_.Name -eq '" + name + "' } | Select-Object -First 1 -ExpandProperty InterfaceIndex); if ($idx -ne $null) { (Get-CimInstance Win32_NetworkAdapterConfiguration -Filter \"InterfaceIndex=$idx\").DHCPEnabled }"
+
 	out, err := runCommandOutput(ctx, psBinary, "-NoProfile", "-Command", script)
 	if err != nil {
 		return nil
@@ -76,9 +82,11 @@ func getAdapterDHCPEnabled(interfaceName string) *bool {
 	switch strings.ToLower(strings.TrimSpace(string(out))) {
 	case "true":
 		enabled := true
+
 		return &enabled
 	case "false":
 		enabled := false
+
 		return &enabled
 	default:
 		return nil
@@ -89,19 +97,36 @@ func getAdapterDisplayName(interfaceName string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), osInfoTimeout)
 	defer cancel()
 
-	psBinary := findPowerShellBinary()
+	psBinary := findTrustedAdapterPowerShellBinary()
 	if psBinary == "" {
 		return ""
 	}
 
 	name := escapePowerShellSingleQuotedString(interfaceName)
 	script := "Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.NetConnectionID -eq '" + name + "' -or $_.Name -eq '" + name + "' } | Select-Object -First 1 -ExpandProperty Name"
+
 	out, err := runCommandOutput(ctx, psBinary, "-NoProfile", "-Command", script)
 	if err != nil {
 		return ""
 	}
 
 	return strings.TrimSpace(string(out))
+}
+
+func findTrustedAdapterPowerShellBinary() string {
+	systemDirectory, err := getAdapterSystemDirectory()
+	if err != nil || strings.TrimSpace(systemDirectory) == "" {
+		return ""
+	}
+
+	candidate := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+
+	info, err := os.Stat(candidate)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+
+	return candidate
 }
 
 func escapePowerShellSingleQuotedString(s string) string {
