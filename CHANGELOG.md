@@ -1,3 +1,10 @@
+# [3.0.0-beta.67](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.66...v3.0.0-beta.67) (2026-10-16)
+
+
+### Features
+
+* include isElevated and heciAvailable in device sync payload ([#1614](https://github.com/device-management-toolkit/rpc-go/issues/1614)) ([8b5f38a](https://github.com/device-management-toolkit/rpc-go/commit/8b5f38a2d5486e67da6adf2125347cbbe2246e31)), closes [#1613](https://github.com/device-management-toolkit/rpc-go/issues/1613)
+
 # [3.0.0-beta.66](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.65...v3.0.0-beta.66) (2026-10-16)
 
 
