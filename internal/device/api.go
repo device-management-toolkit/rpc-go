@@ -199,6 +199,8 @@ type DeviceInfo struct {
 	EthernetAdapterCount int        `json:"ethernetAdapterCount,omitempty"`
 	MonitorConnected     *bool      `json:"monitorConnected,omitempty"`
 	IEEE8021xEnabled     *bool      `json:"ieee8021xEnabled,omitempty"`
+	IsElevated           *bool      `json:"isElevated,omitempty"`
+	HECIAvailable        *bool      `json:"heciAvailable,omitempty"`
 }
 
 // UPIDInfo carries UPID details for the console.

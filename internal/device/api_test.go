@@ -61,6 +61,50 @@ func TestDevicePayload_JSON_WithoutPasswords(t *testing.T) {
 	assert.False(t, hasMPS, "mpspassword should be omitted when empty")
 }
 
+func TestDeviceInfo_JSON_ElevationAndHECI(t *testing.T) {
+	t.Run("omits fields when nil", func(t *testing.T) {
+		payload := DevicePayload{
+			GUID:       "test-guid",
+			DeviceInfo: &DeviceInfo{},
+		}
+
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		devInfo := m["deviceInfo"].(map[string]interface{})
+		_, hasIsElevated := devInfo["isElevated"]
+		_, hasHECIAvailable := devInfo["heciAvailable"]
+
+		assert.False(t, hasIsElevated)
+		assert.False(t, hasHECIAvailable)
+	})
+
+	t.Run("serializes boolean values when set", func(t *testing.T) {
+		elevated := false
+		heci := false
+		payload := DevicePayload{
+			GUID: "test-guid",
+			DeviceInfo: &DeviceInfo{
+				IsElevated:    &elevated,
+				HECIAvailable: &heci,
+			},
+		}
+
+		data, err := json.Marshal(payload)
+		require.NoError(t, err)
+
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &m))
+
+		devInfo := m["deviceInfo"].(map[string]interface{})
+		assert.Equal(t, false, devInfo["isElevated"])
+		assert.Equal(t, false, devInfo["heciAvailable"])
+	})
+}
+
 func TestAddDevice_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
