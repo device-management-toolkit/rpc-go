@@ -25,6 +25,8 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -2457,6 +2459,171 @@ func TestInfoService_SyncDeviceInfo_404_AutoRegister_ElevationAndHECI(t *testing
 			assert.Equal(t, tt.isElevated, deviceInfo["isElevated"])
 			require.NotNil(t, deviceInfo["heciAvailable"])
 			assert.Equal(t, tt.heciAvailable, deviceInfo["heciAvailable"])
+		})
+	}
+}
+
+func TestInfoService_SyncDeviceInfo_UserFacingMessages(t *testing.T) {
+	const uuid = "12345678-1234-1234-1234-123456789ABC"
+
+	tests := []struct {
+		name         string
+		autoRegister bool
+		handler      func(patchCount int) int
+		wantErr      string
+		wantInfo     string
+	}{
+		{
+			name:     "success logs at info level",
+			handler:  func(int) int { return http.StatusOK },
+			wantInfo: "device " + uuid + " synced successfully (PATCH)",
+		},
+		{
+			name:         "success after registration logs at info level",
+			autoRegister: true,
+			handler: func(patchCount int) int {
+				if patchCount == 1 {
+					return http.StatusNotFound
+				}
+
+				return http.StatusOK
+			},
+			wantInfo: "device " + uuid + " synced successfully after registration",
+		},
+		{
+			name:     "404 without auto-register logs skipped at info level",
+			handler:  func(int) int { return http.StatusNotFound },
+			wantInfo: "device " + uuid + " not found (HTTP 404); skipping registration",
+		},
+		{
+			name:    "non-2xx returns descriptive error",
+			handler: func(int) int { return http.StatusInternalServerError },
+			wantErr: "sync failed with status 500 Internal Server Error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patchCount := 0
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusCreated)
+
+					return
+				}
+
+				patchCount++
+				w.WriteHeader(tt.handler(patchCount))
+			}))
+			defer server.Close()
+
+			hook := logtest.NewGlobal()
+			defer hook.Reset()
+
+			originalLevel := logrus.GetLevel()
+			defer logrus.SetLevel(originalLevel)
+
+			logrus.SetLevel(logrus.InfoLevel)
+
+			service := NewInfoService(nil, WithAutoRegister(tt.autoRegister))
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{UUID: uuid}
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, nil)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			found := false
+
+			for _, entry := range hook.AllEntries() {
+				if entry.Level == logrus.InfoLevel && entry.Message == tt.wantInfo {
+					found = true
+				}
+			}
+
+			assert.True(t, found, "expected info log %q", tt.wantInfo)
+		})
+	}
+}
+
+func TestAmtInfoCmd_Run_WithSync_FailureIsReported(t *testing.T) {
+	tests := []struct {
+		name      string
+		closed    bool
+		authFail  bool
+		wantCause string
+	}{
+		{name: "server returns non-2xx", wantCause: "500"},
+		{name: "server unreachable", closed: true},
+		{name: "authentication rejected", authFail: true, wantCause: "device sync failed: authentication failed: authentication failed with status 401"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().GetVersionDataFromME(gomock.Any(), gomock.Any()).Return("16.1.25", nil).AnyTimes()
+			mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil).AnyTimes()
+			mockAMT.EXPECT().GetUPID().Return(nil, nil).AnyTimes()
+			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+			mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+			mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil).AnyTimes()
+			mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
+			mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+			mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil).AnyTimes()
+			mockAMT.EXPECT().GetLANInterfaceSettings(gomock.Any()).Return(amt.InterfaceSettings{}, nil).AnyTimes()
+			mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil).AnyTimes()
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				if r.URL.Path == "/api/v1/authorize" {
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"error":"invalid credentials"}`))
+
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer server.Close()
+
+			url := server.URL + "/api/v1/devices"
+			if tt.closed {
+				server.Close()
+			}
+
+			cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: url}
+			ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+
+			if tt.authFail {
+				ctx.AuthUsername = "user"
+				ctx.AuthPassword = "wrong"
+				ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+			}
+
+			err := cmd.Run(ctx)
+			require.Error(t, err)
+			assert.True(t, strings.HasPrefix(err.Error(), "device sync failed: "), "got %q", err.Error())
+
+			if tt.wantCause != "" {
+				assert.Contains(t, err.Error(), tt.wantCause)
+			}
 		})
 	}
 }

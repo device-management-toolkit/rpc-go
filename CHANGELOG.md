@@ -1,3 +1,10 @@
+# [3.0.0-beta.68](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.67...v3.0.0-beta.68) (2026-10-16)
+
+
+### Bug Fixes
+
+* report sync success and failure clearly ([#1622](https://github.com/device-management-toolkit/rpc-go/issues/1622)) ([3e36039](https://github.com/device-management-toolkit/rpc-go/commit/3e360396c004ab2712f3181aef29f695a60933b8)), closes [#1621](https://github.com/device-management-toolkit/rpc-go/issues/1621)
+
 # [3.0.0-beta.67](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.66...v3.0.0-beta.67) (2026-10-16)
 
 

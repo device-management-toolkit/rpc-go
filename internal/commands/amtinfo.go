@@ -295,7 +295,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	if cmd.Sync {
 		discovered := true
 		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			return err
+			return fmt.Errorf("device sync failed: %w", err)
 		}
 	}
 
@@ -570,7 +570,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 	authToken, err := s.getAuthToken(endpoint, auth, ctx.SkipCertCheck)
 	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return err
 	}
 
 	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
@@ -588,7 +588,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		_ = resp.Body.Close()
 
 		if !s.autoRegister {
-			log.Debugf("device %s not found (HTTP 404); skipping registration", result.UUID)
+			log.Infof("device %s not found (HTTP 404); skipping registration", result.UUID)
 
 			return nil
 		}
@@ -618,7 +618,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			return err
 		}
 
-		log.Debugf("device %s synced successfully after registration", result.UUID)
+		log.Infof("device %s synced successfully after registration", result.UUID)
 
 		return nil
 	}
@@ -632,7 +632,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		return fmt.Errorf("sync failed with status %s", resp.Status)
 	}
 
-	log.Debugf("device %s synced successfully (PATCH)", result.UUID)
+	log.Infof("device %s synced successfully (PATCH)", result.UUID)
 
 	return nil
 }
