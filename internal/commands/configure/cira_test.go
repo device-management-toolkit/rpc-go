@@ -63,6 +63,12 @@ func TestCIRACmd_Validate(t *testing.T) {
 			description: "should fail when MPS address is invalid",
 		},
 		{
+			name:        "missing_mps_cert",
+			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "", EnvironmentDetection: []string{"example.com"}},
+			wantErr:     true,
+			description: "should fail before clearing CIRA when the MPS cert is missing",
+		},
+		{
 			name:        "empty_environment_detection",
 			cmd:         CIRACmd{ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}}, MPSPassword: "mps123", MPSAddress: "mps.example.com", MPSCert: "test-cert", EnvironmentDetection: []string{}},
 			wantErr:     false,

@@ -72,6 +72,10 @@ func (cmd *WirelessCmd) Validate() error {
 		return nil
 	}
 
+	if err := validateIEEE8021xAuthenticationProtocol(cmd.IEEE8021xAuthenticationProtocol); err != nil {
+		return err
+	}
+
 	// Basic validation
 	if cmd.ProfileName == "" {
 		return fmt.Errorf("profile name is required")

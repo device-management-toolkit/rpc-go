@@ -26,6 +26,19 @@ func TestWiredCmd_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid - unsupported 802.1x authentication protocol",
+			cmd: &WiredCmd{
+				ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				DHCPEnabled: func() *bool {
+					b := true
+
+					return &b
+				}(),
+				IEEE8021xAuthenticationProtocol: 1,
+			},
+			wantErr: true,
+		},
+		{
 			name: "valid static IP configuration",
 			cmd: &WiredCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
