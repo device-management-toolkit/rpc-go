@@ -277,6 +277,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
 	)
+	defer service.CloseOwnedWSMANClient()
 
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
@@ -344,6 +345,14 @@ type InfoResult struct {
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
 }
 
+// InfoSnapshot combines the shared amtinfo result with optional WSMAN TLS data.
+type InfoSnapshot struct {
+	Info             *InfoResult
+	TLSMode          string
+	AMTDNSSuffixRead bool
+	OSDNSSuffixRead  bool
+}
+
 // UserCert represents a user certificate
 type UserCert struct {
 	Subject                string `json:"subject,omitempty"`
@@ -367,11 +376,17 @@ type InfoService struct {
 	password         string
 	localTLSEnforced bool
 	// skipAMTCertCheck controls TLS verification when connecting to AMT/LMS
-	skipAMTCertCheck bool
-	wsman            interfaces.WSMANer
-	heciAvailable    bool
+	skipAMTCertCheck  bool
+	wsman             interfaces.WSMANer
+	ownsWSMANClient   bool
+	heciAvailable     bool
+	cachedControlMode *int
 	// autoRegister controls whether a sync that 404s creates the device.
 	autoRegister bool
+}
+
+var newInfoServiceWSMANClient = func() interfaces.WSMANer {
+	return localamt.NewGoWSMANMessages(utils.LMSAddress)
 }
 
 // InfoServiceOption mutates InfoService construction parameters.
@@ -432,6 +447,22 @@ func WithSkipAMTCertCheck(skip bool) InfoServiceOption {
 func WithWSMANClient(wsman interfaces.WSMANer) InfoServiceOption {
 	return func(s *InfoService) {
 		s.wsman = wsman
+		s.ownsWSMANClient = false
+	}
+}
+
+// CloseOwnedWSMANClient closes a client created by this service, but leaves an injected client to its caller.
+func (s *InfoService) CloseOwnedWSMANClient() {
+	if s == nil || !s.ownsWSMANClient || s.wsman == nil {
+		return
+	}
+
+	wsman := s.wsman
+	s.wsman = nil
+	s.ownsWSMANClient = false
+
+	if err := wsman.Close(); err != nil {
+		log.Debugf("failed to close InfoService-owned WSMAN client: %v", err)
 	}
 }
 
@@ -439,6 +470,13 @@ func WithWSMANClient(wsman interfaces.WSMANer) InfoServiceOption {
 func WithHECIAvailable(available bool) InfoServiceOption {
 	return func(s *InfoService) {
 		s.heciAvailable = available
+	}
+}
+
+// WithCachedControlMode reuses the control mode already read by AMTBaseCmd.
+func WithCachedControlMode(controlMode int) InfoServiceOption {
+	return func(s *InfoService) {
+		s.cachedControlMode = &controlMode
 	}
 }
 
@@ -1201,13 +1239,43 @@ func bestIPAddress(res *InfoResult) string {
 // joinURL safely concatenates base URL and path
 // (previously had joinURL helper; no longer needed as endpoints are provided in full)
 
-// GetAMTInfo retrieves AMT information based on the command flags
+// GetAMTInfo retrieves AMT information based on the command flags.
 func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
+	return s.GetInfoSnapshot(cmd, false).Info, nil
+}
+
+// GetInfoSnapshot collects the same AMT fields used by amtinfo and status.
+// TLSMode is read only when requested and a WSMAN client is available.
+func (s *InfoService) GetInfoSnapshot(cmd *AmtInfoCmd, includeTLS bool) *InfoSnapshot {
+	info, reads := s.collectAMTInfo(cmd)
+
+	snapshot := &InfoSnapshot{
+		Info:             info,
+		AMTDNSSuffixRead: reads.amtDNSSuffix,
+		OSDNSSuffixRead:  reads.osDNSSuffix,
+	}
+	if includeTLS && s.wsman != nil {
+		snapshot.TLSMode = s.getTLSModeFromWSMAN()
+	}
+
+	return snapshot
+}
+
+type infoSnapshotReads struct {
+	amtDNSSuffix bool
+	osDNSSuffix  bool
+}
+
+func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd) (*InfoResult, infoSnapshotReads) {
 	result := &InfoResult{}
+	reads := infoSnapshotReads{}
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	// Track control mode for reuse across multiple operations
 	controlMode := -1 // -1 indicates not checked yet
+	if s.cachedControlMode != nil {
+		controlMode = *s.cachedControlMode
+	}
 
 	var controlModeErr error
 
@@ -1350,6 +1418,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		// AMT DNS suffix (requires HECI)
 		if s.heciAvailable {
 			dnsSuffix, err := s.amtCommand.GetDNSSuffix()
+
+			reads.amtDNSSuffix = err == nil
 			if err == nil {
 				result.DNSSuffix = dnsSuffix
 			}
@@ -1357,6 +1427,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 		// OS DNS suffix (no admin required)
 		osDnsSuffix, err := s.amtCommand.GetOSDNSSuffix()
+
+		reads.osDNSSuffix = err == nil
 		if err == nil {
 			result.DNSSuffixOS = osDnsSuffix
 		}
@@ -1466,7 +1538,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
-	return result, nil
+	return result, reads
 }
 
 // OutputJSON outputs the result in JSON format
@@ -2319,7 +2391,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	// SetupWsmanClient falls back to HECI/LME when LMS is absent; no need to gate on LMS here.
-	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+	wsmanClient := newInfoServiceWSMANClient()
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
@@ -2329,10 +2401,15 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	if err := wsmanClient.SetupWsmanClient(username, password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		if closeErr := wsmanClient.Close(); closeErr != nil {
+			log.Debugf("failed to close WSMAN client after setup failure: %v", closeErr)
+		}
+
 		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 	}
 
 	s.wsman = wsmanClient
+	s.ownsWSMANClient = true
 
 	return nil
 }

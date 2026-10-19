@@ -21,6 +21,7 @@ import (
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
@@ -663,6 +664,33 @@ func TestNewInfoService_WithOptions(t *testing.T) {
 	assert.True(t, service.localTLSEnforced)
 	assert.True(t, service.skipAMTCertCheck)
 	assert.False(t, service.heciAvailable)
+}
+
+func TestInfoServiceClosesOnlyOwnedWSMANClients(t *testing.T) {
+	t.Run("service-created client is closed once", func(t *testing.T) {
+		originalFactory := newInfoServiceWSMANClient
+		ctrl := gomock.NewController(t)
+		wsman := mock.NewMockWSMANer(ctrl)
+		newInfoServiceWSMANClient = func() interfaces.WSMANer { return wsman }
+
+		t.Cleanup(func() { newInfoServiceWSMANClient = originalFactory })
+
+		wsman.EXPECT().SetupWsmanClient("admin", "testpassword", false, gomock.Any(), gomock.Any()).Return(nil)
+		wsman.EXPECT().Close().Return(nil).Times(1)
+
+		service := NewInfoService(nil, WithPassword("testpassword"))
+		require.NoError(t, service.ensureWSMANClient(1))
+		service.CloseOwnedWSMANClient()
+		service.CloseOwnedWSMANClient()
+	})
+
+	t.Run("injected client remains caller-owned", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		wsman := mock.NewMockWSMANer(ctrl)
+		service := NewInfoService(nil, WithWSMANClient(wsman))
+
+		service.CloseOwnedWSMANClient()
+	})
 }
 
 func TestInfoService_GetAMTInfo(t *testing.T) {
