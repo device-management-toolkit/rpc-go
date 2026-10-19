@@ -8,8 +8,103 @@ package utils
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func restoreLinuxAdapterNameSeams(t *testing.T) {
+	originalReadDevicePath := readAdapterDevicePath
+	originalResolveExecutable := resolveLspciExecutable
+	originalRunLspci := runLspciCommand
+
+	t.Cleanup(func() {
+		readAdapterDevicePath = originalReadDevicePath
+		resolveLspciExecutable = originalResolveExecutable
+		runLspciCommand = originalRunLspci
+	})
+}
+
+func TestGetAdapterDisplayNameMissingLspci(t *testing.T) {
+	restoreLinuxAdapterNameSeams(t)
+
+	readAdapterDevicePath = func(string) (string, error) { return "/sys/devices/pci0000:00/0000:00:02.0", nil }
+	resolveLspciExecutable = func(string) string { return "" }
+	runLspciCommand = func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("lspci must not run when it is unavailable")
+
+		return nil, nil
+	}
+
+	if got := getAdapterDisplayName("enp0s2"); got != "" {
+		t.Fatalf("getAdapterDisplayName() = %q, want empty", got)
+	}
+}
+
+func TestGetAdapterDisplayNameEmptyLspciOutput(t *testing.T) {
+	restoreLinuxAdapterNameSeams(t)
+
+	readAdapterDevicePath = func(string) (string, error) { return "/sys/devices/pci0000:00/0000:00:02.0", nil }
+
+	resolveLspciExecutable = func(string) string { return "/usr/bin/lspci" }
+	runLspciCommand = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+
+	if got := getAdapterDisplayName("enp0s2"); got != "" {
+		t.Fatalf("getAdapterDisplayName() = %q, want empty", got)
+	}
+}
+
+func TestGetAdapterDisplayNameSuccess(t *testing.T) {
+	restoreLinuxAdapterNameSeams(t)
+
+	const devicePath = "/sys/devices/pci0000:00/0000:00:02.0"
+
+	readAdapterDevicePath = func(path string) (string, error) {
+		if path != "/sys/class/net/enp0s2/device" {
+			t.Fatalf("readAdapterDevicePath() path = %q", path)
+		}
+
+		return devicePath, nil
+	}
+	resolveLspciExecutable = func(name string) string {
+		if name != "lspci" {
+			t.Fatalf("resolveLspciExecutable() name = %q, want lspci", name)
+		}
+
+		return "/usr/bin/lspci"
+	}
+	runLspciCommand = func(_ context.Context, executable string, args ...string) ([]byte, error) {
+		if executable != "/usr/bin/lspci" {
+			t.Fatalf("lspci executable = %q, want /usr/bin/lspci", executable)
+		}
+
+		if len(args) != 3 || args[0] != "-D" || args[1] != "-s" || args[2] != filepath.Base(devicePath) {
+			t.Fatalf("lspci args = %q, want [-D -s %s]", args, filepath.Base(devicePath))
+		}
+
+		return []byte("0000:00:02.0 Ethernet controller: Intel Corporation Ethernet Controller\n"), nil
+	}
+
+	if got, want := getAdapterDisplayName("enp0s2"), "Ethernet controller: Intel Corporation Ethernet Controller"; got != want {
+		t.Fatalf("getAdapterDisplayName() = %q, want %q", got, want)
+	}
+}
+
+func TestFindLinuxSystemExecutableIgnoresPath(t *testing.T) {
+	attackerDirectory := t.TempDir()
+
+	plantedExecutable := filepath.Join(attackerDirectory, "lspci")
+
+	if err := os.WriteFile(plantedExecutable, []byte("not executable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", attackerDirectory)
+
+	if got := findLinuxSystemExecutable("lspci"); got == plantedExecutable {
+		t.Fatalf("trusted executable lookup selected caller-controlled path %q", got)
+	}
+}
 
 func TestGetMEIDriverVersion(t *testing.T) {
 	originalRunModinfo := runModinfo
