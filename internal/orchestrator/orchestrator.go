@@ -104,6 +104,12 @@ func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassw
 	return po
 }
 
+// SetExecutor replaces the executor that runs each profile step, which by
+// default is a CLIExecutor for the current executable.
+func (po *ProfileOrchestrator) SetExecutor(executor CommandExecutor) {
+	po.executor = executor
+}
+
 // baseArgs returns the common CLI arguments including global flags like skip-amt-cert-check.
 // Note: AMT password is now passed via AMT_PASSWORD environment variable instead of --password flag
 // to avoid credential exposure in process argument listings (ps, /proc/<pid>/cmdline).
