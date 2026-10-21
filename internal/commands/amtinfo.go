@@ -268,6 +268,52 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
+	service, result, err := cmd.readInfo(ctx)
+	if err != nil {
+		return err
+	}
+
+	if ctx.JsonOutput {
+		return service.OutputJSON(os.Stdout, result)
+	}
+
+	if ctx.TableOutput {
+		if err := service.OutputTable(os.Stdout, result, cmd); err != nil {
+			return err
+		}
+	} else {
+		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
+			return err
+		}
+	}
+
+	// Signal to Execute() that elevation would unlock more data
+	return cmd.elevationErr()
+}
+
+// Collect returns the information Run prints, without printing it, for
+// callers that use amtinfo as a library. Like Run, it syncs the information
+// to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
+// client before returning, so a long-lived process can call it again. That
+// client is the command's own (cmd.WSMan) if one is set, even if the read did
+// not use it, and otherwise the one the read opened, if any. When HECI is
+// unavailable because the process is not elevated, it returns the result
+// together with utils.IncorrectPermissions, the error Run returns after
+// printing.
+func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
+	service, result, err := cmd.readInfo(ctx)
+	defer service.closeWSMAN()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result, cmd.elevationErr()
+}
+
+// readInfo reads the AMT information and, when Sync is set, syncs it to the
+// devices API. The returned service holds any WSMAN client the read opened.
+func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error) {
 	service := NewInfoService(
 		ctx.AMTCommand,
 		WithJSONOutput(ctx.JsonOutput),
@@ -288,32 +334,23 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	result, err := service.GetAMTInfo(effectiveCmd)
 	if err != nil {
-		return err
+		return service, nil, err
 	}
 
 	// If requested, sync device info to remote server
 	if cmd.Sync {
 		discovered := true
 		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			return fmt.Errorf("device sync failed: %w", err)
+			return service, nil, fmt.Errorf("device sync failed: %w", err)
 		}
 	}
 
-	if ctx.JsonOutput {
-		return service.OutputJSON(os.Stdout, result)
-	}
+	return service, result, nil
+}
 
-	if ctx.TableOutput {
-		if err := service.OutputTable(os.Stdout, result, cmd); err != nil {
-			return err
-		}
-	} else {
-		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
-			return err
-		}
-	}
-
-	// Signal to Execute() that elevation would unlock more data
+// elevationErr returns utils.IncorrectPermissions when HECI is unavailable
+// because the process is not elevated: elevation would unlock more data.
+func (cmd *AmtInfoCmd) elevationErr() error {
 	if !cmd.HECIAvailable && !isElevated() {
 		return utils.IncorrectPermissions
 	}
@@ -2335,6 +2372,22 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	s.wsman = wsmanClient
 
 	return nil
+}
+
+// closeWSMAN closes the service's WSMAN client, if any, and releases it. Run
+// leaves the client to process exit, but over LME a held connection keeps
+// the MEI device open, and the next call in the same process would fail with
+// "device busy". A close failure is only logged.
+func (s *InfoService) closeWSMAN() {
+	if s.wsman == nil {
+		return
+	}
+
+	if err := s.wsman.Close(); err != nil {
+		log.Debugf("closing WSMAN client: %v", err)
+	}
+
+	s.wsman = nil
 }
 
 // getUserCertificates retrieves public key certificates via WSMAN
