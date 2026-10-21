@@ -55,6 +55,29 @@ func TestAMTFeaturesCmd_Validate(t *testing.T) {
 			description: "should succeed when password is provided with KVM feature",
 		},
 		{
+			name: "invalid user consent",
+			cmd: AMTFeaturesCmd{
+				ConfigureBaseCmd: ConfigureBaseCmd{
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2},
+				},
+				UserConsent: "sometimes",
+				KVM:         true,
+			},
+			wantErr:     true,
+			description: "should reject a user consent value outside kvm, all, none",
+		},
+		{
+			name: "user consent none",
+			cmd: AMTFeaturesCmd{
+				ConfigureBaseCmd: ConfigureBaseCmd{
+					AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 2},
+				},
+				UserConsent: "none",
+			},
+			wantErr:     false,
+			description: "should accept user consent none",
+		},
+		{
 			name: "password provided with SOL feature",
 			cmd: AMTFeaturesCmd{
 				ConfigureBaseCmd: ConfigureBaseCmd{

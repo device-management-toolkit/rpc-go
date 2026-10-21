@@ -69,6 +69,10 @@ func (cmd *WiredCmd) Validate() error {
 		return err
 	}
 
+	if err := validateIEEE8021xAuthenticationProtocol(cmd.IEEE8021xAuthenticationProtocol); err != nil {
+		return err
+	}
+
 	// Validate DHCP vs static IP configuration
 	dhcpEnabled := cmd.DHCPEnabled != nil && *cmd.DHCPEnabled
 	staticIPProvided := cmd.IPAddress != "" || cmd.SubnetMask != "" || cmd.Gateway != "" || cmd.PrimaryDNS != "" || cmd.SecondaryDNS != ""
