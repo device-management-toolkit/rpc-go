@@ -66,7 +66,9 @@ func renderText(w io.Writer, result report) error {
 
 	fmt.Fprintf(&output, "%s %s\n", verdictSymbol(result.Verdict.Result), result.Verdict.Status)
 
-	if result.Verdict.ReadyToProvision || len(result.ActivationProfiles) > 0 {
+	if result.Verdict.ReadyForManagement {
+		output.WriteString("→ No action required.\n")
+	} else if result.Verdict.ReadyToProvision || len(result.ActivationProfiles) > 0 {
 		output.WriteString(activationRecommendation(result) + "\n")
 	} else {
 		output.WriteString("→ Review the checks and re-run status after remediation.\n")

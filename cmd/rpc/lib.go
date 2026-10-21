@@ -71,9 +71,9 @@ func rpcExec(Input *C.char, Output, ErrOutput **C.char) int {
 	err := amtCommand.Initialize()
 	if err != nil {
 		log.Error(AccessErrMsg)
-		captureAndRestoreStderr()
+		errCode := handleError(err)
 
-		return handleError(err)
+		return captureOutputsAndReturn(errCode, captureAndRestoreStdout, captureAndRestoreStderr)
 	}
 
 	// create argument array from input string
@@ -85,9 +85,8 @@ func rpcExec(Input *C.char, Output, ErrOutput **C.char) int {
 	args, err := r.Read()
 	if err != nil {
 		log.Error(err.Error())
-		captureAndRestoreStderr()
 
-		return utils.InvalidParameterCombination.Code
+		return captureOutputsAndReturn(utils.InvalidParameterCombination.Code, captureAndRestoreStdout, captureAndRestoreStderr)
 	}
 
 	args = append([]string{"rpc"}, args...)
@@ -97,16 +96,19 @@ func rpcExec(Input *C.char, Output, ErrOutput **C.char) int {
 	if err != nil {
 		log.Error("rpcExec failed: " + inputString)
 		errCode := handleError(err)
-		captureAndRestoreStderr()
 
-		return errCode
+		return captureOutputsAndReturn(errCode, captureAndRestoreStdout, captureAndRestoreStderr)
 	}
 
 	// Save captured output to Output variable and restore stdout
-	captureAndRestoreStdout()
-	captureAndRestoreStderr()
+	return captureOutputsAndReturn(int(utils.Success), captureAndRestoreStdout, captureAndRestoreStderr)
+}
 
-	return int(utils.Success)
+func captureOutputsAndReturn(exitCode int, captureStdout, captureStderr func()) int {
+	captureStdout()
+	captureStderr()
+
+	return exitCode
 }
 
 //export rpcFree

@@ -21,8 +21,9 @@ var statusIsElevated = utils.IsElevated
 type StatusCmd struct {
 	commands.AMTBaseCmd
 
-	ACM bool `help:"Check ACM activation readiness" name:"acm"`
-	CCM bool `help:"Check CCM activation readiness" name:"ccm" aliases:"cm"`
+	ACM  bool   `help:"Check ACM activation readiness" name:"acm"`
+	CCM  bool   `help:"Check CCM activation readiness" name:"ccm" aliases:"cm"`
+	Host string `help:"Console address to probe in direct mode" name:"host"`
 }
 
 func (cmd *StatusCmd) Validate() error {
@@ -51,11 +52,32 @@ func run(w io.Writer, cmd *StatusCmd, ctx *commands.Context) error {
 	}
 
 	result := cmd.evaluate(ctx)
+
+	var renderErr error
 	if ctx.JsonOutput {
-		return renderJSON(w, ctx, result)
+		renderErr = renderJSON(w, ctx, result)
+	} else {
+		renderErr = renderText(w, result)
 	}
 
-	return renderText(w, result)
+	if renderErr != nil {
+		return renderErr
+	}
+
+	return verdictError(result.Verdict)
+}
+
+func verdictError(verdict Verdict) error {
+	switch verdict.Result {
+	case resultNotReady:
+		return utils.AmtNotReady
+	case resultNotAMT:
+		return utils.AmtNotDetected
+	case resultUnknown:
+		return utils.GenericFailure
+	default:
+		return nil
+	}
 }
 
 func (cmd *StatusCmd) evaluate(ctx *commands.Context) report {
@@ -98,12 +120,11 @@ func (cmd *StatusCmd) evaluate(ctx *commands.Context) report {
 	} else if cmd.ControlMode == commands.ControlModeACM || cmd.ControlMode == commands.ControlModeCCM {
 		result.DetectedState = utils.InterpretControlMode(cmd.ControlMode)
 		result.SelectedCheckSet = checkSetPost
-		snapshot = collectInfoSnapshot(cmd, ctx, &commands.AmtInfoCmd{Lan: true, Ras: true})
 
-		result.Checks = append(result.Checks,
-			Check{ID: checkIDActivation, Name: checkNameActivation, Status: checkAlreadyActive, Message: "AMT is already activated: " + result.DetectedState},
-			Check{ID: checkIDPostHealth, Name: checkNamePostHealth, Status: checkNotEvaluated, Message: "Post-activation checks are not included in this release"},
-		)
+		var checks []Check
+
+		checks, snapshot = collectPostActivationChecks(cmd, ctx)
+		result.Checks = append(result.Checks, checks...)
 	} else {
 		if cmd.ControlMode == 0 {
 			result.DetectedState = "pre_provisioning"
@@ -119,6 +140,7 @@ func (cmd *StatusCmd) evaluate(ctx *commands.Context) report {
 	populateSnapshot(&result, snapshot)
 
 	result.Verdict = EvaluateVerdict(result.Checks)
+	result.Host = cmd.Host
 
 	return result
 }

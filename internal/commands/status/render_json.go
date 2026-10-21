@@ -47,6 +47,7 @@ func evaluationFor(result report) evaluation {
 		AMTOperationalState:   result.AMTOperationalState,
 		RemoteAccess:          result.RemoteAccess,
 		TLSMode:               result.TLSMode,
+		Host:                  result.Host,
 		ProcessorModel:        result.ProcessorModel,
 		OSDescription:         result.OSDescription,
 		WiredAdapterName:      result.WiredAdapterName,
@@ -58,6 +59,7 @@ func evaluationFor(result report) evaluation {
 		OverallStatus:         result.Verdict.Status,
 		TotalChecks:           len(result.Checks),
 		ReadyToProvision:      result.Verdict.ReadyToProvision,
+		ReadyForManagement:    result.Verdict.ReadyForManagement,
 	}
 
 	for _, check := range result.Checks {

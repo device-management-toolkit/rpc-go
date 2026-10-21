@@ -6,10 +6,16 @@
 package status
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
@@ -20,6 +26,13 @@ var (
 	statusDetectLMS           = utils.DetectLMS
 	statusGetMEIDriverVersion = utils.GetMEIDriverVersion
 	statusGetLMSVersion       = utils.GetLMSVersion
+)
+
+const (
+	stateEnabled                   = "enabled"
+	stateDisabled                  = "disabled"
+	directHostProbeTimeout         = 3 * time.Second
+	maxLegacyOperationalStateMajor = 11
 )
 
 func initialChecks(elevated, heciAvailable bool, heciInitErr error, meiDriverVersion string) []Check {
@@ -64,6 +77,405 @@ func collectPreActivationChecks(cmd *StatusCmd, ctx *commands.Context) ([]Check,
 	return preActivationChecks(cmd, snapshot), snapshot
 }
 
+func collectPostActivationChecks(cmd *StatusCmd, ctx *commands.Context) ([]Check, *commands.InfoSnapshot) {
+	infoCmd := &commands.AmtInfoCmd{
+		Ver: true, Sku: true, Mode: true, ProvState: true, DNS: true, Lan: true, Ras: true, OpState: true,
+	}
+	snapshot := collectInfoSnapshot(cmd, ctx, infoCmd)
+
+	return postActivationChecks(cmd, snapshot), snapshot
+}
+
+func postActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Check {
+	if snapshot == nil || snapshot.Info == nil {
+		return []Check{{ID: "amt_snapshot", Name: checkNameAMTInfo, Status: checkUnavailable, Message: "AMT information could not be collected"}}
+	}
+
+	info := snapshot.Info
+
+	checks := []Check{
+		{ID: checkIDActivation, Name: checkNameActivation, Status: checkPass, Message: "AMT activated state: " + info.ControlMode},
+		platformCheck(info.Features, info.AMT, info.SKU),
+		versionCheck(info.AMT),
+		dnsCheck(info.DNSSuffix, info.DNSSuffixOS, snapshot.AMTDNSSuffixRead, snapshot.OSDNSSuffixRead, false),
+		postActivationNetworkCheck(info),
+		lmsCheck(cmd.LocalTLSEnforced),
+		provisioningStatePostCheck(info.ProvisioningState, snapshot.ProvisioningStateRead),
+		wsmanSessionCheck(snapshot.PostActivation),
+		connectionModeCheck(info.RAS),
+	}
+	if shouldCheckOperationalState(info.AMT, snapshot.OperationalStateSupported) {
+		checks = append(checks, operationalStatePostCheck(info.OperationalState, snapshot.OperationalStateRead))
+	}
+
+	if requestedMode, ok := requestedPostActivationModeCheck(cmd, info.ControlMode); ok {
+		checks = append(checks, requestedMode)
+	}
+
+	if info.RAS != nil && strings.EqualFold(strings.TrimSpace(info.RAS.NetworkStatus), "outside enterprise (CIRA)") {
+		checks = append(checks, ciraConfigurationCheck(snapshot.PostActivation), ciraConnectionCheck(info.RAS))
+	}
+
+	var post *commands.PostActivationSnapshot
+	if snapshot != nil {
+		post = snapshot.PostActivation
+	}
+
+	checks = append(checks,
+		redirectionCheck(post),
+		solCheck(post),
+		userConsentCheck(post),
+		tlsModeCheck(snapshot.TLSMode, post),
+		monitorCheck(post.MonitorConnected),
+	)
+	if !strings.Contains(info.Features, deviceTypeISM) {
+		checks = append(checks, kvmCheck(post))
+	}
+
+	if tlsRequiresTrustedRoots(snapshot.TLSMode) {
+		checks = append(checks, trustedRootsCheck(snapshot.TLSMode, post))
+	}
+
+	if info.RAS != nil && strings.EqualFold(strings.TrimSpace(info.RAS.NetworkStatus), "direct (LAN)") {
+		checks = append(checks, directHostReachabilityCheck(cmd.Host, snapshot.TLSMode))
+	}
+
+	return checks
+}
+
+func requestedPostActivationModeCheck(cmd *StatusCmd, actualMode string) (Check, bool) {
+	if cmd.ACM {
+		requestedMode := utils.InterpretControlMode(commands.ControlModeACM)
+		if strings.EqualFold(strings.TrimSpace(actualMode), requestedMode) {
+			return Check{ID: checkIDRequestedMode, Name: checkNameRequestedMode, Status: checkPass, Message: "AMT control mode matches requested ACM"}, true
+		}
+
+		return Check{ID: checkIDRequestedMode, Name: checkNameRequestedMode, Status: checkFail, Message: "AMT is in " + displayDetectedState(actualMode) + "; --acm was requested"}, true
+	}
+
+	if cmd.CCM {
+		requestedMode := utils.InterpretControlMode(commands.ControlModeCCM)
+		if strings.EqualFold(strings.TrimSpace(actualMode), requestedMode) {
+			return Check{ID: checkIDRequestedMode, Name: checkNameRequestedMode, Status: checkPass, Message: "AMT control mode matches requested CCM"}, true
+		}
+
+		return Check{ID: checkIDRequestedMode, Name: checkNameRequestedMode, Status: checkFail, Message: "AMT is in " + displayDetectedState(actualMode) + "; --ccm was requested"}, true
+	}
+
+	return Check{}, false
+}
+
+func operationalStatePostCheck(state string, read bool) Check {
+	if !read {
+		return Check{ID: checkIDOperationalState, Name: checkNameOperationalState, Status: checkUnavailable, Message: "AMT operational state could not be read"}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case stateEnabled:
+		return Check{ID: checkIDOperationalState, Name: checkNameOperationalState, Status: checkPass, Message: "AMT operational state is enabled"}
+	case stateDisabled:
+		return Check{ID: checkIDOperationalState, Name: checkNameOperationalState, Status: checkFail, Message: "AMT operational state is disabled"}
+	default:
+		return Check{ID: checkIDOperationalState, Name: checkNameOperationalState, Status: checkUnavailable, Message: "AMT operational state is unknown"}
+	}
+}
+
+func provisioningStatePostCheck(state string, read bool) Check {
+	if !read {
+		return Check{ID: checkIDProvisioningState, Name: checkNameProvisioningState, Status: checkUnavailable, Message: "AMT provisioning state could not be read"}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "post-provisioning":
+		return Check{ID: checkIDProvisioningState, Name: checkNameProvisioningState, Status: checkPass, Message: "AMT provisioning is complete"}
+	case "pre-provisioning", "in provisioning":
+		return Check{ID: checkIDProvisioningState, Name: checkNameProvisioningState, Status: checkFail, Message: "AMT provisioning is incomplete: " + state}
+	default:
+		return Check{ID: checkIDProvisioningState, Name: checkNameProvisioningState, Status: checkUnavailable, Message: "AMT provisioning state is unknown: " + state}
+	}
+}
+
+func supportsOperationalState(amtVersion string) bool {
+	parts := strings.SplitN(strings.TrimSpace(amtVersion), ".", 2)
+	major, err := strconv.Atoi(parts[0])
+
+	return err == nil && major > maxLegacyOperationalStateMajor
+}
+
+func shouldCheckOperationalState(amtVersion string, supported *bool) bool {
+	if !supportsOperationalState(amtVersion) {
+		return false
+	}
+
+	return supported == nil || *supported
+}
+
+func wsmanSessionCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil {
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: "Local WSMAN session could not be evaluated"}
+	}
+
+	switch snapshot.WSMANStatus {
+	case commands.WSMANStatusAvailable:
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkPass, Message: "Local WSMAN session available"}
+	case commands.WSMANStatusUnauthorized:
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: snapshot.WSMANMessage}
+	case commands.WSMANStatusUnavailable:
+		message := snapshot.WSMANMessage
+		if message == "" {
+			message = "Local WSMAN session is unavailable"
+		}
+
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: message}
+	default:
+		message := snapshot.WSMANMessage
+		if message == "" {
+			message = "Local WSMAN session is unavailable"
+		}
+
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: message}
+	}
+}
+
+func connectionModeCheck(status *amt.RemoteAccessStatus) Check {
+	if status == nil {
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkUnavailable, Message: "AMT connection mode could not be read"}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(status.NetworkStatus)) {
+	case "direct (lan)":
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkPass, Message: "AMT Connection Mode: Direct"}
+	case "outside enterprise (cira)":
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkPass, Message: "AMT Connection Mode: CIRA"}
+	case "vpn":
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkPass, Message: "AMT Connection Mode: VPN"}
+	default:
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkUnavailable, Message: "AMT connection mode is unknown: " + status.NetworkStatus}
+	}
+}
+
+func ciraConfigurationCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.CIRAConfigRead {
+		return Check{ID: checkIDCIRA, Name: checkNameCIRA, Status: checkUnavailable, Message: "CIRA configuration could not be read"}
+	}
+
+	if !snapshot.CIRAConfigured {
+		return Check{ID: checkIDCIRA, Name: checkNameCIRA, Status: checkFail, Message: "CIRA mode is active but no MPS and remote-access policy are configured"}
+	}
+
+	return Check{ID: checkIDCIRA, Name: checkNameCIRA, Status: checkPass, Message: "CIRA MPS and remote-access policy are configured"}
+}
+
+func ciraConnectionCheck(status *amt.RemoteAccessStatus) Check {
+	if status == nil {
+		return Check{ID: checkIDCIRAState, Name: checkNameCIRAState, Status: checkUnavailable, Message: "CIRA connection state could not be read"}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(status.RemoteStatus)) {
+	case "connected":
+		return Check{ID: checkIDCIRAState, Name: checkNameCIRAState, Status: checkPass, Message: "CIRA connection is connected"}
+	case "connecting":
+		return Check{ID: checkIDCIRAState, Name: checkNameCIRAState, Status: checkWarn, Message: "CIRA connection is connecting"}
+	case "not connected":
+		return Check{ID: checkIDCIRAState, Name: checkNameCIRAState, Status: checkFail, Message: "CIRA connection is not connected"}
+	default:
+		return Check{ID: checkIDCIRAState, Name: checkNameCIRAState, Status: checkUnavailable, Message: "CIRA connection state is unknown: " + status.RemoteStatus}
+	}
+}
+
+func redirectionCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.RedirectionRead {
+		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkUnavailable, Message: "Redirection service settings could not be read"}
+	}
+
+	state, err := strconv.Atoi(snapshot.RedirectionState)
+
+	message := fmt.Sprintf("redirection listener=%t enabledState=%s", snapshot.RedirectionListenerEnabled, snapshot.RedirectionState)
+	if err != nil {
+		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkUnavailable, Message: message + "; enabled state is unknown"}
+	}
+
+	switch state {
+	case 32769, 32770, 32771:
+		if snapshot.RedirectionListenerEnabled {
+			return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkPass, Message: message}
+		}
+
+		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkFail, Message: message + "; listener is disabled"}
+	case 32768:
+		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkWarn, Message: message + "; SOL and IDER are disabled"}
+	default:
+		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkUnavailable, Message: message + "; enabled state is unknown"}
+	}
+}
+
+func solCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.RedirectionRead {
+		return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkUnavailable, Message: "SOL redirection state could not be read"}
+	}
+
+	state, err := strconv.Atoi(snapshot.RedirectionState)
+	if err != nil {
+		return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkUnavailable, Message: "SOL redirection state is unknown"}
+	}
+
+	switch state {
+	case int(redirection.SOLIsEnabledAndIDERIsDisabled), int(redirection.IDERAndSOLAreEnabled):
+		if !snapshot.RedirectionListenerEnabled {
+			return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkFail, Message: "SOL is configured but the redirection listener is disabled"}
+		}
+
+		return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkPass, Message: "SOL is enabled"}
+	case int(redirection.IDERAndSOLAreDisabled), int(redirection.IDERIsEnabledAndSOLIsDisabled):
+		return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkWarn, Message: "SOL is disabled"}
+	default:
+		return Check{ID: checkIDSOL, Name: checkNameSOL, Status: checkUnavailable, Message: "SOL redirection state is unknown"}
+	}
+}
+
+func userConsentCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.UserConsentRead {
+		return Check{ID: checkIDUserConsent, Name: checkNameUserConsent, Status: checkUnavailable, Message: "KVM user-consent setting could not be read"}
+	}
+
+	consent := strings.TrimSpace(snapshot.UserConsent)
+	if strings.EqualFold(consent, "none") {
+		return Check{ID: checkIDUserConsent, Name: checkNameUserConsent, Status: checkPass, Message: "KVM user consent: none"}
+	}
+
+	if consent == "" {
+		return Check{ID: checkIDUserConsent, Name: checkNameUserConsent, Status: checkUnavailable, Message: "KVM user-consent setting is unknown"}
+	}
+
+	return Check{ID: checkIDUserConsent, Name: checkNameUserConsent, Status: checkWarn, Message: "KVM user consent is required: " + consent}
+}
+
+func tlsModeCheck(mode string, snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.TLSModeRead || strings.TrimSpace(mode) == "" || strings.EqualFold(mode, "unknown") {
+		return Check{ID: checkIDTLS, Name: checkNameTLS, Status: checkUnavailable, Message: "AMT TLS mode could not be read"}
+	}
+
+	if strings.EqualFold(mode, "none") {
+		return Check{ID: checkIDTLS, Name: checkNameTLS, Status: checkWarn, Message: "AMT TLS is disabled"}
+	}
+
+	return Check{ID: checkIDTLS, Name: checkNameTLS, Status: checkPass, Message: "TLS mode: " + mode}
+}
+
+func trustedRootsCheck(mode string, snapshot *commands.PostActivationSnapshot) Check {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "mutual", "mutualandnontls":
+		if snapshot == nil || !snapshot.TrustedRootInventoryRead {
+			return Check{ID: checkIDTrustedRoots, Name: checkNameTrustedRoots, Status: checkUnavailable, Message: "Trusted root certificate inventory could not be read for mutual TLS"}
+		}
+
+		if snapshot.TrustedRootCount == 0 {
+			return Check{ID: checkIDTrustedRoots, Name: checkNameTrustedRoots, Status: checkFail, Message: "Mutual TLS is enabled but no trusted root certificates are installed"}
+		}
+
+		return Check{ID: checkIDTrustedRoots, Name: checkNameTrustedRoots, Status: checkPass, Message: fmt.Sprintf("%d trusted root certificate(s) installed", snapshot.TrustedRootCount)}
+	case "server", "serverandnontls", "none":
+		return Check{ID: checkIDTrustedRoots, Name: checkNameTrustedRoots, Status: checkNotEvaluated, Message: "Trusted root certificates are not required for TLS mode " + mode}
+	default:
+		return Check{ID: checkIDTrustedRoots, Name: checkNameTrustedRoots, Status: checkUnavailable, Message: "Trusted root requirements could not be determined without a TLS mode"}
+	}
+}
+
+func tlsRequiresTrustedRoots(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "mutual", "mutualandnontls":
+		return true
+	default:
+		return false
+	}
+}
+
+func kvmCheck(snapshot *commands.PostActivationSnapshot) Check {
+	if snapshot == nil || !snapshot.KVMRead {
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkUnavailable, Message: "KVM Redirection SAP state could not be read"}
+	}
+
+	switch strings.ToLower(snapshot.KVMState) {
+	case stateEnabled:
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkPass, Message: "KVM is enabled"}
+	case stateDisabled:
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkWarn, Message: "KVM is disabled"}
+	default:
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkUnavailable, Message: "KVM Redirection SAP returned an unknown state"}
+	}
+}
+
+func monitorCheck(connected *bool) Check {
+	if connected == nil {
+		return Check{ID: checkIDMonitor, Name: checkNameMonitor, Status: checkNotEvaluated, Message: "Monitor connection could not be detected on this platform"}
+	}
+
+	if *connected {
+		return Check{ID: checkIDMonitor, Name: checkNameMonitor, Status: checkPass, Message: "Monitor connected"}
+	}
+
+	return Check{ID: checkIDMonitor, Name: checkNameMonitor, Status: checkWarn, Message: "No monitor detected"}
+}
+
+func directHostReachabilityCheck(host, tlsMode string) Check {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return Check{ID: checkIDDirectHost, Name: checkNameDirectHost, Status: checkNotEvaluated, Message: "Direct mode: use --host <console-address> to probe console reachability"}
+	}
+
+	endpoint, err := directHostEndpoint(host, tlsMode)
+	if err != nil {
+		return Check{ID: checkIDDirectHost, Name: checkNameDirectHost, Status: checkWarn, Message: "Invalid console address: " + host}
+	}
+
+	dialer := net.Dialer{Timeout: directHostProbeTimeout}
+
+	connection, err := dialer.DialContext(context.Background(), "tcp", endpoint)
+	if err != nil {
+		return Check{ID: checkIDDirectHost, Name: checkNameDirectHost, Status: checkWarn, Message: "Console endpoint is not reachable: " + err.Error()}
+	}
+
+	_ = connection.Close()
+
+	return Check{ID: checkIDDirectHost, Name: checkNameDirectHost, Status: checkPass, Message: "Console endpoint is reachable at " + endpoint}
+}
+
+func directHostEndpoint(host, tlsMode string) (string, error) {
+	port := "16992"
+	if strings.EqualFold(tlsMode, "Server") || strings.EqualFold(tlsMode, "Mutual") {
+		port = "16993"
+	}
+
+	if strings.Contains(host, "://") {
+		parsed, err := url.Parse(host)
+		if err != nil || parsed.Host == "" {
+			return "", fmt.Errorf("invalid console URL")
+		}
+
+		switch strings.ToLower(parsed.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return "", fmt.Errorf("unsupported console URL scheme %q", parsed.Scheme)
+		}
+
+		host = parsed.Host
+	}
+
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return host, nil
+	}
+
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return "", fmt.Errorf("console host is empty")
+	}
+
+	return net.JoinHostPort(host, port), nil
+}
+
 func collectInfoSnapshot(cmd *StatusCmd, ctx *commands.Context, infoCmd *commands.AmtInfoCmd) *commands.InfoSnapshot {
 	service := commands.NewInfoService(
 		ctx.AMTCommand,
@@ -76,7 +488,12 @@ func collectInfoSnapshot(cmd *StatusCmd, ctx *commands.Context, infoCmd *command
 	)
 	defer service.CloseOwnedWSMANClient()
 
-	return service.GetInfoSnapshot(infoCmd, true)
+	snapshot := service.GetInfoSnapshot(infoCmd, true)
+	if snapshot.PostActivation != nil && snapshot.PostActivation.WSMANStatus == commands.WSMANStatusUnauthorized {
+		cmd.WSMan = nil
+	}
+
+	return snapshot
 }
 
 func preActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Check {
@@ -256,6 +673,7 @@ func networkCheck(info *commands.InfoResult, acm, ccm bool) Check {
 	}
 
 	wiredUp := info.WiredAdapter != nil && strings.EqualFold(info.WiredAdapter.LinkStatus, statusLinkUp)
+
 	wirelessUp := info.WirelessAdapter != nil && strings.EqualFold(info.WirelessAdapter.LinkStatus, statusLinkUp)
 
 	if acm {
@@ -275,6 +693,25 @@ func networkCheck(info *commands.InfoResult, acm, ccm bool) Check {
 	}
 
 	return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkWarn, Message: "No AMT network link detected; CCM can still proceed locally"}
+}
+
+func postActivationNetworkCheck(info *commands.InfoResult) Check {
+	if info == nil || (info.WiredAdapter == nil && info.WirelessAdapter == nil) {
+		return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkUnavailable, Message: "AMT network settings were not collected"}
+	}
+
+	wiredUp := info.WiredAdapter != nil && strings.EqualFold(info.WiredAdapter.LinkStatus, statusLinkUp)
+	wirelessUp := info.WirelessAdapter != nil && strings.EqualFold(info.WirelessAdapter.LinkStatus, statusLinkUp)
+
+	if wiredUp || wirelessUp {
+		return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkPass, Message: "AMT network link is available for remote management"}
+	}
+
+	if info.WiredAdapter != nil && info.WirelessAdapter != nil {
+		return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkFail, Message: "No AMT network link is available for remote management"}
+	}
+
+	return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkUnavailable, Message: "Not all AMT network links could be checked"}
 }
 
 func lmsCheck(localTLSEnforced bool) Check {
