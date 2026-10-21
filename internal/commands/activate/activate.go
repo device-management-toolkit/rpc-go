@@ -61,6 +61,10 @@ type ActivateCmd struct {
 	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+
+	// Executable is the rpc binary that runs each profile step. Only library
+	// callers set it; empty runs the current executable, which is rpc in the CLI.
+	Executable string `kong:"-"`
 }
 
 // AfterApply prints CLI credential warnings and runs the embedded AMT setup hook.
@@ -406,6 +410,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
@@ -696,6 +701,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
