@@ -271,44 +271,14 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
-	service := NewInfoService(
-		ctx.AMTCommand,
-		WithJSONOutput(ctx.JsonOutput),
-		WithPassword(ctx.AMTPassword),
-		WithLocalTLSEnforced(cmd.LocalTLSEnforced),
-		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
-		WithWSMANClient(cmd.GetWSManClient()),
-		WithHECIAvailable(cmd.HECIAvailable),
-	)
-
-	// If syncing, ensure we collect full device info regardless of selective flags
-	effectiveCmd := cmd
-	if cmd.Sync {
-		copied := *cmd
-		copied.All = true
-		effectiveCmd = &copied
-	}
-
-	result, err := service.GetAMTInfo(effectiveCmd)
-	if err != nil {
+	service, result, err := cmd.readInfo(ctx)
+	if result == nil {
 		return err
 	}
 
-	// If requested, sync device info to remote server
-	var syncPermErr error
-
-	if cmd.Sync {
-		discovered := true
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			// A permissions failure still shows what was gathered before elevation is offered.
-			var customErr utils.CustomError
-			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
-				return fmt.Errorf("device sync failed: %w", err)
-			}
-
-			syncPermErr = err
-		}
-	}
+	// A permissions failure still shows what was gathered before elevation is
+	// offered: readInfo returns it with the result, and Run returns it last.
+	syncPermErr := err
 
 	if ctx.JsonOutput {
 		if err := service.OutputJSON(os.Stdout, result); err != nil {
@@ -333,6 +303,80 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	// Signal to Execute() that elevation would unlock more data
+	return cmd.elevationErr()
+}
+
+// Collect returns the information Run prints, without printing it, for
+// callers that use amtinfo as a library. Like Run, it syncs the information
+// to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
+// client before returning, so a long-lived process can call it again. That
+// client is the command's own (cmd.WSMan) if one is set, even if the read did
+// not use it, and otherwise the one the read opened, if any. It returns the
+// result together with the error Run returns after printing: the sync's
+// permissions failure when the sync failed for lack of elevation, otherwise
+// utils.IncorrectPermissions when HECI is unavailable because the process is
+// not elevated.
+func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
+	service, result, err := cmd.readInfo(ctx)
+	defer service.closeWSMAN()
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, cmd.elevationErr()
+}
+
+// readInfo reads the AMT information and, when Sync is set, syncs it to the
+// devices API. The returned service holds any WSMAN client the read opened.
+// The result is nil when the read or the sync failed, except when the sync
+// failed for lack of elevation (a utils.CustomError with the
+// IncorrectPermissions code): then readInfo returns the result together with
+// that error, so the caller can report what was read before the error.
+func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error) {
+	service := NewInfoService(
+		ctx.AMTCommand,
+		WithJSONOutput(ctx.JsonOutput),
+		WithPassword(ctx.AMTPassword),
+		WithLocalTLSEnforced(cmd.LocalTLSEnforced),
+		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
+		WithWSMANClient(cmd.GetWSManClient()),
+		WithHECIAvailable(cmd.HECIAvailable),
+	)
+
+	// If syncing, ensure we collect full device info regardless of selective flags
+	effectiveCmd := cmd
+	if cmd.Sync {
+		copied := *cmd
+		copied.All = true
+		effectiveCmd = &copied
+	}
+
+	result, err := service.GetAMTInfo(effectiveCmd)
+	if err != nil {
+		return service, nil, err
+	}
+
+	// If requested, sync device info to remote server
+	if cmd.Sync {
+		discovered := true
+		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
+			// A permissions failure still shows what was gathered before elevation is offered.
+			var customErr utils.CustomError
+			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
+				return service, nil, fmt.Errorf("device sync failed: %w", err)
+			}
+
+			return service, result, err
+		}
+	}
+
+	return service, result, nil
+}
+
+// elevationErr returns utils.IncorrectPermissions when HECI is unavailable
+// because the process is not elevated: elevation would unlock more data.
+func (cmd *AmtInfoCmd) elevationErr() error {
 	if !cmd.HECIAvailable && !isElevated() {
 		return utils.IncorrectPermissions
 	}
@@ -2363,6 +2407,22 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	s.wsman = wsmanClient
 
 	return nil
+}
+
+// closeWSMAN closes the service's WSMAN client, if any, and releases it. Run
+// leaves the client to process exit, but over LME a held connection keeps
+// the MEI device open, and the next call in the same process would fail with
+// "device busy". A close failure is only logged.
+func (s *InfoService) closeWSMAN() {
+	if s.wsman == nil {
+		return
+	}
+
+	if err := s.wsman.Close(); err != nil {
+		log.Debugf("closing WSMAN client: %v", err)
+	}
+
+	s.wsman = nil
 }
 
 // getUserCertificates retrieves public key certificates via WSMAN
