@@ -7,6 +7,7 @@ package amtinfo
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -170,19 +171,65 @@ func TestSync_ValidOptionsReadAndSync(t *testing.T) {
 
 	result, err := Sync(SyncOptions{URL: server.URL + "/api/v1/devices", AuthToken: "token", TenantID: "tenant-1"})
 
-	// Without HECI the UUID comes from SMBIOS, which Linux exposes only to root:
-	// the sync then fails before it sends anything. Where SMBIOS is readable,
-	// as on windows runners, the device syncs to the local server.
-	if err != nil && !errors.Is(err, utils.IncorrectPermissions) {
+	// Without HECI the UUID comes from SMBIOS, which Linux exposes only to root.
+	// Where SMBIOS is readable, as on windows runners, the device syncs to the
+	// local server.
+	switch {
+	case patches > 0:
+		requireRead(t, result, err)
+		assert.Equal(t, 1, patches)
+	case result == nil:
+		// Elevated without a usable UUID: the sync fails before it sends anything.
 		require.ErrorContains(t, err, "device sync failed: cannot sync:")
-		assert.Nil(t, result)
-		assert.Zero(t, patches)
+	default:
+		// Not elevated without a UUID: the sync needs elevation, so Sync returns
+		// what it read with an IncorrectPermissions error that says why.
+		require.ErrorIs(t, err, utils.IncorrectPermissions)
+		require.ErrorContains(t, err, "cannot sync: device UUID unavailable")
+		require.NotNil(t, result.HECIAvailable)
+	}
+}
 
-		return
+func TestMatchPermissions(t *testing.T) {
+	detailed := utils.IncorrectPermissions
+	detailed.Details = "cannot sync: device UUID unavailable"
+
+	errOther := errors.New("other failure")
+	wrapped := fmt.Errorf("device sync failed: %w", utils.IncorrectPermissions)
+
+	tests := []struct {
+		name    string
+		err     error
+		wantIs  bool
+		wantErr error // nil: expect a new error rather than err itself
+		wantMsg string
+	}{
+		{name: "nil", err: nil},
+		{name: "IncorrectPermissions as is", err: utils.IncorrectPermissions, wantIs: true, wantErr: utils.IncorrectPermissions},
+		{name: "wrapped IncorrectPermissions", err: wrapped, wantIs: true, wantErr: wrapped},
+		{name: "IncorrectPermissions with details", err: detailed, wantIs: true, wantMsg: "cannot sync: device UUID unavailable"},
+		{name: "another code", err: utils.HECIDriverNotDetected, wantErr: utils.HECIDriverNotDetected},
+		{name: "not a CustomError", err: errOther, wantErr: errOther},
 	}
 
-	requireRead(t, result, err)
-	assert.Equal(t, 1, patches)
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchPermissions(tt.err)
+
+			assert.Equal(t, tt.wantIs, errors.Is(got, utils.IncorrectPermissions))
+
+			switch {
+			case tt.err == nil:
+				assert.NoError(t, got)
+			case tt.wantErr != nil:
+				assert.Equal(t, tt.wantErr, got)
+			default:
+				assert.ErrorContains(t, got, tt.wantMsg)
+			}
+		})
+	}
 }
 
 func TestNewCommand_MapsOptions(t *testing.T) {

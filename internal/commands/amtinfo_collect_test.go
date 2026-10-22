@@ -217,9 +217,13 @@ func TestAmtInfoCmd_Collect_ClosesWSMANClient(t *testing.T) {
 	tests := []struct {
 		name     string
 		cmd      AmtInfoCmd
+		elevated bool
 		expect   func(*mock.MockInterface, *mock.MockWSMANer)
 		closeErr error
 		wantErr  string
+		// wantPermErr: the sync needed elevation, so the result comes back with
+		// the sync's IncorrectPermissions error instead of a failure.
+		wantPermErr bool
 	}{
 		{
 			name:   "after a read",
@@ -227,13 +231,23 @@ func TestAmtInfoCmd_Collect_ClosesWSMANClient(t *testing.T) {
 			expect: readProxy,
 		},
 		{
-			name: "after a failed sync",
-			cmd:  AmtInfoCmd{Sync: true, URL: "https://console.example.com/api/v1/devices"},
+			name:     "after a failed sync",
+			cmd:      AmtInfoCmd{Sync: true, URL: "https://console.example.com/api/v1/devices"},
+			elevated: true,
 			expect: func(mockAMT *mock.MockInterface, _ *mock.MockWSMANer) {
 				mockAMT.EXPECT().GetUPID().Return(nil, nil).AnyTimes()
 				mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil).AnyTimes()
 			},
 			wantErr: "device sync failed: cannot sync: device UUID unavailable",
+		},
+		{
+			name: "after a sync that needs elevation",
+			cmd:  AmtInfoCmd{Sync: true, URL: "https://console.example.com/api/v1/devices"},
+			expect: func(mockAMT *mock.MockInterface, _ *mock.MockWSMANer) {
+				mockAMT.EXPECT().GetUPID().Return(nil, nil).AnyTimes()
+				mockAMT.EXPECT().GetOSDNSSuffix().Return("", nil).AnyTimes()
+			},
+			wantPermErr: true,
 		},
 		{
 			name:     "ignoring a close failure",
@@ -247,6 +261,11 @@ func TestAmtInfoCmd_Collect_ClosesWSMANClient(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.name, func(t *testing.T) {
+			origIsElevated := isElevated
+			defer func() { isElevated = origIsElevated }()
+
+			isElevated = func() bool { return tt.elevated }
+
 			ctrl := gomock.NewController(t)
 			mockAMT := mock.NewMockInterface(ctrl)
 			mockWSMAN := mock.NewMockWSMANer(ctrl)
@@ -264,6 +283,17 @@ func TestAmtInfoCmd_Collect_ClosesWSMANClient(t *testing.T) {
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				assert.Nil(t, result)
+
+				return
+			}
+
+			if tt.wantPermErr {
+				var customErr utils.CustomError
+
+				require.ErrorAs(t, err, &customErr)
+				assert.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+				assert.Equal(t, ErrSyncUUIDUnavailable.Error(), customErr.Details)
+				require.NotNil(t, result)
 
 				return
 			}

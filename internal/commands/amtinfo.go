@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -55,6 +56,8 @@ const (
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
 )
+
+var ErrSyncUUIDUnavailable = errors.New("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
 
 // Indent constant for consistent text output spacing.
 const infoIndent = "  "
@@ -269,12 +272,20 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
 	service, result, err := cmd.readInfo(ctx)
-	if err != nil {
+	if result == nil {
 		return err
 	}
 
+	// A permissions failure still shows what was gathered before elevation is
+	// offered: readInfo returns it with the result, and Run returns it last.
+	syncPermErr := err
+
 	if ctx.JsonOutput {
-		return service.OutputJSON(os.Stdout, result)
+		if err := service.OutputJSON(os.Stdout, result); err != nil {
+			return err
+		}
+
+		return syncPermErr
 	}
 
 	if ctx.TableOutput {
@@ -287,6 +298,10 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 		}
 	}
 
+	if syncPermErr != nil {
+		return syncPermErr
+	}
+
 	// Signal to Execute() that elevation would unlock more data
 	return cmd.elevationErr()
 }
@@ -296,16 +311,17 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 // to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
 // client before returning, so a long-lived process can call it again. That
 // client is the command's own (cmd.WSMan) if one is set, even if the read did
-// not use it, and otherwise the one the read opened, if any. When HECI is
-// unavailable because the process is not elevated, it returns the result
-// together with utils.IncorrectPermissions, the error Run returns after
-// printing.
+// not use it, and otherwise the one the read opened, if any. It returns the
+// result together with the error Run returns after printing: the sync's
+// permissions failure when the sync failed for lack of elevation, otherwise
+// utils.IncorrectPermissions when HECI is unavailable because the process is
+// not elevated.
 func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
 	service, result, err := cmd.readInfo(ctx)
 	defer service.closeWSMAN()
 
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
 	return result, cmd.elevationErr()
@@ -313,6 +329,10 @@ func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
 
 // readInfo reads the AMT information and, when Sync is set, syncs it to the
 // devices API. The returned service holds any WSMAN client the read opened.
+// The result is nil when the read or the sync failed, except when the sync
+// failed for lack of elevation (a utils.CustomError with the
+// IncorrectPermissions code): then readInfo returns the result together with
+// that error, so the caller can report what was read before the error.
 func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error) {
 	service := NewInfoService(
 		ctx.AMTCommand,
@@ -341,7 +361,13 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error)
 	if cmd.Sync {
 		discovered := true
 		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			return service, nil, fmt.Errorf("device sync failed: %w", err)
+			// A permissions failure still shows what was gathered before elevation is offered.
+			var customErr utils.CustomError
+			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
+				return service, nil, fmt.Errorf("device sync failed: %w", err)
+			}
+
+			return service, result, err
 		}
 	}
 
@@ -563,7 +589,16 @@ type syncMEInterface struct {
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
-		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
+		// Both sources need root on most Linux systems, so report it as a permissions
+		// failure and let cli.Execute offer to elevate.
+		if !isElevated() {
+			permErr := utils.IncorrectPermissions
+			permErr.Details = ErrSyncUUIDUnavailable.Error()
+
+			return permErr
+		}
+
+		return ErrSyncUUIDUnavailable
 	}
 
 	if utils.IsKnownInvalidUUID(result.UUID) {

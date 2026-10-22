@@ -9,8 +9,12 @@
 package amtinfo
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
 // Result is the AMT information read by Get or Sync. It marshals to the same
@@ -126,12 +130,16 @@ func Get(opts Options) (*Result, error) {
 // updates the device record with a PATCH; if Console has no record for the
 // device, it registers the device as discovered and updates it again.
 //
-// Invalid options are rejected with the CLI's messages before AMT is read. If
-// the sync fails, Sync returns a nil Result and an error starting with
-// "device sync failed". Without HECI, Sync syncs what it could read and
-// returns it as Get does, with an error matching utils.IncorrectPermissions
-// when the process is not elevated. The sync needs the device UUID, which
-// without HECI comes from SMBIOS (readable only by root on Linux).
+// Invalid options are rejected with the CLI's messages before AMT is read.
+// The sync needs the device UUID, which without HECI comes from SMBIOS
+// (readable only by root on Linux). When the process is not elevated and no
+// UUID can be read, Sync returns what it read with an error matching
+// utils.IncorrectPermissions (use errors.Is) that says why, as the CLI prints
+// what it gathered before it offers elevation. If the sync fails for any
+// other reason, Sync returns a nil Result and an error starting with
+// "device sync failed". After a successful sync without HECI, Sync returns
+// the result as Get does, with an error matching utils.IncorrectPermissions
+// when the process is not elevated.
 func Sync(opts SyncOptions) (*Result, error) {
 	cmd, ctx := newSyncCommand(opts)
 
@@ -164,7 +172,23 @@ func run(cmd *commands.AmtInfoCmd, ctx *commands.Context) (*Result, error) {
 
 	ctx.AMTCommand = &amtCommand
 
-	return cmd.Collect(ctx)
+	result, err := cmd.Collect(ctx)
+
+	return result, matchPermissions(err)
+}
+
+// matchPermissions makes errors.Is match err against
+// utils.IncorrectPermissions whenever err carries its code. A sync that needs
+// elevation fails with a copy of utils.IncorrectPermissions whose Details say
+// why, and errors.Is would compare the Details too.
+func matchPermissions(err error) error {
+	var customErr utils.CustomError
+	if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code ||
+		errors.Is(err, utils.IncorrectPermissions) {
+		return err
+	}
+
+	return fmt.Errorf("%w: %s", utils.IncorrectPermissions, customErr.Details)
 }
 
 // newCommand builds the amtinfo command and its context from opts.
