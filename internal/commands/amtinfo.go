@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -55,6 +56,8 @@ const (
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
 )
+
+var ErrSyncUUIDUnavailable = errors.New("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
 
 // Indent constant for consistent text output spacing.
 const infoIndent = "  "
@@ -292,15 +295,27 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	}
 
 	// If requested, sync device info to remote server
+	var syncPermErr error
+
 	if cmd.Sync {
 		discovered := true
 		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			return fmt.Errorf("device sync failed: %w", err)
+			// A permissions failure still shows what was gathered before elevation is offered.
+			var customErr utils.CustomError
+			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
+				return fmt.Errorf("device sync failed: %w", err)
+			}
+
+			syncPermErr = err
 		}
 	}
 
 	if ctx.JsonOutput {
-		return service.OutputJSON(os.Stdout, result)
+		if err := service.OutputJSON(os.Stdout, result); err != nil {
+			return err
+		}
+
+		return syncPermErr
 	}
 
 	if ctx.TableOutput {
@@ -311,6 +326,10 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
 			return err
 		}
+	}
+
+	if syncPermErr != nil {
+		return syncPermErr
 	}
 
 	// Signal to Execute() that elevation would unlock more data
@@ -526,7 +545,16 @@ type syncMEInterface struct {
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
-		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
+		// Both sources need root on most Linux systems, so report it as a permissions
+		// failure and let cli.Execute offer to elevate.
+		if !isElevated() {
+			permErr := utils.IncorrectPermissions
+			permErr.Details = ErrSyncUUIDUnavailable.Error()
+
+			return permErr
+		}
+
+		return ErrSyncUUIDUnavailable
 	}
 
 	if utils.IsKnownInvalidUUID(result.UUID) {
