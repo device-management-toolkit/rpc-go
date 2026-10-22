@@ -182,32 +182,43 @@ func TestSync_ValidOptionsReadAndSync(t *testing.T) {
 		// Elevated without a usable UUID: the sync fails before it sends anything.
 		require.ErrorContains(t, err, "device sync failed: cannot sync:")
 	default:
-		// Not elevated without a UUID: the sync needs elevation, so Sync returns
-		// what it read with an IncorrectPermissions error that says why.
+		// Not elevated without a UUID: the sync needs elevation, so Sync sends
+		// nothing and returns what it read with an error that says why.
 		require.ErrorIs(t, err, utils.IncorrectPermissions)
-		require.ErrorContains(t, err, "cannot sync: device UUID unavailable")
+		require.ErrorIs(t, err, ErrSyncUUIDUnavailable)
 		require.NotNil(t, result.HECIAvailable)
 	}
 }
 
 func TestMatchPermissions(t *testing.T) {
-	detailed := utils.IncorrectPermissions
-	detailed.Details = "cannot sync: device UUID unavailable"
+	noUUID := utils.IncorrectPermissions
+	noUUID.Details = ErrSyncUUIDUnavailable.Error()
+
+	otherDetails := utils.IncorrectPermissions
+	otherDetails.Details = "some other reason"
 
 	errOther := errors.New("other failure")
 	wrapped := fmt.Errorf("device sync failed: %w", utils.IncorrectPermissions)
+	elevatedNoUUID := fmt.Errorf("device sync failed: %w", ErrSyncUUIDUnavailable)
 
 	tests := []struct {
-		name    string
-		err     error
-		wantIs  bool
-		wantErr error // nil: expect a new error rather than err itself
-		wantMsg string
+		name     string
+		err      error
+		wantIs   bool
+		wantUUID bool  // the error also matches ErrSyncUUIDUnavailable
+		wantErr  error // nil: expect a new error rather than err itself
+		wantMsg  string
 	}{
 		{name: "nil", err: nil},
 		{name: "IncorrectPermissions as is", err: utils.IncorrectPermissions, wantIs: true, wantErr: utils.IncorrectPermissions},
 		{name: "wrapped IncorrectPermissions", err: wrapped, wantIs: true, wantErr: wrapped},
-		{name: "IncorrectPermissions with details", err: detailed, wantIs: true, wantMsg: "cannot sync: device UUID unavailable"},
+		{
+			name: "sync without a UUID", err: noUUID, wantIs: true, wantUUID: true,
+			wantMsg: utils.IncorrectPermissions.Error() + ": " + ErrSyncUUIDUnavailable.Error(),
+		},
+		// Elevated without a UUID: a sync failure, not a permissions error.
+		{name: "elevated sync without a UUID", err: elevatedNoUUID, wantUUID: true, wantErr: elevatedNoUUID},
+		{name: "IncorrectPermissions with other details", err: otherDetails, wantIs: true, wantMsg: "some other reason"},
 		{name: "another code", err: utils.HECIDriverNotDetected, wantErr: utils.HECIDriverNotDetected},
 		{name: "not a CustomError", err: errOther, wantErr: errOther},
 	}
@@ -219,6 +230,7 @@ func TestMatchPermissions(t *testing.T) {
 			got := matchPermissions(tt.err)
 
 			assert.Equal(t, tt.wantIs, errors.Is(got, utils.IncorrectPermissions))
+			assert.Equal(t, tt.wantUUID, errors.Is(got, ErrSyncUUIDUnavailable))
 
 			switch {
 			case tt.err == nil:
