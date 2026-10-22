@@ -49,6 +49,13 @@ func (cmd *CIRACmd) Validate() error {
 		return fmt.Errorf("invalid MPS address format: %w", err)
 	}
 
+	// Kong enforces this on the CLI; repeat it for callers that bypass Kong.
+	// Run clears the existing CIRA configuration before installing the cert, so an
+	// empty cert must be rejected here or a working CIRA setup is removed.
+	if strings.TrimSpace(cmd.MPSCert) == "" {
+		return ErrMPSCertRequired
+	}
+
 	// 2. Now call base validation (may prompt for AMT password). This happens only after critical args present.
 	if err := cmd.ConfigureBaseCmd.Validate(); err != nil {
 		return err
