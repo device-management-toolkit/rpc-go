@@ -26,6 +26,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/muesli/termenv"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -974,6 +975,167 @@ func TestInfoService_GetAMTInfo_UUIDFallbackSMBIOSUnavailable(t *testing.T) {
 
 	assert.NotNil(t, result.HECIAvailable)
 	assert.False(t, *result.HECIAvailable)
+	assert.Equal(t, []string{"SMBIOS UUID not available: not available"}, result.Warnings)
+}
+
+func TestAmtInfoCmd_DiagnosticWarnings(t *testing.T) {
+	stubElevated(t, true)
+
+	orig := getSMBIOSSystemUUID
+
+	t.Cleanup(func() { getSMBIOSSystemUUID = orig })
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "", errors.New("permission denied")
+	}
+
+	for _, tt := range []struct {
+		name    string
+		json    bool
+		table   bool
+		collect bool
+		cli     bool
+	}{
+		{name: "text", cli: true},
+		{name: "table", table: true, cli: true},
+		{name: "json", json: true},
+		{name: "library", collect: true},
+		{name: "c-shared"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+
+			t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(hooks) })
+
+			hook := logtest.NewGlobal()
+			level := logrus.GetLevel()
+
+			logrus.SetLevel(logrus.WarnLevel)
+			t.Cleanup(func() { logrus.SetLevel(level) })
+
+			cmd := &AmtInfoCmd{UUID: true}
+			ctx := &Context{
+				JsonOutput:     tt.json,
+				TableOutput:    tt.table,
+				RenderWarnings: tt.cli && !tt.json,
+			}
+
+			const warning = "SMBIOS UUID not available: permission denied"
+
+			output := captureStdout(t, func() {
+				if tt.collect {
+					result, err := cmd.Collect(ctx)
+					require.NoError(t, err)
+					assert.Equal(t, []string{warning}, result.Warnings)
+				} else {
+					require.NoError(t, cmd.Run(ctx))
+				}
+			})
+
+			entries := hook.AllEntries()
+			smbiosEntries := 0
+			heciEntries := 0
+
+			for _, entry := range entries {
+				assert.Equal(t, logrus.WarnLevel, entry.Level)
+
+				switch entry.Message {
+				case warning:
+					smbiosEntries++
+				case "HECI not available, AMT data will be limited":
+					heciEntries++
+				}
+			}
+
+			if tt.json || tt.collect || !tt.cli {
+				assert.Equal(t, 1, smbiosEntries)
+				assert.Equal(t, 1, heciEntries)
+			} else {
+				assert.Zero(t, smbiosEntries, "human-readable diagnostics should not also be logged")
+				assert.Zero(t, heciEntries, "human-readable banners should not also be logged")
+			}
+
+			switch {
+			case tt.json:
+				assert.JSONEq(t, `{"heciAvailable":false}`, output)
+			case tt.collect:
+				assert.Empty(t, output)
+			case !tt.cli:
+				assert.NotContains(t, output, warning, "library calls should preserve Logrus output instead of rendering diagnostics")
+			default:
+				assert.Equal(t, 1, strings.Count(output, warning))
+			}
+		})
+	}
+}
+
+func TestInfoService_OutputWarnings(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+
+	const warning = "SMBIOS UUID not available: permission denied"
+
+	for _, color := range []bool{false, true} {
+		for _, tableOutput := range []bool{false, true} {
+			for _, state := range []struct {
+				name          string
+				heciAvailable bool
+				elevated      bool
+				banner        string
+			}{
+				{name: "unprivileged", banner: "Not running as administrator"},
+				{name: "missing HECI", elevated: true, banner: "MEI/HECI driver not detected"},
+				{name: "HECI available", elevated: true, heciAvailable: true},
+			} {
+				t.Run(fmt.Sprintf("color=%t/table=%t/%s", color, tableOutput, state.name), func(t *testing.T) {
+					stubElevated(t, state.elevated)
+
+					if color {
+						lipgloss.SetColorProfile(termenv.ANSI256)
+					} else {
+						lipgloss.SetColorProfile(termenv.Ascii)
+					}
+
+					service := NewInfoService(nil, WithHECIAvailable(state.heciAvailable))
+					service.deferWarnings = true
+					result := &InfoResult{Warnings: []string{warning}, HostnameOS: "test-host"}
+					cmd := &AmtInfoCmd{Hostname: true}
+
+					var output bytes.Buffer
+
+					var err error
+					if tableOutput {
+						err = service.OutputTable(&output, result, cmd)
+					} else {
+						err = service.OutputText(&output, result, cmd)
+					}
+
+					require.NoError(t, err)
+
+					text := output.String()
+					assert.Equal(t, 1, strings.Count(text, warning))
+					assert.Contains(t, text, infoIndent+infoYellowStyle.Render(warning))
+					assert.Contains(t, text, "test-host")
+					assert.NotContains(t, text, "level=warning")
+					assert.NotContains(t, text, "HECI not available, AMT data will be limited")
+
+					if state.banner != "" {
+						assert.Equal(t, 1, strings.Count(text, state.banner))
+					} else {
+						assert.NotContains(t, text, "Not running as administrator")
+						assert.NotContains(t, text, "MEI/HECI driver not detected")
+					}
+
+					if color {
+						assert.Contains(t, text, "\x1b[")
+					} else {
+						assert.NotContains(t, text, "\x1b")
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestInfoService_OutputJSON(t *testing.T) {
@@ -982,6 +1144,7 @@ func TestInfoService_OutputJSON(t *testing.T) {
 		AMT:         "16.1.25",
 		BuildNumber: "3425",
 		SKU:         "16392",
+		Warnings:    []string{"SMBIOS UUID not available: permission denied"},
 	}
 
 	var buf bytes.Buffer
@@ -995,6 +1158,8 @@ func TestInfoService_OutputJSON(t *testing.T) {
 	assert.Equal(t, result.AMT, parsed.AMT)
 	assert.Equal(t, result.BuildNumber, parsed.BuildNumber)
 	assert.Equal(t, result.SKU, parsed.SKU)
+	assert.Empty(t, parsed.Warnings)
+	assert.NotContains(t, buf.String(), "SMBIOS")
 }
 
 func TestInfoService_OutputJSON_Error(t *testing.T) {
@@ -2096,6 +2261,43 @@ func TestAmtInfoCmd_Run_WithSync_SMBIOSUUID_NotElevated_JSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, uuid, gotBody.GUID)
 	assert.JSONEq(t, `{"status":"updated","uuid":"`+uuid+`"}`, string(out))
+}
+
+func TestAmtInfoCmd_Run_SyncFailureLogsDeferredWarnings(t *testing.T) {
+	stubElevated(t, true)
+
+	origSMBIOS := getSMBIOSSystemUUID
+
+	t.Cleanup(func() { getSMBIOSSystemUUID = origSMBIOS })
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "", errors.New("permission denied")
+	}
+
+	hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+
+	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(hooks) })
+
+	hook := logtest.NewGlobal()
+
+	mockAMT := mock.NewMockInterface(gomock.NewController(t))
+	mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI unavailable"))
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+
+	cmd := &AmtInfoCmd{
+		AMTBaseCmd: AMTBaseCmd{HECIAvailable: false},
+		Sync:       true,
+		URL:        "https://console.example.com/api/v1/devices",
+	}
+	err := cmd.Run(&Context{
+		AMTCommand:     mockAMT,
+		RenderWarnings: true,
+	})
+
+	require.ErrorContains(t, err, "cannot sync: device UUID unavailable")
+	require.NotNil(t, hook.LastEntry())
+	assert.Equal(t, logrus.WarnLevel, hook.LastEntry().Level)
+	assert.Equal(t, "SMBIOS UUID not available: permission denied", hook.LastEntry().Message)
 }
 
 func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
