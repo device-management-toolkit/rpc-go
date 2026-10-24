@@ -44,7 +44,11 @@ func (mpr *MockPasswordReaderFail) ReadPasswordWithConfirmation(prompt, confirmP
 }
 
 // Mock the AMT Hardware
-type MockAMT struct{}
+// MockAMT embeds upid.TEPInterface only to satisfy amt.Interface; TEP commands
+// are unused here and panic if called.
+type MockAMT struct {
+	upid.TEPInterface
+}
 
 var (
 	mebxDNSSuffix string
