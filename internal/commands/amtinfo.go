@@ -271,7 +271,7 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
-	service, result, err := cmd.readInfo(ctx)
+	service, result, err := cmd.readInfo(ctx, !ctx.JsonOutput)
 	if result == nil {
 		return err
 	}
@@ -315,9 +315,9 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 // result together with the error Run returns after printing: the sync's
 // permissions failure when the sync failed for lack of elevation, otherwise
 // utils.IncorrectPermissions when HECI is unavailable because the process is
-// not elevated.
+// not elevated. Non-fatal diagnostic warnings are returned in InfoResult.Warnings.
 func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
-	service, result, err := cmd.readInfo(ctx)
+	service, result, err := cmd.readInfo(ctx, false)
 	defer service.closeWSMAN()
 
 	if err != nil {
@@ -333,7 +333,8 @@ func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
 // failed for lack of elevation (a utils.CustomError with the
 // IncorrectPermissions code): then readInfo returns the result together with
 // that error, so the caller can report what was read before the error.
-func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error) {
+// deferWarnings leaves diagnostics for human-readable output instead of logging them.
+func (cmd *AmtInfoCmd) readInfo(ctx *Context, deferWarnings bool) (*InfoService, *InfoResult, error) {
 	service := NewInfoService(
 		ctx.AMTCommand,
 		WithJSONOutput(ctx.JsonOutput),
@@ -343,6 +344,7 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error)
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
 	)
+	service.deferWarnings = deferWarnings
 
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
@@ -405,6 +407,8 @@ type InfoResult struct {
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
+	// Warnings holds non-fatal diagnostics, omitted from JSON output.
+	Warnings []string `json:"-"`
 }
 
 // UserCert represents a user certificate
@@ -433,6 +437,8 @@ type InfoService struct {
 	skipAMTCertCheck bool
 	wsman            interfaces.WSMANer
 	heciAvailable    bool
+	// deferWarnings lets human-readable CLI output render diagnostics instead of logging them.
+	deferWarnings bool
 	// autoRegister controls whether a sync that 404s creates the device.
 	autoRegister bool
 }
@@ -1343,7 +1349,12 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		if result.UUID == "" {
 			uuid, err := getSMBIOSSystemUUID()
 			if err != nil {
-				log.Warn("SMBIOS UUID not available:", err)
+				warning := fmt.Sprintf("SMBIOS UUID not available: %v", err)
+				result.Warnings = append(result.Warnings, warning)
+
+				if !s.deferWarnings {
+					log.Warn(warning)
+				}
 			} else {
 				result.UUID = uuid
 			}
@@ -1572,21 +1583,8 @@ var (
 func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoCmd) error {
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
-	if !s.heciAvailable {
-		fmt.Fprintln(w)
-
-		if !isElevated() {
-			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
-				"Not running as administrator \u2014 AMT data unavailable",
-			))
-			fmt.Fprintln(w, infoIndent+infoDimStyle.Render(
-				"Showing OS-level information only",
-			))
-		} else {
-			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
-				"MEI/HECI driver not detected \u2014 AMT may not be available on this device",
-			))
-		}
+	if _, err := fmt.Fprint(w, s.renderWarnings(result)); err != nil {
+		return err
 	}
 
 	type row struct {
@@ -1828,10 +1826,7 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 	return nil
 }
 
-// OutputText outputs the result in styled human-readable text format
-func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCmd) error {
-	showAll := cmd.All || cmd.HasNoFlagsSet()
-
+func (s *InfoService) renderWarnings(result *InfoResult) string {
 	var b strings.Builder
 
 	if !s.heciAvailable {
@@ -1848,6 +1843,25 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 			) + "\n")
 		}
 	}
+
+	for _, warning := range result.Warnings {
+		if b.Len() == 0 {
+			b.WriteString("\n")
+		}
+
+		b.WriteString(infoIndent + infoYellowStyle.Render(warning) + "\n")
+	}
+
+	return b.String()
+}
+
+// OutputText outputs the result in styled human-readable text format
+func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCmd) error {
+	showAll := cmd.All || cmd.HasNoFlagsSet()
+
+	var b strings.Builder
+
+	b.WriteString(s.renderWarnings(result))
 
 	// Build unboxed sections first; they're the default output.
 	deviceSec := buildDeviceSection(result, cmd, showAll, false)

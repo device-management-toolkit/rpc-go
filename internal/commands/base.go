@@ -193,7 +193,7 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 	if err != nil {
 		// For commands that tolerate missing HECI (e.g. amtinfo), degrade gracefully
 		if cmd.SkipWSMANSetup {
-			log.Warn("HECI not available, AMT data will be limited")
+			log.Debugf("HECI not available, AMT data will be limited: %v", err)
 
 			cmd.ControlMode = -1
 			cmd.afterApplied = true
