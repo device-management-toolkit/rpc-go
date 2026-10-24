@@ -14,13 +14,16 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/amterror"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
@@ -663,6 +666,33 @@ func TestNewInfoService_WithOptions(t *testing.T) {
 	assert.True(t, service.localTLSEnforced)
 	assert.True(t, service.skipAMTCertCheck)
 	assert.False(t, service.heciAvailable)
+}
+
+func TestInfoServiceClosesOnlyOwnedWSMANClients(t *testing.T) {
+	t.Run("service-created client is closed once", func(t *testing.T) {
+		originalFactory := newInfoServiceWSMANClient
+		ctrl := gomock.NewController(t)
+		wsman := mock.NewMockWSMANer(ctrl)
+		newInfoServiceWSMANClient = func() interfaces.WSMANer { return wsman }
+
+		t.Cleanup(func() { newInfoServiceWSMANClient = originalFactory })
+
+		wsman.EXPECT().SetupWsmanClient("admin", "testpassword", false, gomock.Any(), gomock.Any()).Return(nil)
+		wsman.EXPECT().Close().Return(nil).Times(1)
+
+		service := NewInfoService(nil, WithPassword("testpassword"))
+		require.NoError(t, service.ensureWSMANClient(1))
+		service.CloseOwnedWSMANClient()
+		service.CloseOwnedWSMANClient()
+	})
+
+	t.Run("injected client remains caller-owned", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		wsman := mock.NewMockWSMANer(ctrl)
+		service := NewInfoService(nil, WithWSMANClient(wsman))
+
+		service.CloseOwnedWSMANClient()
+	})
 }
 
 func TestInfoService_GetAMTInfo(t *testing.T) {
@@ -2701,6 +2731,36 @@ func TestAmtInfoCmd_Run_WithSync_FailureIsReported(t *testing.T) {
 
 			if tt.wantCause != "" {
 				assert.Contains(t, err.Error(), tt.wantCause)
+			}
+		})
+	}
+}
+
+func TestClassifyStatusWSMANFailure(t *testing.T) {
+	transportErr := &net.OpError{Op: "dial", Err: errors.New("connection refused")}
+	tlsErr := &url.Error{Op: "Post", URL: "https://amt.example.com", Err: errors.New("certificate verify failed")}
+	tests := []struct {
+		name        string
+		err         error
+		status      WSMANStatus
+		message     string
+		credentials bool
+	}{
+		{name: "HTTP 401", err: errors.New("wsman.Client post received: 401 Unauthorized"), status: WSMANStatusUnauthorized, message: "HTTP 401", credentials: true},
+		{name: "HTTP 503", err: errors.New("wsman.Client post received: 503 Service Unavailable"), status: WSMANStatusUnavailable, message: "HTTP 503"},
+		{name: "connection failure", err: transportErr, status: WSMANStatusUnavailable, message: "connection/TLS request failed"},
+		{name: "TLS failure", err: tlsErr, status: WSMANStatusUnavailable, message: "connection/TLS request failed"},
+		{name: "SOAP fault", err: amterror.NewAMTError("Client", "Access denied", "fault detail"), status: WSMANStatusUnavailable, message: "WSMAN SOAP fault"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, message := classifyStatusWSMANFailure(test.err)
+			assert.Equal(t, test.status, status)
+			assert.Contains(t, message, test.message)
+
+			if !test.credentials {
+				assert.NotContains(t, message, "credentials")
 			}
 		})
 	}

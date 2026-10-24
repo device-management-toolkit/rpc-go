@@ -283,6 +283,21 @@ func TestAMTBaseCmd_AfterApplyAmtInfoDegradedPath(t *testing.T) {
 	assert.True(t, cmd.afterApplied)
 }
 
+func TestAMTBaseCmd_AfterApplyAmtInfoPreservesProbeFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	probeErr := errors.New("ME remains busy")
+
+	amtCommand.EXPECT().Close().Return(nil)
+	amtCommand.EXPECT().GetControlMode().Return(0, probeErr).Times(4)
+
+	cmd := &AMTBaseCmd{SkipWSMANSetup: true}
+	err := cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) {})
+
+	require.NoError(t, err)
+	assert.ErrorIs(t, cmd.GetHECIInitError(), probeErr)
+}
+
 func TestAMTBaseCmd_AfterApplyPermanentErrorsAreClassifiedWithoutRetry(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -358,10 +373,11 @@ func TestAMTBaseCmd_AfterApplyUnsupportedArchitecture(t *testing.T) {
 		name        string
 		skipWSMAN   bool
 		wantErr     error
+		wantInitErr error
 		wantApplied bool
 	}{
 		{name: "AMT command reports missing driver", wantErr: utils.HECIDriverNotDetected},
-		{name: "amtinfo remains degraded", skipWSMAN: true, wantApplied: true},
+		{name: "amtinfo remains degraded", skipWSMAN: true, wantInitErr: heci.ErrUnsupportedDevice, wantApplied: true},
 	}
 
 	for _, tt := range tests {
@@ -382,6 +398,10 @@ func TestAMTBaseCmd_AfterApplyUnsupportedArchitecture(t *testing.T) {
 			assert.Equal(t, tt.wantApplied, cmd.afterApplied)
 			assert.Equal(t, -1, cmd.ControlMode)
 			assert.False(t, cmd.HECIAvailable)
+
+			if tt.wantInitErr != nil {
+				assert.ErrorIs(t, cmd.GetHECIInitError(), tt.wantInitErr)
+			}
 		})
 	}
 }
