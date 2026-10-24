@@ -91,6 +91,9 @@ type MessagePayload struct {
 	TLSTunnel         bool                  `json:"tlsTunnel,omitempty"`
 	// ProgressSupported tells RPS this client can handle `progress` messages.
 	ProgressSupported bool `json:"progressSupported,omitempty"`
+	// WeakAlgorithmsRemoved selects RPS's certificate crypto policy. Nil means
+	// the capability probe failed; successful probes report true or false.
+	WeakAlgorithmsRemoved *bool `json:"weakAlgorithmsRemoved,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -190,6 +193,28 @@ func (p Payload) createPayload(dnsSuffix, hostname string, amtTimeout time.Durat
 	payload.CurrentMode, err = p.AMT.GetControlMode()
 	if err != nil {
 		return payload, err
+	}
+
+	// Capability probe, not a provisioning prerequisite: a failure must not abort activation.
+	if changeEnabled, cerr := p.AMT.GetChangeEnabled(); cerr != nil {
+		log.Warnf("AMT crypto capability: query failed (%v), assuming weak algorithms present", cerr)
+	} else {
+		weakAlgorithmsRemoved := changeEnabled.AreWeakAlgorithmsRemoved()
+		payload.WeakAlgorithmsRemoved = &weakAlgorithmsRemoved
+
+		state := "present"
+		if weakAlgorithmsRemoved {
+			state = "removed"
+		}
+
+		// A clear bit on firmware that predates the field is an assumption, not a report.
+		source := "reported"
+		if !weakAlgorithmsRemoved && !changeEnabled.IsNewInterfaceVersion() {
+			source = "assumed"
+		}
+
+		log.Infof("AMT crypto capability (0x%02X): weak algorithms %s, %s",
+			uint8(changeEnabled), state, source)
 	}
 
 	lsa, err := p.AMT.GetLocalSystemAccount()
