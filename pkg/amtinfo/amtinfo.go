@@ -29,6 +29,11 @@ type UserCert = commands.UserCert
 // Result.ProxyAccessPoints.
 type ProxyAccessPoint = commands.ProxyAccessPoint
 
+// ErrSyncUUIDUnavailable is matched (use errors.Is) by the error Sync returns
+// when it sent nothing because it could not read the device UUID. Without
+// HECI the UUID comes from SMBIOS, which only root can read on Linux.
+var ErrSyncUUIDUnavailable = commands.ErrSyncUUIDUnavailable
+
 // Options selects what Get reads. The zero value reads what `rpc amtinfo`
 // shows by default: everything except certificate hashes and user
 // certificates, which are read only when CertificateHashes, UserCertificates
@@ -133,13 +138,13 @@ func Get(opts Options) (*Result, error) {
 // Invalid options are rejected with the CLI's messages before AMT is read.
 // The sync needs the device UUID, which without HECI comes from SMBIOS
 // (readable only by root on Linux). When the process is not elevated and no
-// UUID can be read, Sync returns what it read with an error matching
-// utils.IncorrectPermissions (use errors.Is) that says why, as the CLI prints
-// what it gathered before it offers elevation. If the sync fails for any
-// other reason, Sync returns a nil Result and an error starting with
-// "device sync failed". After a successful sync without HECI, Sync returns
-// the result as Get does, with an error matching utils.IncorrectPermissions
-// when the process is not elevated.
+// UUID can be read, Sync sends nothing and returns what it read with an error
+// matching both utils.IncorrectPermissions and ErrSyncUUIDUnavailable (use
+// errors.Is), as the CLI prints what it gathered before it offers elevation.
+// If the sync fails for any other reason, Sync returns a nil Result and an
+// error starting with "device sync failed". After a successful sync without
+// HECI, Sync returns the result as Get does, with an error matching
+// utils.IncorrectPermissions when the process is not elevated.
 func Sync(opts SyncOptions) (*Result, error) {
 	cmd, ctx := newSyncCommand(opts)
 
@@ -180,12 +185,18 @@ func run(cmd *commands.AmtInfoCmd, ctx *commands.Context) (*Result, error) {
 // matchPermissions makes errors.Is match err against
 // utils.IncorrectPermissions whenever err carries its code. A sync that needs
 // elevation fails with a copy of utils.IncorrectPermissions whose Details say
-// why, and errors.Is would compare the Details too.
+// why, and errors.Is would compare the Details too. When the Details are
+// ErrSyncUUIDUnavailable's, the error matches that too, so callers can tell
+// that nothing was sent.
 func matchPermissions(err error) error {
 	var customErr utils.CustomError
 	if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code ||
 		errors.Is(err, utils.IncorrectPermissions) {
 		return err
+	}
+
+	if customErr.Details == ErrSyncUUIDUnavailable.Error() {
+		return fmt.Errorf("%w: %w", utils.IncorrectPermissions, ErrSyncUUIDUnavailable)
 	}
 
 	return fmt.Errorf("%w: %s", utils.IncorrectPermissions, customErr.Details)
