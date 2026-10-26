@@ -49,8 +49,8 @@ type Globals struct {
 	TableOutput      bool   `help:"Output in table format" name:"table" short:"t"`
 	NoColor          bool   `help:"Disable colored output" name:"no-color" env:"NO_COLOR"`
 	Verbose          bool   `help:"Enable verbose logging" name:"verbose" short:"v"`
-	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections (insecure)" name:"skip-cert-check" short:"n"`
-	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS (insecure)" name:"skip-amt-cert-check"`
+	SkipCertCheck    bool   `help:"Skip certificate verification for remote HTTPS/WSS (RPS) connections; accepts any certificate, including self-signed (insecure). Alias: --allow-self-signed" name:"skip-cert-check" short:"n" aliases:"allow-self-signed"`
+	SkipAMTCertCheck bool   `help:"Skip certificate verification when connecting to AMT/LMS over TLS; accepts any certificate, including self-signed (insecure). Alias: --allow-amt-self-signed" name:"skip-amt-cert-check" aliases:"allow-amt-self-signed"`
 	TenantID         string `help:"Tenant ID for multi-tenant environments for use with RPS" env:"TENANT_ID" name:"tenantid"`
 	LMSAddress       string `help:"LMS address to connect to" default:"localhost" name:"lmsaddress"`
 	LMSPort          string `help:"LMS port to connect to" default:"16992" name:"lmsport"`

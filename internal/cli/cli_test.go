@@ -178,6 +178,33 @@ func TestParse_AmtInfoSyncAliases(t *testing.T) {
 	}
 }
 
+func TestParse_CertCheckFlagAliases(t *testing.T) {
+	tests := []struct {
+		flag        string
+		wantSkip    bool
+		wantSkipAMT bool
+	}{
+		{"--skip-cert-check", true, false},
+		{"-n", true, false},
+		{"--allow-self-signed", true, false},
+		{"--skip-amt-cert-check", false, true},
+		{"--allow-amt-self-signed", false, true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.flag, func(t *testing.T) {
+			_, parsed, err := Parse([]string{"rpc", tt.flag, "version"}, nil)
+			require.NoError(t, err)
+			require.NotNil(t, parsed)
+
+			assert.Equal(t, tt.wantSkip, parsed.SkipCertCheck)
+			assert.Equal(t, tt.wantSkipAMT, parsed.SkipAMTCertCheck)
+		})
+	}
+}
+
 func TestGlobalsBeforeApply(t *testing.T) {
 	tests := []struct {
 		name    string
