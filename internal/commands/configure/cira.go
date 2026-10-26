@@ -37,7 +37,7 @@ func (cmd *CIRACmd) AfterApply(amtCommand amt.Interface) error {
 		return err
 	}
 
-	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MPSPassword, EnvVar: "MPS_PASSWORD", FlagName: []string{"mpspassword"}})
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MPSPassword, FlagName: []string{"mpspassword"}})
 
 	return nil
 }
@@ -47,6 +47,13 @@ func (cmd *CIRACmd) Validate() error {
 	// 1. Validate required non-password inputs first so we can fail fast without prompting
 	if err := cmd.validateURL(cmd.MPSAddress); err != nil {
 		return fmt.Errorf("invalid MPS address format: %w", err)
+	}
+
+	// Kong enforces this on the CLI; repeat it for callers that bypass Kong.
+	// Run clears the existing CIRA configuration before installing the cert, so an
+	// empty cert must be rejected here or a working CIRA setup is removed.
+	if strings.TrimSpace(cmd.MPSCert) == "" {
+		return ErrMPSCertRequired
 	}
 
 	// 2. Now call base validation (may prompt for AMT password). This happens only after critical args present.

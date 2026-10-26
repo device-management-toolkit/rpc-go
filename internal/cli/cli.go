@@ -109,7 +109,7 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 	}
 
 	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{
-		Value: g.AMTPassword, EnvVar: "AMT_PASSWORD", FlagName: []string{"password"},
+		Value: g.AMTPassword, FlagName: []string{"password"},
 	})
 
 	return nil
@@ -151,7 +151,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	defer commands.SetParsedCLIArgs(parseArgs)()
 
 	// Batch security warnings so credentials found across Globals, ServerAuthFlags,
-	// and any subcommand flags are reported in a single consolidated banner.
+	// and any subcommand flags are reported in a single warning line.
 	commands.BeginCredentialWarningBatch()
 
 	ctx, perr := parser.Parse(parseArgs)

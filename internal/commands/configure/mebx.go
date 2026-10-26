@@ -28,7 +28,7 @@ func (cmd *MEBxCmd) AfterApply(amtCommand amt.Interface) error {
 		return err
 	}
 
-	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}})
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MEBxPassword, FlagName: []string{"mebxpassword"}})
 
 	return nil
 }

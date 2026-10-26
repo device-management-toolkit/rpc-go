@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	userConsentKVM = "kvm"
-	userConsentAll = "all"
+	userConsentKVM  = "kvm"
+	userConsentAll  = "all"
+	userConsentNone = "none"
 )
 
 // AMTFeaturesCmd represents AMT features configuration
@@ -40,6 +41,13 @@ func (cmd *AMTFeaturesCmd) Validate() error {
 	// First call the base Validate to handle password validation
 	if err := cmd.ConfigureBaseCmd.Validate(); err != nil {
 		return err
+	}
+
+	// Kong enforces this enum on the CLI; repeat it here for callers that bypass Kong.
+	switch cmd.UserConsent {
+	case "", userConsentKVM, userConsentAll, userConsentNone:
+	default:
+		return fmt.Errorf("invalid user consent %q: must be one of kvm, all, none", cmd.UserConsent)
 	}
 
 	// Backward compatibility: by default, require at least one feature or user consent.
@@ -132,7 +140,7 @@ func (cmd *AMTFeaturesCmd) Run(ctx *commands.Context) error {
 		optInRequired := getOptInServiceResponse.Body.GetAndPutResponse.OptInRequired
 
 		switch cmd.UserConsent {
-		case "none":
+		case userConsentNone:
 			optInRequired = uint32(optin.OptInRequiredNone)
 		case userConsentKVM:
 			optInRequired = uint32(optin.OptInRequiredKVM)
