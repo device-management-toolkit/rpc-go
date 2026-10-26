@@ -1,3 +1,10 @@
+# [3.0.0-beta.74](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.73...v3.0.0-beta.74) (2026-10-26)
+
+
+### Bug Fixes
+
+* **local:** report AMT cert errors instead of falling back to HECI ([#1654](https://github.com/device-management-toolkit/rpc-go/issues/1654)) ([364ff4c](https://github.com/device-management-toolkit/rpc-go/commit/364ff4c7343728fdec1dc7654be1ffd0f4855eac))
+
 # [3.0.0-beta.73](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.72...v3.0.0-beta.73) (2026-10-26)
 
 # [3.0.0-beta.72](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.71...v3.0.0-beta.72) (2026-10-26)
