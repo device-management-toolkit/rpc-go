@@ -346,8 +346,13 @@ func TestServerAuthFlags_WarnIfInsecure(t *testing.T) {
 			// If we expect a warning, verify it contains key elements
 			if tt.expectWarning {
 				assert.Contains(t, logOutput, "SECURITY WARNING", "Warning should contain security notice")
-				assert.Contains(t, logOutput, "visible in process listings", "Warning should mention process visibility")
-				assert.Contains(t, logOutput, "Use environment variables instead", "Warning should suggest env vars")
+				assert.Contains(t, logOutput, "can be seen by other users viewing running commands", "Warning should mention process visibility")
+				assert.Contains(t, logOutput, "see --help for variable names.")
+				assert.Equal(t, 1, strings.Count(logOutput, "\n"))
+				assert.NotContains(t, logOutput, "AUTH_TOKEN")
+				assert.NotContains(t, logOutput, "AUTH_USERNAME")
+				assert.NotContains(t, logOutput, "AUTH_PASSWORD")
+				assert.NotContains(t, logOutput, "<value>")
 			}
 		})
 	}

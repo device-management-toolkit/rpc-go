@@ -132,7 +132,7 @@ func (cmd *TLSCmd) AfterApply(amtCommand amt.Interface) error {
 		return err
 	}
 
-	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.EAPassword, EnvVar: "EA_PASSWORD", FlagName: []string{"eaPassword"}})
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.EAPassword, FlagName: []string{"eaPassword"}})
 
 	return nil
 }

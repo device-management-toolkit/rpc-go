@@ -70,10 +70,10 @@ func (cmd *ActivateCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	commands.WarnIfCredentialsOnCLI(
-		commands.CredentialCLI{Value: cmd.ProvisioningCert, EnvVar: "PROVISIONING_CERT", FlagName: []string{"provisioningCert"}},
-		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, EnvVar: "PROVISIONING_CERT_PASSWORD", FlagName: []string{"provisioningCertPwd"}},
-		commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}},
-		commands.CredentialCLI{Value: cmd.Key, EnvVar: "CONFIG_ENCRYPTION_KEY", FlagName: []string{"key", "k"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCert, FlagName: []string{"provisioningCert"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, FlagName: []string{"provisioningCertPwd"}},
+		commands.CredentialCLI{Value: cmd.MEBxPassword, FlagName: []string{"mebxpassword"}},
+		commands.CredentialCLI{Value: cmd.Key, FlagName: []string{"key", "k"}},
 	)
 
 	return nil
