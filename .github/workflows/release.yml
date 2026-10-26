@@ -71,10 +71,10 @@ jobs:
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@d9bf53a078bd2f86aaffaec796dbb3d28f1b6f34 # v8.1.3
         with:
-          semantic_version: 19.0.5
+          semantic_version: 25.0.9
             # It is recommended to specify specifying version range
             # for semantic-release.
           extra_plugins: |
-            @semantic-release/exec@6.0.3
+            @semantic-release/exec@7.1.0
         env:
           GITHUB_TOKEN: ${{ secrets.ROSIE_TOKEN }}

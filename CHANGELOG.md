@@ -1,3 +1,10 @@
+# [3.0.0-beta.69](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.68...v3.0.0-beta.69) (2026-10-23)
+
+
+### Bug Fixes
+
+* show info and offer sudo when sync lacks root access ([#1601](https://github.com/device-management-toolkit/rpc-go/issues/1601)) ([a894759](https://github.com/device-management-toolkit/rpc-go/commit/a8947593c6a9b108067e2830b1aa5c2327896625))
+
 # [3.0.0-beta.68](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.67...v3.0.0-beta.68) (2026-10-16)
 
 
