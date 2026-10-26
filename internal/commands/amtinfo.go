@@ -271,7 +271,7 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
-	service, result, err := cmd.readInfo(ctx)
+	service, result, syncResult, err := cmd.readInfo(ctx)
 	if result == nil {
 		return err
 	}
@@ -279,6 +279,31 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	// A permissions failure still shows what was gathered before elevation is
 	// offered: readInfo returns it with the result, and Run returns it last.
 	syncPermErr := err
+
+	if cmd.Sync && syncPermErr == nil {
+		if ctx.JsonOutput {
+			jsonBytes, err := json.MarshalIndent(syncResult, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal sync result: %w", err)
+			}
+
+			fmt.Fprintln(os.Stdout, string(jsonBytes))
+		} else {
+			message := "Device " + syncResult.Status
+			if syncResult.Status == "registration_skipped" {
+				message = "Device not found; registration skipped"
+			}
+
+			fmt.Fprintf(os.Stdout, "%s (UUID: %s)\n", message, syncResult.UUID)
+		}
+
+		// Signal to Execute() that elevation would unlock more data
+		if !ctx.JsonOutput && !cmd.HECIAvailable && !isElevated() {
+			return utils.IncorrectPermissions
+		}
+
+		return nil
+	}
 
 	if ctx.JsonOutput {
 		if err := service.OutputJSON(os.Stdout, result); err != nil {
@@ -317,7 +342,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 // utils.IncorrectPermissions when HECI is unavailable because the process is
 // not elevated.
 func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
-	service, result, err := cmd.readInfo(ctx)
+	service, result, _, err := cmd.readInfo(ctx)
 	defer service.closeWSMAN()
 
 	if err != nil {
@@ -329,11 +354,12 @@ func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
 
 // readInfo reads the AMT information and, when Sync is set, syncs it to the
 // devices API. The returned service holds any WSMAN client the read opened.
+// The sync result summarizes a successful sync and is nil otherwise.
 // The result is nil when the read or the sync failed, except when the sync
 // failed for lack of elevation (a utils.CustomError with the
 // IncorrectPermissions code): then readInfo returns the result together with
 // that error, so the caller can report what was read before the error.
-func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error) {
+func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, *DeviceSyncResult, error) {
 	service := NewInfoService(
 		ctx.AMTCommand,
 		WithJSONOutput(ctx.JsonOutput),
@@ -354,24 +380,28 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, error)
 
 	result, err := service.GetAMTInfo(effectiveCmd)
 	if err != nil {
-		return service, nil, err
+		return service, nil, nil, err
 	}
 
 	// If requested, sync device info to remote server
+	var syncResult *DeviceSyncResult
+
 	if cmd.Sync {
 		discovered := true
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
+
+		syncResult, err = service.SyncDeviceInfoWithResult(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered)
+		if err != nil {
 			// A permissions failure still shows what was gathered before elevation is offered.
 			var customErr utils.CustomError
 			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
-				return service, nil, fmt.Errorf("device sync failed: %w", err)
+				return service, nil, nil, fmt.Errorf("device sync failed: %w", err)
 			}
 
-			return service, result, err
+			return service, result, nil, err
 		}
 	}
 
-	return service, result, nil
+	return service, result, syncResult, nil
 }
 
 // elevationErr returns utils.IncorrectPermissions when HECI is unavailable
@@ -405,6 +435,12 @@ type InfoResult struct {
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
+}
+
+// DeviceSyncResult summarizes the outcome of syncing a device.
+type DeviceSyncResult struct {
+	Status string `json:"status"`
+	UUID   string `json:"uuid"`
 }
 
 // UserCert represents a user certificate
@@ -587,6 +623,13 @@ type syncMEInterface struct {
 //
 // This flag is set only once during device creation and does not change thereafter.
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
+	_, err := s.SyncDeviceInfoWithResult(ctx, result, urlArg, auth, discovered)
+
+	return err
+}
+
+// SyncDeviceInfoWithResult sends device information to the server and returns a concise outcome.
+func (s *InfoService) SyncDeviceInfoWithResult(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) (*DeviceSyncResult, error) {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
 		// Both sources need root on most Linux systems, so report it as a permissions
@@ -595,14 +638,14 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			permErr := utils.IncorrectPermissions
 			permErr.Details = ErrSyncUUIDUnavailable.Error()
 
-			return permErr
+			return nil, permErr
 		}
 
-		return ErrSyncUUIDUnavailable
+		return nil, ErrSyncUUIDUnavailable
 	}
 
 	if utils.IsKnownInvalidUUID(result.UUID) {
-		return fmt.Errorf("cannot sync: invalid device UUID sentinel value")
+		return nil, fmt.Errorf("cannot sync: invalid device UUID sentinel value")
 	}
 
 	// Use the provided URL directly as the target endpoint
@@ -635,14 +678,14 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal sync payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal sync payload: %w", err)
 	}
 
 	httpClient := s.newHTTPClient(ctx.SkipCertCheck, endpoint)
 
 	authToken, err := s.getAuthToken(endpoint, auth, ctx.SkipCertCheck)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
@@ -652,7 +695,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
-		return err
+		return nil, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -662,7 +705,7 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		if !s.autoRegister {
 			log.Infof("device %s not found (HTTP 404); skipping registration", result.UUID)
 
-			return nil
+			return &DeviceSyncResult{Status: "registration_skipped", UUID: result.UUID}, nil
 		}
 
 		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
@@ -675,10 +718,11 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			discovered = &autoDiscovered
 		}
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken, ctx.TenantID, discovered, now); err != nil {
+		created, err := s.createDevice(httpClient, endpoint, result, authToken, ctx.TenantID, discovered, now)
+		if err != nil {
 			log.Debugf("device registration (POST) failed: %v", err)
 
-			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
+			return nil, fmt.Errorf("device not found; failed to auto-register device: %w", err)
 		}
 
 		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
@@ -687,12 +731,17 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		if err := s.doPatchRequest(httpClient, endpoint, body, authToken, ctx.TenantID); err != nil {
 			log.Debugf("retry PATCH after registration failed: %v", err)
 
-			return err
+			return nil, err
 		}
 
 		log.Infof("device %s synced successfully after registration", result.UUID)
 
-		return nil
+		status := "registered"
+		if !created {
+			status = "updated"
+		}
+
+		return &DeviceSyncResult{Status: status, UUID: result.UUID}, nil
 	}
 	defer resp.Body.Close()
 
@@ -701,12 +750,12 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 		log.Debugf("PATCH request failed with status %s", resp.Status)
 
-		return fmt.Errorf("sync failed with status %s", resp.Status)
+		return nil, fmt.Errorf("sync failed with status %s", resp.Status)
 	}
 
 	log.Infof("device %s synced successfully (PATCH)", result.UUID)
 
-	return nil
+	return &DeviceSyncResult{Status: "updated", UUID: result.UUID}, nil
 }
 
 // newHTTPClient creates an HTTP client with appropriate TLS configuration
@@ -781,10 +830,10 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
 // The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
 // syncedAt is the sync timestamp, reused so the created record matches the retried PATCH.
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken, tenantID string, discovered *bool, syncedAt time.Time) error {
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken, tenantID string, discovered *bool, syncedAt time.Time) (bool, error) {
 	body, hostname, err := s.buildDeviceCreatePayload(result, discovered, syncedAt)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
@@ -793,7 +842,7 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 	if err != nil {
 		log.Debugf("device registration (POST) request failed: %v", err)
 
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 
@@ -854,11 +903,11 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 }
 
 // handleDeviceCreateResponse interprets the HTTP response from device creation POST.
-func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) error {
+func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) (bool, error) {
 	if resp.StatusCode == http.StatusConflict {
 		log.Debugf("device %s already exists (HTTP 409), will proceed with update", guid)
 		// Device was created concurrently; proceed with retry PATCH.
-		return nil
+		return false, nil
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -866,12 +915,12 @@ func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid strin
 
 		log.Debugf("device registration failed with status %s", resp.Status)
 
-		return fmt.Errorf("device creation failed with status %s", resp.Status)
+		return false, fmt.Errorf("device creation failed with status %s", resp.Status)
 	}
 
 	log.Debugf("device %s registered successfully (HTTP %d)", guid, resp.StatusCode)
 
-	return nil
+	return true, nil
 }
 
 // getCreateHostname returns a hostname for device registration.
