@@ -47,7 +47,11 @@ type CommandExecutor interface {
 }
 
 // CLIExecutor executes commands using the CLI
-type CLIExecutor struct{}
+type CLIExecutor struct {
+	// Executable is the rpc binary to run. Empty runs the current executable,
+	// which is rpc itself when the orchestrator runs inside the rpc CLI.
+	Executable string
+}
 
 // Execute runs the RPC command with the given arguments and optional custom environment variables.
 // Environment variables are passed per-subprocess without mutating the global process environment.
@@ -57,6 +61,11 @@ func (e *CLIExecutor) Execute(args []string, env map[string]string) error {
 	if err != nil {
 		// Fallback to "rpc" if we can't determine the executable
 		executable = rpcExecutableName
+	}
+
+	// A program that embeds the orchestrator is not rpc, so it names the rpc binary.
+	if e.Executable != "" {
+		executable = e.Executable
 	}
 
 	// Replace the first "rpc" argument with the actual executable
