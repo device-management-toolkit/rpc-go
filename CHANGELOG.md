@@ -1,3 +1,33 @@
+# [3.0.0-beta.74](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.73...v3.0.0-beta.74) (2026-10-26)
+
+
+### Bug Fixes
+
+* **local:** report AMT cert errors instead of falling back to HECI ([#1654](https://github.com/device-management-toolkit/rpc-go/issues/1654)) ([364ff4c](https://github.com/device-management-toolkit/rpc-go/commit/364ff4c7343728fdec1dc7654be1ffd0f4855eac))
+
+# [3.0.0-beta.73](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.72...v3.0.0-beta.73) (2026-10-26)
+
+# [3.0.0-beta.72](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.71...v3.0.0-beta.72) (2026-10-26)
+
+
+### Bug Fixes
+
+* ensure bounds correctly checked for box output ([#1631](https://github.com/device-management-toolkit/rpc-go/issues/1631)) ([a000b8a](https://github.com/device-management-toolkit/rpc-go/commit/a000b8a3d6309ddf833076d754e36878ceefd75e))
+
+# [3.0.0-beta.71](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.70...v3.0.0-beta.71) (2026-10-26)
+
+
+### Bug Fixes
+
+* shorten CLI credential warning to a single line ([#1649](https://github.com/device-management-toolkit/rpc-go/issues/1649)) ([92b2b76](https://github.com/device-management-toolkit/rpc-go/commit/92b2b7658237fefe99de3a5f7cdde7a5c846cee1))
+
+# [3.0.0-beta.70](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.69...v3.0.0-beta.70) (2026-10-26)
+
+
+### Bug Fixes
+
+* show concise sync results instead of full device details ([#1635](https://github.com/device-management-toolkit/rpc-go/issues/1635)) ([820666d](https://github.com/device-management-toolkit/rpc-go/commit/820666d6f8ca28e3db6c7364a323c48b8c242ce9)), closes [#1633](https://github.com/device-management-toolkit/rpc-go/issues/1633)
+
 # [3.0.0-beta.69](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.68...v3.0.0-beta.69) (2026-10-23)
 
 
