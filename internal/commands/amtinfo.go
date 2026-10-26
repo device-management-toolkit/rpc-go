@@ -1499,7 +1499,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 		if controlModeErr == nil {
 			if err := s.ensureWSMANClient(controlMode); err != nil {
-				logWSMANSetupFailure(err)
+				log.Debug("WSMAN client setup failed, WSMAN features unavailable: ", err)
 			}
 		}
 	}
@@ -2426,19 +2426,6 @@ func (s *InfoService) getMajorVersion(version string) (int, error) {
 	}
 
 	return majorVersion, nil
-}
-
-// logWSMANSetupFailure reports why WSMAN-backed fields are missing. A rejected
-// AMT certificate is shown because the user can fix it; anything else stays at
-// debug level.
-func logWSMANSetupFailure(err error) {
-	if errors.Is(err, localamt.ErrAMTCertNotVerified) {
-		log.Warn("WSMAN details unavailable: ", err)
-
-		return
-	}
-
-	log.Debug("WSMAN client setup failed, WSMAN features unavailable: ", err)
 }
 
 // ensureWSMANClient sets up s.wsman once if not already initialized.
