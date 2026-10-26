@@ -6,12 +6,29 @@ package commands
 
 import (
 	"crypto/tls"
+	"fmt"
+	"io"
+	"os"
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/muesli/termenv"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/term"
 )
+
+const credentialWarningMessage = "SECURITY WARNING: Credentials passed via CLI flags can be seen by other users viewing running commands on this system. Use environment variables instead; see --help for variable names."
+
+var credentialWarningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+
+// isTerminalWriter reports whether w is an interactive terminal. It is a variable so tests can override it.
+var isTerminalWriter = func(w io.Writer) bool {
+	f, ok := w.(*os.File)
+
+	return ok && term.IsTerminal(int(f.Fd()))
+}
 
 // Context holds shared dependencies injected into commands
 type Context struct {
@@ -128,12 +145,31 @@ func emitCredentialWarning(credentials ...CredentialCLI) {
 			}
 
 			if flagHasValueOnCLI(flag) {
-				log.Warn("SECURITY WARNING: Credentials passed via CLI flags can be seen by other users viewing running commands on this system. Use environment variables instead; see --help for variable names.")
+				logCredentialWarning()
 
 				return
 			}
 		}
 	}
+}
+
+// logCredentialWarning prints the credential warning in yellow when logging plain
+// text to a color-capable terminal. Otherwise (JSON output, --no-color, or
+// redirected output) it falls back to a regular structured warning log line.
+func logCredentialWarning() {
+	logger := log.StandardLogger()
+	if !logger.IsLevelEnabled(log.WarnLevel) {
+		return
+	}
+
+	_, isText := logger.Formatter.(*log.TextFormatter)
+	if !isText || lipgloss.ColorProfile() == termenv.Ascii || !isTerminalWriter(logger.Out) {
+		log.Warn(credentialWarningMessage)
+
+		return
+	}
+
+	fmt.Fprintln(logger.Out, credentialWarningStyle.Render(credentialWarningMessage))
 }
 
 // flagHasValueOnCLI reports whether flag was explicitly passed with a non-empty value.

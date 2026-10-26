@@ -6,9 +6,12 @@ package commands
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -140,4 +143,98 @@ func TestCredentialWarningBatch(t *testing.T) {
 	require.NotContains(t, output.String(), "<value>")
 	require.NotContains(t, output.String(), "ea-secret")
 	require.NotContains(t, output.String(), "wireless-secret")
+}
+
+func TestLogCredentialWarningStyling(t *testing.T) {
+	tests := []struct {
+		name       string
+		formatter  logrus.Formatter
+		profile    termenv.Profile
+		terminal   bool
+		level      logrus.Level
+		wantANSI   bool
+		wantLogFmt bool
+		wantEmpty  bool
+	}{
+		{
+			name:      "text format on color terminal prints yellow",
+			formatter: &logrus.TextFormatter{DisableColors: true},
+			profile:   termenv.ANSI256,
+			terminal:  true,
+			level:     logrus.WarnLevel,
+			wantANSI:  true,
+		},
+		{
+			name:       "no-color falls back to structured log",
+			formatter:  &logrus.TextFormatter{DisableColors: true},
+			profile:    termenv.Ascii,
+			terminal:   true,
+			level:      logrus.WarnLevel,
+			wantLogFmt: true,
+		},
+		{
+			name:       "redirected output falls back to structured log",
+			formatter:  &logrus.TextFormatter{DisableColors: true},
+			profile:    termenv.ANSI256,
+			terminal:   false,
+			level:      logrus.WarnLevel,
+			wantLogFmt: true,
+		},
+		{
+			name:       "json format never colorizes",
+			formatter:  &logrus.JSONFormatter{},
+			profile:    termenv.ANSI256,
+			terminal:   true,
+			level:      logrus.WarnLevel,
+			wantLogFmt: true,
+		},
+		{
+			name:      "warn level disabled prints nothing",
+			formatter: &logrus.TextFormatter{DisableColors: true},
+			profile:   termenv.ANSI256,
+			terminal:  true,
+			level:     logrus.ErrorLevel,
+			wantEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logrus.StandardLogger()
+			oldOutput, oldFormatter, oldLevel := logger.Out, logger.Formatter, logger.GetLevel()
+			oldProfile := lipgloss.ColorProfile()
+			oldIsTerminal := isTerminalWriter
+
+			defer func() {
+				logrus.SetOutput(oldOutput)
+				logrus.SetFormatter(oldFormatter)
+				logrus.SetLevel(oldLevel)
+				lipgloss.SetColorProfile(oldProfile)
+
+				isTerminalWriter = oldIsTerminal
+			}()
+
+			var output bytes.Buffer
+
+			logrus.SetOutput(&output)
+			logrus.SetFormatter(tt.formatter)
+			logrus.SetLevel(tt.level)
+			lipgloss.SetColorProfile(tt.profile)
+
+			isTerminalWriter = func(io.Writer) bool { return tt.terminal }
+
+			logCredentialWarning()
+
+			if tt.wantEmpty {
+				require.Empty(t, output.String())
+
+				return
+			}
+
+			require.Contains(t, output.String(), credentialWarningMessage)
+			require.Equal(t, 1, strings.Count(output.String(), "\n"))
+			require.Equal(t, tt.wantANSI, strings.Contains(output.String(), "\x1b["))
+			require.Equal(t, tt.wantLogFmt, strings.Contains(output.String(), "warning"))
+		})
+	}
 }
