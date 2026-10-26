@@ -13,13 +13,20 @@
 # shipping. The verified identity is this repo's release workflow via the
 # GitHub Actions OIDC issuer. Set COSIGN_SKIP_VERIFY=1 to skip verification
 # (e.g. local key-based testing, where there is no Fulcio identity to match).
+#
+# Bundles are named from the full artifact path (slashes/percents encoded) so
+# artifacts that share a basename under different directories cannot
+# overwrite each other's bundle, with a basename-only alias kept for
+# consumers that still expect the plain `<artifact>.sigstore.json` name.
 
 set -euo pipefail
 
 # Keyless verification identity. GITHUB_REPOSITORY is set by GitHub Actions;
-# fall back to the canonical repo for local runs.
+# fall back to the canonical repo for local runs. Override via
+# COSIGN_CERT_IDENTITY_REGEXP for workflows other than release.yml (e.g. the
+# fork-only test-cosign.yml).
 repo="${GITHUB_REPOSITORY:-device-management-toolkit/rpc-go}"
-cert_identity_regexp="^https://github.com/${repo}/.github/workflows/release\\.yml@refs/(heads|tags)/.*$"
+cert_identity_regexp="${COSIGN_CERT_IDENTITY_REGEXP:-^https://github.com/${repo}/.github/workflows/release\\.yml@refs/(heads|tags)/.*$}"
 oidc_issuer="https://token.actions.githubusercontent.com"
 
 # The release artifacts produced by build.sh (see .releaserc.json assets).
@@ -30,6 +37,20 @@ artifacts=(
     rpc_windows_x86.exe
     rpc_so_x64.tar.gz
 )
+bundle_files=()
+
+compatibility_aliases_enabled=1
+declare -A compatibility_bundle_sources=()
+for artifact in "${artifacts[@]}"; do
+    base_name="$(basename "$artifact")"
+    if [[ -n "${compatibility_bundle_sources[$base_name]:-}" ]]; then
+        printf 'Basename aliases disabled: %s and %s share basename %s; verify path-qualified bundles instead\n' \
+            "${compatibility_bundle_sources[$base_name]}" "$artifact" "$base_name" >&2
+        compatibility_aliases_enabled=0
+    else
+        compatibility_bundle_sources[$base_name]="$artifact"
+    fi
+done
 
 for artifact in "${artifacts[@]}"; do
     if [ ! -f "$artifact" ]; then
@@ -37,14 +58,24 @@ for artifact in "${artifacts[@]}"; do
         exit 1
     fi
 
+    bundle_name="${artifact//%/%25}"
+    bundle_name="${bundle_name//\//%2F}"
+    bundle_file="${bundle_name}.sigstore.json"
+    compatibility_bundle_file="$(basename "$artifact").sigstore.json"
+
     echo "──────────────────────────────"
     echo "🔏 Signing binary: $artifact"
     echo "──────────────────────────────"
 
     cosign sign-blob \
         --yes \
-        --bundle "${artifact}.sigstore.json" \
+        --bundle "$bundle_file" \
         "$artifact"
+    bundle_files+=("$bundle_file")
+
+    if [[ "$compatibility_aliases_enabled" == 1 && "$bundle_file" != "$compatibility_bundle_file" ]]; then
+        cp "$bundle_file" "$compatibility_bundle_file"
+    fi
 
     echo "✅ Signed $artifact"
 
@@ -55,12 +86,15 @@ for artifact in "${artifacts[@]}"; do
 
     echo "🧾 Verifying $artifact"
     cosign verify-blob \
-        --bundle "${artifact}.sigstore.json" \
+        --bundle "$bundle_file" \
         --certificate-identity-regexp "$cert_identity_regexp" \
         --certificate-oidc-issuer "$oidc_issuer" \
         "$artifact"
     echo "🟢 Verified $artifact"
 done
 
-echo "Cosign artifacts:"
-ls -lh ./*.sigstore.json || true
+rm -f cosign-signatures.zip
+zip -q cosign-signatures.zip "${bundle_files[@]}"
+
+echo "Cosign signature archive:"
+ls -lh cosign-signatures.zip
