@@ -1,3 +1,10 @@
+# [3.0.0-beta.71](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.70...v3.0.0-beta.71) (2026-10-26)
+
+
+### Bug Fixes
+
+* shorten CLI credential warning to a single line ([#1649](https://github.com/device-management-toolkit/rpc-go/issues/1649)) ([92b2b76](https://github.com/device-management-toolkit/rpc-go/commit/92b2b7658237fefe99de3a5f7cdde7a5c846cee1))
+
 # [3.0.0-beta.70](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.69...v3.0.0-beta.70) (2026-10-26)
 
 
