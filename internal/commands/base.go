@@ -34,10 +34,15 @@ type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
-	HECIAvailable    bool               `kong:"-"` // Whether HECI/MEI driver is accessible
+	// LocalTLSStatusRead reports whether LocalTLSEnforced came from a successful read.
+	LocalTLSStatusRead bool `kong:"-"`
+	HECIAvailable      bool `kong:"-"` // Whether HECI/MEI driver is accessible
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
+	// QuietSetupLogs keeps setup notices (such as local TLS enforcement) at
+	// debug level, for commands that report them in their own output.
+	QuietSetupLogs bool `kong:"-"`
 	// afterApplied ensures AfterApply runs its heavy init exactly once.
 	afterApplied bool `kong:"-"`
 }
@@ -209,11 +214,13 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 	log.Tracef("AMTBaseCmd detected control mode: %d", cmd.ControlMode)
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
-	resp, _ := amtCommand.GetChangeEnabled()
+	resp, tlsErr := amtCommand.GetChangeEnabled()
+
+	cmd.LocalTLSStatusRead = tlsErr == nil
 	if resp.IsTlsEnforcedOnLocalPorts() {
 		cmd.LocalTLSEnforced = true
 
-		log.Info("TLS is enforced on local ports")
+		cmd.logSetupNotice("TLS is enforced on local ports")
 	} else {
 		log.Trace("TLS is not enforced on local ports")
 	}
@@ -223,6 +230,18 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 	cmd.afterApplied = true
 
 	return nil
+}
+
+// logSetupNotice logs a setup notice at info level, or at debug level when the
+// command reports the same detail in its own output.
+func (cmd *AMTBaseCmd) logSetupNotice(msg string) {
+	if cmd.QuietSetupLogs {
+		log.Debug(msg)
+
+		return
+	}
+
+	log.Info(msg)
 }
 
 func isAMTCapableArchitecture(arch string) bool {

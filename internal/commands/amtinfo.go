@@ -120,6 +120,23 @@ func renderInfoRow(label, value string) string {
 	return infoIndent + infoLabelStyle.Render(label) + " " + styledInfoValue(value) + "\n"
 }
 
+// renderUnavailableRow renders a field that could not be read, with the reason.
+func renderUnavailableRow(label, reason string) string {
+	return infoIndent + infoLabelStyle.Render(label) + " " + infoYellowStyle.Render(unavailableValue(reason)) + "\n"
+}
+
+func unavailableValue(reason string) string {
+	return "Unavailable (" + reason + ")"
+}
+
+func localTLSValue(enforced bool) string {
+	if enforced {
+		return "enforced"
+	}
+
+	return "not enforced"
+}
+
 func styledInfoValue(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case statusEnabled, statusConnected, statusUp, statusActive,
@@ -235,6 +252,8 @@ func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
 // ensures AMTBaseCmd.AfterApply can tolerate HECI failures for amtinfo.
 func (cmd *AmtInfoCmd) BeforeApply() error {
 	cmd.SkipWSMANSetup = true
+	// amtinfo shows local TLS enforcement in its own output.
+	cmd.QuietSetupLogs = true
 
 	return nil
 }
@@ -365,6 +384,7 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, *Devic
 		WithJSONOutput(ctx.JsonOutput),
 		WithPassword(ctx.AMTPassword),
 		WithLocalTLSEnforced(cmd.LocalTLSEnforced),
+		WithLocalTLSStatusRead(cmd.LocalTLSStatusRead),
 		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
@@ -424,6 +444,7 @@ type InfoResult struct {
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	ProvisioningState string                       `json:"provisioningState,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
+	LocalTLSEnforced  *bool                        `json:"localTlsEnforced,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
 	DNSSuffixOS       string                       `json:"dnsSuffixOS,omitempty"`
 	HostnameOS        string                       `json:"hostnameOS,omitempty"`
@@ -435,6 +456,10 @@ type InfoResult struct {
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
+	// WSMANUnavailable is the short reason WSMAN-backed fields could not be read.
+	WSMANUnavailable string `json:"wsmanUnavailable,omitempty"`
+	// mpsUnavailable marks the MPS port as unread, as opposed to not configured.
+	mpsUnavailable bool
 }
 
 // DeviceSyncResult summarizes the outcome of syncing a device.
@@ -471,6 +496,12 @@ type InfoService struct {
 	heciAvailable    bool
 	// autoRegister controls whether a sync that 404s creates the device.
 	autoRegister bool
+	// localTLSStatusRead is true when localTLSEnforced came from a successful read.
+	localTLSStatusRead bool
+	// wsmanErr is the first WSMAN failure, used to mark WSMAN-backed fields as unavailable.
+	wsmanErr error
+	// mpsReadFailed is true when the MPS details could not be read over WSMAN.
+	mpsReadFailed bool
 }
 
 // InfoServiceOption mutates InfoService construction parameters.
@@ -517,6 +548,14 @@ func WithPassword(password string) InfoServiceOption {
 func WithLocalTLSEnforced(enabled bool) InfoServiceOption {
 	return func(s *InfoService) {
 		s.localTLSEnforced = enabled
+	}
+}
+
+// WithLocalTLSStatusRead marks the local TLS enforcement value as read from
+// AMT. Without it, amtinfo does not report local TLS enforcement.
+func WithLocalTLSStatusRead(read bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.localTLSStatusRead = read
 	}
 }
 
@@ -1568,7 +1607,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		if s.heciAvailable {
 			userCerts, err := s.getUserCertificates()
 			if err != nil {
-				log.Error("Failed to get user certificates: ", err)
+				log.Debug("Failed to get user certificates: ", err)
 			} else {
 				result.UserCerts = userCerts
 			}
@@ -1587,7 +1626,47 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	s.addConnectionDetails(result, showAll)
+
 	return result, nil
+}
+
+// addConnectionDetails records local TLS enforcement and, when WSMAN failed,
+// the reason WSMAN-backed fields are missing, so the output can show them
+// instead of logging them.
+func (s *InfoService) addConnectionDetails(result *InfoResult, showAll bool) {
+	// Report enforcement only when it was read; a failed read is not "not enforced".
+	if s.heciAvailable && s.localTLSStatusRead && showAll {
+		enforced := s.localTLSEnforced
+		result.LocalTLSEnforced = &enforced
+	}
+
+	result.WSMANUnavailable = wsmanUnavailableReason(s.wsmanErr)
+	result.mpsUnavailable = s.mpsReadFailed
+}
+
+// wsmanUnavailableReason returns the short reason shown next to fields that
+// need WSMAN. Details are logged at debug level when the failure happens.
+func wsmanUnavailableReason(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return "AMT cert not trusted; use --skip-amt-cert-check"
+	}
+
+	return "WSMAN request failed; run with -v for details"
+}
+
+// wsmanFailed records the first WSMAN failure and returns err unchanged.
+func (s *InfoService) wsmanFailed(err error) error {
+	if s.wsmanErr == nil {
+		s.wsmanErr = err
+	}
+
+	return err
 }
 
 // OutputJSON outputs the result in JSON format
@@ -1681,6 +1760,10 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 		add("Device", "--operationalState", "AMT Operational State (BIOS)", result.OperationalState)
 	}
 
+	if result.LocalTLSEnforced != nil {
+		add("Device", "", "TLS on Local Ports", localTLSValue(*result.LocalTLSEnforced))
+	}
+
 	if showAll || cmd.DNS {
 		add("Device", "-d", "DNS Suffix", result.DNSSuffix)
 		add("Device", "-d", "DNS Suffix (OS)", result.DNSSuffixOS)
@@ -1699,6 +1782,8 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 		if result.RAS.MPSPort > 0 {
 			add("Remote Access", "-a", "MPS Port", strconv.Itoa(result.RAS.MPSPort))
+		} else if result.mpsUnavailable {
+			add("Remote Access", "-a", "MPS Port", unavailableValue(result.WSMANUnavailable))
 		}
 	}
 
@@ -1781,6 +1866,11 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 			add("User Certs", "--userCert", name, strings.TrimSpace(flags))
 		}
+
+		// nil means the read failed; an empty map is a successful read with no certificates.
+		if result.UserCerts == nil && result.WSMANUnavailable != "" {
+			add("User Certs", "--userCert", "Unavailable", result.WSMANUnavailable)
+		}
 	}
 
 	// --- HTTP Proxy ---
@@ -1791,6 +1881,8 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 			}
 		} else if (cmd.Proxy || cmd.All) && result.ProxyAccessPoints != nil {
 			add("HTTP Proxy", "--proxy", "None configured", "")
+		} else if (cmd.Proxy || cmd.All) && result.WSMANUnavailable != "" {
+			add("HTTP Proxy", "--proxy", "Unavailable", result.WSMANUnavailable)
 		} else if cmd.Proxy || cmd.All {
 			add("HTTP Proxy", "--proxy", "Unavailable", "Proxy configuration could not be retrieved")
 		}
@@ -2061,6 +2153,10 @@ func buildDeviceSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool
 		main.WriteString(renderInfoRow("AMT Operational State (BIOS)", result.OperationalState))
 	}
 
+	if result.LocalTLSEnforced != nil {
+		main.WriteString(renderInfoRow("TLS on Local Ports", localTLSValue(*result.LocalTLSEnforced)))
+	}
+
 	if showAll || cmd.DNS {
 		main.WriteString(renderInfoRow("DNS Suffix", result.DNSSuffix))
 		main.WriteString(renderInfoRow("DNS Suffix (OS)", result.DNSSuffixOS))
@@ -2096,6 +2192,8 @@ func buildRASSection(result *InfoResult, cmd *AmtInfoCmd, showAll bool) string {
 
 	if result.RAS.MPSPort > 0 {
 		b.WriteString(renderInfoRow("MPS Port", strconv.Itoa(result.RAS.MPSPort)))
+	} else if result.mpsUnavailable {
+		b.WriteString(renderUnavailableRow("MPS Port", result.WSMANUnavailable))
 	}
 
 	return b.String()
@@ -2187,6 +2285,11 @@ func buildProxySection(result *InfoResult, cmd *AmtInfoCmd, showAll, heciAvailab
 	// noise — the top-of-output banner already explains the situation.
 	if !heciAvailable {
 		return ""
+	}
+
+	if result.WSMANUnavailable != "" {
+		return renderInfoHeader("HTTP Proxy Configuration") +
+			infoIndent + infoYellowStyle.Render(unavailableValue(result.WSMANUnavailable)) + "\n"
 	}
 
 	return renderInfoHeader("HTTP Proxy Configuration") +
@@ -2300,6 +2403,12 @@ func buildUserCertsSection(result *InfoResult, cmd *AmtInfoCmd) string {
 	}
 
 	if len(result.UserCerts) == 0 {
+		// nil means the read failed; an empty map is a successful read with no certificates.
+		if result.UserCerts == nil && result.WSMANUnavailable != "" {
+			return renderInfoHeader("Public Key Certificates") +
+				infoIndent + infoYellowStyle.Render(unavailableValue(result.WSMANUnavailable)) + "\n"
+		}
+
 		if cmd.UserCert {
 			return renderInfoHeader("Public Key Certificates") +
 				infoIndent + infoDimStyle.Render("No public key certificates found") + "\n"
@@ -2446,7 +2555,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	if password == "" {
 		lsa, err := s.amtCommand.GetLocalSystemAccount()
 		if err != nil {
-			return fmt.Errorf("failed to get local system account: %w", err)
+			return s.wsmanFailed(fmt.Errorf("failed to get local system account: %w", err))
 		}
 
 		username = lsa.Username
@@ -2464,7 +2573,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	if err := wsmanClient.SetupWsmanClient(username, password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
-		return fmt.Errorf("failed to setup WSMAN client: %w", err)
+		return s.wsmanFailed(fmt.Errorf("failed to setup WSMAN client: %w", err))
 	}
 
 	s.wsman = wsmanClient
@@ -2496,7 +2605,7 @@ func (s *InfoService) getUserCertificates() (map[string]UserCert, error) {
 
 	publicKeyCerts, err := s.wsman.GetPublicKeyCerts()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get public key certificates: %w", err)
+		return nil, s.wsmanFailed(fmt.Errorf("failed to get public key certificates: %w", err))
 	}
 
 	userCertMap := make(map[string]UserCert)
@@ -2521,12 +2630,17 @@ func (s *InfoService) getUserCertificates() (map[string]UserCert, error) {
 // getMPSInfoFromWSMAN retrieves MPS hostname and port via WSMAN ManagementPresenceRemoteSAP.
 func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err error) {
 	if s.wsman == nil {
+		// Unread only if WSMAN failed; in pre-provisioning it does not apply.
+		s.mpsReadFailed = s.wsmanErr != nil
+
 		return "", 0, fmt.Errorf("WSMAN client not available")
 	}
 
 	items, err := s.wsman.GetMPSSAP()
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", err)
+		s.mpsReadFailed = true
+
+		return "", 0, s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", err))
 	}
 
 	if len(items) == 0 {
@@ -2544,7 +2658,7 @@ func (s *InfoService) getProxyAccessPoints() ([]ProxyAccessPoint, error) {
 
 	items, err := s.wsman.GetHTTPProxyAccessPoints()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HTTP proxy access points: %w", err)
+		return nil, s.wsmanFailed(fmt.Errorf("failed to get HTTP proxy access points: %w", err))
 	}
 
 	proxies := make([]ProxyAccessPoint, 0, len(items))
