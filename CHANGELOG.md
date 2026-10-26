@@ -1,3 +1,10 @@
+# [3.0.0-beta.72](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.71...v3.0.0-beta.72) (2026-10-26)
+
+
+### Bug Fixes
+
+* ensure bounds correctly checked for box output ([#1631](https://github.com/device-management-toolkit/rpc-go/issues/1631)) ([a000b8a](https://github.com/device-management-toolkit/rpc-go/commit/a000b8a3d6309ddf833076d754e36878ceefd75e))
+
 # [3.0.0-beta.71](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.70...v3.0.0-beta.71) (2026-10-26)
 
 
