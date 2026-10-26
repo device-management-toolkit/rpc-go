@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
@@ -2935,6 +2936,50 @@ func TestAmtInfoCmd_Run_WithSync_FailureIsReported(t *testing.T) {
 			if tt.wantCause != "" {
 				assert.Contains(t, err.Error(), tt.wantCause)
 			}
+		})
+	}
+}
+
+func TestLogWSMANSetupFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantWarn bool
+	}{
+		{
+			name:     "untrusted AMT certificate is shown",
+			err:      fmt.Errorf("failed to setup WSMAN client: %w", localamt.ErrAMTCertNotVerified),
+			wantWarn: true,
+		},
+		{
+			name:     "other setup failures stay at debug",
+			err:      errors.New("failed to get local system account"),
+			wantWarn: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			hook := logtest.NewGlobal()
+			defer hook.Reset()
+
+			originalLevel := logrus.GetLevel()
+			defer logrus.SetLevel(originalLevel)
+
+			logrus.SetLevel(logrus.InfoLevel)
+
+			logWSMANSetupFailure(tt.err)
+
+			if !tt.wantWarn {
+				assert.Empty(t, hook.AllEntries())
+
+				return
+			}
+
+			require.Len(t, hook.AllEntries(), 1)
+			assert.Equal(t, logrus.WarnLevel, hook.LastEntry().Level)
+			assert.Contains(t, hook.LastEntry().Message, "--skip-amt-cert-check")
 		})
 	}
 }
