@@ -1,3 +1,10 @@
+# [3.0.0-beta.70](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.69...v3.0.0-beta.70) (2026-10-26)
+
+
+### Bug Fixes
+
+* show concise sync results instead of full device details ([#1635](https://github.com/device-management-toolkit/rpc-go/issues/1635)) ([820666d](https://github.com/device-management-toolkit/rpc-go/commit/820666d6f8ca28e3db6c7364a323c48b8c242ce9)), closes [#1633](https://github.com/device-management-toolkit/rpc-go/issues/1633)
+
 # [3.0.0-beta.69](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.68...v3.0.0-beta.69) (2026-10-23)
 
 
