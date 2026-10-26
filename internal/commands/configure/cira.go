@@ -37,7 +37,7 @@ func (cmd *CIRACmd) AfterApply(amtCommand amt.Interface) error {
 		return err
 	}
 
-	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MPSPassword, EnvVar: "MPS_PASSWORD", FlagName: []string{"mpspassword"}})
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.MPSPassword, FlagName: []string{"mpspassword"}})
 
 	return nil
 }

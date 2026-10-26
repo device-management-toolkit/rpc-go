@@ -32,34 +32,9 @@ type Context struct {
 	ServerAuthFlags
 }
 
-// securityWarningSeparator frames the security warning banner printed by logSecurityWarning.
-const securityWarningSeparator = "-------------------------------------------------------------------"
-
-// logSecurityWarning prints the standard banner warning that credentials were passed
-// via CLI flags. envLines, when non-empty, are rendered as "NAME=<value>" suggestions;
-// when empty, a generic recommendation is printed instead.
-func logSecurityWarning(flagsDesc string, envLines []string) {
-	log.Warn(securityWarningSeparator)
-	log.Warnf("SECURITY WARNING: Credentials passed via CLI flags (%s)", flagsDesc)
-	log.Warn("These are visible in process listings and may be captured in system logs.")
-
-	if len(envLines) > 0 {
-		log.Warn("Use environment variables instead:")
-
-		for _, line := range envLines {
-			log.Warnf("  %s", line)
-		}
-	} else {
-		log.Warn("Consider providing this value via a config file or interactive prompt instead.")
-	}
-
-	log.Warn(securityWarningSeparator)
-}
-
 // CredentialCLI describes a sensitive value and its CLI flag aliases.
 type CredentialCLI struct {
 	Value    string
-	EnvVar   string
 	FlagName []string
 }
 
@@ -94,7 +69,7 @@ var (
 // BeginCredentialWarningBatch causes subsequent WarnIfCredentialsOnCLI calls to buffer
 // their credentials instead of warning immediately, so that all credentials detected
 // while parsing a single command (across Globals, ServerAuthFlags, and any subcommand
-// flags) are reported in one consolidated banner. Call EndCredentialWarningBatch to
+// flags) are reported in one warning line. Call EndCredentialWarningBatch to
 // flush the buffer and resume immediate warnings.
 func BeginCredentialWarningBatch() {
 	credentialWarningMu.Lock()
@@ -105,7 +80,7 @@ func BeginCredentialWarningBatch() {
 }
 
 // EndCredentialWarningBatch flushes any credentials buffered since BeginCredentialWarningBatch
-// as a single warning banner, then stops batching.
+// as a single warning line, then stops batching.
 func EndCredentialWarningBatch() {
 	credentialWarningMu.Lock()
 	credentialWarningBatch = false
@@ -119,7 +94,7 @@ func EndCredentialWarningBatch() {
 }
 
 // WarnIfCredentialsOnCLI prints one warning for all non-empty credentials passed
-// via command-line flags. EnvVar is suggested when it is provided. When called
+// via command-line flags. When called
 // between BeginCredentialWarningBatch/EndCredentialWarningBatch, the credentials
 // are buffered and reported together instead of warning immediately.
 func WarnIfCredentialsOnCLI(credentials ...CredentialCLI) {
@@ -137,16 +112,10 @@ func WarnIfCredentialsOnCLI(credentials ...CredentialCLI) {
 
 // emitCredentialWarning does the actual flag matching and warning for a batch of credentials.
 func emitCredentialWarning(credentials ...CredentialCLI) {
-	var cliFlags []string
-
-	var envLines []string
-
 	for _, credential := range credentials {
 		if strings.TrimSpace(credential.Value) == "" {
 			continue
 		}
-
-		matched := ""
 
 		for _, name := range credential.FlagName {
 			flag := name
@@ -159,24 +128,11 @@ func emitCredentialWarning(credentials ...CredentialCLI) {
 			}
 
 			if flagHasValueOnCLI(flag) {
-				matched = flag
+				log.Warn("SECURITY WARNING: Credentials passed via CLI flags can be seen by other users viewing running commands on this system. Use environment variables instead; see --help for variable names.")
 
-				break
+				return
 			}
 		}
-
-		if matched == "" {
-			continue
-		}
-
-		cliFlags = append(cliFlags, matched)
-		if credential.EnvVar != "" {
-			envLines = append(envLines, credential.EnvVar+"=<value>")
-		}
-	}
-
-	if len(cliFlags) > 0 {
-		logSecurityWarning(strings.Join(cliFlags, ", "), envLines)
 	}
 }
 

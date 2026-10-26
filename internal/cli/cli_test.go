@@ -110,7 +110,12 @@ func TestParseBatchesCredentialWarnings(t *testing.T) {
 
 	logOutput := output.String()
 	assert.Equal(t, 1, strings.Count(logOutput, "SECURITY WARNING"))
-	assert.Contains(t, logOutput, "--password, --auth-token")
+	assert.Equal(t, 1, strings.Count(logOutput, "\n"))
+	assert.Contains(t, logOutput, "see --help for variable names.")
+	assert.NotContains(t, logOutput, "AMT_PASSWORD")
+	assert.NotContains(t, logOutput, "AUTH_TOKEN")
+	assert.NotContains(t, logOutput, "amt-password")
+	assert.NotContains(t, logOutput, "auth-token")
 
 	output.Reset()
 	t.Setenv("AUTH_TOKEN", "env-token")

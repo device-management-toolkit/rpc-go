@@ -6,6 +6,7 @@ package commands
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -17,9 +18,7 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 		name       string
 		args       []string
 		value      string
-		envVar     string
 		wantNotice bool
-		wantEnv    string
 	}{
 		{
 			name:       "long flag with separate value",
@@ -37,15 +36,12 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 			name:       "short flag with attached value",
 			args:       []string{"rpc", "activate", "-ksecret"},
 			value:      "secret",
-			envVar:     "CONFIG_ENCRYPTION_KEY",
 			wantNotice: true,
-			wantEnv:    "CONFIG_ENCRYPTION_KEY=<value>",
 		},
 		{
 			name:       "value from environment or config",
 			args:       []string{"rpc", "configure", "mebx"},
 			value:      "secret",
-			envVar:     "MEBX_PASSWORD",
 			wantNotice: false,
 		},
 		{
@@ -88,18 +84,15 @@ func TestWarnIfCredentialsOnCLI(t *testing.T) {
 
 			WarnIfCredentialsOnCLI(CredentialCLI{
 				Value:    tt.value,
-				EnvVar:   tt.envVar,
 				FlagName: []string{"eaPassword", "ieee8021xPrivateKey", "k"},
 			})
 
 			if tt.wantNotice {
-				require.Contains(t, output.String(), "SECURITY WARNING")
+				require.Contains(t, output.String(), "SECURITY WARNING: Credentials passed via CLI flags can be seen by other users viewing running commands on this system. Use environment variables instead; see --help for variable names.")
+				require.Equal(t, 1, strings.Count(output.String(), "\n"))
+				require.NotContains(t, output.String(), tt.value)
 			} else {
-				require.NotContains(t, output.String(), "SECURITY WARNING")
-			}
-
-			if tt.wantEnv != "" {
-				require.Contains(t, output.String(), tt.wantEnv)
+				require.Empty(t, output.String())
 			}
 		})
 	}
@@ -129,12 +122,10 @@ func TestCredentialWarningBatch(t *testing.T) {
 	BeginCredentialWarningBatch()
 	WarnIfCredentialsOnCLI(CredentialCLI{
 		Value:    "ea-secret",
-		EnvVar:   "EA_PASSWORD",
 		FlagName: []string{"eaPassword"},
 	})
 	WarnIfCredentialsOnCLI(CredentialCLI{
 		Value:    "wireless-secret",
-		EnvVar:   "IEEE8021X_PASSWORD",
 		FlagName: []string{"ieee8021xPassword"},
 	})
 
@@ -142,7 +133,11 @@ func TestCredentialWarningBatch(t *testing.T) {
 
 	EndCredentialWarningBatch()
 
-	require.Contains(t, output.String(), "--eaPassword, --ieee8021xPassword")
-	require.Contains(t, output.String(), "EA_PASSWORD=<value>")
-	require.Contains(t, output.String(), "IEEE8021X_PASSWORD=<value>")
+	require.Contains(t, output.String(), "SECURITY WARNING: Credentials passed via CLI flags can be seen by other users viewing running commands on this system. Use environment variables instead; see --help for variable names.")
+	require.Equal(t, 1, strings.Count(output.String(), "\n"))
+	require.NotContains(t, output.String(), "EA_PASSWORD")
+	require.NotContains(t, output.String(), "IEEE8021X_PASSWORD")
+	require.NotContains(t, output.String(), "<value>")
+	require.NotContains(t, output.String(), "ea-secret")
+	require.NotContains(t, output.String(), "wireless-secret")
 }
