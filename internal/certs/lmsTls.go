@@ -48,7 +48,13 @@ func GetTLSConfig(mode *int, amtCertInfo *amt.SecureHBasedResponse, skipAMTCertC
 				return nil
 			}
 
-			return VerifyCertificates(rawCerts, mode, amtCertInfo, upidInfo)
+			if err := VerifyCertificates(rawCerts, mode, amtCertInfo, upidInfo); err != nil {
+				// Match how crypto/tls reports its own verification failures, so
+				// callers can detect both with one errors.As check.
+				return &tls.CertificateVerificationError{Err: err}
+			}
+
+			return nil
 		}
 	} else {
 		tlsConfig.InsecureSkipVerify = skipAMTCertCheck

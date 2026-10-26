@@ -113,6 +113,13 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 				return err
 			}
 
+			// LMS answered but its certificate failed verification. LMS still owns
+			// the MEI, so a HECI fallback would only fail with an unrelated handle
+			// error and hide the real cause.
+			if isCertVerificationError(err) {
+				return fmt.Errorf("%w: %w", ErrAMTCertNotVerified, err)
+			}
+
 			logrus.Debugf("LMS TLS port not active, using LME-over-HECI with local TLS termination. LMS TLS dial error: %v", err)
 
 			g.localTransport = NewLocalTransportTLS(tlsConfig)
@@ -168,6 +175,18 @@ func (g *GoWSMANMessages) SetupWsmanClient(username, password string, useTLS, lo
 // fall back to LME-over-HECI on this error: the MEI is unavailable and HECI
 // would only fail with "device or resource busy".
 var errLMSUpButUnready = errors.New("LMS is up but its local port is not ready")
+
+// ErrAMTCertNotVerified indicates LMS presented an AMT TLS certificate that
+// failed verification.
+var ErrAMTCertNotVerified = errors.New("AMT TLS certificate could not be verified (use --skip-amt-cert-check to skip verification)")
+
+// isCertVerificationError reports whether a TLS dial failed because the peer
+// certificate was rejected, as opposed to LMS not answering.
+func isCertVerificationError(err error) bool {
+	var certErr *cryptotls.CertificateVerificationError
+
+	return errors.As(err, &certErr)
+}
 
 // probeLMS dials LMS to decide whether an LMS daemon is answering or the caller
 // must fall back to LME-over-HECI. The two failure classes are treated very
