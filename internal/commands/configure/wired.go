@@ -52,11 +52,11 @@ func (cmd *WiredCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	commands.WarnIfCredentialsOnCLI(
-		commands.CredentialCLI{Value: cmd.EAPassword, EnvVar: "EA_PASSWORD", FlagName: []string{"eaPassword"}},
-		commands.CredentialCLI{Value: cmd.IEEE8021xPassword, EnvVar: "IEEE8021X_PASSWORD", FlagName: []string{"ieee8021xPassword"}},
-		commands.CredentialCLI{Value: cmd.IEEE8021xPrivateKey, EnvVar: "IEEE8021X_PRIVATE_KEY", FlagName: []string{"ieee8021xPrivateKey", "privatekey"}},
-		commands.CredentialCLI{Value: cmd.IEEE8021xClientCert, EnvVar: "IEEE8021X_CLIENT_CERT", FlagName: []string{"ieee8021xClientCert", "clientcert"}},
-		commands.CredentialCLI{Value: cmd.IEEE8021xCACert, EnvVar: "IEEE8021X_CA_CERT", FlagName: []string{"ieee8021xCACert", "cacert"}},
+		commands.CredentialCLI{Value: cmd.EAPassword, FlagName: []string{"eaPassword"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xPassword, FlagName: []string{"ieee8021xPassword"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xPrivateKey, FlagName: []string{"ieee8021xPrivateKey", "privatekey"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xClientCert, FlagName: []string{"ieee8021xClientCert", "clientcert"}},
+		commands.CredentialCLI{Value: cmd.IEEE8021xCACert, FlagName: []string{"ieee8021xCACert", "cacert"}},
 	)
 
 	return nil

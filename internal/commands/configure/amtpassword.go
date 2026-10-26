@@ -31,7 +31,7 @@ func (cmd *AMTPasswordCmd) AfterApply(amtCommand amt.Interface) error {
 		return err
 	}
 
-	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.NewPassword, EnvVar: "NEW_AMT_PASSWORD", FlagName: []string{"newamtpassword"}})
+	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{Value: cmd.NewPassword, FlagName: []string{"newamtpassword"}})
 
 	return nil
 }

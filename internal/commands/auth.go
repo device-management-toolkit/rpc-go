@@ -97,9 +97,9 @@ func (a *ServerAuthFlags) AfterApply() error {
 // in process listings (ps, htop, /proc/<pid>/cmdline), which is a security risk.
 func (a *ServerAuthFlags) WarnIfInsecure() {
 	WarnIfCredentialsOnCLI(
-		CredentialCLI{Value: a.AuthToken, EnvVar: "AUTH_TOKEN", FlagName: []string{"auth-token"}},
-		CredentialCLI{Value: a.AuthUsername, EnvVar: "AUTH_USERNAME", FlagName: []string{"auth-username"}},
-		CredentialCLI{Value: a.AuthPassword, EnvVar: "AUTH_PASSWORD", FlagName: []string{"auth-password"}},
+		CredentialCLI{Value: a.AuthToken, FlagName: []string{"auth-token"}},
+		CredentialCLI{Value: a.AuthUsername, FlagName: []string{"auth-username"}},
+		CredentialCLI{Value: a.AuthPassword, FlagName: []string{"auth-password"}},
 	)
 }
 
