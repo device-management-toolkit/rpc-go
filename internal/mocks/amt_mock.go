@@ -14,6 +14,7 @@ import (
 	time "time"
 
 	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	mkhi "github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	pthi "github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	upid "github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	gomock "go.uber.org/mock/gomock"
@@ -160,6 +161,21 @@ func (mr *MockInterfaceMockRecorder) GetDNSSuffix() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDNSSuffix", reflect.TypeOf((*MockInterface)(nil).GetDNSSuffix))
 }
 
+// GetFWCapabilities mocks base method.
+func (m *MockInterface) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFWCapabilities")
+	ret0, _ := ret[0].(mkhi.FWCapabilities)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFWCapabilities indicates an expected call of GetFWCapabilities.
+func (mr *MockInterfaceMockRecorder) GetFWCapabilities() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFWCapabilities", reflect.TypeOf((*MockInterface)(nil).GetFWCapabilities))
+}
+
 // GetFlog mocks base method.
 func (m *MockInterface) GetFlog() ([]byte, error) {
 	m.ctrl.T.Helper()
@@ -220,6 +236,21 @@ func (mr *MockInterfaceMockRecorder) GetOSDNSSuffix() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOSDNSSuffix", reflect.TypeOf((*MockInterface)(nil).GetOSDNSSuffix))
 }
 
+// GetProvisioningLog mocks base method.
+func (m *MockInterface) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProvisioningLog")
+	ret0, _ := ret[0].(pthi.ProvisioningLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProvisioningLog indicates an expected call of GetProvisioningLog.
+func (mr *MockInterfaceMockRecorder) GetProvisioningLog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProvisioningLog", reflect.TypeOf((*MockInterface)(nil).GetProvisioningLog))
+}
+
 // GetProvisioningState mocks base method.
 func (m *MockInterface) GetProvisioningState() (int, error) {
 	m.ctrl.T.Helper()
@@ -263,6 +294,21 @@ func (m *MockInterface) GetUPID() (*upid.UPID, error) {
 func (mr *MockInterfaceMockRecorder) GetUPID() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPID", reflect.TypeOf((*MockInterface)(nil).GetUPID))
+}
+
+// GetUPIDFullCertificateChain mocks base method.
+func (m *MockInterface) GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUPIDFullCertificateChain", index)
+	ret0, _ := ret[0].([][]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUPIDFullCertificateChain indicates an expected call of GetUPIDFullCertificateChain.
+func (mr *MockInterfaceMockRecorder) GetUPIDFullCertificateChain(index any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPIDFullCertificateChain", reflect.TypeOf((*MockInterface)(nil).GetUPIDFullCertificateChain), index)
 }
 
 // GetUUID mocks base method.

@@ -101,6 +101,24 @@ func TestHWGetUPID(t *testing.T) {
 	t.Logf("UPID:\n%s", upid)
 }
 
+func TestHWGetFullCertificateChain(t *testing.T) {
+	cmd := hwCommand(t)
+
+	for name, index := range map[string]CertIndex{"BIOS": CertIndexBIOS, "OS": CertIndexOS, "TEP": CertIndexTEP} {
+		t.Run(name, func(t *testing.T) {
+			chain, err := cmd.GetFullCertificateChain(index)
+			require.NoError(t, err)
+			require.NotEmpty(t, chain)
+
+			for i, der := range chain {
+				cert, err := x509.ParseCertificate(der)
+				require.NoError(t, err, "certificate %d", i)
+				t.Logf("  cert[%d]: %s (issuer %s)", i, cert.Subject, cert.Issuer)
+			}
+		})
+	}
+}
+
 func TestHWTEPGetCapabilities(t *testing.T) {
 	caps, err := hwCommand(t).TEPGetCapabilities()
 	require.NoError(t, err)
