@@ -35,8 +35,9 @@ func resetMock() {
 	bufferSize = 5120
 }
 
-func (c *MockHECICommands) Init(useLME, useWD bool) error { return initError }
-func (c *MockHECICommands) GetBufferSize() uint32         { return bufferSize } // MaxMessageLength
+func (c *MockHECICommands) Init(useLME, useWD bool) error  { return initError }
+func (c *MockHECICommands) InitWithGUID(guid string) error { return nil }
+func (c *MockHECICommands) GetBufferSize() uint32          { return bufferSize } // MaxMessageLength
 func (c *MockHECICommands) SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error) {
 	return sendBytesWritten, sendError
 }
@@ -238,6 +239,10 @@ func (m *MockHECI) Init(useLME, useWD bool) error {
 		return m.InitFunc(useLME, useWD)
 	}
 
+	return nil
+}
+
+func (m *MockHECI) InitWithGUID(guid string) error {
 	return nil
 }
 

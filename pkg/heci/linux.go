@@ -65,6 +65,29 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	return heci.parseConnectClientData(data)
+}
+
+// InitWithGUID initializes the HECI driver for the MEI client identified by guid,
+// given in registry form, e.g. "{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}".
+func (heci *Driver) InitWithGUID(guid string) error {
+	guidBytes, err := meiGUIDFromString(guid)
+	if err != nil {
+		return err
+	}
+
+	data := CMEIConnectClientData{data: guidBytes}
+
+	if err := heci.openAndConnect(&data); err != nil {
+		return err
+	}
+
+	return heci.parseConnectClientData(data)
+}
+
+// parseConnectClientData reads the MEI_CONNECT_CLIENT response out of data and
+// records the negotiated buffer size and protocol version on the driver.
+func (heci *Driver) parseConnectClientData(data CMEIConnectClientData) error {
 	t := MEIConnectClientData{}
 
 	err := binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)

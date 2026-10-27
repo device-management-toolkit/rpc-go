@@ -87,6 +87,19 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return err
 }
 
+// InitWithGUID initializes the HECI driver for the MEI client identified by guid,
+// given in registry form, e.g. "{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}".
+func (heci *Driver) InitWithGUID(guid string) error {
+	guidValue, err := windows.GUIDFromString(guid)
+	if err != nil {
+		return err
+	}
+
+	heci.clientGUID = &guidValue
+
+	return heci.FindDevices()
+}
+
 func (heci *Driver) FindDevices() error {
 	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
 	if err != nil {
@@ -152,15 +165,20 @@ func (heci *Driver) FindDevices() error {
 		return err
 	}
 
+	// Release the device handle when the client cannot be connected (e.g. the
+	// platform has no client with this GUID); the caller never gets a handle
+	// to close otherwise.
 	err = heci.GetHeciVersion()
 	if err != nil {
-		heci.meiDevice = 0
+		heci.Close()
+
 		return err
 	}
 
 	err = heci.ConnectHeciClient()
 	if err != nil {
-		heci.meiDevice = 0
+		heci.Close()
+
 		return err
 	}
 
