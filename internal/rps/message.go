@@ -5,21 +5,31 @@
 package rps
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
 
 type Payload struct {
-	AMT amt.Interface
+	AMT  amt.Interface
+	UPID upid.Interface
 }
+
+// Host inventory sources, overridable in tests.
+var (
+	getOSInfo       = utils.GetOSInfo
+	getSerialNumber = utils.GetSystemSerialNumber
+)
 
 // Message is used for tranferring messages between RPS and RPC
 type Message struct {
@@ -91,6 +101,21 @@ type MessagePayload struct {
 	TLSTunnel         bool                  `json:"tlsTunnel,omitempty"`
 	// ProgressSupported tells RPS this client can handle `progress` messages.
 	ProgressSupported bool `json:"progressSupported,omitempty"`
+	// Host inventory reported on activation. All fields are best-effort and
+	// omitted when unavailable; older RPS releases ignore them.
+	OSName       string    `json:"osName,omitempty"`
+	OSVersion    string    `json:"osVersion,omitempty"`
+	OSDistro     string    `json:"osDistro,omitempty"`
+	SerialNumber string    `json:"serialNumber,omitempty"`
+	UPID         *UPIDInfo `json:"upid,omitempty"`
+}
+
+// UPIDInfo is the Intel Unique Platform ID as reported to RPS. IDs are
+// uppercase hex, matching the deviceInfo.upid shape used by Console.
+type UPIDInfo struct {
+	CSMEId            string `json:"csmeId,omitempty"`
+	OEMId             string `json:"oemId,omitempty"`
+	OEMPlatformIdType string `json:"oemPlatformIdType,omitempty"`
 }
 
 // MethodTLSData is the method type for TLS tunnel data passthrough
@@ -123,7 +148,90 @@ type PortSwitchPayload struct {
 
 func NewPayload() Payload {
 	return Payload{
-		AMT: amt.NewAMTCommand(),
+		AMT:  amt.NewAMTCommand(),
+		UPID: upid.NewCommand(),
+	}
+}
+
+// reportsHostInventory reports whether the request should carry host inventory:
+// activation, and maintenance syncdeviceinfo (RPS rewrites deviceInfo wholesale
+// on sync, so it must resend these fields). flags.Command has already been
+// expanded by setCommandMethod (e.g. "activate --profile p"), so only the
+// leading word is compared.
+func reportsHostInventory(f flags.Flags) bool {
+	fields := strings.Fields(f.Command)
+	if len(fields) == 0 {
+		return false
+	}
+
+	switch fields[0] {
+	case utils.CommandActivate:
+		return true
+	case utils.CommandMaintenance:
+		return f.SubCommand == utils.SubCommandSyncDeviceInfo
+	default:
+		return false
+	}
+}
+
+// addHostInventory populates the OS, serial number, and UPID fields. Failures
+// are logged and never block the request: UPID only exists on Tiger Lake and
+// newer, and many OEMs leave the SMBIOS serial number blank.
+func (p Payload) addHostInventory(payload *MessagePayload) {
+	osInfo := getOSInfo()
+	payload.OSName = osInfo.Name
+	payload.OSVersion = osInfo.Version
+	payload.OSDistro = osInfo.Distro
+
+	serial, err := getSerialNumber()
+	if err != nil {
+		log.Debugf("Unable to read system serial number: %v", err)
+	} else {
+		payload.SerialNumber = serial
+	}
+
+	if p.UPID == nil {
+		return
+	}
+
+	platformID, err := p.UPID.GetUPID()
+	if err != nil {
+		log.Debugf("Unable to read Intel UPID: %v", err)
+
+		return
+	}
+
+	payload.UPID = newUPIDInfo(platformID)
+}
+
+func newUPIDInfo(u *upid.UPID) *UPIDInfo {
+	if u == nil {
+		return nil
+	}
+
+	info := &UPIDInfo{
+		CSMEId:            fmt.Sprintf("%X", u.HWSerialNum),
+		OEMPlatformIdType: upidPlatformIDType(u.PlatformIdType),
+	}
+
+	// An all-zero OEM Platform ID means the OEM never provisioned one.
+	if !bytes.Equal(u.OEMPlatformID, make([]byte, len(u.OEMPlatformID))) {
+		info.OEMId = fmt.Sprintf("%X", u.OEMPlatformID)
+	}
+
+	return info
+}
+
+func upidPlatformIDType(t uint32) string {
+	switch t {
+	case upid.PlatformIDTypeNotSet:
+		return "Not Set (0)"
+	case upid.PlatformIDTypeBinary:
+		return "Binary (1)"
+	case upid.PlatformIDTypePrintableString:
+		return "Printable String (2)"
+	default:
+		return fmt.Sprintf("Unknown (%d)", t)
 	}
 }
 
@@ -289,11 +397,17 @@ func (p Payload) CreateMessageRequest(flags flags.Flags) (Message, error) {
 	payload.TLSEnforced = flags.LocalTlsEnforced
 	payload.TLSTunnel = flags.TLSTunnel
 
+	if reportsHostInventory(flags) {
+		p.addHostInventory(&payload)
+	}
+
 	log.Debug("Creating initial message request")
 	log.Debugf("  AMT Version: %s, Build: %s, SKU: %s", payload.Version, payload.Build, payload.SKU)
 	log.Debugf("  UUID: %s, Hostname: %s, FQDN: %s", payload.UUID, payload.Hostname, payload.FQDN)
 	log.Debugf("  Current Mode: %d, TLS Enforced: %t", payload.CurrentMode, payload.TLSEnforced)
 	log.Debugf("  Certificate Hashes: %d", len(payload.CertificateHashes))
+	log.Debugf("  OS: %s %s (%s), Serial Number: %s, UPID reported: %t",
+		payload.OSName, payload.OSVersion, payload.OSDistro, payload.SerialNumber, payload.UPID != nil)
 
 	// convert struct to json
 	data, err := json.Marshal(payload)

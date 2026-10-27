@@ -87,6 +87,19 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 	return err
 }
 
+// InitWithGUID initializes the HECI driver for the MEI client identified by guid,
+// which must be a windows.GUID.
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	guidValue, ok := guid.(windows.GUID)
+	if !ok {
+		return errors.New("invalid GUID type for Windows, expected windows.GUID")
+	}
+
+	heci.clientGUID = &guidValue
+
+	return heci.FindDevices()
+}
+
 func (heci *Driver) FindDevices() error {
 	deviceGUID, err := windows.GUIDFromString("{E2D1FF34-3458-49A9-88DA-8E6915CE9BE5}")
 	if err != nil {

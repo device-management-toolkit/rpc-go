@@ -45,6 +45,9 @@ var MEI_LMEIF = [16]uint8{0xdb, 0xa4, 0x33, 0x67, 0x76, 0x04, 0x7b, 0x4e, 0xb3, 
 // Watchdog (WD)
 var MEI_WDIF = [16]uint8{0x6f, 0x9a, 0xb7, 0x05, 0x28, 0x46, 0x7f, 0x4d, 0x89, 0x9D, 0xA9, 0x15, 0x14, 0xCB, 0x32, 0xAB}
 
+// Intel Unique Platform ID (UPID) {92136C79-5FEA-4CFD-980E-23BE07FA5E9F}
+var MEI_UPID = [16]uint8{0x79, 0x6c, 0x13, 0x92, 0xea, 0x5f, 0xfd, 0x4c, 0x98, 0x0e, 0x23, 0xbe, 0x07, 0xfa, 0x5e, 0x9f}
+
 func NewDriver() *Driver {
 	return &Driver{}
 }
@@ -65,6 +68,29 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	return heci.parseConnectClientData(data)
+}
+
+// InitWithGUID initializes the HECI driver for the MEI client identified by guid,
+// which must be a [16]uint8 in MEI byte order (e.g. MEI_UPID).
+func (heci *Driver) InitWithGUID(guid interface{}) error {
+	guidBytes, ok := guid.([16]uint8)
+	if !ok {
+		return errors.New("invalid GUID type for Linux, expected [16]uint8")
+	}
+
+	data := CMEIConnectClientData{data: guidBytes}
+
+	if err := heci.openAndConnect(&data); err != nil {
+		return err
+	}
+
+	return heci.parseConnectClientData(data)
+}
+
+// parseConnectClientData reads the MEI_CONNECT_CLIENT response out of data and
+// records the negotiated buffer size and protocol version on the driver.
+func (heci *Driver) parseConnectClientData(data CMEIConnectClientData) error {
 	t := MEIConnectClientData{}
 
 	err := binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
