@@ -88,8 +88,13 @@ type GetProvisioningLogResponse struct {
 // ErrProvisioningLogTruncated is returned when the firmware response is shorter than a full log.
 var ErrProvisioningLogTruncated = errors.New("provisioning log response truncated")
 
-// getProvisioningLogRequestSize is the 12-byte header plus the 1-byte version.
-const getProvisioningLogRequestSize = GET_REQUEST_SIZE + 1
+const (
+	// provisioningLogHeaderSize is the 12-byte message header plus the 4-byte status.
+	provisioningLogHeaderSize = GET_REQUEST_SIZE + 4
+	// provisioningLogPayloadSize is what the header's Length counts for a
+	// complete log: status (4), version (1) and HBP_PROV_LOG (20).
+	provisioningLogPayloadSize = 4 + 1 + 20
+)
 
 // GetProvisioningLog sends AMT_HOSTIF_CFG_GET_HBP_PROV_LOG, which reports the
 // latest CCM/ACM host-based provisioning result, including TEP-specific
@@ -106,22 +111,38 @@ func (pthi Command) GetProvisioningLog() (response GetProvisioningLogResponse, e
 		return response, err
 	}
 
-	result, err := pthi.Call(binBuf.Bytes(), getProvisioningLogRequestSize)
+	// Send and Receive rather than Call, which returns the whole zero-filled
+	// receive buffer and would hide a short response.
+	if err := pthi.Send(binBuf.Bytes()); err != nil {
+		return response, err
+	}
+
+	result, bytesRead, err := pthi.Receive()
 	if err != nil {
 		return response, err
 	}
 
-	buf := bytes.NewBuffer(result)
+	return parseProvisioningLogResponse(result[:bytesRead])
+}
+
+// parseProvisioningLogResponse decodes a response from the bytes actually
+// received. A success response must carry the full log, both in the length
+// its header declares and in the bytes received.
+func parseProvisioningLogResponse(b []byte) (response GetProvisioningLogResponse, err error) {
+	if len(b) < provisioningLogHeaderSize {
+		return response, fmt.Errorf("%w: received %d bytes, need %d for the header and status", ErrProvisioningLogTruncated, len(b), provisioningLogHeaderSize)
+	}
+
+	buf := bytes.NewBuffer(b)
 	response.Header = ReadHeaderResponse(buf)
 
 	if response.Header.Status != AMT_STATUS_SUCCESS {
 		return response, fmt.Errorf("get provisioning log failed: %s (0x%x)", response.Header.Status, uint32(response.Header.Status))
 	}
 
-	// Header.Length counts the payload after the 12-byte header: status, version and log.
-	const payloadSize = 4 + 1 + 20
-	if response.Header.Header.Length < payloadSize {
-		return response, fmt.Errorf("%w: %d bytes, want %d", ErrProvisioningLogTruncated, response.Header.Header.Length, payloadSize)
+	declared := response.Header.Header.Length
+	if received := len(b) - GET_REQUEST_SIZE; declared < provisioningLogPayloadSize || received < provisioningLogPayloadSize {
+		return response, fmt.Errorf("%w: header declares %d bytes and %d were received, want %d", ErrProvisioningLogTruncated, declared, received, provisioningLogPayloadSize)
 	}
 
 	if err := binary.Read(buf, binary.LittleEndian, &response.Version); err != nil {

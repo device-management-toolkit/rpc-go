@@ -33,7 +33,7 @@ func provisioningLogMessage(t *testing.T, status Status, length uint32, log Prov
 }
 
 func TestGetProvisioningLog(t *testing.T) {
-	numBytes = getProvisioningLogRequestSize
+	numBytes = GET_REQUEST_SIZE + 1 // header plus the version byte
 
 	want := ProvisioningLog{
 		CcmProvisioningStatus: PROV_RES_INVALID,
@@ -60,11 +60,36 @@ func TestGetProvisioningLog(t *testing.T) {
 		assert.Contains(t, err.Error(), "AMT_STATUS_INTERNAL_ERROR")
 	})
 
-	t.Run("truncated", func(t *testing.T) {
+	t.Run("declared length too short", func(t *testing.T) {
 		message = provisioningLogMessage(t, AMT_STATUS_SUCCESS, 5, want)
 
 		_, err := pthi.GetProvisioningLog()
 		require.ErrorIs(t, err, ErrProvisioningLogTruncated)
+	})
+
+	t.Run("received fewer bytes than declared", func(t *testing.T) {
+		// Header still declares the full 25 bytes, but the log is cut off
+		// after the version and 3 log bytes.
+		message = provisioningLogMessage(t, AMT_STATUS_SUCCESS, 25, want)[:provisioningLogHeaderSize+4]
+
+		_, err := pthi.GetProvisioningLog()
+		require.ErrorIs(t, err, ErrProvisioningLogTruncated)
+	})
+
+	t.Run("header cut off", func(t *testing.T) {
+		message = provisioningLogMessage(t, AMT_STATUS_SUCCESS, 25, want)[:provisioningLogHeaderSize-1]
+
+		_, err := pthi.GetProvisioningLog()
+		require.ErrorIs(t, err, ErrProvisioningLogTruncated)
+	})
+
+	t.Run("failure status without a log", func(t *testing.T) {
+		message = provisioningLogMessage(t, AMT_STATUS_INTERNAL_ERROR, 4, ProvisioningLog{})[:provisioningLogHeaderSize]
+
+		_, err := pthi.GetProvisioningLog()
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrProvisioningLogTruncated)
+		assert.Contains(t, err.Error(), "AMT_STATUS_INTERNAL_ERROR")
 	})
 }
 
