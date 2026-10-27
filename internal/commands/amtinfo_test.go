@@ -2973,28 +2973,21 @@ func TestClassifyStatusWSMANFailure(t *testing.T) {
 	transportErr := &net.OpError{Op: "dial", Err: errors.New("connection refused")}
 	tlsErr := &url.Error{Op: "Post", URL: "https://amt.example.com", Err: errors.New("certificate verify failed")}
 	tests := []struct {
-		name        string
-		err         error
-		status      WSMANStatus
-		message     string
-		credentials bool
+		name    string
+		err     error
+		message string
 	}{
-		{name: "HTTP 401", err: errors.New("wsman.Client post received: 401 Unauthorized"), status: WSMANStatusUnauthorized, message: "HTTP 401", credentials: true},
-		{name: "HTTP 503", err: errors.New("wsman.Client post received: 503 Service Unavailable"), status: WSMANStatusUnavailable, message: "HTTP 503"},
-		{name: "connection failure", err: transportErr, status: WSMANStatusUnavailable, message: "connection/TLS request failed"},
-		{name: "TLS failure", err: tlsErr, status: WSMANStatusUnavailable, message: "connection/TLS request failed"},
-		{name: "SOAP fault", err: amterror.NewAMTError("Client", "Access denied", "fault detail"), status: WSMANStatusUnavailable, message: "WSMAN SOAP fault"},
+		{name: "HTTP 401 error text", err: errors.New("wsman.Client post received: 401 Unauthorized"), message: "WSMAN request failed: wsman.Client post received: 401 Unauthorized"},
+		{name: "HTTP 503 error text", err: errors.New("wsman.Client post received: 503 Service Unavailable"), message: "WSMAN request failed: wsman.Client post received: 503 Service Unavailable"},
+		{name: "connection failure", err: transportErr, message: "connection/TLS request failed"},
+		{name: "TLS failure", err: tlsErr, message: "connection/TLS request failed"},
+		{name: "SOAP fault", err: amterror.NewAMTError("Client", "Access denied", "fault detail"), message: "WSMAN SOAP fault"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			status, message := classifyStatusWSMANFailure(test.err)
-			assert.Equal(t, test.status, status)
+			message := classifyStatusWSMANFailure(test.err)
 			assert.Contains(t, message, test.message)
-
-			if !test.credentials {
-				assert.NotContains(t, message, "credentials")
-			}
 		})
 	}
 }

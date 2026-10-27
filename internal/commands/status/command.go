@@ -74,7 +74,11 @@ func verdictError(verdict Verdict) error {
 	case resultNotAMT:
 		return utils.AmtNotDetected
 	case resultUnknown:
-		return utils.GenericFailure
+		return utils.CustomError{
+			Code:    utils.AmtStatusUnknown.Code,
+			Message: utils.AmtStatusUnknown.Message,
+			Details: verdict.Status,
+		}
 	default:
 		return nil
 	}
@@ -88,17 +92,14 @@ func (cmd *StatusCmd) evaluate(ctx *commands.Context) report {
 		meiDriverVersion = statusGetMEIDriverVersion()
 	}
 
-	adapters := utils.GetPlatformAdapters()
 	osInfo := utils.GetOSInfo()
 
 	result := report{
-		DetectedState:       resultUnknown,
-		SelectedCheckSet:    selectedCheckSet(cmd),
-		Checks:              initialChecks(elevated, cmd.HECIAvailable, cmd.GetHECIInitError(), meiDriverVersion),
-		ProcessorModel:      utils.GetCPUModel(),
-		OSDescription:       strings.TrimSpace(strings.TrimSpace(osInfo.Distro) + " " + osInfo.Version),
-		WiredAdapterName:    strings.Join(adapters.Wired, ", "),
-		WirelessAdapterName: strings.Join(adapters.Wireless, ", "),
+		DetectedState:    resultUnknown,
+		SelectedCheckSet: selectedCheckSet(cmd),
+		Checks:           initialChecks(elevated, cmd.HECIAvailable, cmd.GetHECIInitError(), meiDriverVersion),
+		ProcessorModel:   utils.GetCPUModel(),
+		OSDescription:    strings.TrimSpace(strings.TrimSpace(osInfo.Distro) + " " + osInfo.Version),
 	}
 	if result.OSDescription == "" {
 		result.OSDescription = osInfo.Name
@@ -127,17 +128,20 @@ func (cmd *StatusCmd) evaluate(ctx *commands.Context) report {
 		result.Checks = append(result.Checks, checks...)
 	} else {
 		if cmd.ControlMode == 0 {
-			result.DetectedState = "pre_provisioning"
+			result.DetectedState = statePreProvisioning
 		}
 
 		var checks []Check
 
 		checks, snapshot = collectPreActivationChecks(cmd, ctx)
 		result.Checks = append(result.Checks, checks...)
-		result.ActivationProfiles = evaluateActivationProfiles(snapshot, result.Checks)
 	}
 
 	populateSnapshot(&result, snapshot)
+
+	if result.DetectedState == statePreProvisioning {
+		result.ActivationProfiles = evaluateActivationProfiles(snapshot, result.Checks)
+	}
 
 	result.Verdict = EvaluateVerdict(result.Checks)
 	result.Host = cmd.Host

@@ -67,7 +67,11 @@ func renderText(w io.Writer, result report) error {
 	fmt.Fprintf(&output, "%s %s\n", verdictSymbol(result.Verdict.Result), result.Verdict.Status)
 
 	if result.Verdict.ReadyForManagement {
-		output.WriteString("→ No action required.\n")
+		if hasWarnings(result.Checks) {
+			output.WriteString("→ Review the warnings for your management configuration.\n")
+		} else {
+			output.WriteString("→ No action required.\n")
+		}
 	} else if result.Verdict.ReadyToProvision || len(result.ActivationProfiles) > 0 {
 		output.WriteString(activationRecommendation(result) + "\n")
 	} else {
@@ -108,6 +112,10 @@ func renderText(w io.Writer, result report) error {
 }
 
 func activationRecommendation(result report) string {
+	if result.Verdict.Reason == reasonRemoteNetworkBlocked {
+		return "→ Restore host networking before RPS or Console-profile activation; use a local activation path only if its prerequisites pass."
+	}
+
 	if len(result.ActivationProfiles) == 2 {
 		acmReady := result.ActivationProfiles[0].ReadyToProvision
 		ccmReady := result.ActivationProfiles[1].ReadyToProvision
@@ -142,7 +150,7 @@ func activationRecommendation(result report) string {
 	}
 
 	if result.Verdict.Result == resultConditional {
-		if strings.Contains(result.Verdict.Status, "DNS suffixes differ") {
+		if result.Verdict.Reason == reasonDNSSuffixMismatch {
 			return "→ Proceed with " + mode + " activation; verify the DNS suffix difference is compatible with the selected provisioning profile."
 		}
 
@@ -150,6 +158,16 @@ func activationRecommendation(result report) string {
 	}
 
 	return "→ Proceed with " + mode + " activation."
+}
+
+func hasWarnings(checks []Check) bool {
+	for _, check := range checks {
+		if check.Status == checkWarn {
+			return true
+		}
+	}
+
+	return false
 }
 
 func readinessLabel(result string) string {
@@ -167,7 +185,7 @@ func readinessLabel(result string) string {
 
 func displayDetectedState(state string) string {
 	switch state {
-	case "pre_provisioning":
+	case statePreProvisioning:
 		return "Pre-provisioning"
 	case "admin control mode":
 		return "Admin Control Mode"

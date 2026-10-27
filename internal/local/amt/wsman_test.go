@@ -23,38 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPreserveWSMANHTTPStatus(t *testing.T) {
-	tests := []struct {
-		name       string
-		err        error
-		statusCode int
-		wantTyped  bool
-	}{
-		{name: "unauthorized", err: errors.New("wsman.Client post received: 401 Unauthorized\\nSOAP body"), statusCode: 401, wantTyped: true},
-		{name: "server error", err: errors.New("wsman.Client post received: 503 Service Unavailable\\nSOAP body"), statusCode: 503, wantTyped: true},
-		{name: "transport failure", err: errors.New("connection refused")},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := PreserveWSMANHTTPStatus(tt.err)
-
-			var statusErr *WSMANHTTPStatusError
-
-			errAs := errors.As(got, &statusErr)
-			if !tt.wantTyped {
-				assert.False(t, errAs)
-
-				return
-			}
-
-			require.True(t, errAs)
-			assert.Equal(t, tt.statusCode, statusErr.StatusCode)
-			assert.ErrorIs(t, got, tt.err)
-		})
-	}
-}
-
 // newUntrustedTLSServer starts a TLS server whose self-signed certificate a
 // default tls.Config rejects, like AMT's certificate after activation.
 func newUntrustedTLSServer(t *testing.T) string {

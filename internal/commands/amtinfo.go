@@ -294,6 +294,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
 	service, result, syncResult, err := cmd.readInfo(ctx)
+	defer service.closeWSMAN()
+
 	if result == nil {
 		return err
 	}
@@ -355,7 +357,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 // Collect returns the information Run prints, without printing it, for
 // callers that use amtinfo as a library. Like Run, it syncs the information
-// to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
+// to the devices API when Sync is set. Like Run, it closes the read's WSMAN
 // client before returning, so a long-lived process can call it again. That
 // client is the command's own (cmd.WSMan) if one is set, even if the read did
 // not use it, and otherwise the one the read opened, if any. It returns the
@@ -392,8 +394,6 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, *Devic
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
 	)
-	defer service.CloseOwnedWSMANClient()
-
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
 	if cmd.Sync {
@@ -470,6 +470,7 @@ type InfoResult struct {
 type InfoSnapshot struct {
 	Info                      *InfoResult
 	TLSMode                   string
+	WSMANPreflightFailed      bool
 	AMTDNSSuffixRead          bool
 	OSDNSSuffixRead           bool
 	ProvisioningStateRead     bool
@@ -481,9 +482,8 @@ type InfoSnapshot struct {
 type WSMANStatus string
 
 const (
-	WSMANStatusAvailable    WSMANStatus = "available"
-	WSMANStatusUnauthorized WSMANStatus = "unauthorized"
-	WSMANStatusUnavailable  WSMANStatus = "unavailable"
+	WSMANStatusAvailable   WSMANStatus = "available"
+	WSMANStatusUnavailable WSMANStatus = "unavailable"
 )
 
 type PostActivationSnapshot struct {
@@ -637,13 +637,7 @@ func (s *InfoService) CloseOwnedWSMANClient() {
 		return
 	}
 
-	wsman := s.wsman
-	s.wsman = nil
-	s.ownsWSMANClient = false
-
-	if err := wsman.Close(); err != nil {
-		log.Debugf("failed to close InfoService-owned WSMAN client: %v", err)
-	}
+	s.closeWSMAN()
 }
 
 // WithHECIAvailable configures whether HECI-dependent reads should run.
@@ -1470,8 +1464,7 @@ func (s *InfoService) GetInfoSnapshot(cmd *AmtInfoCmd, includeTLS bool) *InfoSna
 
 	if includeTLS && s.heciAvailable && (controlMode == 1 || controlMode == 2) {
 		snapshot.PostActivation = &PostActivationSnapshot{}
-
-		s.preflightStatusWSMAN(controlMode)
+		snapshot.WSMANPreflightFailed = !s.preflightStatusWSMAN(controlMode)
 	}
 
 	info, reads := s.collectAMTInfo(cmd, snapshot.PostActivation != nil)
@@ -1487,6 +1480,8 @@ func (s *InfoService) GetInfoSnapshot(cmd *AmtInfoCmd, includeTLS bool) *InfoSna
 	}
 
 	if snapshot.PostActivation != nil {
+		snapshot.PostActivation.MonitorConnected = utils.DetectMonitorConnected()
+
 		snapshot.PostActivation.TLSModeRead = s.tlsModeRead
 		if s.wsman != nil && !s.wsmanBlocked {
 			connectionMode := ""
@@ -1505,46 +1500,57 @@ func (s *InfoService) GetInfoSnapshot(cmd *AmtInfoCmd, includeTLS bool) *InfoSna
 	return snapshot
 }
 
-func (s *InfoService) preflightStatusWSMAN(controlMode int) {
+func (s *InfoService) preflightStatusWSMAN(controlMode int) bool {
 	if err := s.ensureWSMANClient(controlMode); err != nil {
-		s.recordPostWSMANFailure(err)
-		s.wsmanBlocked = true
-		s.releaseWSMANClient()
+		s.failWSMANPreflight(err)
 
-		return
+		return false
 	}
 
 	if s.wsman == nil {
-		s.wsmanStatus = WSMANStatusUnavailable
-		s.wsmanMessage = "WSMAN client is unavailable"
-		s.wsmanBlocked = true
+		s.failWSMANPreflight(errors.New("WSMAN client is unavailable"))
 
-		return
+		return false
 	}
 
 	if _, err := s.wsman.GetGeneralSettings(); err != nil {
-		s.recordPostWSMANFailure(err)
-		s.wsmanBlocked = true
-		s.releaseWSMANClient()
+		s.failWSMANPreflight(err)
 
-		return
+		return false
 	}
 
 	s.wsmanStatus = WSMANStatusAvailable
 	s.wsmanMessage = "Authenticated WSMAN request succeeded"
+
+	return true
+}
+
+func (s *InfoService) failWSMANPreflight(err error) {
+	s.wsmanFailed(err)
+	s.wsmanStatus = WSMANStatusUnavailable
+	s.wsmanMessage = preflightWSMANFailureMessage(err)
+	s.wsmanBlocked = true
+	s.releaseWSMANClient()
+}
+
+func preflightWSMANFailureMessage(err error) string {
+	message := "WSMAN unavailable"
+	if err != nil {
+		message += ": " + err.Error()
+	}
+
+	var certErr *tls.CertificateVerificationError
+	if err != nil && errors.As(err, &certErr) {
+		message += "; " + wsmanUnavailableReason(err)
+	}
+
+	return message + "; check the AMT admin password (--password) and that LMS is running"
 }
 
 func (s *InfoService) recordPostWSMANFailure(err error) bool {
-	err = localamt.PreserveWSMANHTTPStatus(err)
-
-	s.wsmanStatus, s.wsmanMessage = classifyStatusWSMANFailure(err)
-
-	if s.wsmanStatus != WSMANStatusUnauthorized {
-		return false
-	}
-
+	s.wsmanStatus = WSMANStatusUnavailable
+	s.wsmanMessage = classifyStatusWSMANFailure(err)
 	s.wsmanBlocked = true
-	s.releaseWSMANClient()
 
 	return true
 }
@@ -1556,43 +1562,35 @@ func (s *InfoService) releaseWSMANClient() {
 		return
 	}
 
-	// Injected clients remain caller-owned, but must not be used after a 401.
+	// Injected clients remain caller-owned; failed preflights clear the service reference.
 	s.wsman = nil
 }
 
-func classifyStatusWSMANFailure(err error) (WSMANStatus, string) {
-	err = localamt.PreserveWSMANHTTPStatus(err)
-
-	var statusErr *localamt.WSMANHTTPStatusError
-	if errors.As(err, &statusErr) {
-		if statusErr.StatusCode == http.StatusUnauthorized {
-			return WSMANStatusUnauthorized, "AMT rejected WSMAN credentials (HTTP 401)"
-		}
-
-		return WSMANStatusUnavailable, fmt.Sprintf("WSMAN returned HTTP %d", statusErr.StatusCode)
+func classifyStatusWSMANFailure(err error) string {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return "WSMAN unavailable (" + wsmanUnavailableReason(err) + ")"
 	}
 
 	var soapErr *amterror.AMTError
 	if errors.As(err, &soapErr) {
-		return WSMANStatusUnavailable, "AMT returned a WSMAN SOAP fault: " + soapErr.Message
+		return "AMT returned a WSMAN SOAP fault: " + soapErr.Message
 	}
 
 	var urlErr *neturl.Error
 	if errors.As(err, &urlErr) {
-		return WSMANStatusUnavailable, "WSMAN connection/TLS request failed: " + urlErr.Err.Error()
+		return "WSMAN connection/TLS request failed: " + urlErr.Err.Error()
 	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		return WSMANStatusUnavailable, "WSMAN connection/TLS request failed: " + netErr.Error()
+		return "WSMAN connection/TLS request failed: " + netErr.Error()
 	}
 
-	return WSMANStatusUnavailable, "WSMAN request failed: " + err.Error()
+	return "WSMAN request failed: " + err.Error()
 }
 
 func (s *InfoService) collectPostActivationSnapshot(snapshot *PostActivationSnapshot, connectionMode, tlsMode string, kvmSupported bool) {
-	snapshot.MonitorConnected = utils.DetectMonitorConnected()
-
 	if s.wsman == nil || s.wsmanBlocked {
 		return
 	}
@@ -2919,10 +2917,9 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	return nil
 }
 
-// closeWSMAN closes the service's WSMAN client, if any, and releases it. Run
-// leaves the client to process exit, but over LME a held connection keeps
-// the MEI device open, and the next call in the same process would fail with
-// "device busy". A close failure is only logged.
+// closeWSMAN closes the service's WSMAN client, if any, and releases it. Over
+// LME, a held connection keeps the MEI device open, and the next call in the
+// same process would fail with "device busy". A close failure is only logged.
 func (s *InfoService) closeWSMAN() {
 	if s.wsman == nil {
 		return
@@ -2933,6 +2930,7 @@ func (s *InfoService) closeWSMAN() {
 	}
 
 	s.wsman = nil
+	s.ownsWSMANClient = false
 }
 
 // getUserCertificates retrieves public key certificates via WSMAN

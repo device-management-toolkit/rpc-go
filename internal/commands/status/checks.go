@@ -97,7 +97,7 @@ func postActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Che
 		{ID: checkIDActivation, Name: checkNameActivation, Status: checkPass, Message: "AMT activated state: " + info.ControlMode},
 		platformCheck(info.Features, info.AMT, info.SKU),
 		versionCheck(info.AMT),
-		dnsCheck(info.DNSSuffix, info.DNSSuffixOS, snapshot.AMTDNSSuffixRead, snapshot.OSDNSSuffixRead, false),
+		postActivationDNSCheck(info.DNSSuffix, info.DNSSuffixOS, snapshot.AMTDNSSuffixRead, snapshot.OSDNSSuffixRead),
 		postActivationNetworkCheck(info),
 		lmsCheck(cmd.LocalTLSEnforced),
 		provisioningStatePostCheck(info.ProvisioningState, snapshot.ProvisioningStateRead),
@@ -116,9 +116,17 @@ func postActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Che
 		checks = append(checks, ciraConfigurationCheck(snapshot.PostActivation), ciraConnectionCheck(info.RAS))
 	}
 
-	var post *commands.PostActivationSnapshot
+	var (
+		post             *commands.PostActivationSnapshot
+		monitorConnected *bool
+	)
+
 	if snapshot != nil {
 		post = snapshot.PostActivation
+	}
+
+	if post != nil {
+		monitorConnected = post.MonitorConnected
 	}
 
 	checks = append(checks,
@@ -126,7 +134,7 @@ func postActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Che
 		solCheck(post),
 		userConsentCheck(post),
 		tlsModeCheck(snapshot.TLSMode, post),
-		monitorCheck(post.MonitorConnected),
+		monitorCheck(monitorConnected),
 	)
 	if !strings.Contains(info.Features, deviceTypeISM) {
 		checks = append(checks, kvmCheck(post))
@@ -140,7 +148,27 @@ func postActivationChecks(cmd *StatusCmd, snapshot *commands.InfoSnapshot) []Che
 		checks = append(checks, directHostReachabilityCheck(cmd.Host, snapshot.TLSMode))
 	}
 
-	return checks
+	return collapseUnavailableWSMANChecks(checks, post)
+}
+
+func collapseUnavailableWSMANChecks(checks []Check, post *commands.PostActivationSnapshot) []Check {
+	if post == nil || post.WSMANStatus == commands.WSMANStatusAvailable {
+		return checks
+	}
+
+	filtered := make([]Check, 0, len(checks))
+	for _, check := range checks {
+		if check.Status == checkUnavailable {
+			switch check.ID {
+			case checkIDRedirection, checkIDSOL, checkIDUserConsent, checkIDTLS, checkIDTrustedRoots, checkIDKVM, checkIDCIRA:
+				continue
+			}
+		}
+
+		filtered = append(filtered, check)
+	}
+
+	return filtered
 }
 
 func requestedPostActivationModeCheck(cmd *StatusCmd, actualMode string) (Check, bool) {
@@ -218,15 +246,13 @@ func wsmanSessionCheck(snapshot *commands.PostActivationSnapshot) Check {
 	switch snapshot.WSMANStatus {
 	case commands.WSMANStatusAvailable:
 		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkPass, Message: "Local WSMAN session available"}
-	case commands.WSMANStatusUnauthorized:
-		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: snapshot.WSMANMessage}
 	case commands.WSMANStatusUnavailable:
 		message := snapshot.WSMANMessage
 		if message == "" {
 			message = "Local WSMAN session is unavailable"
 		}
 
-		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: message}
+		return Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: "Skipped: " + message}
 	default:
 		message := snapshot.WSMANMessage
 		if message == "" {
@@ -250,7 +276,7 @@ func connectionModeCheck(status *amt.RemoteAccessStatus) Check {
 	case "vpn":
 		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkPass, Message: "AMT Connection Mode: VPN"}
 	default:
-		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkUnavailable, Message: "AMT connection mode is unknown: " + status.NetworkStatus}
+		return Check{ID: checkIDConnectionMode, Name: checkNameConnectionMode, Status: checkUnavailable, Message: "AMT connection mode could not be determined"}
 	}
 }
 
@@ -290,19 +316,36 @@ func redirectionCheck(snapshot *commands.PostActivationSnapshot) Check {
 
 	state, err := strconv.Atoi(snapshot.RedirectionState)
 
-	message := fmt.Sprintf("redirection listener=%t enabledState=%s", snapshot.RedirectionListenerEnabled, snapshot.RedirectionState)
+	message := "Redirection listener is disabled"
+	if snapshot.RedirectionListenerEnabled {
+		message = "Redirection listener is enabled"
+	}
+
 	if err != nil {
 		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkUnavailable, Message: message + "; enabled state is unknown"}
 	}
 
 	switch state {
-	case 32769, 32770, 32771:
+	case int(redirection.IDERIsEnabledAndSOLIsDisabled), int(redirection.SOLIsEnabledAndIDERIsDisabled), int(redirection.IDERAndSOLAreEnabled):
 		if snapshot.RedirectionListenerEnabled {
-			return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkPass, Message: message}
+			features := "SOL and IDER are enabled"
+
+			switch state {
+			case int(redirection.IDERIsEnabledAndSOLIsDisabled):
+				features = "IDER is enabled; SOL is disabled"
+			case int(redirection.SOLIsEnabledAndIDERIsDisabled):
+				features = "SOL is enabled; IDER is disabled"
+			}
+
+			return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkPass, Message: message + "; " + features}
 		}
 
 		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkFail, Message: message + "; listener is disabled"}
-	case 32768:
+	case int(redirection.IDERAndSOLAreDisabled):
+		if snapshot.KVMRead && strings.EqualFold(snapshot.KVMState, stateEnabled) && !snapshot.RedirectionListenerEnabled {
+			return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkFail, Message: message + "; KVM cannot accept remote connections"}
+		}
+
 		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkWarn, Message: message + "; SOL and IDER are disabled"}
 	default:
 		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkUnavailable, Message: message + "; enabled state is unknown"}
@@ -440,11 +483,8 @@ func directHostReachabilityCheck(host, tlsMode string) Check {
 	return Check{ID: checkIDDirectHost, Name: checkNameDirectHost, Status: checkPass, Message: "Console endpoint is reachable at " + endpoint}
 }
 
-func directHostEndpoint(host, tlsMode string) (string, error) {
-	port := "16992"
-	if strings.EqualFold(tlsMode, "Server") || strings.EqualFold(tlsMode, "Mutual") {
-		port = "16993"
-	}
+func directHostEndpoint(host, _ string) (string, error) {
+	port := "443"
 
 	if strings.Contains(host, "://") {
 		parsed, err := url.Parse(host)
@@ -489,7 +529,7 @@ func collectInfoSnapshot(cmd *StatusCmd, ctx *commands.Context, infoCmd *command
 	defer service.CloseOwnedWSMANClient()
 
 	snapshot := service.GetInfoSnapshot(infoCmd, true)
-	if snapshot.PostActivation != nil && snapshot.PostActivation.WSMANStatus == commands.WSMANStatusUnauthorized {
+	if snapshot.WSMANPreflightFailed {
 		cmd.WSMan = nil
 	}
 
@@ -525,7 +565,7 @@ func evaluateActivationProfiles(snapshot *commands.InfoSnapshot, checks []Check)
 
 	commonChecks := make([]Check, 0, len(checks))
 	for _, check := range checks {
-		if check.ID != checkIDDNS && check.ID != checkIDNetwork {
+		if check.ID != checkIDDNS && check.ID != checkIDNetwork && check.ID != checkIDHostNetwork {
 			commonChecks = append(commonChecks, check)
 		}
 	}
@@ -546,11 +586,13 @@ func evaluateActivationProfiles(snapshot *commands.InfoSnapshot, checks []Check)
 			networkCheck(snapshot.Info, profile.acm, profile.ccm),
 		)
 		verdict := EvaluateVerdict(profileChecks)
+		verdict.ReadyForRemoteActivation = verdict.ReadyToProvision && remoteActivationNetworkReady(checks)
 		readiness = append(readiness, activationProfileReadiness{
-			Profile:          profile.name,
-			Result:           verdict.Result,
-			Status:           verdict.Status,
-			ReadyToProvision: verdict.ReadyToProvision,
+			Profile:                  profile.name,
+			Result:                   verdict.Result,
+			Status:                   verdict.Status,
+			ReadyToProvision:         verdict.ReadyToProvision,
+			ReadyForRemoteActivation: verdict.ReadyForRemoteActivation,
 		})
 	}
 
@@ -569,8 +611,22 @@ func populateSnapshot(result *report, snapshot *commands.InfoSnapshot) {
 	result.AMTOperationalState = snapshot.Info.OperationalState
 	result.RemoteAccess = snapshot.Info.RAS
 	result.TLSMode = snapshot.TLSMode
-	result.WiredAdapterStatus = adapterStatus(snapshot.Info.WiredAdapter)
-	result.WirelessAdapterStatus = adapterStatus(snapshot.Info.WirelessAdapter)
+	macs := make([]string, 0, 2)
+
+	adapters := []*amt.InterfaceSettings{snapshot.Info.WiredAdapter, snapshot.Info.WirelessAdapter}
+	for _, adapter := range adapters {
+		if adapter != nil {
+			macs = append(macs, adapter.MACAddress)
+		}
+	}
+
+	inventory, err := statusGetAMTNetworkAdapters(macs)
+	result.WiredAdapterName, result.WiredAdapterStatus = matchedAdapterDetails(snapshot.Info.WiredAdapter, inventory)
+
+	result.WirelessAdapterName, result.WirelessAdapterStatus = matchedAdapterDetails(snapshot.Info.WirelessAdapter, inventory)
+	if snapshot.Info.ControlMode == utils.InterpretControlMode(0) {
+		result.Checks = append(result.Checks, hostNetworkCheck(adapters, inventory, err))
+	}
 }
 
 func activationCheck(controlMode string) Check {
@@ -660,7 +716,21 @@ func dnsCheck(amtSuffix, osSuffix string, amtSuffixRead, osSuffixRead, acm bool)
 		return Check{ID: checkIDDNS, Name: checkNameDNS, Status: checkPass, Message: "AMT DNS suffix configured: " + amtSuffix}
 	}
 
-	return Check{ID: checkIDDNS, Name: checkNameDNS, Status: checkWarn, Message: "AMT DNS suffix (" + amtSuffix + ") differs from host DNS suffix (" + osSuffix + "). Confirm this matches your provisioning setup"}
+	return Check{ID: checkIDDNS, Name: checkNameDNS, Status: checkWarn, Reason: reasonDNSSuffixMismatch, Message: "AMT DNS suffix (" + amtSuffix + ") differs from host DNS suffix (" + osSuffix + "). Confirm this matches your provisioning setup"}
+}
+
+func postActivationDNSCheck(amtSuffix, osSuffix string, amtRead, osRead bool) Check {
+	check := dnsCheck(amtSuffix, osSuffix, amtRead, osRead, false)
+	if !amtRead || !osRead {
+		check.Status = checkUnavailable
+		check.Message = "AMT and host DNS suffix compatibility could not be verified"
+	} else if strings.Trim(strings.TrimSpace(amtSuffix), ".") == "" {
+		check.Message = "AMT DNS suffix is not configured; verify the intended management DNS configuration"
+	} else if check.Reason == reasonDNSSuffixMismatch {
+		check.Message = "AMT DNS suffix differs from the host DNS suffix; verify the intended management DNS configuration"
+	}
+
+	return check
 }
 
 func networkCheck(info *commands.InfoResult, acm, ccm bool) Check {
@@ -692,7 +762,7 @@ func networkCheck(info *commands.InfoResult, acm, ccm bool) Check {
 		return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkWarn, Message: "Wireless link is up; ACM activation requires wired link"}
 	}
 
-	return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkWarn, Message: "No AMT network link detected; CCM can still proceed locally"}
+	return Check{ID: checkIDNetwork, Name: checkNameNetwork, Status: checkWarn, Reason: reasonLocalOnlyNetwork, Message: "No AMT network link detected; CCM can still proceed locally"}
 }
 
 func postActivationNetworkCheck(info *commands.InfoResult) Check {
@@ -725,22 +795,4 @@ func lmsCheck(localTLSEnforced bool) Check {
 	}
 
 	return Check{ID: checkIDLMS, Name: checkNameLMS, Status: checkWarn, Message: "Local Manageability Service is not reachable"}
-}
-
-func adapterStatus(adapter *amt.InterfaceSettings) string {
-	if adapter == nil {
-		return "not detected"
-	}
-
-	supported := adapter.IsEnabled || (adapter.MACAddress != "" && adapter.MACAddress != "00:00:00:00:00:00")
-	if !supported {
-		return "not supported"
-	}
-
-	linkStatus := "down"
-	if strings.EqualFold(adapter.LinkStatus, statusLinkUp) {
-		linkStatus = statusLinkUp
-	}
-
-	return "supported, link " + linkStatus
 }

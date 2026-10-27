@@ -35,6 +35,7 @@ const (
 	checkIDVersion             = "amt_version"
 	checkIDDNS                 = "dns_suffix"
 	checkIDNetwork             = "amt_network_link"
+	checkIDHostNetwork         = "host_network_for_remote_activation"
 	checkIDLMS                 = "lms"
 	checkIDWSMAN               = "wsman_session"
 	checkIDConnectionMode      = "amt_connection_mode"
@@ -81,6 +82,10 @@ const (
 	statusLinkUp               = "up"
 	minSupportedAMTMajor       = 11
 	maxSupportedAMTMajor       = 21
+	statePreProvisioning       = "pre_provisioning"
+	reasonDNSSuffixMismatch    = "dns_suffix_mismatch"
+	reasonLocalOnlyNetwork     = "local_only_network"
+	reasonRemoteNetworkBlocked = "remote_activation_network_blocked"
 )
 
 // Check is one machine-readable readiness observation.
@@ -89,21 +94,25 @@ type Check struct {
 	Name    string     `json:"name"`
 	Status  checkState `json:"status"`
 	Message string     `json:"message"`
+	Reason  string     `json:"reason,omitempty"`
 }
 
 // Verdict is the only computed summary consumed by text and JSON output.
 type Verdict struct {
-	Result             string
-	Status             string
-	ReadyToProvision   bool
-	ReadyForManagement bool
+	Result                   string
+	Status                   string
+	ReadyToProvision         bool
+	ReadyForManagement       bool
+	ReadyForRemoteActivation bool
+	Reason                   string
 }
 
 type activationProfileReadiness struct {
-	Profile          string `json:"profile"`
-	Result           string `json:"result"`
-	Status           string `json:"status"`
-	ReadyToProvision bool   `json:"readyToProvision"`
+	Profile                  string `json:"profile"`
+	Result                   string `json:"result"`
+	Status                   string `json:"status"`
+	ReadyToProvision         bool   `json:"readyToProvision"`
+	ReadyForRemoteActivation bool   `json:"readyForRemoteActivation"`
 }
 
 type report struct {
@@ -129,32 +138,33 @@ type report struct {
 }
 
 type evaluation struct {
-	DetectedState         string                       `json:"detectedState"`
-	SelectedCheckSet      string                       `json:"selectedCheckSet"`
-	DeviceType            string                       `json:"deviceType,omitempty"`
-	AMTVersion            string                       `json:"amtVersion,omitempty"`
-	AMTDNSSuffix          string                       `json:"amtDnsSuffix,omitempty"`
-	OSDNSSuffix           string                       `json:"osDnsSuffix,omitempty"`
-	AMTOperationalState   string                       `json:"amtOperationalState,omitempty"`
-	RemoteAccess          *amt.RemoteAccessStatus      `json:"remoteAccess,omitempty"`
-	TLSMode               string                       `json:"tlsMode,omitempty"`
-	Host                  string                       `json:"host,omitempty"`
-	ProcessorModel        string                       `json:"processor,omitempty"`
-	OSDescription         string                       `json:"os,omitempty"`
-	WiredAdapterName      string                       `json:"wiredAdapterName,omitempty"`
-	WirelessAdapterName   string                       `json:"wirelessAdapterName,omitempty"`
-	WiredAdapterStatus    string                       `json:"wiredAdapterStatus,omitempty"`
-	WirelessAdapterStatus string                       `json:"wirelessAdapterStatus,omitempty"`
-	ActivationProfiles    []activationProfileReadiness `json:"activationProfiles,omitempty"`
-	OverallResult         string                       `json:"overallResult"`
-	OverallStatus         string                       `json:"overallStatus"`
-	TotalChecks           int                          `json:"totalChecks"`
-	Passed                int                          `json:"passed"`
-	Warned                int                          `json:"warned"`
-	Failed                int                          `json:"failed"`
-	NotVerified           int                          `json:"notVerified"`
-	ReadyToProvision      bool                         `json:"readyToProvision"`
-	ReadyForManagement    bool                         `json:"readyForManagement,omitempty"`
+	DetectedState            string                       `json:"detectedState"`
+	SelectedCheckSet         string                       `json:"selectedCheckSet"`
+	DeviceType               string                       `json:"deviceType,omitempty"`
+	AMTVersion               string                       `json:"amtVersion,omitempty"`
+	AMTDNSSuffix             string                       `json:"amtDnsSuffix,omitempty"`
+	OSDNSSuffix              string                       `json:"osDnsSuffix,omitempty"`
+	AMTOperationalState      string                       `json:"amtOperationalState,omitempty"`
+	RemoteAccess             *amt.RemoteAccessStatus      `json:"remoteAccess,omitempty"`
+	TLSMode                  string                       `json:"tlsMode,omitempty"`
+	Host                     string                       `json:"host,omitempty"`
+	ProcessorModel           string                       `json:"processor,omitempty"`
+	OSDescription            string                       `json:"os,omitempty"`
+	WiredAdapterName         string                       `json:"wiredAdapterName,omitempty"`
+	WirelessAdapterName      string                       `json:"wirelessAdapterName,omitempty"`
+	WiredAdapterStatus       string                       `json:"wiredAdapterStatus,omitempty"`
+	WirelessAdapterStatus    string                       `json:"wirelessAdapterStatus,omitempty"`
+	ActivationProfiles       []activationProfileReadiness `json:"activationProfiles,omitempty"`
+	OverallResult            string                       `json:"overallResult"`
+	OverallStatus            string                       `json:"overallStatus"`
+	TotalChecks              int                          `json:"totalChecks"`
+	Passed                   int                          `json:"passed"`
+	Warned                   int                          `json:"warned"`
+	Failed                   int                          `json:"failed"`
+	NotVerified              int                          `json:"notVerified"`
+	ReadyToProvision         bool                         `json:"readyToProvision"`
+	ReadyForManagement       bool                         `json:"readyForManagement,omitempty"`
+	ReadyForRemoteActivation bool                         `json:"readyForRemoteActivation"`
 }
 
 type jsonMetadata struct {

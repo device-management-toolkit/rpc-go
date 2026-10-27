@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -55,38 +54,6 @@ type GoWSMANMessages struct {
 	wsmanMessages  wsman.Messages
 	target         string
 	localTransport *LocalTransport
-}
-
-// WSMANHTTPStatusError preserves the HTTP response code from the WSMAN client.
-type WSMANHTTPStatusError struct {
-	StatusCode int
-	Cause      error
-}
-
-func (e *WSMANHTTPStatusError) Error() string { return e.Cause.Error() }
-
-func (e *WSMANHTTPStatusError) Unwrap() error { return e.Cause }
-
-// PreserveWSMANHTTPStatus converts the dependency's final HTTP response error into a typed status error.
-func PreserveWSMANHTTPStatus(err error) error {
-	const responsePrefix = "wsman.Client post received: "
-	if err == nil || !strings.HasPrefix(err.Error(), responsePrefix) {
-		return err
-	}
-
-	statusLine := strings.SplitN(strings.TrimPrefix(err.Error(), responsePrefix), "\n", 2)[0]
-
-	statusFields := strings.Fields(statusLine)
-	if len(statusFields) == 0 {
-		return err
-	}
-
-	statusCode, parseErr := strconv.Atoi(statusFields[0])
-	if parseErr != nil {
-		return err
-	}
-
-	return &WSMANHTTPStatusError{StatusCode: statusCode, Cause: err}
 }
 
 func NewGoWSMANMessages(lmsAddress string) *GoWSMANMessages {

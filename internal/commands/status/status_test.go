@@ -7,9 +7,10 @@ package status
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/general"
@@ -18,7 +19,6 @@ import (
 	cimkvm "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	ipsoptin "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
-	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
@@ -238,7 +238,7 @@ func TestVerdictErrorUsesCustomExitCodes(t *testing.T) {
 	}{
 		{name: "not ready", result: resultNotReady, wantCode: utils.AmtNotReady.Code},
 		{name: "not AMT", result: resultNotAMT, wantCode: utils.AmtNotDetected.Code},
-		{name: "unknown", result: resultUnknown, wantCode: utils.GenericFailure.Code},
+		{name: "unknown", result: resultUnknown, wantCode: utils.AmtStatusUnknown.Code},
 		{name: "conditional is successful", result: resultConditional},
 		{name: "ready is successful", result: resultReady},
 		{name: "not evaluated is successful", result: "not_evaluated"},
@@ -258,6 +258,22 @@ func TestVerdictErrorUsesCustomExitCodes(t *testing.T) {
 			assert.Equal(t, tt.wantCode, customErr.Code)
 		})
 	}
+}
+
+func TestUnknownVerdictErrorsDoNotShareDetails(t *testing.T) {
+	firstErr := verdictError(Verdict{Result: resultUnknown, Status: "first failure"})
+	secondErr := verdictError(Verdict{Result: resultUnknown, Status: "second failure"})
+
+	var firstCustomErr utils.CustomError
+
+	var secondCustomErr utils.CustomError
+
+	require.ErrorAs(t, firstErr, &firstCustomErr)
+	require.ErrorAs(t, secondErr, &secondCustomErr)
+
+	assert.Equal(t, "first failure", firstCustomErr.Details)
+	assert.Equal(t, "second failure", secondCustomErr.Details)
+	assert.Empty(t, utils.AmtStatusUnknown.Details)
 }
 
 func TestEvaluateUnknownWhenNotElevated(t *testing.T) {
@@ -527,14 +543,53 @@ func TestPostActivationVerdictRequiresWSMAN(t *testing.T) {
 	assert.False(t, verdict.ReadyForManagement)
 }
 
-func TestUnauthorizedWSMANStopsPostActivationReads(t *testing.T) {
+func TestActivatedManagementUnavailablePreservesActivationAndErrorDetails(t *testing.T) {
+	for _, mode := range []string{"client control mode", "admin control mode"} {
+		t.Run(mode, func(t *testing.T) {
+			checks := []Check{
+				{ID: checkIDActivation, Status: checkPass, Message: "AMT activated state: " + mode},
+				{ID: checkIDNetwork, Status: checkPass},
+				{ID: checkIDWSMAN, Status: checkUnavailable, Message: "WSMAN connection/TLS request failed: connection refused"},
+				{ID: checkIDKVM, Status: checkUnavailable, Message: "KVM Redirection SAP state could not be read"},
+				{ID: checkIDDirectHost, Status: checkNotEvaluated, Message: "Optional host probe not requested"},
+			}
+			result := report{DetectedState: mode, SelectedCheckSet: checkSetPost, Checks: checks, Verdict: EvaluateVerdict(checks)}
+			assert.Equal(t, resultUnknown, result.Verdict.Result)
+			assert.True(t, strings.HasPrefix(result.Verdict.Status, "Activated; management features not verified: "))
+			assert.Contains(t, result.Verdict.Status, "connection refused")
+			assert.Contains(t, result.Verdict.Status, "KVM Redirection SAP")
+			assert.NotContains(t, result.Verdict.Status, "Optional host probe")
+			assert.False(t, result.Verdict.ReadyForManagement)
+
+			var statusErr utils.CustomError
+			require.ErrorAs(t, verdictError(result.Verdict), &statusErr)
+			assert.Equal(t, utils.AmtStatusUnknown.Code, statusErr.Code)
+			assert.NotEqual(t, utils.GenericFailure.Code, statusErr.Code)
+			assert.Equal(t, result.Verdict.Status, statusErr.Details)
+			assert.Empty(t, utils.AmtStatusUnknown.Details)
+
+			var text bytes.Buffer
+			require.NoError(t, renderText(&text, result))
+			assert.Contains(t, text.String(), result.Verdict.Status)
+
+			var machine bytes.Buffer
+			require.NoError(t, renderJSON(&machine, &commands.Context{}, result))
+
+			var parsed jsonOutput
+			require.NoError(t, json.Unmarshal(machine.Bytes(), &parsed))
+			assert.Equal(t, mode, parsed.Evaluation.DetectedState)
+			assert.Equal(t, resultUnknown, parsed.Evaluation.OverallResult)
+			assert.Equal(t, result.Verdict.Status, parsed.Evaluation.OverallStatus)
+			assert.Equal(t, 2, parsed.Evaluation.Passed)
+		})
+	}
+}
+
+func TestPreflightWSMANFailureReportsUnavailableAndClearsCommandClient(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	amtCommand := mock.NewMockInterface(ctrl)
 	wsman := mock.NewMockWSMANer(ctrl)
-	wsman.EXPECT().GetGeneralSettings().Return(general.Response{}, &localamt.WSMANHTTPStatusError{
-		StatusCode: http.StatusUnauthorized,
-		Cause:      errors.New("unauthorized"),
-	})
+	wsman.EXPECT().GetGeneralSettings().Return(general.Response{}, errors.New("wsman.Client post received: 401 Unauthorized"))
 	expectActivatedStatusAMT(amtCommand)
 	amtCommand.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 		NetworkStatus: "direct (LAN)",
@@ -559,18 +614,105 @@ func TestUnauthorizedWSMANStopsPostActivationReads(t *testing.T) {
 	}
 
 	assert.Equal(t, checkUnavailable, wsmanCheck.Status)
-	assert.Contains(t, wsmanCheck.Message, "HTTP 401")
+	assert.Contains(t, wsmanCheck.Message, "WSMAN unavailable:")
+	assert.Contains(t, wsmanCheck.Message, "401 Unauthorized")
+	assert.Contains(t, wsmanCheck.Message, "--password")
+	assert.Contains(t, wsmanCheck.Message, "LMS is running")
 }
 
-func TestUnauthorizedMPSReadClearsWSMANAndStopsDependentReads(t *testing.T) {
+func TestCertificateFailureCollapsesDependentChecks(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(ctrl)
+	wsman := mock.NewMockWSMANer(ctrl)
+	wsman.EXPECT().GetGeneralSettings().Return(general.Response{}, &tls.CertificateVerificationError{Err: errors.New("untrusted test certificate")})
+	expectActivatedStatusAMT(amtCommand)
+	amtCommand.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{NetworkStatus: "direct (LAN)"}, nil)
+	amtCommand.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{LinkStatus: "up"}, nil)
+	amtCommand.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{LinkStatus: "down"}, nil)
+
+	cmd := &StatusCmd{AMTBaseCmd: commands.AMTBaseCmd{HECIAvailable: true, ControlMode: commands.ControlModeCCM, WSMan: wsman}}
+	result := cmd.evaluate(&commands.Context{AMTCommand: amtCommand})
+	assert.Equal(t, resultUnknown, result.Verdict.Result)
+
+	for _, check := range result.Checks {
+		switch check.ID {
+		case checkIDWSMAN:
+			assert.Equal(t, checkUnavailable, check.Status)
+			assert.Contains(t, check.Message, "WSMAN unavailable: tls: failed to verify certificate")
+			assert.Contains(t, check.Message, "AMT cert not trusted; use --skip-amt-cert-check")
+			assert.Contains(t, check.Message, "check the AMT admin password (--password) and that LMS is running")
+		case checkIDRedirection, checkIDSOL, checkIDKVM, checkIDUserConsent, checkIDTLS, checkIDTrustedRoots:
+			t.Errorf("unexpected dependent check after certificate failure: %s", check.ID)
+		}
+	}
+}
+
+func TestMonitorCheckSurvivesUnavailableWSMANAndNilPostSnapshot(t *testing.T) {
+	connected := true
+	snapshot := &commands.InfoSnapshot{Info: &commands.InfoResult{AMT: "16.1.25"},
+		PostActivation: &commands.PostActivationSnapshot{WSMANStatus: commands.WSMANStatusUnavailable, MonitorConnected: &connected}}
+	checks := postActivationChecks(&StatusCmd{}, snapshot)
+	found := false
+
+	for _, check := range checks {
+		if check.ID == checkIDMonitor {
+			found = true
+
+			assert.Equal(t, checkPass, check.Status)
+		}
+	}
+
+	assert.True(t, found)
+
+	snapshot.PostActivation = nil
+
+	assert.NotPanics(t, func() { postActivationChecks(&StatusCmd{}, snapshot) })
+}
+
+func TestAdapterIdentityAndRemoteActivationUseMatchingMAC(t *testing.T) {
+	wired := &amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", LinkStatus: "up"}
+	wireless := &amt.InterfaceSettings{MACAddress: "00:11:22:33:44:66", LinkStatus: "down"}
+	inventory := []utils.OSNetworkInterface{
+		{Name: "Ethernet 2", Description: "Intel I226-V", MACAddress: "00:11:22:33:44:77", LinkStatus: "up"},
+		{Name: "Wi-Fi 2", Description: "Virtual wireless", MACAddress: "00:11:22:33:44:88", LinkStatus: "up"},
+		{Name: "Ethernet", Description: "Intel I226-LM", MACAddress: "00-11-22-33-44-55", LinkStatus: "disabled"},
+		{Name: "Wi-Fi", Description: "Intel wireless", MACAddress: wireless.MACAddress, LinkStatus: "down"},
+	}
+	name, state := matchedAdapterDetails(wired, inventory)
+	assert.Equal(t, "Intel I226-LM", name)
+	assert.Equal(t, "AMT link up; OS state disabled", state)
+
+	name, _ = matchedAdapterDetails(wireless, inventory)
+	assert.Equal(t, "Intel wireless", name)
+
+	check := hostNetworkCheck([]*amt.InterfaceSettings{wired, wireless}, inventory, nil)
+	assert.Equal(t, checkWarn, check.Status)
+	verdict := EvaluateVerdict([]Check{check})
+	assert.True(t, verdict.ReadyToProvision)
+	assert.False(t, verdict.ReadyForRemoteActivation)
+	assert.Contains(t, verdict.Status, "RPS/Console-profile activation is blocked")
+	assert.Equal(t, checkUnavailable, hostNetworkCheck([]*amt.InterfaceSettings{wired}, nil, nil).Status)
+
+	inventory[3].LinkStatus = "up"
+	assert.Equal(t, checkPass, hostNetworkCheck([]*amt.InterfaceSettings{wired, wireless}, inventory, nil).Status)
+	assert.Equal(t, checkUnavailable, hostNetworkCheck([]*amt.InterfaceSettings{wired}, inventory, errors.New("inventory failed")).Status)
+}
+
+func TestManagementWarningsRecommendReview(t *testing.T) {
+	checks := []Check{{ID: checkIDWSMAN, Status: checkPass}, {ID: checkIDDNS, Status: checkWarn}}
+
+	var output bytes.Buffer
+	require.NoError(t, renderText(&output, report{Checks: checks, Verdict: EvaluateVerdict(checks)}))
+	assert.Contains(t, output.String(), "Review the warnings")
+	assert.NotContains(t, output.String(), "No action required")
+}
+
+func TestLaterMPSReadFailureDoesNotClearCommandWSMAN(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	amtCommand := mock.NewMockInterface(ctrl)
 	wsman := mock.NewMockWSMANer(ctrl)
 	wsman.EXPECT().GetGeneralSettings().Return(general.Response{}, nil)
-	wsman.EXPECT().GetMPSSAP().Return(nil, &localamt.WSMANHTTPStatusError{
-		StatusCode: http.StatusUnauthorized,
-		Cause:      errors.New("unauthorized"),
-	})
+	wsman.EXPECT().GetMPSSAP().Return(nil, errors.New("wsman.Client post received: 401 Unauthorized"))
 	expectActivatedStatusAMT(amtCommand)
 	amtCommand.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{
 		NetworkStatus: "outside enterprise (CIRA)", RemoteStatus: "connecting",
@@ -583,8 +725,21 @@ func TestUnauthorizedMPSReadClearsWSMANAndStopsDependentReads(t *testing.T) {
 	}}
 	result := cmd.evaluate(&commands.Context{AMTCommand: amtCommand})
 
-	assert.Nil(t, cmd.WSMan)
-	assert.Contains(t, result.Checks, Check{ID: checkIDWSMAN, Name: checkNameWSMAN, Status: checkUnavailable, Message: "AMT rejected WSMAN credentials (HTTP 401)"})
+	assert.Same(t, wsman, cmd.WSMan)
+
+	var wsmanCheck Check
+
+	for _, check := range result.Checks {
+		if check.ID == checkIDWSMAN {
+			wsmanCheck = check
+
+			break
+		}
+	}
+
+	assert.Equal(t, checkUnavailable, wsmanCheck.Status)
+	assert.Contains(t, wsmanCheck.Message, "401 Unauthorized")
+	assert.NotContains(t, wsmanCheck.Message, "check the AMT admin password")
 }
 
 func TestDirectServerTLSSkipsCIRAAndRootInventoryReads(t *testing.T) {
@@ -645,7 +800,9 @@ func TestDirectHostEndpointUsesSchemeDefaultsAndKeepsExplicitPort(t *testing.T) 
 		{name: "HTTPS defaults to 443", host: "https://console.example.com", tlsMode: "Server", want: "console.example.com:443"},
 		{name: "HTTP defaults to 80", host: "http://console.example.com/path", tlsMode: "Mutual", want: "console.example.com:80"},
 		{name: "explicit URL port is preserved", host: "https://console.example.com:8443/path", tlsMode: "Server", want: "console.example.com:8443"},
-		{name: "bare host uses AMT TLS port", host: "console.example.com", tlsMode: "Server", want: "console.example.com:16993"},
+		{name: "bare host uses Console HTTPS port", host: "console.example.com", tlsMode: "Server", want: "console.example.com:443"},
+		{name: "server and non-TLS mode does not change Console port", host: "console.example.com", tlsMode: "ServerAndNonTLS", want: "console.example.com:443"},
+		{name: "mutual and non-TLS mode does not change Console port", host: "console.example.com", tlsMode: "MutualAndNonTLS", want: "console.example.com:443"},
 		{name: "unsupported scheme rejected", host: "ftp://console.example.com", tlsMode: "Server", wantErr: true},
 	}
 
@@ -693,6 +850,7 @@ func TestProfileSpecificDNSAndNetworkChecks(t *testing.T) {
 	}
 	assert.Equal(t, checkFail, networkCheck(noLinks, true, false).Status)
 	assert.Equal(t, checkWarn, networkCheck(noLinks, false, true).Status)
+	assert.Equal(t, reasonLocalOnlyNetwork, networkCheck(noLinks, false, true).Reason)
 
 	wirelessLink := &commands.InfoResult{
 		WiredAdapter:    &amt.InterfaceSettings{LinkStatus: "down"},
@@ -701,6 +859,36 @@ func TestProfileSpecificDNSAndNetworkChecks(t *testing.T) {
 	assert.Equal(t, checkFail, networkCheck(wirelessLink, true, false).Status)
 	assert.Equal(t, checkUnavailable, networkCheck(&commands.InfoResult{WirelessAdapter: wirelessLink.WirelessAdapter}, true, false).Status)
 	assert.Equal(t, checkPass, networkCheck(wirelessLink, false, true).Status)
+}
+
+func TestPostActivationDNSCheckUsesManagementGuidance(t *testing.T) {
+	missingSuffix := postActivationDNSCheck("", "", true, true)
+	assert.Equal(t, checkWarn, missingSuffix.Status)
+	assert.Contains(t, missingSuffix.Message, "intended management DNS configuration")
+	assert.NotContains(t, missingSuffix.Message, "CCM can still proceed")
+
+	mismatchedSuffix := postActivationDNSCheck("amt.example.com", "host.example.com", true, true)
+	assert.Equal(t, checkWarn, mismatchedSuffix.Status)
+	assert.Contains(t, mismatchedSuffix.Message, "intended management DNS configuration")
+	assert.NotContains(t, mismatchedSuffix.Message, "activation")
+	assert.NotContains(t, mismatchedSuffix.Message, "CCM")
+}
+
+func TestNoAMTLinkKeepsRemoteReadinessFalseWhenHostNICIsUp(t *testing.T) {
+	info := &commands.InfoResult{
+		WiredAdapter:    &amt.InterfaceSettings{LinkStatus: "down"},
+		WirelessAdapter: &amt.InterfaceSettings{LinkStatus: "down"},
+	}
+	checks := []Check{
+		networkCheck(info, false, true),
+		{ID: checkIDHostNetwork, Status: checkPass, Message: "OS adapter matching an AMT MAC is enabled"},
+	}
+
+	verdict := EvaluateVerdict(checks)
+	assert.Equal(t, resultConditional, verdict.Result)
+	assert.True(t, verdict.ReadyToProvision)
+	assert.False(t, verdict.ReadyForRemoteActivation)
+	assert.Contains(t, verdict.Status, "CCM can proceed locally")
 }
 
 func TestPostActivationRequiresAnAMTNetworkLink(t *testing.T) {
@@ -777,7 +965,7 @@ func TestRunUnprivilegedJSONReportsUnknown(t *testing.T) {
 
 	var customErr utils.CustomError
 	require.ErrorAs(t, err, &customErr)
-	assert.Equal(t, utils.GenericFailure.Code, customErr.Code)
+	assert.Equal(t, utils.AmtStatusUnknown.Code, customErr.Code)
 
 	var parsed jsonOutput
 	require.NoError(t, json.Unmarshal(output.Bytes(), &parsed))
@@ -801,7 +989,7 @@ func TestRunUnprivilegedTextReportsSameUnknownVerdict(t *testing.T) {
 
 	var customErr utils.CustomError
 	require.ErrorAs(t, err, &customErr)
-	assert.Equal(t, utils.GenericFailure.Code, customErr.Code)
+	assert.Equal(t, utils.AmtStatusUnknown.Code, customErr.Code)
 	assert.Contains(t, output.String(), "AMT status unknown (run as administrator)")
 }
 
@@ -822,9 +1010,9 @@ func TestEvaluateActivatedDeviceIsNotReadyOrHealthy(t *testing.T) {
 	assert.Equal(t, checkSetPost, result.SelectedCheckSet)
 	assert.Equal(t, resultUnknown, result.Verdict.Result)
 	assert.False(t, result.Verdict.ReadyToProvision)
-	assert.Contains(t, result.Verdict.Status, "unknown")
-	assert.Equal(t, "supported, link up", result.WiredAdapterStatus)
-	assert.Equal(t, "not supported", result.WirelessAdapterStatus)
+	assert.Contains(t, result.Verdict.Status, "Activated; management features not verified")
+	assert.Equal(t, "AMT link up; OS state not verified", result.WiredAdapterStatus)
+	assert.Equal(t, "AMT link down; OS state not verified", result.WirelessAdapterStatus)
 }
 
 func TestActivatedCCMTextShowsAMTLinkStatus(t *testing.T) {
@@ -850,8 +1038,8 @@ func TestActivatedCCMTextShowsAMTLinkStatus(t *testing.T) {
 	require.NoError(t, renderText(&output, result))
 	assert.Contains(t, output.String(), "Detected state: Client Control Mode")
 	assert.Contains(t, output.String(), "Selected checks: post-activation")
-	assert.Contains(t, output.String(), "supported, link up")
-	assert.Contains(t, output.String(), "not supported")
+	assert.Contains(t, output.String(), "AMT link up; OS state not verified")
+	assert.Contains(t, output.String(), "AMT link down; OS state not verified")
 	assert.Contains(t, output.String(), "AMT-reported network status: Unavailable")
 	assert.Contains(t, output.String(), "Remote access connection: Unavailable")
 	assert.Contains(t, output.String(), "TLS mode: Unavailable (WSMAN data unavailable)")
@@ -859,6 +1047,13 @@ func TestActivatedCCMTextShowsAMTLinkStatus(t *testing.T) {
 }
 
 func TestPreActivationChecksUseInfoServiceSnapshot(t *testing.T) {
+	oldInventory := statusGetAMTNetworkAdapters
+	statusGetAMTNetworkAdapters = func([]string) ([]utils.OSNetworkInterface, error) {
+		return []utils.OSNetworkInterface{{MACAddress: "00:11:22:33:44:55", LinkStatus: "up"}}, nil
+	}
+
+	t.Cleanup(func() { statusGetAMTNetworkAdapters = oldInventory })
+
 	oldElevated := statusIsElevated
 	oldDetectLMS := statusDetectLMS
 	oldGetLMSVersion := statusGetLMSVersion
@@ -937,7 +1132,7 @@ func TestStatusUsesSharedCIRAAndTLSSnapshot(t *testing.T) {
 	assert.Equal(t, "connecting", result.RemoteAccess.RemoteStatus)
 	assert.Equal(t, "Mutual", result.TLSMode)
 	assert.Contains(t, result.Checks, Check{ID: checkIDTLS, Name: checkNameTLS, Status: checkPass, Message: "TLS mode: Mutual"})
-	assert.Contains(t, result.Checks, Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkPass, Message: "redirection listener=true enabledState=32771"})
+	assert.Contains(t, result.Checks, Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkPass, Message: "Redirection listener is enabled; SOL and IDER are enabled"})
 	assert.Equalf(t, resultNotReady, result.Verdict.Result, "checks: %+v", result.Checks)
 
 	var text bytes.Buffer
@@ -1042,7 +1237,7 @@ func TestConditionalDNSRecommendationAllowsSelectedActivationMode(t *testing.T) 
 				SelectedCheckSet: tt.selectedCheckSet,
 				Checks: []Check{{
 					ID: checkIDDNS, Name: checkNameDNS, Status: checkWarn,
-					Message: "AMT DNS suffix (vprodemo.com) differs from host DNS suffix (iind.intel.com). Confirm this matches your provisioning setup",
+					Reason: reasonDNSSuffixMismatch, Message: "DNS comparison wording may change without changing readiness",
 				}},
 			}
 			result.Verdict = EvaluateVerdict(result.Checks)
@@ -1076,15 +1271,21 @@ func TestActivationProfileReadinessPredictsACMAndCCM(t *testing.T) {
 		WiredAdapter:     &amt.InterfaceSettings{LinkStatus: "up", MACAddress: "00:11:22:33:44:55"},
 		WirelessAdapter:  &amt.InterfaceSettings{LinkStatus: "down"},
 	}, AMTDNSSuffixRead: true, OSDNSSuffixRead: true}
-	profiles := evaluateActivationProfiles(snapshot, initialChecks(true, true, nil, ""))
+
+	checks := append(initialChecks(true, true, nil, ""), Check{
+		ID: checkIDHostNetwork, Status: checkUnavailable, Message: "Host adapter state could not be verified",
+	})
+	profiles := evaluateActivationProfiles(snapshot, checks)
 
 	require.Len(t, profiles, 2)
 	assert.Equal(t, "ACM", profiles[0].Profile)
 	assert.Equal(t, resultConditional, profiles[0].Result)
 	assert.True(t, profiles[0].ReadyToProvision)
+	assert.False(t, profiles[0].ReadyForRemoteActivation)
 	assert.Equal(t, "CCM", profiles[1].Profile)
 	assert.Equal(t, resultConditional, profiles[1].Result)
 	assert.True(t, profiles[1].ReadyToProvision)
+	assert.False(t, profiles[1].ReadyForRemoteActivation)
 
 	var output bytes.Buffer
 	require.NoError(t, renderJSON(&output, &commands.Context{}, report{
@@ -1096,6 +1297,18 @@ func TestActivationProfileReadinessPredictsACMAndCCM(t *testing.T) {
 	require.NoError(t, json.Unmarshal(output.Bytes(), &parsed))
 	assert.Equal(t, "ACM", parsed.Evaluation.ActivationProfiles[0].Profile)
 	assert.Equal(t, "CCM", parsed.Evaluation.ActivationProfiles[1].Profile)
+}
+
+func TestUnavailableHostNetworkDoesNotBlockLocalReadiness(t *testing.T) {
+	verdict := EvaluateVerdict([]Check{
+		{ID: checkIDNetwork, Status: checkPass},
+		{ID: checkIDHostNetwork, Status: checkUnavailable, Message: "OS adapter state could not be read"},
+	})
+
+	assert.Equal(t, resultReady, verdict.Result)
+	assert.True(t, verdict.ReadyToProvision)
+	assert.False(t, verdict.ReadyForRemoteActivation)
+	assert.Contains(t, verdict.Status, "local activation")
 }
 
 func TestActivationProfileReadinessAllowsCCMWhenACMPrerequisitesFail(t *testing.T) {
