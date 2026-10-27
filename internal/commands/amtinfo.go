@@ -1955,10 +1955,9 @@ func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd, postActivation bool) (*Inf
 		}
 	}
 
-	return result, reads
 	s.addConnectionDetails(result, showAll)
 
-	return result, nil
+	return result, reads
 }
 
 // addConnectionDetails records local TLS enforcement and, when WSMAN failed,
@@ -2911,7 +2910,6 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 			log.Debugf("failed to close WSMAN client after setup failure: %v", closeErr)
 		}
 
-		return fmt.Errorf("failed to setup WSMAN client: %w", err)
 		return s.wsmanFailed(fmt.Errorf("failed to setup WSMAN client: %w", err))
 	}
 
@@ -2982,6 +2980,9 @@ func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err erro
 		s.mpsErr = readErr
 
 		if readErr != nil {
+			s.mpsReadFailed = true
+			s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", readErr))
+
 			if s.wsmanStatus != "" {
 				s.recordPostWSMANFailure(readErr)
 			}
@@ -2996,11 +2997,6 @@ func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err erro
 
 	if s.mpsErr != nil {
 		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", s.mpsErr)
-	items, err := s.wsman.GetMPSSAP()
-	if err != nil {
-		s.mpsReadFailed = true
-
-		return "", 0, s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", err))
 	}
 
 	if s.mpsCount == 0 {

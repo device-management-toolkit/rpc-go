@@ -53,6 +53,8 @@ func TestPreserveWSMANHTTPStatus(t *testing.T) {
 			assert.ErrorIs(t, got, tt.err)
 		})
 	}
+}
+
 // newUntrustedTLSServer starts a TLS server whose self-signed certificate a
 // default tls.Config rejects, like AMT's certificate after activation.
 func newUntrustedTLSServer(t *testing.T) string {
