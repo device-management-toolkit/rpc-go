@@ -109,7 +109,7 @@ func (g *Globals) AfterApply(ctx *kong.Context) error {
 	}
 
 	commands.WarnIfCredentialsOnCLI(commands.CredentialCLI{
-		Value: g.AMTPassword, EnvVar: "AMT_PASSWORD", FlagName: []string{"password"},
+		Value: g.AMTPassword, FlagName: []string{"password"},
 	})
 
 	return nil
@@ -151,7 +151,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	defer commands.SetParsedCLIArgs(parseArgs)()
 
 	// Batch security warnings so credentials found across Globals, ServerAuthFlags,
-	// and any subcommand flags are reported in a single consolidated banner.
+	// and any subcommand flags are reported in a single warning line.
 	commands.BeginCredentialWarningBatch()
 
 	ctx, perr := parser.Parse(parseArgs)
@@ -160,7 +160,7 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 
 	// Log config file presence after parsing (logging is configured by AfterApply at this point)
 	if _, statErr := os.Stat(configFilePath); statErr == nil {
-		log.Infof("Using configuration file: %s (flag values may originate from this file)", configFilePath)
+		logConfigFileUse(ctx, configFilePath)
 	}
 
 	if perr == nil {
@@ -178,6 +178,20 @@ func Parse(args []string, amtCommand amt.Interface) (*kong.Context, *CLI, error)
 	}
 
 	return nil, nil, perr
+}
+
+// logConfigFileUse notes that flag values may come from the config file. amtinfo
+// only reports device state, so it keeps the note at debug level.
+func logConfigFileUse(ctx *kong.Context, path string) {
+	msg := fmt.Sprintf("Using configuration file: %s (flag values may originate from this file)", path)
+
+	if ctx != nil && ctx.Command() == commandAmtInfo {
+		log.Debug(msg)
+
+		return
+	}
+
+	log.Info(msg)
 }
 
 // PrintHelp prints contextual help by appending --help to the args and re-parsing.

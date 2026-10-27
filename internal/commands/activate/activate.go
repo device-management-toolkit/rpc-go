@@ -61,6 +61,10 @@ type ActivateCmd struct {
 	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
+
+	// Executable is the rpc binary that runs each profile step. Only library
+	// callers set it; empty runs the current executable, which is rpc in the CLI.
+	Executable string `kong:"-"`
 }
 
 // AfterApply prints CLI credential warnings and runs the embedded AMT setup hook.
@@ -70,10 +74,10 @@ func (cmd *ActivateCmd) AfterApply(amtCommand amt.Interface) error {
 	}
 
 	commands.WarnIfCredentialsOnCLI(
-		commands.CredentialCLI{Value: cmd.ProvisioningCert, EnvVar: "PROVISIONING_CERT", FlagName: []string{"provisioningCert"}},
-		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, EnvVar: "PROVISIONING_CERT_PASSWORD", FlagName: []string{"provisioningCertPwd"}},
-		commands.CredentialCLI{Value: cmd.MEBxPassword, EnvVar: "MEBX_PASSWORD", FlagName: []string{"mebxpassword"}},
-		commands.CredentialCLI{Value: cmd.Key, EnvVar: "CONFIG_ENCRYPTION_KEY", FlagName: []string{"key", "k"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCert, FlagName: []string{"provisioningCert"}},
+		commands.CredentialCLI{Value: cmd.ProvisioningCertPwd, FlagName: []string{"provisioningCertPwd"}},
+		commands.CredentialCLI{Value: cmd.MEBxPassword, FlagName: []string{"mebxpassword"}},
+		commands.CredentialCLI{Value: cmd.Key, FlagName: []string{"key", "k"}},
 	)
 
 	return nil
@@ -406,6 +410,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
@@ -488,6 +493,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 	}
 
 	discovered := false
+	isElevated := utils.IsElevated()
+	heciAvailable := cmd.HECIAvailable
 
 	payload := device.DevicePayload{
 		GUID:            guid,
@@ -501,6 +508,8 @@ func (cmd *ActivateCmd) addDeviceToConsole(ctx *commands.Context, consoleBaseURL
 		AllowSelfSigned: allowSelfSigned,
 		DeviceInfo: &device.DeviceInfo{
 			Discovered:           &discovered,
+			IsElevated:           &isElevated,
+			HECIAvailable:        &heciAvailable,
 			LMSInstalled:         &isLMSAvailable,
 			LMSVersion:           lmsVersion,
 			OSName:               osInfo.Name,
@@ -692,6 +701,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
+	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)

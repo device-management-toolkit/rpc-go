@@ -82,6 +82,30 @@ func TestWirelessCmd_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "unsupported 802.1x authentication protocol",
+			cmd: &WirelessCmd{
+				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				ProfileName:                     "testprofile",
+				SSID:                            "testssid",
+				Priority:                        1,
+				AuthenticationMethod:            int(wifi.AuthenticationMethodWPA2IEEE8021x),
+				EncryptionMethod:                int(wifi.EncryptionMethodCCMP),
+				IEEE8021xProfileName:            "wifi8021x",
+				IEEE8021xPassword:               "secret",
+				IEEE8021xAuthenticationProtocol: 1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "purge only ignores 802.1x authentication protocol",
+			cmd: &WirelessCmd{
+				ConfigureBaseCmd:                ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},
+				Purge:                           true,
+				IEEE8021xAuthenticationProtocol: 1,
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing profile name",
 			cmd: &WirelessCmd{
 				ConfigureBaseCmd:     ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{ControlMode: 1}},

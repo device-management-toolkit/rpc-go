@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -28,12 +29,17 @@ func (c MockPTHICommands) OpenWatchdog() error {
 }
 
 var (
-	flag        bool = false
-	flag1       bool = false
-	returnError bool = false
+	flag            bool = false
+	flag1           bool = false
+	returnError     bool = false
+	initializeError error
 )
 
 func (c MockPTHICommands) Open(useLME bool) error {
+	if initializeError != nil {
+		return initializeError
+	}
+
 	if flag == true {
 		return errors.New("The handle is invalid.")
 	} else if flag1 == true {
@@ -215,9 +221,20 @@ func TestInitializeNoError(t *testing.T) {
 func TestInitializeMEIError(t *testing.T) {
 	flag = true
 	err := amt.Initialize()
-	assert.Error(t, err, utils.HECIDriverNotDetected)
+	assert.ErrorIs(t, err, utils.HECIDriverNotDetected)
 
 	flag = false
+}
+
+func TestInitializePreservesHECIError(t *testing.T) {
+	initializeError = heci.ErrDeviceNotFound
+
+	t.Cleanup(func() { initializeError = nil })
+
+	err := amt.Initialize()
+
+	assert.ErrorIs(t, err, utils.HECIDriverNotDetected)
+	assert.ErrorIs(t, err, heci.ErrDeviceNotFound)
 }
 
 func TestInitializeError(t *testing.T) {
@@ -451,6 +468,33 @@ func TestChangeEnabledResponse(t *testing.T) {
 			assert.Equal(t, tt.expectTransition, cer.IsTransitionAllowed())
 			assert.Equal(t, tt.expectSupportsSetOpState, cer.SupportsSetAmtOperationalState())
 			assert.Equal(t, tt.expectTlsEnforced, cer.IsTlsEnforcedOnLocalPorts())
+		})
+	}
+}
+
+func TestAreWeakAlgorithmsRemoved(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    uint8
+		expected bool
+	}{
+		// Values observed on hardware. Bit 4 is set only on AMT 22.
+		{name: "AMT 11", value: 0x01, expected: false},
+		{name: "AMT 16", value: 0x02, expected: false},
+		{name: "AMT 18", value: 0xA2, expected: false},
+		{name: "AMT 20", value: 0xE2, expected: false},
+		{name: "AMT 21", value: 0xE2, expected: false},
+		{name: "AMT 22", value: 0xF2, expected: true},
+		// The bit is believed on every generation. Hardening can reach an older
+		// platform by firmware update, and the interface version will not move
+		// with it, so bit 7 must not gate the answer.
+		{name: "hardened with the old interface version", value: 0x10, expected: true},
+		{name: "hardened AMT 16 after a firmware update", value: 0x12, expected: true},
+		{name: "new interface without hardening", value: 0x80, expected: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, ChangeEnabledResponse(tt.value).AreWeakAlgorithmsRemoved())
 		})
 	}
 }

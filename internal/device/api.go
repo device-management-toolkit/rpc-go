@@ -63,25 +63,17 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("request failed with status %s", e.Status)
 }
 
-// doJSONRequest executes an HTTP request; returns *StatusError for non-2xx responses.
-func doJSONRequest(method, requestURL, token, tenantID string, body []byte, skipCertCheck bool) error {
-	httpClient := &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: skipCertCheck, //nolint:gosec // user-controlled flag for self-signed certs
-			},
-		},
-	}
-
+// DoJSONRequest sends a request with JSON content type, bearer auth, and tenant headers applied.
+// The caller owns status handling and must close the response body.
+func DoJSONRequest(ctx context.Context, client *http.Client, method, requestURL, token, tenantID string, body []byte) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, requestURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, bodyReader)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create %s request: %w", method, err)
 	}
 
 	if body != nil {
@@ -96,21 +88,12 @@ func doJSONRequest(method, requestURL, token, tenantID string, body []byte, skip
 		req.Header.Set(tenantHeaderName, tenantID)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &StatusError{
-			StatusCode: resp.StatusCode,
-			Status:     resp.Status,
-			Detail:     readErrorBody(resp.Body),
-		}
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	return nil
+	return resp, nil
 }
 
 func sendDeviceJSONRequest(method, endpoint, token, tenantID string, payload interface{}, skipCertCheck bool, errContext string) error {
@@ -125,8 +108,27 @@ func sendDeviceJSONRequest(method, endpoint, token, tenantID string, payload int
 		body = encoded
 	}
 
-	if err := doJSONRequest(method, endpoint, token, tenantID, body, skipCertCheck); err != nil {
+	httpClient := &http.Client{
+		Timeout: requestTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: skipCertCheck, //nolint:gosec // user-controlled flag for self-signed certs
+			},
+		},
+	}
+
+	resp, err := DoJSONRequest(context.Background(), httpClient, method, endpoint, token, tenantID, body)
+	if err != nil {
 		return fmt.Errorf("%s: %w", errContext, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s: %w", errContext, &StatusError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Detail:     readErrorBody(resp.Body),
+		})
 	}
 
 	return nil
@@ -197,6 +199,8 @@ type DeviceInfo struct {
 	EthernetAdapterCount int        `json:"ethernetAdapterCount,omitempty"`
 	MonitorConnected     *bool      `json:"monitorConnected,omitempty"`
 	IEEE8021xEnabled     *bool      `json:"ieee8021xEnabled,omitempty"`
+	IsElevated           *bool      `json:"isElevated,omitempty"`
+	HECIAvailable        *bool      `json:"heciAvailable,omitempty"`
 }
 
 // UPIDInfo carries UPID details for the console.

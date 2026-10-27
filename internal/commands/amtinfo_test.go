@@ -19,12 +19,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -135,23 +138,23 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 
 	mockAMT := mock.NewMockInterface(ctrl)
 	// Minimal calls required when All=true for sync data
-	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil)
-	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil)
-	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.25", nil).AnyTimes()
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("3425", nil).AnyTimes()
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil).AnyTimes()
 	mockAMT.EXPECT().GetVersionDataFromME("LMS", gomock.Any()).Return("2406.0.0.0", nil).AnyTimes()
-	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
-	mockAMT.EXPECT().GetUPID().Return(nil, nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil).AnyTimes()
+	mockAMT.EXPECT().GetUPID().Return(nil, nil).AnyTimes()
 	mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
 	mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
 	mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
-	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil)
-	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil).AnyTimes()
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
 
-	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available"))
-	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil)
-	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
-	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil)
-	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil)
+	mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+	mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE"}, nil).AnyTimes()
+	mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil).AnyTimes()
 
 	// Fake server to capture PATCH
 	var (
@@ -176,8 +179,29 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: server.URL + "/api/v1/devices"}
 	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
 
-	err := cmd.Run(ctx)
+	run := func() ([]byte, error) {
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		require.NoError(t, err)
+
+		os.Stdout = w
+
+		runErr := cmd.Run(ctx)
+
+		require.NoError(t, w.Close())
+
+		out, readErr := io.ReadAll(r)
+		require.NoError(t, readErr)
+		require.NoError(t, r.Close())
+
+		os.Stdout = oldStdout
+
+		return out, runErr
+	}
+
+	out, err := run()
 	assert.NoError(t, err)
+	assert.Equal(t, "Device updated (UUID: 12345678-1234-1234-1234-123456789ABC)\n", string(out))
 	assert.Equal(t, http.MethodPatch, gotMethod)
 	assert.Equal(t, "/api/v1/devices", gotPath)
 	assert.Equal(t, "application/json", gotContentType)
@@ -198,6 +222,99 @@ func TestAmtInfoCmd_Run_WithSync(t *testing.T) {
 	assert.True(t, *gotBody.DeviceInfo.AMTEnabledInBIOS)
 	// MEInterfaceVersion may legitimately be empty on CI runners; don't assert its value here.
 	assert.NotEmpty(t, gotBody.DeviceInfo.OSName)
+
+	ctx.JsonOutput = true
+	out, err = run()
+	require.NoError(t, err)
+
+	var syncResult map[string]interface{}
+
+	require.NoError(t, json.Unmarshal(out, &syncResult))
+	assert.Equal(t, map[string]interface{}{
+		"status": "updated",
+		"uuid":   "12345678-1234-1234-1234-123456789ABC",
+	}, syncResult)
+}
+
+func TestInfoService_SyncDeviceInfoWithResult(t *testing.T) {
+	tests := []struct {
+		name           string
+		autoRegister   bool
+		firstPatchCode int
+		postCode       int
+		wantStatus     string
+		wantPatchCount int
+		wantPostCount  int
+	}{
+		{
+			name:           "updates an existing device",
+			autoRegister:   true,
+			firstPatchCode: http.StatusOK,
+			wantStatus:     "updated",
+			wantPatchCount: 1,
+		},
+		{
+			name:           "registers a missing device",
+			autoRegister:   true,
+			firstPatchCode: http.StatusNotFound,
+			postCode:       http.StatusCreated,
+			wantStatus:     "registered",
+			wantPatchCount: 2,
+			wantPostCount:  1,
+		},
+		{
+			name:           "reports skipped registration when disabled",
+			autoRegister:   false,
+			firstPatchCode: http.StatusNotFound,
+			wantStatus:     "registration_skipped",
+			wantPatchCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var patchCount, postCount int
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				switch r.Method {
+				case http.MethodPatch:
+					patchCount++
+					if patchCount == 1 {
+						w.WriteHeader(tt.firstPatchCode)
+
+						return
+					}
+
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					postCount++
+
+					w.WriteHeader(tt.postCode)
+				default:
+					w.WriteHeader(http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+
+			service := NewInfoService(nil, WithAutoRegister(tt.autoRegister))
+			result, err := service.SyncDeviceInfoWithResult(
+				&Context{},
+				&InfoResult{UUID: "12345678-1234-1234-1234-123456789ABC"},
+				server.URL+"/api/v1/devices",
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, tt.wantStatus, result.Status)
+			assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", result.UUID)
+			assert.Equal(t, tt.wantPatchCount, patchCount)
+			assert.Equal(t, tt.wantPostCount, postCount)
+		})
+	}
 }
 
 func TestInfoService_populateDiscoveryFields_MEInterfaceVersion(t *testing.T) {
@@ -1280,6 +1397,72 @@ func TestInfoService_OutputText_TwoColumnLayout(t *testing.T) {
 		"UUID should not wrap across lines inside the box; got:\n%s", out)
 }
 
+// When content is wider than half the terminal, the boxed two-column layout
+// would render past termW and the terminal would wrap each row mid-border.
+// In that case the renderer must fall back to single-column unboxed output.
+func TestInfoService_OutputText_FallsBackWhenBoxesDoNotFit(t *testing.T) {
+	origWidth := getTerminalWidth
+	defer func() { getTerminalWidth = origWidth }()
+
+	result := &InfoResult{
+		AMT:         "16.1.25.2049",
+		BuildNumber: "1234",
+		UUID:        "12345678-1234-1234-1234-123456789ABC",
+		ControlMode: "admin control mode",
+		DNSSuffix:   "this-is-a-pretty-long-dns-suffix.corp.example.com",
+		HostnameOS:  "my-host-name-that-is-fairly-long",
+		RAS: &amt.RemoteAccessStatus{
+			NetworkStatus: "connected",
+			RemoteStatus:  "connected",
+			RemoteTrigger: "user",
+			MPSHostname:   "mps.long-name.example.internal.local",
+		},
+		WiredAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:11:22:33:44:55",
+			IPAddress:   "192.168.100.123",
+			OsIPAddress: "192.168.100.123",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+		WirelessAdapter: &amt.InterfaceSettings{
+			MACAddress:  "00:AA:BB:CC:DD:EE",
+			IPAddress:   "192.168.100.124",
+			OsIPAddress: "192.168.100.124",
+			DHCPEnabled: true,
+			DHCPMode:    "active",
+			LinkStatus:  "up",
+		},
+	}
+
+	service := NewInfoService(nil)
+	cmd := &AmtInfoCmd{All: true}
+
+	for _, tw := range []int{150, 160} {
+		t.Run("", func(t *testing.T) {
+			getTerminalWidth = func() int { return tw }
+
+			var buf bytes.Buffer
+
+			err := service.OutputText(&buf, result, cmd)
+			require.NoError(t, err)
+
+			out := buf.String()
+
+			maxLine := 0
+			for _, line := range strings.Split(out, "\n") {
+				if w := lipgloss.Width(line); w > maxLine {
+					maxLine = w
+				}
+			}
+
+			assert.LessOrEqualf(t, maxLine, tw,
+				"rendered line width %d > termW %d — terminal will wrap and break box borders\n%s",
+				maxLine, tw, out)
+		})
+	}
+}
+
 func TestAmtInfoCmd_HasNoFlagsSet(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1766,23 +1949,153 @@ func TestInfoService_GetAMTInfo_RAS_PreProvisioningMode(t *testing.T) {
 	assert.Equal(t, 0, result.RAS.MPSPort)
 }
 
+// stubElevated pins the privilege check so tests don't depend on who runs them.
+func stubElevated(t *testing.T, elevated bool) {
+	t.Helper()
+
+	orig := isElevated
+
+	t.Cleanup(func() { isElevated = orig })
+
+	isElevated = func() bool { return elevated }
+}
+
 func TestInfoService_SyncDeviceInfo_EmptyUUID_ReturnsError(t *testing.T) {
+	stubElevated(t, true)
+
 	service := NewInfoService(nil)
 	ctx := &Context{}
 	result := &InfoResult{}
 
 	err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	assert.ErrorIs(t, err, ErrSyncUUIDUnavailable)
 }
 
 func TestInfoService_SyncDeviceInfo_NilResult_ReturnsError(t *testing.T) {
+	stubElevated(t, true)
+
 	service := NewInfoService(nil)
 	ctx := &Context{}
 
 	err := service.SyncDeviceInfo(ctx, nil, "https://example.com/api/v1/devices", nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	assert.ErrorIs(t, err, ErrSyncUUIDUnavailable)
+}
+
+func TestInfoService_SyncDeviceInfo_EmptyUUID_NotElevated_ReturnsIncorrectPermissions(t *testing.T) {
+	stubElevated(t, false)
+
+	service := NewInfoService(nil)
+	ctx := &Context{}
+
+	for _, result := range []*InfoResult{nil, {}, {UUID: "   "}} {
+		err := service.SyncDeviceInfo(ctx, result, "https://example.com/api/v1/devices", nil, nil)
+		require.Error(t, err)
+
+		var customErr utils.CustomError
+		require.ErrorAs(t, err, &customErr)
+		assert.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+		assert.Contains(t, err.Error(), "cannot sync: device UUID unavailable")
+	}
+}
+
+// Without root on Linux neither HECI nor SMBIOS yields a UUID; the gathered info
+// must still print and the error must be one cli.Execute offers to elevate for.
+func TestAmtInfoCmd_Run_WithSync_NoUUID_NotElevated(t *testing.T) {
+	stubElevated(t, false)
+
+	origSMBIOS := getSMBIOSSystemUUID
+	defer func() { getSMBIOSSystemUUID = origSMBIOS }()
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return "", errors.New("permission denied")
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("sync must not reach the server without a UUID, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available")).AnyTimes()
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
+
+	cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: false}, Sync: true, URL: server.URL + "/api/v1/devices"}
+	ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, JsonOutput: true}
+
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+
+	os.Stdout = w
+	err := cmd.Run(ctx)
+	os.Stdout = origStdout
+
+	require.NoError(t, w.Close())
+
+	out, readErr := io.ReadAll(r)
+	require.NoError(t, readErr)
+
+	var customErr utils.CustomError
+	require.ErrorAs(t, err, &customErr)
+	assert.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+	assert.Contains(t, string(out), `"heciAvailable": false`)
+}
+
+func TestAmtInfoCmd_Run_WithSync_SMBIOSUUID_NotElevated_JSON(t *testing.T) {
+	stubElevated(t, false)
+
+	const uuid = "12345678-1234-1234-1234-123456789ABC"
+
+	origSMBIOS := getSMBIOSSystemUUID
+
+	t.Cleanup(func() { getSMBIOSSystemUUID = origSMBIOS })
+
+	getSMBIOSSystemUUID = func() (string, error) {
+		return uuid, nil
+	}
+
+	var gotBody syncPayload
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctrl := gomock.NewController(t)
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available")).AnyTimes()
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
+
+	cmd := &AmtInfoCmd{Sync: true, URL: server.URL + "/api/v1/devices"}
+	ctx := &Context{AMTCommand: mockAMT, JsonOutput: true}
+
+	origStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	require.NoError(t, pipeErr)
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		_ = r.Close()
+		_ = w.Close()
+	})
+
+	os.Stdout = w
+	err := cmd.Run(ctx)
+	os.Stdout = origStdout
+
+	require.NoError(t, w.Close())
+
+	out, readErr := io.ReadAll(r)
+	require.NoError(t, readErr)
+	require.NoError(t, err)
+	assert.Equal(t, uuid, gotBody.GUID)
+	assert.JSONEq(t, `{"status":"updated","uuid":"`+uuid+`"}`, string(out))
 }
 
 func TestInfoService_SyncDeviceInfo_SentinelUUID_ReturnsError(t *testing.T) {
@@ -2306,4 +2619,322 @@ func TestSyncDeviceInfoHelper_HECIUnavailable_HandlesGracefully(t *testing.T) {
 
 	assert.Nil(t, gotBody.DeviceInfo.UPID)
 	assert.Empty(t, gotBody.DeviceInfo.CertHashes)
+	require.NotNil(t, gotBody.DeviceInfo.HECIAvailable)
+	assert.False(t, *gotBody.DeviceInfo.HECIAvailable)
+	require.NotNil(t, gotBody.DeviceInfo.IsElevated)
+}
+
+func TestSyncDeviceInfoHelper_ElevationAndHECI(t *testing.T) {
+	tests := []struct {
+		name          string
+		isElevated    bool
+		heciAvailable bool
+	}{
+		{
+			name:          "elevated with HECI available",
+			isElevated:    true,
+			heciAvailable: true,
+		},
+		{
+			name:          "unprivileged without HECI",
+			isElevated:    false,
+			heciAvailable: false,
+		},
+		{
+			name:          "elevated without HECI",
+			isElevated:    true,
+			heciAvailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origIsElevated := isElevated
+			defer func() { isElevated = origIsElevated }()
+
+			isElevated = func() bool { return tt.isElevated }
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			if tt.heciAvailable {
+				mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+				mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+				mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+				mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+				mockAMT.EXPECT().GetUPID().Return(nil, nil)
+				mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
+				mockAMT.EXPECT().GetLANInterfaceSettings(gomock.Any()).Return(amt.InterfaceSettings{}, nil).AnyTimes()
+				mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+				mockAMT.EXPECT().GetCertificateHashes().Return(nil, nil)
+			} else {
+				mockAMT.EXPECT().GetUPID().Return(nil, errors.New("HECI not available"))
+			}
+
+			mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil).AnyTimes()
+
+			var gotBody syncPayload
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPatch, r.Method)
+				_ = json.NewDecoder(r.Body).Decode(&gotBody)
+
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			ctx := &Context{
+				AMTCommand:    mockAMT,
+				SkipCertCheck: true,
+			}
+			baseCmd := &AMTBaseCmd{HECIAvailable: tt.heciAvailable}
+
+			err := SyncDeviceInfoHelper(ctx, baseCmd, nil, server.URL+"/api/v1/devices", "token-123", "12345678-1234-1234-1234-123456789ABC")
+			require.NoError(t, err)
+
+			require.NotNil(t, gotBody.DeviceInfo.IsElevated)
+			assert.Equal(t, tt.isElevated, *gotBody.DeviceInfo.IsElevated)
+			require.NotNil(t, gotBody.DeviceInfo.HECIAvailable)
+			assert.Equal(t, tt.heciAvailable, *gotBody.DeviceInfo.HECIAvailable)
+		})
+	}
+}
+
+func TestInfoService_SyncDeviceInfo_404_AutoRegister_ElevationAndHECI(t *testing.T) {
+	tests := []struct {
+		name          string
+		isElevated    bool
+		heciAvailable bool
+	}{
+		{
+			name:          "elevated with HECI available",
+			isElevated:    true,
+			heciAvailable: true,
+		},
+		{
+			name:          "unprivileged without HECI",
+			isElevated:    false,
+			heciAvailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origIsElevated := isElevated
+			defer func() { isElevated = origIsElevated }()
+
+			isElevated = func() bool { return tt.isElevated }
+
+			service := NewInfoService(nil)
+			service.heciAvailable = tt.heciAvailable
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{
+				UUID:          "12345678-1234-1234-1234-123456789ABC",
+				HECIAvailable: &tt.heciAvailable,
+			}
+			discovered := true
+
+			var (
+				patchCount int
+				postBody   map[string]interface{}
+			)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodPatch:
+					patchCount++
+					if patchCount == 1 {
+						w.WriteHeader(http.StatusNotFound)
+					} else {
+						w.WriteHeader(http.StatusOK)
+					}
+				case http.MethodPost:
+					defer r.Body.Close()
+
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&postBody))
+					w.WriteHeader(http.StatusCreated)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, &discovered)
+			require.NoError(t, err)
+			assert.Equal(t, 2, patchCount)
+
+			deviceInfo, ok := postBody["deviceInfo"].(map[string]interface{})
+			require.True(t, ok, "deviceInfo should be present in POST body")
+			require.NotNil(t, deviceInfo["isElevated"])
+			assert.Equal(t, tt.isElevated, deviceInfo["isElevated"])
+			require.NotNil(t, deviceInfo["heciAvailable"])
+			assert.Equal(t, tt.heciAvailable, deviceInfo["heciAvailable"])
+		})
+	}
+}
+
+func TestInfoService_SyncDeviceInfo_UserFacingMessages(t *testing.T) {
+	const uuid = "12345678-1234-1234-1234-123456789ABC"
+
+	tests := []struct {
+		name         string
+		autoRegister bool
+		handler      func(patchCount int) int
+		wantErr      string
+		wantInfo     string
+	}{
+		{
+			name:     "success logs at info level",
+			handler:  func(int) int { return http.StatusOK },
+			wantInfo: "device " + uuid + " synced successfully (PATCH)",
+		},
+		{
+			name:         "success after registration logs at info level",
+			autoRegister: true,
+			handler: func(patchCount int) int {
+				if patchCount == 1 {
+					return http.StatusNotFound
+				}
+
+				return http.StatusOK
+			},
+			wantInfo: "device " + uuid + " synced successfully after registration",
+		},
+		{
+			name:     "404 without auto-register logs skipped at info level",
+			handler:  func(int) int { return http.StatusNotFound },
+			wantInfo: "device " + uuid + " not found (HTTP 404); skipping registration",
+		},
+		{
+			name:    "non-2xx returns descriptive error",
+			handler: func(int) int { return http.StatusInternalServerError },
+			wantErr: "sync failed with status 500 Internal Server Error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patchCount := 0
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				if r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusCreated)
+
+					return
+				}
+
+				patchCount++
+				w.WriteHeader(tt.handler(patchCount))
+			}))
+			defer server.Close()
+
+			hook := logtest.NewGlobal()
+			defer hook.Reset()
+
+			originalLevel := logrus.GetLevel()
+			defer logrus.SetLevel(originalLevel)
+
+			logrus.SetLevel(logrus.InfoLevel)
+
+			service := NewInfoService(nil, WithAutoRegister(tt.autoRegister))
+			ctx := &Context{SkipCertCheck: true}
+			result := &InfoResult{UUID: uuid}
+
+			err := service.SyncDeviceInfo(ctx, result, server.URL+"/api/v1/devices", nil, nil)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			found := false
+
+			for _, entry := range hook.AllEntries() {
+				if entry.Level == logrus.InfoLevel && entry.Message == tt.wantInfo {
+					found = true
+				}
+			}
+
+			assert.True(t, found, "expected info log %q", tt.wantInfo)
+		})
+	}
+}
+
+func TestAmtInfoCmd_Run_WithSync_FailureIsReported(t *testing.T) {
+	tests := []struct {
+		name      string
+		closed    bool
+		authFail  bool
+		wantCause string
+	}{
+		{name: "server returns non-2xx", wantCause: "500"},
+		{name: "server unreachable", closed: true},
+		{name: "authentication rejected", authFail: true, wantCause: "device sync failed: authentication failed: authentication failed with status 401"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().GetVersionDataFromME(gomock.Any(), gomock.Any()).Return("16.1.25", nil).AnyTimes()
+			mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil).AnyTimes()
+			mockAMT.EXPECT().GetUPID().Return(nil, nil).AnyTimes()
+			mockAMT.EXPECT().GetControlMode().Return(1, nil).AnyTimes()
+			mockAMT.EXPECT().GetProvisioningState().Return(2, nil).AnyTimes()
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+			mockAMT.EXPECT().GetDNSSuffix().Return("example.com", nil).AnyTimes()
+			mockAMT.EXPECT().GetOSDNSSuffix().Return("os.example.com", nil).AnyTimes()
+			mockAMT.EXPECT().GetLocalSystemAccount().Return(amt.LocalSystemAccount{}, errors.New("not available")).AnyTimes()
+			mockAMT.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, nil).AnyTimes()
+			mockAMT.EXPECT().GetLANInterfaceSettings(gomock.Any()).Return(amt.InterfaceSettings{}, nil).AnyTimes()
+			mockAMT.EXPECT().GetCertificateHashes().Return([]amt.CertHashEntry{}, nil).AnyTimes()
+
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				if r.URL.Path == "/api/v1/authorize" {
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"error":"invalid credentials"}`))
+
+					return
+				}
+
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer server.Close()
+
+			url := server.URL + "/api/v1/devices"
+			if tt.closed {
+				server.Close()
+			}
+
+			cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true}, Sync: true, URL: url}
+			ctx := &Context{AMTCommand: mockAMT, SkipCertCheck: true, SkipAMTCertCheck: true}
+
+			if tt.authFail {
+				ctx.AuthUsername = "user"
+				ctx.AuthPassword = "wrong"
+				ctx.AuthEndpoint = server.URL + "/api/v1/authorize"
+			}
+
+			err := cmd.Run(ctx)
+			require.Error(t, err)
+			assert.True(t, strings.HasPrefix(err.Error(), "device sync failed: "), "got %q", err.Error())
+
+			if tt.wantCause != "" {
+				assert.Contains(t, err.Error(), tt.wantCause)
+			}
+		})
+	}
 }

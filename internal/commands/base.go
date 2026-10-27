@@ -7,7 +7,9 @@ package commands
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -31,10 +34,15 @@ type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
-	HECIAvailable    bool               `kong:"-"` // Whether HECI/MEI driver is accessible
+	// LocalTLSStatusRead reports whether LocalTLSEnforced came from a successful read.
+	LocalTLSStatusRead bool `kong:"-"`
+	HECIAvailable      bool `kong:"-"` // Whether HECI/MEI driver is accessible
 	// SkipWSMANSetup allows embedding commands (e.g., amtinfo without --userCert)
 	// to bypass LMS/WSMAN client initialization when it isn't required.
 	SkipWSMANSetup bool `kong:"-"`
+	// QuietSetupLogs keeps setup notices (such as local TLS enforcement) at
+	// debug level, for commands that report them in their own output.
+	QuietSetupLogs bool `kong:"-"`
 	// afterApplied ensures AfterApply runs its heavy init exactly once.
 	afterApplied bool `kong:"-"`
 }
@@ -108,6 +116,10 @@ func (cmd *AMTBaseCmd) EnsureWSMAN(ctx *Context) error {
 // This method will be called automatically by Kong after command validation.
 // The AMT command is injected via Kong's dependency injection system.
 func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
+	return cmd.afterApply(amtCommand, utils.IsElevated(), runtime.GOARCH, time.Sleep)
+}
+
+func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch string, sleep func(time.Duration)) error {
 	if cmd.afterApplied {
 		// Idempotent: avoid duplicate work/logging if Kong calls AfterApply twice.
 		return nil
@@ -117,6 +129,17 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 
 	// Ensure we close the MEI device connection after getting control mode and TLS status
 	defer amtCommand.Close()
+
+	if !isAMTCapableArchitecture(arch) {
+		cmd.ControlMode = -1
+		if cmd.SkipWSMANSetup {
+			cmd.afterApplied = true
+
+			return nil
+		}
+
+		return utils.HECIDriverNotDetected
+	}
 
 	// always have the control mode handy
 	// Get the current control mode using the injected AMT command, with retries if AMT is busy
@@ -131,13 +154,21 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	)
 
 	// HECI requires admin — fail fast when not elevated instead of retrying.
-	if !utils.IsElevated() {
+	if !elevated {
 		if cmd.SkipWSMANSetup {
 			// amtinfo: degrade gracefully, show OS-level data only
 			cmd.ControlMode = -1
 			cmd.afterApplied = true
 
 			return nil
+		}
+
+		if _, err := amtCommand.GetControlMode(); err != nil && isPermanentHECIError(err) {
+			log.Debugf("HECI permanently unavailable while unprivileged: %v", err)
+
+			cmd.ControlMode = -1
+
+			return classifyHECIFailure(err)
 		}
 
 		return utils.IncorrectPermissions
@@ -158,7 +189,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 
 		if attempt < maxAttempts {
 			log.Warnf("GetControlMode failed (attempt %d/%d): %v. Retrying in %s...", attempt, maxAttempts, err, backoff)
-			time.Sleep(backoff)
+			sleep(backoff)
 
 			continue
 		}
@@ -175,12 +206,7 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 			return nil
 		}
 
-		log.Error("Failed to execute due to access issues. " +
-			"Please ensure that Intel ME is present, " +
-			"the MEI driver is installed, " +
-			"and the runtime has administrator or root privileges.")
-
-		return utils.HECIDriverNotDetected
+		return classifyHECIFailure(err)
 	}
 
 	cmd.ControlMode = controlMode
@@ -188,11 +214,13 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	log.Tracef("AMTBaseCmd detected control mode: %d", cmd.ControlMode)
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
-	resp, _ := amtCommand.GetChangeEnabled()
+	resp, tlsErr := amtCommand.GetChangeEnabled()
+
+	cmd.LocalTLSStatusRead = tlsErr == nil
 	if resp.IsTlsEnforcedOnLocalPorts() {
 		cmd.LocalTLSEnforced = true
 
-		log.Info("TLS is enforced on local ports")
+		cmd.logSetupNotice("TLS is enforced on local ports")
 	} else {
 		log.Trace("TLS is not enforced on local ports")
 	}
@@ -202,6 +230,27 @@ func (cmd *AMTBaseCmd) AfterApply(amtCommand amt.Interface) error {
 	cmd.afterApplied = true
 
 	return nil
+}
+
+// logSetupNotice logs a setup notice at info level, or at debug level when the
+// command reports the same detail in its own output.
+func (cmd *AMTBaseCmd) logSetupNotice(msg string) {
+	if cmd.QuietSetupLogs {
+		log.Debug(msg)
+
+		return
+	}
+
+	log.Info(msg)
+}
+
+func isAMTCapableArchitecture(arch string) bool {
+	switch arch {
+	case "amd64", "386":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetWSManClient returns the WSMAN client instance
@@ -220,12 +269,33 @@ func (cmd *AMTBaseCmd) RequiresAMTPassword() bool {
 	return true
 }
 
-// isPermanentHECIError returns true for errors that indicate HECI is structurally
-// absent and retrying will not help (non-vPro hardware or MEI driver not installed).
+// isPermanentHECIError returns true when retrying a HECI probe is not expected to help.
 func isPermanentHECIError(err error) bool {
-	msg := err.Error()
+	return errors.Is(err, heci.ErrDeviceNotFound) ||
+		errors.Is(err, heci.ErrUnsupportedDevice) ||
+		errors.Is(err, heci.ErrPermissionDenied) ||
+		errors.Is(err, utils.HECIDriverNotDetected)
+}
 
-	return strings.Contains(msg, "inappropriate ioctl for device") || // non-vPro: /dev/mei0 is wrong device type
-		strings.Contains(msg, "no such file or directory") || // MEI driver not installed
-		msg == utils.HECIDriverNotDetected.Error() // already-classified sentinel
+// classifyHECIFailure maps a probe failure to its RPC exit code and preserves the cause.
+func classifyHECIFailure(err error) error {
+	switch {
+	case errors.Is(err, heci.ErrPermissionDenied):
+		log.Error("Permission denied accessing the MEI/HECI device. " +
+			"Run with administrator or root privileges.")
+
+		return fmt.Errorf("%w: %w", utils.IncorrectPermissions, err)
+	case errors.Is(err, heci.ErrUnsupportedDevice):
+		log.Error("The MEI device on this system does not expose the AMT (PTHI) client. " +
+			"This is typically non-vPro hardware.")
+
+		return fmt.Errorf("%w: %w", utils.AmtNotDetected, err)
+	default:
+		log.Error("Failed to execute due to access issues. " +
+			"Please ensure that Intel ME is present, " +
+			"the MEI driver is installed, " +
+			"and the runtime has administrator or root privileges.")
+
+		return fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, err)
+	}
 }

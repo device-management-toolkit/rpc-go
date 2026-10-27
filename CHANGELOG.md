@@ -1,3 +1,82 @@
+# [3.0.0-beta.75](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.74...v3.0.0-beta.75) (2026-10-26)
+
+
+### Bug Fixes
+
+* **internal:** keep amtinfo output free of log lines ([#1657](https://github.com/device-management-toolkit/rpc-go/issues/1657)) ([4a82ac8](https://github.com/device-management-toolkit/rpc-go/commit/4a82ac8ddb729268ba973c8af2f4d27a9e58a944))
+
+# [3.0.0-beta.74](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.73...v3.0.0-beta.74) (2026-10-26)
+
+
+### Bug Fixes
+
+* **local:** report AMT cert errors instead of falling back to HECI ([#1654](https://github.com/device-management-toolkit/rpc-go/issues/1654)) ([364ff4c](https://github.com/device-management-toolkit/rpc-go/commit/364ff4c7343728fdec1dc7654be1ffd0f4855eac))
+
+# [3.0.0-beta.73](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.72...v3.0.0-beta.73) (2026-10-26)
+
+# [3.0.0-beta.72](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.71...v3.0.0-beta.72) (2026-10-26)
+
+
+### Bug Fixes
+
+* ensure bounds correctly checked for box output ([#1631](https://github.com/device-management-toolkit/rpc-go/issues/1631)) ([a000b8a](https://github.com/device-management-toolkit/rpc-go/commit/a000b8a3d6309ddf833076d754e36878ceefd75e))
+
+# [3.0.0-beta.71](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.70...v3.0.0-beta.71) (2026-10-26)
+
+
+### Bug Fixes
+
+* shorten CLI credential warning to a single line ([#1649](https://github.com/device-management-toolkit/rpc-go/issues/1649)) ([92b2b76](https://github.com/device-management-toolkit/rpc-go/commit/92b2b7658237fefe99de3a5f7cdde7a5c846cee1))
+
+# [3.0.0-beta.70](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.69...v3.0.0-beta.70) (2026-10-26)
+
+
+### Bug Fixes
+
+* show concise sync results instead of full device details ([#1635](https://github.com/device-management-toolkit/rpc-go/issues/1635)) ([820666d](https://github.com/device-management-toolkit/rpc-go/commit/820666d6f8ca28e3db6c7364a323c48b8c242ce9)), closes [#1633](https://github.com/device-management-toolkit/rpc-go/issues/1633)
+
+# [3.0.0-beta.69](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.68...v3.0.0-beta.69) (2026-10-23)
+
+
+### Bug Fixes
+
+* show info and offer sudo when sync lacks root access ([#1601](https://github.com/device-management-toolkit/rpc-go/issues/1601)) ([a894759](https://github.com/device-management-toolkit/rpc-go/commit/a8947593c6a9b108067e2830b1aa5c2327896625))
+
+# [3.0.0-beta.68](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.67...v3.0.0-beta.68) (2026-10-16)
+
+
+### Bug Fixes
+
+* report sync success and failure clearly ([#1622](https://github.com/device-management-toolkit/rpc-go/issues/1622)) ([3e36039](https://github.com/device-management-toolkit/rpc-go/commit/3e360396c004ab2712f3181aef29f695a60933b8)), closes [#1621](https://github.com/device-management-toolkit/rpc-go/issues/1621)
+
+# [3.0.0-beta.67](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.66...v3.0.0-beta.67) (2026-10-16)
+
+
+### Features
+
+* include isElevated and heciAvailable in device sync payload ([#1614](https://github.com/device-management-toolkit/rpc-go/issues/1614)) ([8b5f38a](https://github.com/device-management-toolkit/rpc-go/commit/8b5f38a2d5486e67da6adf2125347cbbe2246e31)), closes [#1613](https://github.com/device-management-toolkit/rpc-go/issues/1613)
+
+# [3.0.0-beta.66](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.65...v3.0.0-beta.66) (2026-10-16)
+
+
+### Features
+
+* Implement diag bundle command ([#1547](https://github.com/device-management-toolkit/rpc-go/issues/1547)) ([8b1f5ff](https://github.com/device-management-toolkit/rpc-go/commit/8b1f5ffd7a06851be676ffe7c51a73b3a70a9b0b)), closes [#1544](https://github.com/device-management-toolkit/rpc-go/issues/1544)
+
+# [3.0.0-beta.65](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.64...v3.0.0-beta.65) (2026-10-15)
+
+
+### Features
+
+* Add remote RPS support to configure sync-clock ([#1562](https://github.com/device-management-toolkit/rpc-go/issues/1562)) ([f8a6f5c](https://github.com/device-management-toolkit/rpc-go/commit/f8a6f5c00f2730ef7153366d5f7a6cd23252f07f)), closes [#1561](https://github.com/device-management-toolkit/rpc-go/issues/1561) [device-management-toolkit/rps#2905](https://github.com/device-management-toolkit/rps/issues/2905)
+
+# [3.0.0-beta.64](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.63...v3.0.0-beta.64) (2026-10-15)
+
+
+### Features
+
+* **rps:** report AMT crypto capabilities to RPS ([#1615](https://github.com/device-management-toolkit/rpc-go/issues/1615)) ([14b3cbc](https://github.com/device-management-toolkit/rpc-go/commit/14b3cbcc9d3d227abeb6a5123e1117a2fa322496))
+
 # [3.0.0-beta.63](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.62...v3.0.0-beta.63) (2026-10-12)
 
 

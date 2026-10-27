@@ -7,6 +7,7 @@ package heci
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -20,7 +21,21 @@ var (
 	// which tracks per-session APF channel ids) must re-handshake and retry
 	// rather than reuse their pre-reinit state.
 	ErrDeviceReinitialized = errors.New("heci device reinitialized, retry required")
+	// ErrDeviceNotFound indicates no HECI device interface is available.
+	ErrDeviceNotFound = errors.New("heci device not found")
+	// ErrUnsupportedDevice indicates the HECI device does not support the requested operation.
+	ErrUnsupportedDevice = errors.New("heci device does not support the requested operation")
+	// ErrPermissionDenied indicates the process cannot access the HECI device.
+	ErrPermissionDenied = errors.New("permission denied accessing heci device")
 )
+
+func wrapError(kind, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%w: %w", kind, err)
+}
 
 // IsReadTimeout reports whether err is a HECI read timeout. It matches the
 // ErrReadTimeout sentinel via errors.Is and also accepts an error whose message

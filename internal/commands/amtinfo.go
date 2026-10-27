@@ -6,10 +6,10 @@
 package commands
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,6 +28,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
@@ -55,6 +56,8 @@ const (
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
 )
+
+var ErrSyncUUIDUnavailable = errors.New("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
 
 // Indent constant for consistent text output spacing.
 const infoIndent = "  "
@@ -105,6 +108,9 @@ var (
 // test seam for SMBIOS UUID fallback in GetAMTInfo.
 var getSMBIOSSystemUUID = utils.GetSMBIOSSystemUUID
 
+// test seam for privilege checking.
+var isElevated = utils.IsElevated
+
 func renderInfoHeader(title string) string {
 	return "\n" + infoIndent + infoHeaderStyle.Render(title) + "\n" + infoIndent +
 		infoSepStyle.Render(strings.Repeat("─", len([]rune(title)))) + "\n"
@@ -112,6 +118,23 @@ func renderInfoHeader(title string) string {
 
 func renderInfoRow(label, value string) string {
 	return infoIndent + infoLabelStyle.Render(label) + " " + styledInfoValue(value) + "\n"
+}
+
+// renderUnavailableRow renders a field that could not be read, with the reason.
+func renderUnavailableRow(label, reason string) string {
+	return infoIndent + infoLabelStyle.Render(label) + " " + infoYellowStyle.Render(unavailableValue(reason)) + "\n"
+}
+
+func unavailableValue(reason string) string {
+	return "Unavailable (" + reason + ")"
+}
+
+func localTLSValue(enforced bool) string {
+	if enforced {
+		return "enforced"
+	}
+
+	return "not enforced"
 }
 
 func styledInfoValue(value string) string {
@@ -229,6 +252,8 @@ func (cmd *AmtInfoCmd) RequiresAMTPassword() bool {
 // ensures AMTBaseCmd.AfterApply can tolerate HECI failures for amtinfo.
 func (cmd *AmtInfoCmd) BeforeApply() error {
 	cmd.SkipWSMANSetup = true
+	// amtinfo shows local TLS enforcement in its own output.
+	cmd.QuietSetupLogs = true
 
 	return nil
 }
@@ -265,11 +290,101 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
+	service, result, syncResult, err := cmd.readInfo(ctx)
+	if result == nil {
+		return err
+	}
+
+	// A permissions failure still shows what was gathered before elevation is
+	// offered: readInfo returns it with the result, and Run returns it last.
+	syncPermErr := err
+
+	if cmd.Sync && syncPermErr == nil {
+		if ctx.JsonOutput {
+			jsonBytes, err := json.MarshalIndent(syncResult, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal sync result: %w", err)
+			}
+
+			fmt.Fprintln(os.Stdout, string(jsonBytes))
+		} else {
+			message := "Device " + syncResult.Status
+			if syncResult.Status == "registration_skipped" {
+				message = "Device not found; registration skipped"
+			}
+
+			fmt.Fprintf(os.Stdout, "%s (UUID: %s)\n", message, syncResult.UUID)
+		}
+
+		// Signal to Execute() that elevation would unlock more data
+		if !ctx.JsonOutput && !cmd.HECIAvailable && !isElevated() {
+			return utils.IncorrectPermissions
+		}
+
+		return nil
+	}
+
+	if ctx.JsonOutput {
+		if err := service.OutputJSON(os.Stdout, result); err != nil {
+			return err
+		}
+
+		return syncPermErr
+	}
+
+	if ctx.TableOutput {
+		if err := service.OutputTable(os.Stdout, result, cmd); err != nil {
+			return err
+		}
+	} else {
+		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
+			return err
+		}
+	}
+
+	if syncPermErr != nil {
+		return syncPermErr
+	}
+
+	// Signal to Execute() that elevation would unlock more data
+	return cmd.elevationErr()
+}
+
+// Collect returns the information Run prints, without printing it, for
+// callers that use amtinfo as a library. Like Run, it syncs the information
+// to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
+// client before returning, so a long-lived process can call it again. That
+// client is the command's own (cmd.WSMan) if one is set, even if the read did
+// not use it, and otherwise the one the read opened, if any. It returns the
+// result together with the error Run returns after printing: the sync's
+// permissions failure when the sync failed for lack of elevation, otherwise
+// utils.IncorrectPermissions when HECI is unavailable because the process is
+// not elevated.
+func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
+	service, result, _, err := cmd.readInfo(ctx)
+	defer service.closeWSMAN()
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, cmd.elevationErr()
+}
+
+// readInfo reads the AMT information and, when Sync is set, syncs it to the
+// devices API. The returned service holds any WSMAN client the read opened.
+// The sync result summarizes a successful sync and is nil otherwise.
+// The result is nil when the read or the sync failed, except when the sync
+// failed for lack of elevation (a utils.CustomError with the
+// IncorrectPermissions code): then readInfo returns the result together with
+// that error, so the caller can report what was read before the error.
+func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, *DeviceSyncResult, error) {
 	service := NewInfoService(
 		ctx.AMTCommand,
 		WithJSONOutput(ctx.JsonOutput),
 		WithPassword(ctx.AMTPassword),
 		WithLocalTLSEnforced(cmd.LocalTLSEnforced),
+		WithLocalTLSStatusRead(cmd.LocalTLSStatusRead),
 		WithSkipAMTCertCheck(ctx.SkipAMTCertCheck),
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
@@ -285,33 +400,34 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 	result, err := service.GetAMTInfo(effectiveCmd)
 	if err != nil {
-		return err
+		return service, nil, nil, err
 	}
 
 	// If requested, sync device info to remote server
+	var syncResult *DeviceSyncResult
+
 	if cmd.Sync {
 		discovered := true
-		if err := service.SyncDeviceInfo(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered); err != nil {
-			return err
+
+		syncResult, err = service.SyncDeviceInfoWithResult(ctx, result, cmd.URL, &ctx.ServerAuthFlags, &discovered)
+		if err != nil {
+			// A permissions failure still shows what was gathered before elevation is offered.
+			var customErr utils.CustomError
+			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
+				return service, nil, nil, fmt.Errorf("device sync failed: %w", err)
+			}
+
+			return service, result, nil, err
 		}
 	}
 
-	if ctx.JsonOutput {
-		return service.OutputJSON(os.Stdout, result)
-	}
+	return service, result, syncResult, nil
+}
 
-	if ctx.TableOutput {
-		if err := service.OutputTable(os.Stdout, result, cmd); err != nil {
-			return err
-		}
-	} else {
-		if err := service.OutputText(os.Stdout, result, cmd); err != nil {
-			return err
-		}
-	}
-
-	// Signal to Execute() that elevation would unlock more data
-	if !cmd.HECIAvailable && !utils.IsElevated() {
+// elevationErr returns utils.IncorrectPermissions when HECI is unavailable
+// because the process is not elevated: elevation would unlock more data.
+func (cmd *AmtInfoCmd) elevationErr() error {
+	if !cmd.HECIAvailable && !isElevated() {
 		return utils.IncorrectPermissions
 	}
 
@@ -328,6 +444,7 @@ type InfoResult struct {
 	ControlMode       string                       `json:"controlMode,omitempty"`
 	ProvisioningState string                       `json:"provisioningState,omitempty"`
 	OperationalState  string                       `json:"operationalState,omitempty"`
+	LocalTLSEnforced  *bool                        `json:"localTlsEnforced,omitempty"`
 	DNSSuffix         string                       `json:"dnsSuffix,omitempty"`
 	DNSSuffixOS       string                       `json:"dnsSuffixOS,omitempty"`
 	HostnameOS        string                       `json:"hostnameOS,omitempty"`
@@ -339,6 +456,16 @@ type InfoResult struct {
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
 	HECIAvailable     *bool                        `json:"heciAvailable,omitempty"`
+	// WSMANUnavailable is the short reason WSMAN-backed fields could not be read.
+	WSMANUnavailable string `json:"wsmanUnavailable,omitempty"`
+	// mpsUnavailable marks the MPS port as unread, as opposed to not configured.
+	mpsUnavailable bool
+}
+
+// DeviceSyncResult summarizes the outcome of syncing a device.
+type DeviceSyncResult struct {
+	Status string `json:"status"`
+	UUID   string `json:"uuid"`
 }
 
 // UserCert represents a user certificate
@@ -369,6 +496,12 @@ type InfoService struct {
 	heciAvailable    bool
 	// autoRegister controls whether a sync that 404s creates the device.
 	autoRegister bool
+	// localTLSStatusRead is true when localTLSEnforced came from a successful read.
+	localTLSStatusRead bool
+	// wsmanErr is the first WSMAN failure, used to mark WSMAN-backed fields as unavailable.
+	wsmanErr error
+	// mpsReadFailed is true when the MPS details could not be read over WSMAN.
+	mpsReadFailed bool
 }
 
 // InfoServiceOption mutates InfoService construction parameters.
@@ -415,6 +548,14 @@ func WithPassword(password string) InfoServiceOption {
 func WithLocalTLSEnforced(enabled bool) InfoServiceOption {
 	return func(s *InfoService) {
 		s.localTLSEnforced = enabled
+	}
+}
+
+// WithLocalTLSStatusRead marks the local TLS enforcement value as read from
+// AMT. Without it, amtinfo does not report local TLS enforcement.
+func WithLocalTLSStatusRead(read bool) InfoServiceOption {
+	return func(s *InfoService) {
+		s.localTLSStatusRead = read
 	}
 }
 
@@ -482,6 +623,8 @@ type syncDeviceInfo struct {
 	EthernetAdapterCount int                      `json:"ethernetAdapterCount,omitempty"`
 	MonitorConnected     *bool                    `json:"monitorConnected,omitempty"`
 	IEEE8021xEnabled     *bool                    `json:"ieee8021xEnabled,omitempty"`
+	IsElevated           *bool                    `json:"isElevated,omitempty"`
+	HECIAvailable        *bool                    `json:"heciAvailable,omitempty"`
 	MENetwork            *syncMENetwork           `json:"meNetwork,omitempty"`
 	OSNetwork            *utils.OSNetworkAdapters `json:"osNetwork,omitempty"`
 	PlatformAdapters     *utils.PlatformAdapters  `json:"platformAdapters,omitempty"`
@@ -519,13 +662,29 @@ type syncMEInterface struct {
 //
 // This flag is set only once during device creation and does not change thereafter.
 func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) error {
+	_, err := s.SyncDeviceInfoWithResult(ctx, result, urlArg, auth, discovered)
+
+	return err
+}
+
+// SyncDeviceInfoWithResult sends device information to the server and returns a concise outcome.
+func (s *InfoService) SyncDeviceInfoWithResult(ctx *Context, result *InfoResult, urlArg string, auth *ServerAuthFlags, discovered *bool) (*DeviceSyncResult, error) {
 	// Without a usable UUID (neither HECI nor SMBIOS available), we cannot identify the device.
 	if result == nil || strings.TrimSpace(result.UUID) == "" {
-		return fmt.Errorf("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
+		// Both sources need root on most Linux systems, so report it as a permissions
+		// failure and let cli.Execute offer to elevate.
+		if !isElevated() {
+			permErr := utils.IncorrectPermissions
+			permErr.Details = ErrSyncUUIDUnavailable.Error()
+
+			return nil, permErr
+		}
+
+		return nil, ErrSyncUUIDUnavailable
 	}
 
 	if utils.IsKnownInvalidUUID(result.UUID) {
-		return fmt.Errorf("cannot sync: invalid device UUID sentinel value")
+		return nil, fmt.Errorf("cannot sync: invalid device UUID sentinel value")
 	}
 
 	// Use the provided URL directly as the target endpoint
@@ -558,24 +717,24 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal sync payload: %w", err)
+		return nil, fmt.Errorf("failed to marshal sync payload: %w", err)
 	}
 
 	httpClient := s.newHTTPClient(ctx.SkipCertCheck, endpoint)
 
 	authToken, err := s.getAuthToken(endpoint, auth, ctx.SkipCertCheck)
 	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return nil, err
 	}
 
 	log.Debugf("attempting to sync device %s to %s", result.UUID, endpoint)
 
 	// Try PATCH request
-	resp, err := s.doHTTPRequest(httpClient, http.MethodPatch, endpoint, body, authToken, ctx.TenantID)
+	resp, err := device.DoJSONRequest(context.Background(), httpClient, http.MethodPatch, endpoint, authToken, ctx.TenantID, body)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
-		return err
+		return nil, err
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
@@ -583,9 +742,9 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		_ = resp.Body.Close()
 
 		if !s.autoRegister {
-			log.Debugf("device %s not found (HTTP 404); skipping registration", result.UUID)
+			log.Infof("device %s not found (HTTP 404); skipping registration", result.UUID)
 
-			return nil
+			return &DeviceSyncResult{Status: "registration_skipped", UUID: result.UUID}, nil
 		}
 
 		log.Debugf("device %s not found (HTTP 404), attempting to register device", result.UUID)
@@ -598,10 +757,11 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 			discovered = &autoDiscovered
 		}
 
-		if err := s.createDevice(httpClient, endpoint, result, authToken, ctx.TenantID, discovered, now); err != nil {
+		created, err := s.createDevice(httpClient, endpoint, result, authToken, ctx.TenantID, discovered, now)
+		if err != nil {
 			log.Debugf("device registration (POST) failed: %v", err)
 
-			return fmt.Errorf("device not found; failed to auto-register device: %w", err)
+			return nil, fmt.Errorf("device not found; failed to auto-register device: %w", err)
 		}
 
 		log.Debugf("device %s registered successfully, retrying sync (PATCH)", result.UUID)
@@ -610,12 +770,17 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 		if err := s.doPatchRequest(httpClient, endpoint, body, authToken, ctx.TenantID); err != nil {
 			log.Debugf("retry PATCH after registration failed: %v", err)
 
-			return err
+			return nil, err
 		}
 
-		log.Debugf("device %s synced successfully after registration", result.UUID)
+		log.Infof("device %s synced successfully after registration", result.UUID)
 
-		return nil
+		status := "registered"
+		if !created {
+			status = "updated"
+		}
+
+		return &DeviceSyncResult{Status: status, UUID: result.UUID}, nil
 	}
 	defer resp.Body.Close()
 
@@ -624,12 +789,12 @@ func (s *InfoService) SyncDeviceInfo(ctx *Context, result *InfoResult, urlArg st
 
 		log.Debugf("PATCH request failed with status %s", resp.Status)
 
-		return fmt.Errorf("sync failed with status %s", resp.Status)
+		return nil, fmt.Errorf("sync failed with status %s", resp.Status)
 	}
 
-	log.Debugf("device %s synced successfully (PATCH)", result.UUID)
+	log.Infof("device %s synced successfully (PATCH)", result.UUID)
 
-	return nil
+	return &DeviceSyncResult{Status: "updated", UUID: result.UUID}, nil
 }
 
 // newHTTPClient creates an HTTP client with appropriate TLS configuration
@@ -671,34 +836,6 @@ func (s *InfoService) getAuthToken(endpoint string, auth *ServerAuthFlags, skipC
 	return token, nil
 }
 
-// doHTTPRequest performs an HTTP request and returns the response
-func (s *InfoService) doHTTPRequest(client *http.Client, method, endpoint string, body []byte, authToken, tenantID string) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), httpRequestTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create %s request: %w", method, err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	if tenantID != "" {
-		req.Header.Set("x-tenant-id", tenantID)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	return resp, nil
-}
-
 // isHTTPSuccess checks if the response status code indicates success (2xx)
 func isHTTPSuccess(statusCode int) bool {
 	return statusCode >= 200 && statusCode < 300
@@ -708,7 +845,7 @@ func isHTTPSuccess(statusCode int) bool {
 func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body []byte, authToken, tenantID string) error {
 	log.Debugf("updating device info (PATCH) to %s", endpoint)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPatch, endpoint, body, authToken, tenantID)
+	resp, err := device.DoJSONRequest(context.Background(), client, http.MethodPatch, endpoint, authToken, tenantID, body)
 	if err != nil {
 		log.Debugf("PATCH request failed: %v", err)
 
@@ -732,19 +869,19 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 // createDevice sends a minimal POST to register the device before retrying PATCH sync.
 // The discovered parameter indicates if this is an auto-discovered device (true) or explicitly provisioned (false).
 // syncedAt is the sync timestamp, reused so the created record matches the retried PATCH.
-func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken, tenantID string, discovered *bool, syncedAt time.Time) error {
+func (s *InfoService) createDevice(client *http.Client, endpoint string, result *InfoResult, authToken, tenantID string, discovered *bool, syncedAt time.Time) (bool, error) {
 	body, hostname, err := s.buildDeviceCreatePayload(result, discovered, syncedAt)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	log.Debugf("registering device %s with hostname %s", result.UUID, hostname)
 
-	resp, err := s.doHTTPRequest(client, http.MethodPost, endpoint, body, authToken, tenantID)
+	resp, err := device.DoJSONRequest(context.Background(), client, http.MethodPost, endpoint, authToken, tenantID, body)
 	if err != nil {
 		log.Debugf("device registration (POST) request failed: %v", err)
 
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 
@@ -760,6 +897,8 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 		Discovered      *bool      `json:"discovered,omitempty"`
 		FirstDiscovered *time.Time `json:"firstDiscovered,omitempty"`
 		LastSynced      *time.Time `json:"lastSynced,omitempty"`
+		IsElevated      *bool      `json:"isElevated,omitempty"`
+		HECIAvailable   *bool      `json:"heciAvailable,omitempty"`
 	}
 
 	createPayload := struct {
@@ -771,13 +910,24 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 		Hostname: hostname,
 	}
 
+	elevated := isElevated()
+	heci := s.heciAvailable
+
+	if result != nil && result.HECIAvailable != nil {
+		heci = *result.HECIAvailable
+	}
+
+	createPayload.DeviceInfo = &deviceInfoCreate{
+		IsElevated:    &elevated,
+		HECIAvailable: &heci,
+	}
+
 	if discovered != nil {
 		// lastSynced advances on every sync; firstDiscovered is only stamped for a
 		// genuine discovery (discovered=true) and is immutable thereafter.
-		createPayload.DeviceInfo = &deviceInfoCreate{
-			Discovered: discovered,
-			LastSynced: &syncedAt,
-		}
+		createPayload.DeviceInfo.Discovered = discovered
+
+		createPayload.DeviceInfo.LastSynced = &syncedAt
 		if *discovered {
 			createPayload.DeviceInfo.FirstDiscovered = &syncedAt
 		}
@@ -792,11 +942,11 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 }
 
 // handleDeviceCreateResponse interprets the HTTP response from device creation POST.
-func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) error {
+func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) (bool, error) {
 	if resp.StatusCode == http.StatusConflict {
 		log.Debugf("device %s already exists (HTTP 409), will proceed with update", guid)
 		// Device was created concurrently; proceed with retry PATCH.
-		return nil
+		return false, nil
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -804,12 +954,12 @@ func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid strin
 
 		log.Debugf("device registration failed with status %s", resp.Status)
 
-		return fmt.Errorf("device creation failed with status %s", resp.Status)
+		return false, fmt.Errorf("device creation failed with status %s", resp.Status)
 	}
 
 	log.Debugf("device %s registered successfully (HTTP %d)", guid, resp.StatusCode)
 
-	return nil
+	return true, nil
 }
 
 // getCreateHostname returns a hostname for device registration.
@@ -914,6 +1064,16 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WS
 // populateDiscoveryFields fills additional device discovery fields into the sync payload.
 func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *InfoResult) {
 	log.Debug("Starting discovery fields population")
+
+	elevated := isElevated()
+	info.IsElevated = &elevated
+
+	if result != nil && result.HECIAvailable != nil {
+		info.HECIAvailable = result.HECIAvailable
+	} else {
+		heci := s.heciAvailable
+		info.HECIAvailable = &heci
+	}
 
 	// UPID
 	if result.UPID != nil {
@@ -1447,7 +1607,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		if s.heciAvailable {
 			userCerts, err := s.getUserCertificates()
 			if err != nil {
-				log.Error("Failed to get user certificates: ", err)
+				log.Debug("Failed to get user certificates: ", err)
 			} else {
 				result.UserCerts = userCerts
 			}
@@ -1466,7 +1626,47 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	s.addConnectionDetails(result, showAll)
+
 	return result, nil
+}
+
+// addConnectionDetails records local TLS enforcement and, when WSMAN failed,
+// the reason WSMAN-backed fields are missing, so the output can show them
+// instead of logging them.
+func (s *InfoService) addConnectionDetails(result *InfoResult, showAll bool) {
+	// Report enforcement only when it was read; a failed read is not "not enforced".
+	if s.heciAvailable && s.localTLSStatusRead && showAll {
+		enforced := s.localTLSEnforced
+		result.LocalTLSEnforced = &enforced
+	}
+
+	result.WSMANUnavailable = wsmanUnavailableReason(s.wsmanErr)
+	result.mpsUnavailable = s.mpsReadFailed
+}
+
+// wsmanUnavailableReason returns the short reason shown next to fields that
+// need WSMAN. Details are logged at debug level when the failure happens.
+func wsmanUnavailableReason(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return "AMT cert not trusted; use --skip-amt-cert-check"
+	}
+
+	return "WSMAN request failed; run with -v for details"
+}
+
+// wsmanFailed records the first WSMAN failure and returns err unchanged.
+func (s *InfoService) wsmanFailed(err error) error {
+	if s.wsmanErr == nil {
+		s.wsmanErr = err
+	}
+
+	return err
 }
 
 // OutputJSON outputs the result in JSON format
@@ -1503,7 +1703,7 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 	if !s.heciAvailable {
 		fmt.Fprintln(w)
 
-		if !utils.IsElevated() {
+		if !isElevated() {
 			fmt.Fprintln(w, infoIndent+infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable",
 			))
@@ -1560,6 +1760,10 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 		add("Device", "--operationalState", "AMT Operational State (BIOS)", result.OperationalState)
 	}
 
+	if result.LocalTLSEnforced != nil {
+		add("Device", "", "TLS on Local Ports", localTLSValue(*result.LocalTLSEnforced))
+	}
+
 	if showAll || cmd.DNS {
 		add("Device", "-d", "DNS Suffix", result.DNSSuffix)
 		add("Device", "-d", "DNS Suffix (OS)", result.DNSSuffixOS)
@@ -1578,6 +1782,8 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 		if result.RAS.MPSPort > 0 {
 			add("Remote Access", "-a", "MPS Port", strconv.Itoa(result.RAS.MPSPort))
+		} else if result.mpsUnavailable {
+			add("Remote Access", "-a", "MPS Port", unavailableValue(result.WSMANUnavailable))
 		}
 	}
 
@@ -1660,6 +1866,11 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 			add("User Certs", "--userCert", name, strings.TrimSpace(flags))
 		}
+
+		// nil means the read failed; an empty map is a successful read with no certificates.
+		if result.UserCerts == nil && result.WSMANUnavailable != "" {
+			add("User Certs", "--userCert", "Unavailable", result.WSMANUnavailable)
+		}
 	}
 
 	// --- HTTP Proxy ---
@@ -1670,6 +1881,8 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 			}
 		} else if (cmd.Proxy || cmd.All) && result.ProxyAccessPoints != nil {
 			add("HTTP Proxy", "--proxy", "None configured", "")
+		} else if (cmd.Proxy || cmd.All) && result.WSMANUnavailable != "" {
+			add("HTTP Proxy", "--proxy", "Unavailable", result.WSMANUnavailable)
 		} else if cmd.Proxy || cmd.All {
 			add("HTTP Proxy", "--proxy", "Unavailable", "Proxy configuration could not be retrieved")
 		}
@@ -1763,7 +1976,7 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 	var b strings.Builder
 
 	if !s.heciAvailable {
-		if !utils.IsElevated() {
+		if !isElevated() {
 			b.WriteString("\n" + infoIndent + infoYellowStyle.Render(
 				"Not running as administrator \u2014 AMT data unavailable",
 			) + "\n")
@@ -1793,19 +2006,33 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 
 	termW := getTerminalWidth()
 
+	// Decide layout up front. The boxed two-column path is only safe when the
+	// joined outer width (2*(baseColWidth+2)+2) fits the terminal; otherwise the
+	// terminal wraps each row mid-border. Compute content width first, then gate.
+	var (
+		useBoxed     bool
+		left, right  string
+		baseColWidth int
+	)
+
 	if termW >= twoColumnMinWidth && leftHasContent && rightHasContent {
 		// Rebuild sections whose header differs inside a box.
 		deviceBoxed := buildDeviceSection(result, cmd, showAll, true)
 		wiredBoxed := buildWiredSection(result, cmd, showAll, true)
 		wirelessBoxed := buildWirelessSection(result, cmd, showAll, true)
 
-		left := strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
-		right := strings.Trim(wiredBoxed+wirelessBoxed, "\n")
+		left = strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
+		right = strings.Trim(wiredBoxed+wirelessBoxed, "\n")
 
 		// Baseline colWidth from upper content (+2 for Padding(1, 1) horizontal).
 		upperContentW := maxInt(lipgloss.Width(left), lipgloss.Width(right))
-		baseColWidth := upperContentW + 2
+		baseColWidth = upperContentW + 2
 
+		// Outer width of joined upper boxes: 2*(colWidth + 2 borders) + 2 gutter.
+		useBoxed = 2*(baseColWidth+2)+2 <= termW
+	}
+
+	if useBoxed {
 		// Attempt 2-col cert hashes. If the resulting cert box outer width
 		// (2*colWidth + 6) would overflow the terminal, fall back to 1-col.
 		certsTwoCol := buildCertsSection(result, cmd, showAll, true)
@@ -1926,6 +2153,10 @@ func buildDeviceSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool
 		main.WriteString(renderInfoRow("AMT Operational State (BIOS)", result.OperationalState))
 	}
 
+	if result.LocalTLSEnforced != nil {
+		main.WriteString(renderInfoRow("TLS on Local Ports", localTLSValue(*result.LocalTLSEnforced)))
+	}
+
 	if showAll || cmd.DNS {
 		main.WriteString(renderInfoRow("DNS Suffix", result.DNSSuffix))
 		main.WriteString(renderInfoRow("DNS Suffix (OS)", result.DNSSuffixOS))
@@ -1961,6 +2192,8 @@ func buildRASSection(result *InfoResult, cmd *AmtInfoCmd, showAll bool) string {
 
 	if result.RAS.MPSPort > 0 {
 		b.WriteString(renderInfoRow("MPS Port", strconv.Itoa(result.RAS.MPSPort)))
+	} else if result.mpsUnavailable {
+		b.WriteString(renderUnavailableRow("MPS Port", result.WSMANUnavailable))
 	}
 
 	return b.String()
@@ -2052,6 +2285,11 @@ func buildProxySection(result *InfoResult, cmd *AmtInfoCmd, showAll, heciAvailab
 	// noise — the top-of-output banner already explains the situation.
 	if !heciAvailable {
 		return ""
+	}
+
+	if result.WSMANUnavailable != "" {
+		return renderInfoHeader("HTTP Proxy Configuration") +
+			infoIndent + infoYellowStyle.Render(unavailableValue(result.WSMANUnavailable)) + "\n"
 	}
 
 	return renderInfoHeader("HTTP Proxy Configuration") +
@@ -2165,6 +2403,12 @@ func buildUserCertsSection(result *InfoResult, cmd *AmtInfoCmd) string {
 	}
 
 	if len(result.UserCerts) == 0 {
+		// nil means the read failed; an empty map is a successful read with no certificates.
+		if result.UserCerts == nil && result.WSMANUnavailable != "" {
+			return renderInfoHeader("Public Key Certificates") +
+				infoIndent + infoYellowStyle.Render(unavailableValue(result.WSMANUnavailable)) + "\n"
+		}
+
 		if cmd.UserCert {
 			return renderInfoHeader("Public Key Certificates") +
 				infoIndent + infoDimStyle.Render("No public key certificates found") + "\n"
@@ -2311,7 +2555,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	if password == "" {
 		lsa, err := s.amtCommand.GetLocalSystemAccount()
 		if err != nil {
-			return fmt.Errorf("failed to get local system account: %w", err)
+			return s.wsmanFailed(fmt.Errorf("failed to get local system account: %w", err))
 		}
 
 		username = lsa.Username
@@ -2329,12 +2573,28 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	if err := wsmanClient.SetupWsmanClient(username, password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
-		return fmt.Errorf("failed to setup WSMAN client: %w", err)
+		return s.wsmanFailed(fmt.Errorf("failed to setup WSMAN client: %w", err))
 	}
 
 	s.wsman = wsmanClient
 
 	return nil
+}
+
+// closeWSMAN closes the service's WSMAN client, if any, and releases it. Run
+// leaves the client to process exit, but over LME a held connection keeps
+// the MEI device open, and the next call in the same process would fail with
+// "device busy". A close failure is only logged.
+func (s *InfoService) closeWSMAN() {
+	if s.wsman == nil {
+		return
+	}
+
+	if err := s.wsman.Close(); err != nil {
+		log.Debugf("closing WSMAN client: %v", err)
+	}
+
+	s.wsman = nil
 }
 
 // getUserCertificates retrieves public key certificates via WSMAN
@@ -2345,7 +2605,7 @@ func (s *InfoService) getUserCertificates() (map[string]UserCert, error) {
 
 	publicKeyCerts, err := s.wsman.GetPublicKeyCerts()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get public key certificates: %w", err)
+		return nil, s.wsmanFailed(fmt.Errorf("failed to get public key certificates: %w", err))
 	}
 
 	userCertMap := make(map[string]UserCert)
@@ -2370,12 +2630,17 @@ func (s *InfoService) getUserCertificates() (map[string]UserCert, error) {
 // getMPSInfoFromWSMAN retrieves MPS hostname and port via WSMAN ManagementPresenceRemoteSAP.
 func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err error) {
 	if s.wsman == nil {
+		// Unread only if WSMAN failed; in pre-provisioning it does not apply.
+		s.mpsReadFailed = s.wsmanErr != nil
+
 		return "", 0, fmt.Errorf("WSMAN client not available")
 	}
 
 	items, err := s.wsman.GetMPSSAP()
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", err)
+		s.mpsReadFailed = true
+
+		return "", 0, s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", err))
 	}
 
 	if len(items) == 0 {
@@ -2393,7 +2658,7 @@ func (s *InfoService) getProxyAccessPoints() ([]ProxyAccessPoint, error) {
 
 	items, err := s.wsman.GetHTTPProxyAccessPoints()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get HTTP proxy access points: %w", err)
+		return nil, s.wsmanFailed(fmt.Errorf("failed to get HTTP proxy access points: %w", err))
 	}
 
 	proxies := make([]ProxyAccessPoint, 0, len(items))

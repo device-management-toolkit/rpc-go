@@ -232,7 +232,8 @@ func CheckCertificateAlgorithmSupported(certAlgorithm x509.SignatureAlgorithm) (
 		value = 3
 	case x509.SHA512WithRSA, x509.ECDSAWithSHA512, x509.SHA512WithRSAPSS:
 		value = 5
-	case x509.UnknownSignatureAlgorithm, x509.MD2WithRSA, x509.PureEd25519:
+	case x509.UnknownSignatureAlgorithm, x509.MD2WithRSA, x509.PureEd25519,
+		x509.MLDSA44, x509.MLDSA65, x509.MLDSA87:
 		fallthrough
 	default:
 		value = 99
