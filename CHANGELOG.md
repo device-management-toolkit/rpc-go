@@ -1,3 +1,10 @@
+# [3.0.0-beta.76](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.75...v3.0.0-beta.76) (2026-10-27)
+
+
+### Features
+
+* **internal:** show Intel TEP status in amtinfo ([#1661](https://github.com/device-management-toolkit/rpc-go/issues/1661)) ([d15af0e](https://github.com/device-management-toolkit/rpc-go/commit/d15af0e57027c9d0377318dee204dff3c82784f8))
+
 # [3.0.0-beta.75](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.74...v3.0.0-beta.75) (2026-10-26)
 
 
