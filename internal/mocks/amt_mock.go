@@ -429,6 +429,63 @@ func (mr *MockInterfaceMockRecorder) TEPGetVouchers() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPGetVouchers", reflect.TypeOf((*MockInterface)(nil).TEPGetVouchers))
 }
 
+// TEPRemoveOwnershipVoucher mocks base method.
+func (m *MockInterface) TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPRemoveOwnershipVoucher", voucherID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TEPRemoveOwnershipVoucher indicates an expected call of TEPRemoveOwnershipVoucher.
+func (mr *MockInterfaceMockRecorder) TEPRemoveOwnershipVoucher(voucherID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPRemoveOwnershipVoucher", reflect.TypeOf((*MockInterface)(nil).TEPRemoveOwnershipVoucher), voucherID)
+}
+
+// TEPRequestOwnershipVoucher mocks base method.
+func (m *MockInterface) TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPRequestOwnershipVoucher", request)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TEPRequestOwnershipVoucher indicates an expected call of TEPRequestOwnershipVoucher.
+func (mr *MockInterfaceMockRecorder) TEPRequestOwnershipVoucher(request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPRequestOwnershipVoucher", reflect.TypeOf((*MockInterface)(nil).TEPRequestOwnershipVoucher), request)
+}
+
+// TEPSetOwnershipVoucher mocks base method.
+func (m *MockInterface) TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPSetOwnershipVoucher", voucherID, voucherCMS)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TEPSetOwnershipVoucher indicates an expected call of TEPSetOwnershipVoucher.
+func (mr *MockInterfaceMockRecorder) TEPSetOwnershipVoucher(voucherID, voucherCMS any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPSetOwnershipVoucher", reflect.TypeOf((*MockInterface)(nil).TEPSetOwnershipVoucher), voucherID, voucherCMS)
+}
+
+// TEPSetTimeAndCerts mocks base method.
+func (m *MockInterface) TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TEPSetTimeAndCerts", certChain, ocspResponses)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// TEPSetTimeAndCerts indicates an expected call of TEPSetTimeAndCerts.
+func (mr *MockInterfaceMockRecorder) TEPSetTimeAndCerts(certChain, ocspResponses any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TEPSetTimeAndCerts", reflect.TypeOf((*MockInterface)(nil).TEPSetTimeAndCerts), certChain, ocspResponses)
+}
+
 // Unprovision mocks base method.
 func (m *MockInterface) Unprovision() (int, error) {
 	m.ctrl.T.Helper()
