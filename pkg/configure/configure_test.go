@@ -7,6 +7,7 @@ package configure
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -44,8 +46,43 @@ func TestMain(m *testing.M) {
 func requireReachedAMT(t *testing.T, err error) {
 	t.Helper()
 
-	if !errors.Is(err, utils.IncorrectPermissions) && !errors.Is(err, utils.HECIDriverNotDetected) {
+	if !failedOnAMTAccess(err) {
 		t.Fatalf("expected validation to pass and AMT access to fail, got: %v", err)
+	}
+}
+
+// failedOnAMTAccess reports whether err is one of the errors the command's
+// AfterApply returns when it cannot use AMT: the process is not elevated, no
+// HECI driver or device was found, or the MEI device has no AMT client
+// (non-vPro hardware).
+func failedOnAMTAccess(err error) bool {
+	return errors.Is(err, utils.IncorrectPermissions) ||
+		errors.Is(err, utils.HECIDriverNotDetected) ||
+		errors.Is(err, utils.AmtNotDetected)
+}
+
+func TestFailedOnAMTAccess(t *testing.T) {
+	// The wrapped errors are the ones AfterApply builds from a failed HECI probe.
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"not elevated", utils.IncorrectPermissions, true},
+		{"no access to the MEI device", fmt.Errorf("%w: %w", utils.IncorrectPermissions, heci.ErrPermissionDenied), true},
+		{"no HECI on this architecture", utils.HECIDriverNotDetected, true},
+		{"no MEI device or driver", fmt.Errorf("%w: %w", utils.HECIDriverNotDetected, heci.ErrDeviceNotFound), true},
+		{"no AMT client on the MEI device", fmt.Errorf("%w: %w", utils.AmtNotDetected, heci.ErrUnsupportedDevice), true},
+		{"call succeeded", nil, false},
+		{"validation failed", errors.New("validation failed"), false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, failedOnAMTAccess(tt.err))
+		})
 	}
 }
 

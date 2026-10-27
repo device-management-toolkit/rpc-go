@@ -7,9 +7,14 @@ package amt
 
 import (
 	"context"
+	cryptotls "crypto/tls"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"syscall"
 	"testing"
 	"time"
@@ -48,6 +53,65 @@ func TestPreserveWSMANHTTPStatus(t *testing.T) {
 			assert.ErrorIs(t, got, tt.err)
 		})
 	}
+// newUntrustedTLSServer starts a TLS server whose self-signed certificate a
+// default tls.Config rejects, like AMT's certificate after activation.
+func newUntrustedTLSServer(t *testing.T) string {
+	t.Helper()
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Config.ErrorLog = log.New(io.Discard, "", 0)
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	return server.Listener.Addr().String()
+}
+
+func dialUntrustedTLS(ctx context.Context, addr string) (net.Conn, error) {
+	dialer := &cryptotls.Dialer{Config: &cryptotls.Config{}}
+
+	return dialer.DialContext(ctx, "tcp", addr)
+}
+
+func TestIsCertVerificationError(t *testing.T) {
+	_, certErr := dialUntrustedTLS(context.Background(), newUntrustedTLSServer(t))
+	require.Error(t, certErr, "a self-signed certificate must fail default verification")
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "untrusted certificate", err: certErr, want: true},
+		{name: "wrapped untrusted certificate", err: fmt.Errorf("%w: %w", ErrAMTCertNotVerified, certErr), want: true},
+		{name: "connection refused", err: syscall.ECONNREFUSED, want: false},
+		{name: "EOF", err: io.EOF, want: false},
+		{name: "timeout", err: timeoutErr{}, want: false},
+		{name: "nil", err: nil, want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCertVerificationError(tt.err))
+		})
+	}
+}
+
+func TestProbeLMS_UntrustedCertificateFailsFast(t *testing.T) {
+	addr := newUntrustedTLSServer(t)
+	attempts := 0
+
+	conn, err := probeLMS(func(ctx context.Context) (net.Conn, error) {
+		attempts++
+
+		return dialUntrustedTLS(ctx, addr)
+	}, time.Second, 5*time.Second, time.Millisecond)
+
+	require.Error(t, err)
+	assert.Nil(t, conn)
+	assert.Equal(t, 1, attempts, "a rejected certificate is not an LMS restart and must not be retried")
+	assert.True(t, isCertVerificationError(err), "the certificate error must reach SetupWsmanClient intact")
+	assert.False(t, errors.Is(err, errLMSUpButUnready))
 }
 
 // timeoutErr implements net.Error with Timeout() == true.

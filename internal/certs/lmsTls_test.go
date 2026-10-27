@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -121,6 +122,27 @@ func TestGetTLSConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetTLSConfig_PreProvisioningVerifyError(t *testing.T) {
+	mode := 0
+
+	t.Run("failure is reported as a certificate verification error", func(t *testing.T) {
+		tlsConfig := GetTLSConfig(&mode, nil, false, nil)
+
+		err := tlsConfig.VerifyPeerCertificate(nil, nil)
+
+		var certErr *tls.CertificateVerificationError
+
+		assert.ErrorAs(t, err, &certErr)
+		assert.ErrorContains(t, err, "unexpected number of certificates")
+	})
+
+	t.Run("skip bypasses verification", func(t *testing.T) {
+		tlsConfig := GetTLSConfig(&mode, nil, true, nil)
+
+		assert.NoError(t, tlsConfig.VerifyPeerCertificate(nil, nil))
+	})
 }
 
 func TestVerifyUPIDBinding(t *testing.T) {

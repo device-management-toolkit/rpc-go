@@ -132,6 +132,10 @@ type ExecutorConfig struct {
 	TLSTunnel        bool
 }
 
+// newLMEConnection creates the LME connection NewExecutor falls back to when
+// LMS is not running. Tests replace it to fake the MEI device.
+var newLMEConnection = lm.NewLMEConnection
+
 func NewExecutor(config ExecutorConfig) (Executor, error) {
 	// these are closed in the close function for each lm implementation
 	lmDataChannel := make(chan []byte)
@@ -156,7 +160,7 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 	if err != nil {
 		log.Tracef("LMS dial failed (%v); falling back to LME (in-band HECI/APF)", err)
 
-		lme := lm.NewLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
+		lme := newLMEConnection(lmDataChannel, lmErrorChannel, client.waitGroup)
 		// On TLS-enforced AMT the active local port is 16993; aim the first
 		// CHANNEL_OPEN there so RPS doesn't have to issue a port_switch just
 		// to get past the activation handshake.
@@ -168,6 +172,9 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 
 		client.isLME = true
 		if err := client.localManagement.Initialize(); err != nil {
+			// Initialize can fail after it opened the MEI device, so close it here too.
+			client.localManagement.Close()
+
 			return Executor{}, fmt.Errorf("failed to initialize LME connection: %w", err)
 		}
 	} else {
@@ -175,14 +182,23 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 		client.localManagement.Close()
 	}
 
-	err = client.server.Connect(config.SkipCertCheck)
-	if err != nil {
-		// TODO: should the connection be closed?
-		// client.localManagement.Close()
-		log.Error("error connecting to RPS")
-	}
+	err = client.connectToRPS(config.SkipCertCheck)
 
 	return client, err
+}
+
+// connectToRPS connects to RPS. If that fails, it closes the LMS/LME
+// connection NewExecutor opened, because callers drop the executor when
+// NewExecutor fails: an LME connection left open keeps the MEI device busy
+// for the next HECI call in this process.
+func (e *Executor) connectToRPS(skipCertCheck bool) error {
+	err := e.server.Connect(skipCertCheck)
+	if err != nil {
+		log.Error("error connecting to RPS")
+		e.localManagement.Close()
+	}
+
+	return err
 }
 
 // MakeItSo uses a pointer receiver because it updates executor state (lastError)
@@ -190,8 +206,14 @@ func NewExecutor(config ExecutorConfig) (Executor, error) {
 func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	// Hand SIGINT/SIGTERM back on return; otherwise a program that calls this
+	// could no longer be stopped with Ctrl-C or SIGTERM.
+	defer signal.Stop(interrupt)
 
 	rpsDataChannel := e.server.Listen()
+
+	// Deferred before Send, so a failed Send also releases the LMS/LME connection.
+	defer e.localManagement.Close()
 
 	log.Debug("sending activation request to RPS")
 
@@ -201,8 +223,6 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 
 		return fmt.Errorf("failed to send activation request: %w", err)
 	}
-
-	defer e.localManagement.Close()
 
 	for {
 		select {
