@@ -106,6 +106,10 @@ func (c MockAMT) GetUPID() (*upid.UPID, error) {
 	return nil, nil
 }
 
+func (c MockAMT) GetUPIDFullCertificateChain(_ upid.CertIndex) ([][]byte, error) {
+	return nil, nil
+}
+
 func (c MockAMT) GetFlog() ([]byte, error) {
 	return []byte{}, nil
 }

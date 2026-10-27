@@ -28,6 +28,12 @@ type fakeUPID struct {
 
 func (f *fakeUPID) GetUPID() (*upid.UPID, error) { return nil, f.err }
 
+func (f *fakeUPID) GetFullCertificateChain(_ upid.CertIndex) ([][]byte, error) {
+	f.calls = append(f.calls, "chain")
+
+	return [][]byte{{0x30}}, f.err
+}
+
 func (f *fakeUPID) TEPGetCapabilities() (*upid.TEPCapabilities, error) {
 	f.calls = append(f.calls, "caps")
 
@@ -144,9 +150,13 @@ func TestAMTCommandTEPDelegation(t *testing.T) {
 	require.NoError(t, cmd.TEPRemoveOwnershipVoucher(voucherID))
 	assert.Equal(t, voucherID, f.voucherID)
 
+	fullChain, err := cmd.GetUPIDFullCertificateChain(upid.CertIndexTEP)
+	require.NoError(t, err)
+	assert.Equal(t, [][]byte{{0x30}}, fullChain)
+
 	assert.Equal(t, []string{
 		"caps", "vouchers", "all", "state", "ownership", "nonce",
-		"settime", "request", "set", "remove",
+		"settime", "request", "set", "remove", "chain",
 	}, f.calls)
 }
 

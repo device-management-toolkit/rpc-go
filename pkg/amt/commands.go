@@ -204,6 +204,7 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	GetUPID() (*upid.UPID, error)
+	GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error)
 	TEPGetCapabilities() (*upid.TEPCapabilities, error)
 	TEPGetVouchers() ([]upid.TEPVoucherID, error)
 	TEPGetAllVoucherIDs() ([]upid.TEPVoucherID, error)
@@ -646,6 +647,11 @@ func (amt AMTCommand) StopConfiguration() (response StopConfigurationResponse, e
 // GetUPID retrieves the Intel Unique Platform Identifier
 func (amt AMTCommand) GetUPID() (*upid.UPID, error) {
 	return amt.UPID.GetUPID()
+}
+
+// GetUPIDFullCertificateChain returns the CSME on-die CA certificate chain (DER, leaf first).
+func (amt AMTCommand) GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error) {
+	return amt.UPID.GetFullCertificateChain(index)
 }
 
 // TEPGetCapabilities returns the features that can be provisioned via Intel TEP.

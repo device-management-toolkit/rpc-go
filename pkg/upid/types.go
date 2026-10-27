@@ -44,6 +44,8 @@ const (
 	CommandPlatformIDGet            uint8 = 5 // UPID_PLATFORM_ID_GET_CMD
 	CommandRefurbishCounterGet      uint8 = 6 // UPID_PLATFORM_ID_REFURBISH_COUNTER_GET_CMD
 	CommandOEMPlatformIDUpdate      uint8 = 7 // UPID_OEM_PLATFORM_ID_UPDATE_CMD
+
+	CommandOEMPlatformIDGetFullCertChain uint8 = 0x12 // UPID_HECI_OEM_PLATFORM_ID_GET_FULL_CERTIFICATE_CHAIN
 )
 
 // UPID OEM Platform ID Types (from Intel UPID Attestation SDK)
@@ -143,6 +145,8 @@ type Interface interface {
 	// Returns the UPID struct or an error if not supported/enabled
 	// Automatically checks support and manages resource cleanup
 	GetUPID() (*UPID, error)
+	// GetFullCertificateChain returns the CSME on-die CA certificate chain (DER, leaf first)
+	GetFullCertificateChain(index CertIndex) ([][]byte, error)
 	// TEPInterface is the Intel TEP command set on the same MEI client
 	TEPInterface
 }

@@ -280,6 +280,21 @@ func (mr *MockInterfaceMockRecorder) GetUPID() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPID", reflect.TypeOf((*MockInterface)(nil).GetUPID))
 }
 
+// GetUPIDFullCertificateChain mocks base method.
+func (m *MockInterface) GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUPIDFullCertificateChain", index)
+	ret0, _ := ret[0].([][]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUPIDFullCertificateChain indicates an expected call of GetUPIDFullCertificateChain.
+func (mr *MockInterfaceMockRecorder) GetUPIDFullCertificateChain(index any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUPIDFullCertificateChain", reflect.TypeOf((*MockInterface)(nil).GetUPIDFullCertificateChain), index)
+}
+
 // GetUUID mocks base method.
 func (m *MockInterface) GetUUID() (string, error) {
 	m.ctrl.T.Helper()

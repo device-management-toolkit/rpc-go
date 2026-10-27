@@ -479,6 +479,10 @@ func (m *MockAMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
 	return pthi.ProvisioningLog{}, nil
 }
 
+func (m *MockAMTCommand) GetUPIDFullCertificateChain(_ upid.CertIndex) ([][]byte, error) {
+	return nil, nil
+}
+
 func (m *MockAMTCommand) Close() error {
 	return nil
 }
