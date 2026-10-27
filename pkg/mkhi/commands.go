@@ -55,14 +55,14 @@ func (f FWCapabilities) Has(c FWCapabilities) bool {
 	return f&c == c
 }
 
-// minTEPCSMEMajor is the first CSME major version (Meteor Lake) where FW caps bit 24 means TEP.
-const minTEPCSMEMajor = 18
+// MinTEPCSMEMajor is the first CSME major version (Meteor Lake) where FW caps bit 24 means TEP.
+const MinTEPCSMEMajor = 18
 
 // TEPSupported reports whether Trusted Endpoint Provisioning is supported:
 // CSME major version 18 or later with the TEP FW caps bit set. The version
 // check matters because bit 24 has a different meaning before CSME 18.
 func TEPSupported(csmeMajor int, caps FWCapabilities) bool {
-	return csmeMajor >= minTEPCSMEMajor && caps.Has(FWCapsTEP)
+	return csmeMajor >= MinTEPCSMEMajor && caps.Has(FWCapsTEP)
 }
 
 // Interface defines the MKHI operations.

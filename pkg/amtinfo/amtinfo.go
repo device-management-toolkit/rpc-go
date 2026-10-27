@@ -29,6 +29,12 @@ type UserCert = commands.UserCert
 // Result.ProxyAccessPoints.
 type ProxyAccessPoint = commands.ProxyAccessPoint
 
+// TEPInfo is the Intel Trusted Endpoint Provisioning (TEP) status, in Result.TEP.
+type TEPInfo = commands.TEPInfo
+
+// TEPVoucher is the ownership voucher state of one TEP feature, listed in TEPInfo.Vouchers.
+type TEPVoucher = commands.TEPVoucher
+
 // Options selects what Get reads. The zero value reads what `rpc amtinfo`
 // shows by default: everything except certificate hashes and user
 // certificates, which are read only when CertificateHashes, UserCertificates
@@ -45,6 +51,10 @@ type Options struct {
 	UUID bool
 	// UPID reads the Intel Unique Platform ID.
 	UPID bool
+	// TEP reads the Intel Trusted Endpoint Provisioning (TEP) status. When set,
+	// Result.TEP is filled even on devices that do not support TEP; otherwise
+	// it is left nil on those devices.
+	TEP bool
 	// ControlMode reads the AMT control mode.
 	ControlMode bool
 	// ProvisioningState reads the AMT provisioning state.
@@ -199,6 +209,7 @@ func newCommand(opts Options) (*commands.AmtInfoCmd, *commands.Context) {
 		Sku:       opts.SKU,
 		UUID:      opts.UUID,
 		UPID:      opts.UPID,
+		TEP:       opts.TEP,
 		Mode:      opts.ControlMode,
 		ProvState: opts.ProvisioningState,
 		DNS:       opts.DNSSuffix,

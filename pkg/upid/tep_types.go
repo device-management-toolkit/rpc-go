@@ -323,6 +323,22 @@ const (
 	TEPFeatureCapMgmt TEPFeature = 160
 )
 
+// String returns the feature's display name.
+func (f TEPFeature) String() string {
+	switch f {
+	case TEPFeatureAny:
+		return "Any"
+	case TEPFeatureAMT:
+		return "AMT"
+	case TEPFeatureOEM1:
+		return "OEM"
+	case TEPFeatureCapMgmt:
+		return "Capability Management"
+	default:
+		return fmt.Sprintf("Feature %d", uint8(f))
+	}
+}
+
 // Certificate policy OID arcs (2.16.840.1.113741.1.2.5.y) reported in
 // TEPOwnershipContext.CertPolicies for the Ownership Service certificate.
 const (

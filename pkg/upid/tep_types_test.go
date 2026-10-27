@@ -233,3 +233,11 @@ func TestTEPFeatureOID(t *testing.T) {
 	assert.False(t, oid.IsZero())
 	assert.True(t, TEPOID{}.IsZero())
 }
+
+func TestTEPFeatureString(t *testing.T) {
+	assert.Equal(t, "Any", TEPFeatureAny.String())
+	assert.Equal(t, "AMT", TEPFeatureAMT.String())
+	assert.Equal(t, "OEM", TEPFeatureOEM1.String())
+	assert.Equal(t, "Capability Management", TEPFeatureCapMgmt.String())
+	assert.Equal(t, "Feature 42", TEPFeature(42).String())
+}

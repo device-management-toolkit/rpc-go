@@ -245,6 +245,7 @@ func TestNewCommand_MapsOptions(t *testing.T) {
 		{name: "SKU", opts: Options{SKU: true}, wantCmd: commands.AmtInfoCmd{Sku: true}},
 		{name: "UUID", opts: Options{UUID: true}, wantCmd: commands.AmtInfoCmd{UUID: true}},
 		{name: "UPID", opts: Options{UPID: true}, wantCmd: commands.AmtInfoCmd{UPID: true}},
+		{name: "TEP", opts: Options{TEP: true}, wantCmd: commands.AmtInfoCmd{TEP: true}},
 		{name: "ControlMode", opts: Options{ControlMode: true}, wantCmd: commands.AmtInfoCmd{Mode: true}},
 		{name: "ProvisioningState", opts: Options{ProvisioningState: true}, wantCmd: commands.AmtInfoCmd{ProvState: true}},
 		{name: "DNSSuffix", opts: Options{DNSSuffix: true}, wantCmd: commands.AmtInfoCmd{DNS: true}},
