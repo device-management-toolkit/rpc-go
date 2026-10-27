@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
@@ -308,4 +309,84 @@ func TestTEPRowsUnavailable(t *testing.T) {
 
 	text := buildTEPSection(&InfoResult{TEP: &TEPInfo{Unavailable: "CSME version could not be read"}}, &AmtInfoCmd{TEP: true}, false)
 	assert.Contains(t, text, unavailableValue("CSME version could not be read"))
+}
+
+// tepDeviceMock is a CSME 21 device with the given firmware capabilities and
+// no TEP vouchers. Everything amtinfo reads besides TEP fails, to keep the
+// output to the TEP section.
+func tepDeviceMock(t *testing.T, caps mkhi.FWCapabilities) *mock.MockInterface {
+	t.Helper()
+
+	m := mock.NewMockInterface(gomock.NewController(t))
+	m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return(tepTestVersion, nil).AnyTimes()
+	m.EXPECT().GetVersionDataFromME(gomock.Not("AMT"), gomock.Any()).Return("", errTEPTest).AnyTimes()
+	m.EXPECT().GetUUID().Return("", errTEPTest).AnyTimes()
+	m.EXPECT().GetUPID().Return(nil, errTEPTest).AnyTimes()
+	m.EXPECT().GetControlMode().Return(0, errTEPTest).AnyTimes()
+	m.EXPECT().GetProvisioningState().Return(0, errTEPTest).AnyTimes()
+	m.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), errTEPTest).AnyTimes()
+	m.EXPECT().GetDNSSuffix().Return("", errTEPTest).AnyTimes()
+	m.EXPECT().GetOSDNSSuffix().Return("", errTEPTest).AnyTimes()
+	m.EXPECT().GetRemoteAccessConnectionStatus().Return(amt.RemoteAccessStatus{}, errTEPTest).AnyTimes()
+	m.EXPECT().GetLANInterfaceSettings(gomock.Any()).Return(amt.InterfaceSettings{}, errTEPTest).AnyTimes()
+	m.EXPECT().GetCertificateHashes().Return(nil, errTEPTest).AnyTimes()
+	m.EXPECT().GetFWCapabilities().Return(caps, nil).AnyTimes()
+	m.EXPECT().TEPGetCapabilities().Return(tepCaps(upid.TEPFeatureAMT), nil).AnyTimes()
+	m.EXPECT().TEPGetVoucherStateByFeature(gomock.Any()).Return(nil, noVoucher()).AnyTimes()
+	m.EXPECT().GetProvisioningLog().Return(pthi.ProvisioningLog{}, nil).AnyTimes()
+
+	return m
+}
+
+// TestAmtInfoTEPVisibility checks when the whole command shows the TEP
+// section: on a device without TEP it appears only when --tep asks for it.
+func TestAmtInfoTEPVisibility(t *testing.T) {
+	tests := []struct {
+		name          string
+		caps          mkhi.FWCapabilities
+		cmd           AmtInfoCmd
+		wantSection   bool
+		wantSupported string
+	}{
+		{name: "not supported, default output", caps: mkhi.FWCapsAMT},
+		{name: "not supported, --all", caps: mkhi.FWCapsAMT, cmd: AmtInfoCmd{All: true}},
+		{name: "not supported, --tep", caps: mkhi.FWCapsAMT, cmd: AmtInfoCmd{TEP: true}, wantSection: true, wantSupported: "No"},
+		{name: "supported, default output", caps: mkhi.FWCapsAMT | mkhi.FWCapsTEP, wantSection: true, wantSupported: "Yes"},
+		{name: "supported, --tep", caps: mkhi.FWCapsTEP, cmd: AmtInfoCmd{TEP: true}, wantSection: true, wantSupported: "Yes"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := tt.cmd
+			service := NewInfoService(tepDeviceMock(t, tt.caps), WithHECIAvailable(true))
+
+			result, err := service.GetAMTInfo(&cmd)
+			require.NoError(t, err)
+
+			var text, table, jsonOut bytes.Buffer
+
+			require.NoError(t, service.OutputText(&text, result, &cmd))
+			require.NoError(t, service.OutputTable(&table, result, &cmd))
+			require.NoError(t, service.OutputJSON(&jsonOut, result))
+
+			if !tt.wantSection {
+				assert.Nil(t, result.TEP)
+				assert.NotContains(t, text.String(), tepSectionTitle)
+				assert.NotContains(t, table.String(), tepSectionTitle)
+				assert.NotContains(t, jsonOut.String(), `"tep"`)
+
+				return
+			}
+
+			require.NotNil(t, result.TEP)
+			assert.Equal(t, tt.wantSupported == "Yes", result.TEP.Supported)
+			assert.Contains(t, jsonOut.String(), `"tep"`)
+
+			for name, out := range map[string]string{"text": text.String(), "table": table.String()} {
+				assert.Contains(t, out, tepSectionTitle, name)
+				assert.Regexp(t, tepSupportedLabel+`\s.*`+tt.wantSupported, out, name)
+			}
+		})
+	}
 }
