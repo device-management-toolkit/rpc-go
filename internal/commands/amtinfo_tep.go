@@ -20,7 +20,7 @@ const (
 	// tepVoucherNone is the voucher status when no voucher is installed for a feature.
 	tepVoucherNone = "none"
 
-	tepSectionTitle = "Intel TEP"
+	tepSectionTitle = "Intel Trusted Endpoint Provisioning (TEP)"
 	tepFlag         = "--tep"
 
 	tepSupportedLabel = "Supported"

@@ -29,6 +29,7 @@ amtinfo:
   bld: false                # Show build number
   sku: false                # Show SKU
   uuid: false               # Show UUID
+  tep: false                # Show Intel TEP status (shown by default on TEP-capable devices)
   mode: false               # Show control mode
   dns: false                # Show firmware DNS suffix
   hostname: false           # Show OS hostname
