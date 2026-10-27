@@ -20,6 +20,9 @@ type fakeUPID struct {
 	feature   upid.TEPFeature
 	reqID     upid.TEPNonce
 	voucherID upid.TEPVoucherID
+	chain     [][]byte
+	ocsp      [][]byte
+	cms       []byte
 	err       error
 }
 
@@ -65,6 +68,34 @@ func (f *fakeUPID) TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNo
 	return &upid.TEPTimeSyncNonce{CSMENonce: upid.TEPNonce{9}}, f.err
 }
 
+func (f *fakeUPID) TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error {
+	f.calls = append(f.calls, "settime")
+	f.chain, f.ocsp = certChain, ocspResponses
+
+	return f.err
+}
+
+func (f *fakeUPID) TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error) {
+	f.calls = append(f.calls, "request")
+	f.voucherID = request.VoucherID
+
+	return []byte{0x30}, f.err
+}
+
+func (f *fakeUPID) TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error {
+	f.calls = append(f.calls, "set")
+	f.voucherID, f.cms = voucherID, voucherCMS
+
+	return f.err
+}
+
+func (f *fakeUPID) TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error {
+	f.calls = append(f.calls, "remove")
+	f.voucherID = voucherID
+
+	return f.err
+}
+
 func TestAMTCommandTEPDelegation(t *testing.T) {
 	f := &fakeUPID{}
 	cmd := AMTCommand{UPID: f}
@@ -98,7 +129,25 @@ func TestAMTCommandTEPDelegation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, upid.TEPNonce{9}, nonce.CSMENonce)
 
-	assert.Equal(t, []string{"caps", "vouchers", "all", "state", "ownership", "nonce"}, f.calls)
+	chain, ocsp := [][]byte{{1}}, [][]byte{{2}}
+	require.NoError(t, cmd.TEPSetTimeAndCerts(chain, ocsp))
+	assert.Equal(t, chain, f.chain)
+	assert.Equal(t, ocsp, f.ocsp)
+
+	cms, err := cmd.TEPRequestOwnershipVoucher(&upid.TEPBinaryVoucherRequest{VoucherID: voucherID})
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0x30}, cms)
+
+	require.NoError(t, cmd.TEPSetOwnershipVoucher(voucherID, []byte{0x31}))
+	assert.Equal(t, []byte{0x31}, f.cms)
+
+	require.NoError(t, cmd.TEPRemoveOwnershipVoucher(voucherID))
+	assert.Equal(t, voucherID, f.voucherID)
+
+	assert.Equal(t, []string{
+		"caps", "vouchers", "all", "state", "ownership", "nonce",
+		"settime", "request", "set", "remove",
+	}, f.calls)
 }
 
 func TestAMTCommandTEPPropagatesErrors(t *testing.T) {

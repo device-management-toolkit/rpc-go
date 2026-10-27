@@ -210,6 +210,10 @@ type Interface interface {
 	TEPGetVoucherStateByFeature(feature upid.TEPFeature) (*upid.TEPVoucherState, error)
 	TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.TEPVoucherID) (*upid.TEPOwnershipState, error)
 	TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error)
+	TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error
+	TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error)
+	TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error
+	TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
@@ -671,6 +675,26 @@ func (amt AMTCommand) TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.T
 // TEPGetTimeSyncNonce returns a CSME-signed nonce for TEP time sync / OCSP requests.
 func (amt AMTCommand) TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error) {
 	return amt.UPID.TEPGetTimeSyncNonce(reqID)
+}
+
+// TEPSetTimeAndCerts sets TEP time and the Ownership Service certificate status from OCSP responses.
+func (amt AMTCommand) TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error {
+	return amt.UPID.TEPSetTimeAndCerts(certChain, ocspResponses)
+}
+
+// TEPRequestOwnershipVoucher returns a CSME-signed CMS TEP ownership voucher request.
+func (amt AMTCommand) TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error) {
+	return amt.UPID.TEPRequestOwnershipVoucher(request)
+}
+
+// TEPSetOwnershipVoucher installs a TEP ownership voucher signed by the Ownership Service.
+func (amt AMTCommand) TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error {
+	return amt.UPID.TEPSetOwnershipVoucher(voucherID, voucherCMS)
+}
+
+// TEPRemoveOwnershipVoucher removes a TEP ownership voucher that is not ACTIVE.
+func (amt AMTCommand) TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error {
+	return amt.UPID.TEPRemoveOwnershipVoucher(voucherID)
 }
 
 // GetFlog retrieves the CSME Flash Log (FLOG)
