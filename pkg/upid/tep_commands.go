@@ -146,7 +146,9 @@ func (c *Command) tepCall(command uint8, request any) ([]byte, error) {
 	maxSize := int(c.Heci.GetBufferSize())
 	log.Tracef("TEP command %d: MEI client max message length %d", command, maxSize)
 
-	if size := binary.Size(request); maxSize > 0 && size > maxSize {
+	// A zero maximum (for example on a closed handle) also refuses the request,
+	// so a state-changing command is never sent without room for the reply.
+	if size := binary.Size(request); size > maxSize {
 		return nil, fmt.Errorf("TEP command %d: %w: request is %d bytes, MEI client accepts %d", command, ErrMessageTooLarge, size, maxSize)
 	}
 

@@ -29,6 +29,8 @@ var (
 	ErrTEPVoucherTooLarge = errors.New("TEP voucher exceeds maximum size")
 	// ErrTEPTooManyFeatures is returned when a voucher request lists more than TEPMaxVoucherFeatures features.
 	ErrTEPTooManyFeatures = errors.New("too many TEP voucher features")
+	// ErrTEPInvalidFeature is returned when a voucher request has no features or lists one that cannot be requested.
+	ErrTEPInvalidFeature = errors.New("invalid TEP voucher feature")
 	// ErrTEPEmptyVoucher is returned when a voucher request or voucher is missing or empty.
 	ErrTEPEmptyVoucher = errors.New("TEP voucher is empty")
 )
@@ -60,10 +62,22 @@ type (
 	}
 )
 
-// SetFeatures stores the OIDs of features in the request's feature list.
+// SetFeatures stores the OIDs of features in the request's feature list. At
+// least one feature is required. TEPFeatureAny only appears in stored
+// vouchers and is rejected, as is the zero value, which would end the list.
 func (r *TEPBinaryVoucherRequest) SetFeatures(features ...TEPFeature) error {
+	if len(features) == 0 {
+		return fmt.Errorf("%w: at least one feature is required", ErrTEPInvalidFeature)
+	}
+
 	if len(features) > TEPMaxVoucherFeatures {
 		return fmt.Errorf("%w: %d, at most %d", ErrTEPTooManyFeatures, len(features), TEPMaxVoucherFeatures)
+	}
+
+	for _, f := range features {
+		if f == 0 || f == TEPFeatureAny {
+			return fmt.Errorf("%w: feature %d cannot be requested", ErrTEPInvalidFeature, f)
+		}
 	}
 
 	r.Features = [TEPMaxVoucherFeatures]TEPOID{}

@@ -177,6 +177,37 @@ func TestTEPBinaryVoucherRequestSetFeatures(t *testing.T) {
 	assert.True(t, r.Features[1].IsZero(), "previous features are cleared")
 
 	require.ErrorIs(t, r.SetFeatures(make([]TEPFeature, TEPMaxVoucherFeatures+1)...), ErrTEPTooManyFeatures)
+
+	for name, features := range map[string][]TEPFeature{
+		"no features":  nil,
+		"any feature":  {TEPFeatureAMT, TEPFeatureAny},
+		"zero feature": {0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := TEPBinaryVoucherRequest{}
+			require.NoError(t, r.SetFeatures(TEPFeatureOEM1))
+
+			require.ErrorIs(t, r.SetFeatures(features...), ErrTEPInvalidFeature)
+			assert.Equal(t, TEPFeatureOEM1.OID(), r.Features[0], "features unchanged on error")
+		})
+	}
+}
+
+// zeroBufferHECI reports a maximum message length of 0, as the Windows
+// driver does once its handle is closed.
+type zeroBufferHECI struct{ *MockHECI }
+
+func (zeroBufferHECI) GetBufferSize() uint32 { return 0 }
+
+func TestTEPCallZeroMaxMessageLength(t *testing.T) {
+	m := &MockHECI{sendMessageFunc: func([]byte, *uint32) (int, error) {
+		t.Fatal("request must not be sent")
+
+		return 0, nil
+	}}
+
+	err := (&Command{Heci: zeroBufferHECI{m}}).TEPRemoveOwnershipVoucher(mustVoucherID(t, "932586c2-d439-4154-86cb-49ba914aa716"))
+	require.ErrorIs(t, err, ErrMessageTooLarge)
 }
 
 func TestTEPSetOwnershipVoucher(t *testing.T) {
