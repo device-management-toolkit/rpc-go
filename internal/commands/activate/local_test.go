@@ -475,6 +475,10 @@ func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
 }
 
+func (m *MockAMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	return pthi.ProvisioningLog{}, nil
+}
+
 func (m *MockAMTCommand) Close() error {
 	return nil
 }

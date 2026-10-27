@@ -220,6 +220,21 @@ func (mr *MockInterfaceMockRecorder) GetOSDNSSuffix() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOSDNSSuffix", reflect.TypeOf((*MockInterface)(nil).GetOSDNSSuffix))
 }
 
+// GetProvisioningLog mocks base method.
+func (m *MockInterface) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProvisioningLog")
+	ret0, _ := ret[0].(pthi.ProvisioningLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProvisioningLog indicates an expected call of GetProvisioningLog.
+func (mr *MockInterfaceMockRecorder) GetProvisioningLog() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProvisioningLog", reflect.TypeOf((*MockInterface)(nil).GetProvisioningLog))
+}
+
 // GetProvisioningState mocks base method.
 func (m *MockInterface) GetProvisioningState() (int, error) {
 	m.ctrl.T.Helper()

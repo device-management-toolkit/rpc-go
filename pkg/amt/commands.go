@@ -217,6 +217,7 @@ type Interface interface {
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
+	GetProvisioningLog() (pthi.ProvisioningLog, error)
 	Close() error
 }
 
@@ -745,4 +746,22 @@ func (amt AMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	}
 
 	return result, nil
+}
+
+// GetProvisioningLog returns the latest host-based provisioning attempt,
+// including TEP-specific failure reasons for ACM activation.
+func (amt AMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return pthi.ProvisioningLog{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetProvisioningLog()
+	if err != nil {
+		return pthi.ProvisioningLog{}, err
+	}
+
+	return result.ProvisioningLog, nil
 }

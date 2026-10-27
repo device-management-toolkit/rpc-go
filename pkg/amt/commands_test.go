@@ -103,6 +103,12 @@ func (c MockPTHICommands) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
 }
 
+func (c MockPTHICommands) GetProvisioningLog() (pthi.GetProvisioningLogResponse, error) {
+	return pthi.GetProvisioningLogResponse{
+		ProvisioningLog: pthi.ProvisioningLog{AcmProvisioningStatus: pthi.PROV_RES_TEP_OWNERSHIP_EXPIRED},
+	}, nil
+}
+
 var (
 	SetOperationsStateStatus       = pthi.Status(0)
 	SetOperationsStateError  error = nil
@@ -554,4 +560,10 @@ func TestGetFlog(t *testing.T) {
 	assert.Equal(t, byte(0x4C), result[1]) // 'L'
 	assert.Equal(t, byte(0x4F), result[2]) // 'O'
 	assert.Equal(t, byte(0x47), result[3]) // 'G'
+}
+
+func TestGetProvisioningLog(t *testing.T) {
+	result, err := amt.GetProvisioningLog()
+	assert.NoError(t, err)
+	assert.Equal(t, pthi.PROV_RES_TEP_OWNERSHIP_EXPIRED, result.AcmProvisioningStatus)
 }
