@@ -14,6 +14,7 @@ import (
 	time "time"
 
 	amt "github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	mkhi "github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	pthi "github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	upid "github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	gomock "go.uber.org/mock/gomock"
@@ -158,6 +159,21 @@ func (m *MockInterface) GetDNSSuffix() (string, error) {
 func (mr *MockInterfaceMockRecorder) GetDNSSuffix() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDNSSuffix", reflect.TypeOf((*MockInterface)(nil).GetDNSSuffix))
+}
+
+// GetFWCapabilities mocks base method.
+func (m *MockInterface) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetFWCapabilities")
+	ret0, _ := ret[0].(mkhi.FWCapabilities)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetFWCapabilities indicates an expected call of GetFWCapabilities.
+func (mr *MockInterfaceMockRecorder) GetFWCapabilities() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFWCapabilities", reflect.TypeOf((*MockInterface)(nil).GetFWCapabilities))
 }
 
 // GetFlog mocks base method.

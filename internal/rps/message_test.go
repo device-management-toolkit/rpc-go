@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -124,6 +125,10 @@ func (c MockAMT) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 
 func (c MockAMT) GetProvisioningLog() (pthi.ProvisioningLog, error) {
 	return pthi.ProvisioningLog{}, nil
+}
+
+func (c MockAMT) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	return 0, nil
 }
 
 func (c MockAMT) Close() error {

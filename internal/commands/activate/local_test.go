@@ -17,6 +17,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -477,6 +478,10 @@ func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 
 func (m *MockAMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
 	return pthi.ProvisioningLog{}, nil
+}
+
+func (m *MockAMTCommand) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	return 0, nil
 }
 
 func (m *MockAMTCommand) GetUPIDFullCertificateChain(_ upid.CertIndex) ([][]byte, error) {

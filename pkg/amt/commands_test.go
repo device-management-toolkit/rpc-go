@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -560,6 +561,18 @@ func TestGetFlog(t *testing.T) {
 	assert.Equal(t, byte(0x4C), result[1]) // 'L'
 	assert.Equal(t, byte(0x4F), result[2]) // 'O'
 	assert.Equal(t, byte(0x47), result[3]) // 'G'
+}
+
+type fakeMKHI struct{ caps mkhi.FWCapabilities }
+
+func (f fakeMKHI) GetFWCapabilities() (mkhi.FWCapabilities, error) { return f.caps, nil }
+
+func TestGetFWCapabilities(t *testing.T) {
+	cmd := AMTCommand{MKHI: fakeMKHI{caps: mkhi.FWCapsTEP}}
+
+	caps, err := cmd.GetFWCapabilities()
+	assert.NoError(t, err)
+	assert.True(t, caps.Has(mkhi.FWCapsTEP))
 }
 
 func TestGetProvisioningLog(t *testing.T) {
