@@ -26,7 +26,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/list"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/amterror"
+	cimkvm "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	ipsoptin "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/certs"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
@@ -292,6 +295,8 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
 	service, result, syncResult, err := cmd.readInfo(ctx)
+	defer service.closeWSMAN()
+
 	if result == nil {
 		return err
 	}
@@ -353,7 +358,7 @@ func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 
 // Collect returns the information Run prints, without printing it, for
 // callers that use amtinfo as a library. Like Run, it syncs the information
-// to the devices API when Sync is set. Unlike Run, it closes the read's WSMAN
+// to the devices API when Sync is set. Like Run, it closes the read's WSMAN
 // client before returning, so a long-lived process can call it again. That
 // client is the command's own (cmd.WSMan) if one is set, even if the read did
 // not use it, and otherwise the one the read opened, if any. It returns the
@@ -390,7 +395,6 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context) (*InfoService, *InfoResult, *Devic
 		WithWSMANClient(cmd.GetWSManClient()),
 		WithHECIAvailable(cmd.HECIAvailable),
 	)
-
 	// If syncing, ensure we collect full device info regardless of selective flags
 	effectiveCmd := cmd
 	if cmd.Sync {
@@ -464,6 +468,44 @@ type InfoResult struct {
 	mpsUnavailable bool
 }
 
+// InfoSnapshot combines the shared amtinfo result with optional WSMAN TLS data.
+type InfoSnapshot struct {
+	Info                      *InfoResult
+	TLSMode                   string
+	WSMANPreflightFailed      bool
+	AMTDNSSuffixRead          bool
+	OSDNSSuffixRead           bool
+	ProvisioningStateRead     bool
+	OperationalStateRead      bool
+	OperationalStateSupported *bool
+	PostActivation            *PostActivationSnapshot
+}
+
+type WSMANStatus string
+
+const (
+	WSMANStatusAvailable   WSMANStatus = "available"
+	WSMANStatusUnavailable WSMANStatus = "unavailable"
+)
+
+type PostActivationSnapshot struct {
+	WSMANStatus                WSMANStatus
+	WSMANMessage               string
+	TLSModeRead                bool
+	KVMRead                    bool
+	KVMState                   string
+	RedirectionRead            bool
+	RedirectionState           string
+	RedirectionListenerEnabled bool
+	UserConsentRead            bool
+	UserConsent                string
+	CIRAConfigRead             bool
+	CIRAConfigured             bool
+	TrustedRootInventoryRead   bool
+	TrustedRootCount           int
+	MonitorConnected           *bool
+}
+
 // DeviceSyncResult summarizes the outcome of syncing a device.
 type DeviceSyncResult struct {
 	Status string `json:"status"`
@@ -493,9 +535,20 @@ type InfoService struct {
 	password         string
 	localTLSEnforced bool
 	// skipAMTCertCheck controls TLS verification when connecting to AMT/LMS
-	skipAMTCertCheck bool
-	wsman            interfaces.WSMANer
-	heciAvailable    bool
+	skipAMTCertCheck  bool
+	wsman             interfaces.WSMANer
+	ownsWSMANClient   bool
+	wsmanBlocked      bool
+	wsmanStatus       WSMANStatus
+	wsmanMessage      string
+	tlsModeRead       bool
+	mpsRead           bool
+	mpsCount          int
+	mpsHostname       string
+	mpsPort           int
+	mpsErr            error
+	heciAvailable     bool
+	cachedControlMode *int
 	// autoRegister controls whether a sync that 404s creates the device.
 	autoRegister bool
 	// localTLSStatusRead is true when localTLSEnforced came from a successful read.
@@ -504,6 +557,10 @@ type InfoService struct {
 	wsmanErr error
 	// mpsReadFailed is true when the MPS details could not be read over WSMAN.
 	mpsReadFailed bool
+}
+
+var newInfoServiceWSMANClient = func() interfaces.WSMANer {
+	return localamt.NewGoWSMANMessages(utils.LMSAddress)
 }
 
 // InfoServiceOption mutates InfoService construction parameters.
@@ -572,13 +629,30 @@ func WithSkipAMTCertCheck(skip bool) InfoServiceOption {
 func WithWSMANClient(wsman interfaces.WSMANer) InfoServiceOption {
 	return func(s *InfoService) {
 		s.wsman = wsman
+		s.ownsWSMANClient = false
 	}
+}
+
+// CloseOwnedWSMANClient closes a client created by this service, but leaves an injected client to its caller.
+func (s *InfoService) CloseOwnedWSMANClient() {
+	if s == nil || !s.ownsWSMANClient || s.wsman == nil {
+		return
+	}
+
+	s.closeWSMAN()
 }
 
 // WithHECIAvailable configures whether HECI-dependent reads should run.
 func WithHECIAvailable(available bool) InfoServiceOption {
 	return func(s *InfoService) {
 		s.heciAvailable = available
+	}
+}
+
+// WithCachedControlMode reuses the control mode already read by AMTBaseCmd.
+func WithCachedControlMode(controlMode int) InfoServiceOption {
+	return func(s *InfoService) {
+		s.cachedControlMode = &controlMode
 	}
 }
 
@@ -1254,8 +1328,14 @@ func buildSyncMEInterface(adapter *amt.InterfaceSettings) *syncMEInterface {
 
 // getTLSModeFromWSMAN queries AMT TLS settings via WSMan and returns the mode string.
 func (s *InfoService) getTLSModeFromWSMAN() string {
+	s.tlsModeRead = false
+
 	enumerateRsp, err := s.wsman.EnumerateTLSSettingData()
 	if err != nil {
+		if s.wsmanStatus != "" {
+			s.recordPostWSMANFailure(err)
+		}
+
 		log.Debug("Failed to enumerate TLS settings: ", err)
 
 		return ""
@@ -1263,6 +1343,10 @@ func (s *InfoService) getTLSModeFromWSMAN() string {
 
 	pullRsp, err := s.wsman.PullTLSSettingData(enumerateRsp.Body.EnumerateResponse.EnumerationContext)
 	if err != nil {
+		if s.wsmanStatus != "" {
+			s.recordPostWSMANFailure(err)
+		}
+
 		log.Debug("Failed to pull TLS settings: ", err)
 
 		return ""
@@ -1271,6 +1355,8 @@ func (s *InfoService) getTLSModeFromWSMAN() string {
 	// Use the remote TLS instance to determine the effective mode
 	for _, item := range pullRsp.Body.PullResponse.SettingDataItems {
 		if strings.HasSuffix(item.InstanceID, "AMT 802.3 TLS Settings") {
+			s.tlsModeRead = true
+
 			return determineTLSMode(item.MutualAuthentication, item.Enabled, item.AcceptNonSecureConnections)
 		}
 	}
@@ -1363,13 +1449,250 @@ func bestIPAddress(res *InfoResult) string {
 // joinURL safely concatenates base URL and path
 // (previously had joinURL helper; no longer needed as endpoints are provided in full)
 
-// GetAMTInfo retrieves AMT information based on the command flags
+// GetAMTInfo retrieves AMT information based on the command flags.
 func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
+	return s.GetInfoSnapshot(cmd, false).Info, nil
+}
+
+// GetInfoSnapshot collects the same AMT fields used by amtinfo and status.
+// TLSMode is read only when requested and a WSMAN client is available.
+func (s *InfoService) GetInfoSnapshot(cmd *AmtInfoCmd, includeTLS bool) *InfoSnapshot {
+	snapshot := &InfoSnapshot{}
+
+	controlMode := -1
+	if s.cachedControlMode != nil {
+		controlMode = *s.cachedControlMode
+	}
+
+	if includeTLS && s.heciAvailable && (controlMode == 1 || controlMode == 2) {
+		snapshot.PostActivation = &PostActivationSnapshot{}
+		snapshot.WSMANPreflightFailed = !s.preflightStatusWSMAN(controlMode)
+	}
+
+	info, reads := s.collectAMTInfo(cmd, snapshot.PostActivation != nil)
+	snapshot.Info = info
+	snapshot.AMTDNSSuffixRead = reads.amtDNSSuffix
+	snapshot.OSDNSSuffixRead = reads.osDNSSuffix
+	snapshot.ProvisioningStateRead = reads.provisioningState
+	snapshot.OperationalStateRead = reads.operationalState
+	snapshot.OperationalStateSupported = reads.operationalStateSupported
+
+	if includeTLS && s.wsman != nil && !s.wsmanBlocked {
+		snapshot.TLSMode = s.getTLSModeFromWSMAN()
+	}
+
+	if snapshot.PostActivation != nil {
+		snapshot.PostActivation.MonitorConnected = utils.DetectMonitorConnected()
+
+		snapshot.PostActivation.TLSModeRead = s.tlsModeRead
+		if s.wsman != nil && !s.wsmanBlocked {
+			connectionMode := ""
+			if info.RAS != nil {
+				connectionMode = info.RAS.NetworkStatus
+			}
+
+			kvmSupported := !strings.Contains(info.Features, "Intel Standard Manageability")
+			s.collectPostActivationSnapshot(snapshot.PostActivation, connectionMode, snapshot.TLSMode, kvmSupported)
+		}
+
+		snapshot.PostActivation.WSMANStatus = s.wsmanStatus
+		snapshot.PostActivation.WSMANMessage = s.wsmanMessage
+	}
+
+	return snapshot
+}
+
+func (s *InfoService) preflightStatusWSMAN(controlMode int) bool {
+	if err := s.ensureWSMANClient(controlMode); err != nil {
+		s.failWSMANPreflight(err)
+
+		return false
+	}
+
+	if s.wsman == nil {
+		s.failWSMANPreflight(errors.New("WSMAN client is unavailable"))
+
+		return false
+	}
+
+	if _, err := s.wsman.GetGeneralSettings(); err != nil {
+		s.failWSMANPreflight(err)
+
+		return false
+	}
+
+	s.wsmanStatus = WSMANStatusAvailable
+	s.wsmanMessage = "Authenticated WSMAN request succeeded"
+
+	return true
+}
+
+func (s *InfoService) failWSMANPreflight(err error) {
+	s.wsmanFailed(err)
+	s.wsmanStatus = WSMANStatusUnavailable
+	s.wsmanMessage = preflightWSMANFailureMessage(err)
+	s.wsmanBlocked = true
+	s.releaseWSMANClient()
+}
+
+func preflightWSMANFailureMessage(err error) string {
+	message := "WSMAN unavailable"
+	if err != nil {
+		message += ": " + err.Error()
+	}
+
+	var certErr *tls.CertificateVerificationError
+	if err != nil && errors.As(err, &certErr) {
+		message += "; " + wsmanUnavailableReason(err)
+	}
+
+	return message + "; check the AMT admin password (--password) and that LMS is running"
+}
+
+func (s *InfoService) recordPostWSMANFailure(err error) bool {
+	s.wsmanStatus = WSMANStatusUnavailable
+	s.wsmanMessage = classifyStatusWSMANFailure(err)
+	s.wsmanBlocked = true
+
+	return true
+}
+
+func (s *InfoService) releaseWSMANClient() {
+	if s.ownsWSMANClient {
+		s.CloseOwnedWSMANClient()
+
+		return
+	}
+
+	// Injected clients remain caller-owned; failed preflights clear the service reference.
+	s.wsman = nil
+}
+
+func classifyStatusWSMANFailure(err error) string {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return "WSMAN unavailable (" + wsmanUnavailableReason(err) + ")"
+	}
+
+	var soapErr *amterror.AMTError
+	if errors.As(err, &soapErr) {
+		return "AMT returned a WSMAN SOAP fault: " + soapErr.Message
+	}
+
+	var urlErr *neturl.Error
+	if errors.As(err, &urlErr) {
+		return "WSMAN connection/TLS request failed: " + urlErr.Err.Error()
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return "WSMAN connection/TLS request failed: " + netErr.Error()
+	}
+
+	return "WSMAN request failed: " + err.Error()
+}
+
+func (s *InfoService) collectPostActivationSnapshot(snapshot *PostActivationSnapshot, connectionMode, tlsMode string, kvmSupported bool) {
+	if s.wsman == nil || s.wsmanBlocked {
+		return
+	}
+
+	if kvmSupported {
+		kvmResponse, err := s.wsman.GetKVMRedirectionSAP()
+		if err != nil {
+			if s.recordPostWSMANFailure(err) {
+				return
+			}
+		} else {
+			snapshot.KVMRead = true
+
+			switch int(kvmResponse.Body.GetResponse.EnabledState) {
+			case int(cimkvm.EnabledStateEnabled):
+				snapshot.KVMState = "enabled"
+			case int(cimkvm.EnabledStateDisabled):
+				snapshot.KVMState = "disabled"
+			default:
+				snapshot.KVMState = "unknown"
+			}
+		}
+	}
+
+	redirectionResponse, err := s.wsman.GetRedirectionService()
+	if err != nil {
+		if s.recordPostWSMANFailure(err) {
+			return
+		}
+	} else {
+		snapshot.RedirectionRead = true
+		settings := redirectionResponse.Body.GetAndPutResponse
+		snapshot.RedirectionState = strconv.Itoa(int(settings.EnabledState))
+		snapshot.RedirectionListenerEnabled = settings.ListenerEnabled
+	}
+
+	optInResponse, err := s.wsman.GetIpsOptInService()
+	if err != nil {
+		if s.recordPostWSMANFailure(err) {
+			return
+		}
+	} else {
+		snapshot.UserConsentRead = true
+		snapshot.UserConsent = ipsoptin.OptInRequired(optInResponse.Body.GetAndPutResponse.OptInRequired).String()
+	}
+
+	if strings.EqualFold(strings.TrimSpace(connectionMode), "outside enterprise (CIRA)") {
+		s.getMPSInfoFromWSMAN()
+
+		if s.wsmanBlocked || s.wsman == nil {
+			return
+		}
+
+		policies, policyErr := s.wsman.GetRemoteAccessPolicies()
+		if policyErr != nil && s.recordPostWSMANFailure(policyErr) {
+			return
+		}
+
+		if s.mpsRead && s.mpsErr == nil && policyErr == nil {
+			snapshot.CIRAConfigRead = true
+			snapshot.CIRAConfigured = s.mpsCount > 0 && len(policies) > 0
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(tlsMode), "Mutual") || strings.EqualFold(strings.TrimSpace(tlsMode), "MutualAndNonTLS") {
+		certificates, err := s.wsman.GetPublicKeyCerts()
+		if err != nil {
+			if s.recordPostWSMANFailure(err) {
+				return
+			}
+		} else {
+			snapshot.TrustedRootInventoryRead = true
+
+			for _, certificate := range certificates {
+				if certificate.TrustedRootCertificate {
+					snapshot.TrustedRootCount++
+				}
+			}
+		}
+	}
+}
+
+type infoSnapshotReads struct {
+	amtDNSSuffix              bool
+	osDNSSuffix               bool
+	provisioningState         bool
+	operationalState          bool
+	operationalStateSupported *bool
+}
+
+func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd, postActivation bool) (*InfoResult, infoSnapshotReads) {
 	result := &InfoResult{}
+	reads := infoSnapshotReads{}
 	showAll := cmd.All || cmd.HasNoFlagsSet()
 
 	// Track control mode for reuse across multiple operations
 	controlMode := -1 // -1 indicates not checked yet
+	if s.cachedControlMode != nil {
+		controlMode = *s.cachedControlMode
+	}
 
 	var controlModeErr error
 
@@ -1473,6 +1796,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 			if err != nil {
 				log.Error("Failed to get provisioning state: ", err)
 			} else {
+				reads.provisioningState = true
 				result.ProvisioningState = utils.InterpretProvisioningState(provState)
 			}
 		}
@@ -1493,11 +1817,18 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 				majorVersion, err := s.getMajorVersion(result.AMT)
 				if err == nil && majorVersion > 11 {
 					opState, err := s.amtCommand.GetChangeEnabled()
-					if err == nil && opState.IsNewInterfaceVersion() {
-						if opState.IsAMTEnabled() {
-							result.OperationalState = statusEnabled
-						} else {
-							result.OperationalState = statusDisabled
+					if err == nil {
+						supported := opState.IsNewInterfaceVersion()
+						reads.operationalStateSupported = &supported
+
+						if supported {
+							reads.operationalState = true
+
+							if opState.IsAMTEnabled() {
+								result.OperationalState = statusEnabled
+							} else {
+								result.OperationalState = statusDisabled
+							}
 						}
 					}
 				} else if err == nil {
@@ -1517,6 +1848,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		// AMT DNS suffix (requires HECI)
 		if s.heciAvailable {
 			dnsSuffix, err := s.amtCommand.GetDNSSuffix()
+
+			reads.amtDNSSuffix = err == nil
 			if err == nil {
 				result.DNSSuffix = dnsSuffix
 			}
@@ -1524,6 +1857,8 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 		// OS DNS suffix (no admin required)
 		osDnsSuffix, err := s.amtCommand.GetOSDNSSuffix()
+
+		reads.osDNSSuffix = err == nil
 		if err == nil {
 			result.DNSSuffixOS = osDnsSuffix
 		}
@@ -1553,27 +1888,19 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 	// Get RAS (Remote Access Status) (requires HECI)
 	if showAll || cmd.Ras {
 		if s.heciAvailable {
-			// Try WSMAN first for MPS hostname + port
-			var (
-				wsmanHostname string
-				wsmanPort     int
-				wsmanErr      error
-			)
-
-			wsmanHostname, wsmanPort, wsmanErr = s.getMPSInfoFromWSMAN()
-			if wsmanErr != nil {
-				log.Debug("Failed to get MPS info from WSMAN, will use HECI: ", wsmanErr)
-			}
-
-			// Always call HECI for NetworkStatus, RemoteStatus, RemoteTrigger
 			ras, err := s.amtCommand.GetRemoteAccessConnectionStatus()
 			if err == nil {
-				if wsmanErr == nil {
-					// WSMAN succeeded: use WSMAN hostname + port
-					ras.MPSHostname = wsmanHostname
-					ras.MPSPort = wsmanPort
+				shouldReadMPS := !postActivation || strings.EqualFold(strings.TrimSpace(ras.NetworkStatus), "outside enterprise (CIRA)")
+				if shouldReadMPS {
+					mpsHostname, mpsPort, wsmanErr := s.getMPSInfoFromWSMAN()
+					if wsmanErr != nil {
+						log.Debug("Failed to get MPS info from WSMAN, will use HECI: ", wsmanErr)
+					} else {
+						ras.MPSHostname = mpsHostname
+						ras.MPSPort = mpsPort
+					}
 				}
-				// If WSMAN failed, HECI hostname is already in ras.MPSHostname; port stays 0
+
 				result.RAS = &ras
 			}
 		}
@@ -1635,7 +1962,7 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 
 	s.addConnectionDetails(result, showAll)
 
-	return result, nil
+	return result, reads
 }
 
 // addConnectionDetails records local TLS enforcement and, when WSMAN failed,
@@ -2561,6 +2888,10 @@ func (s *InfoService) getMajorVersion(version string) (int, error) {
 // ensureWSMANClient sets up s.wsman once if not already initialized.
 // Uses the AMT password if available, otherwise falls back to LSA credentials.
 func (s *InfoService) ensureWSMANClient(controlMode int) error {
+	if s.wsmanBlocked {
+		return fmt.Errorf("WSMAN requests blocked after authentication failure")
+	}
+
 	if s.wsman != nil {
 		return nil
 	}
@@ -2584,7 +2915,7 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	// SetupWsmanClient falls back to HECI/LME when LMS is absent; no need to gate on LMS here.
-	wsmanClient := localamt.NewGoWSMANMessages(utils.LMSAddress)
+	wsmanClient := newInfoServiceWSMANClient()
 
 	var tlsConfig *tls.Config
 	if s.localTLSEnforced {
@@ -2594,18 +2925,22 @@ func (s *InfoService) ensureWSMANClient(controlMode int) error {
 	}
 
 	if err := wsmanClient.SetupWsmanClient(username, password, s.localTLSEnforced, log.GetLevel() == log.TraceLevel, tlsConfig); err != nil {
+		if closeErr := wsmanClient.Close(); closeErr != nil {
+			log.Debugf("failed to close WSMAN client after setup failure: %v", closeErr)
+		}
+
 		return s.wsmanFailed(fmt.Errorf("failed to setup WSMAN client: %w", err))
 	}
 
 	s.wsman = wsmanClient
+	s.ownsWSMANClient = true
 
 	return nil
 }
 
-// closeWSMAN closes the service's WSMAN client, if any, and releases it. Run
-// leaves the client to process exit, but over LME a held connection keeps
-// the MEI device open, and the next call in the same process would fail with
-// "device busy". A close failure is only logged.
+// closeWSMAN closes the service's WSMAN client, if any, and releases it. Over
+// LME, a held connection keeps the MEI device open, and the next call in the
+// same process would fail with "device busy". A close failure is only logged.
 func (s *InfoService) closeWSMAN() {
 	if s.wsman == nil {
 		return
@@ -2616,6 +2951,7 @@ func (s *InfoService) closeWSMAN() {
 	}
 
 	s.wsman = nil
+	s.ownsWSMANClient = false
 }
 
 // getUserCertificates retrieves public key certificates via WSMAN
@@ -2657,18 +2993,36 @@ func (s *InfoService) getMPSInfoFromWSMAN() (hostname string, port int, err erro
 		return "", 0, fmt.Errorf("WSMAN client not available")
 	}
 
-	items, err := s.wsman.GetMPSSAP()
-	if err != nil {
-		s.mpsReadFailed = true
+	if !s.mpsRead {
+		s.mpsRead = true
+		items, readErr := s.wsman.GetMPSSAP()
+		s.mpsErr = readErr
 
-		return "", 0, s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", err))
+		if readErr != nil {
+			s.mpsReadFailed = true
+			s.wsmanFailed(fmt.Errorf("failed to get MPS SAP: %w", readErr))
+
+			if s.wsmanStatus != "" {
+				s.recordPostWSMANFailure(readErr)
+			}
+		} else {
+			s.mpsCount = len(items)
+			if len(items) > 0 {
+				s.mpsHostname = items[0].AccessInfo
+				s.mpsPort = items[0].Port
+			}
+		}
 	}
 
-	if len(items) == 0 {
+	if s.mpsErr != nil {
+		return "", 0, fmt.Errorf("failed to get MPS SAP: %w", s.mpsErr)
+	}
+
+	if s.mpsCount == 0 {
 		return "", 0, fmt.Errorf("no MPS entries found")
 	}
 
-	return items[0].AccessInfo, items[0].Port, nil
+	return s.mpsHostname, s.mpsPort, nil
 }
 
 // getProxyAccessPoints retrieves HTTP proxy access points via WSMAN.

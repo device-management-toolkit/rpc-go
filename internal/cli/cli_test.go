@@ -87,6 +87,24 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseStatusAliases(t *testing.T) {
+	for _, name := range []string{"status", "health", "doctor"} {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			amtCommand := mock.NewMockInterface(ctrl)
+			amtCommand.EXPECT().Close().Return(nil).AnyTimes()
+			amtCommand.EXPECT().GetControlMode().Return(0, nil).AnyTimes()
+			amtCommand.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+
+			ctx, _, err := Parse([]string{"rpc", name}, amtCommand)
+
+			require.NoError(t, err)
+			require.NotNil(t, ctx)
+			assert.True(t, hasCommand([]string{"rpc", name}))
+		})
+	}
+}
+
 func TestParseBatchesCredentialWarnings(t *testing.T) {
 	oldOutput := logrus.StandardLogger().Out
 	oldLevel := logrus.GetLevel()

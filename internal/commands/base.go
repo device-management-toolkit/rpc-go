@@ -34,6 +34,7 @@ type AMTBaseCmd struct {
 	WSMan            interfaces.WSMANer `kong:"-"`
 	ControlMode      int                `kong:"-"` // Store the control mode for use by embedding commands
 	LocalTLSEnforced bool               `kong:"-"`
+	heciInitErr      error              `kong:"-"`
 	// LocalTLSStatusRead reports whether LocalTLSEnforced came from a successful read.
 	LocalTLSStatusRead bool `kong:"-"`
 	HECIAvailable      bool `kong:"-"` // Whether HECI/MEI driver is accessible
@@ -133,6 +134,7 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 	if !isAMTCapableArchitecture(arch) {
 		cmd.ControlMode = -1
 		if cmd.SkipWSMANSetup {
+			cmd.heciInitErr = fmt.Errorf("%w: HECI is not supported on architecture %s", heci.ErrUnsupportedDevice, arch)
 			cmd.afterApplied = true
 
 			return nil
@@ -201,6 +203,7 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 			log.Warn("HECI not available, AMT data will be limited")
 
 			cmd.ControlMode = -1
+			cmd.heciInitErr = err
 			cmd.afterApplied = true
 
 			return nil
@@ -211,6 +214,7 @@ func (cmd *AMTBaseCmd) afterApply(amtCommand amt.Interface, elevated bool, arch 
 
 	cmd.ControlMode = controlMode
 	cmd.HECIAvailable = true
+	cmd.heciInitErr = nil
 	log.Tracef("AMTBaseCmd detected control mode: %d", cmd.ControlMode)
 
 	// Determine if TLS is enforced on local ports; needed even if we skip full WSMAN setup
@@ -261,6 +265,11 @@ func (cmd *AMTBaseCmd) GetWSManClient() interfaces.WSMANer {
 // GetControlMode returns the AMT control mode
 func (cmd *AMTBaseCmd) GetControlMode() int {
 	return cmd.ControlMode
+}
+
+// GetHECIInitError returns the last control-mode probe error when initialization degraded gracefully.
+func (cmd *AMTBaseCmd) GetHECIInitError() error {
+	return cmd.heciInitErr
 }
 
 // RequiresAMTPassword indicates whether this command requires AMT password.

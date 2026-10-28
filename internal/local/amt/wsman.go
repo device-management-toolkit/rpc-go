@@ -643,6 +643,10 @@ func (g *GoWSMANMessages) RequestKVMStateChange(requestedState kvm.KVMRedirectio
 	return g.wsmanMessages.CIM.KVMRedirectionSAP.RequestStateChange(requestedState)
 }
 
+func (g *GoWSMANMessages) GetKVMRedirectionSAP() (response kvm.Response, err error) {
+	return g.wsmanMessages.CIM.KVMRedirectionSAP.Get()
+}
+
 func (g *GoWSMANMessages) PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error) {
 	return g.wsmanMessages.AMT.RedirectionService.Put(requestedState)
 }
