@@ -14,7 +14,10 @@ import (
 
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -85,6 +88,39 @@ func TestParse(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecuteWithAMTPreservesLibraryWarningLogging(t *testing.T) {
+	hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+
+	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(hooks) })
+
+	hook := logtest.NewGlobal()
+	level := logrus.GetLevel()
+
+	t.Cleanup(func() { logrus.SetLevel(level) })
+
+	controller := gomock.NewController(t)
+	amtCommand := mock.NewMockInterface(controller)
+	amtCommand.EXPECT().Close().Return(nil).AnyTimes()
+	amtCommand.EXPECT().GetControlMode().Return(0, heci.ErrDeviceNotFound).AnyTimes()
+
+	err := ExecuteWithAMT([]string{"rpc", "amtinfo", "--hostname"}, amtCommand)
+	if err != nil {
+		var customErr utils.CustomError
+		require.ErrorAs(t, err, &customErr)
+		require.Equal(t, utils.IncorrectPermissions.Code, customErr.Code)
+	}
+
+	var foundWarning bool
+
+	for _, entry := range hook.AllEntries() {
+		if entry.Level == logrus.WarnLevel && entry.Message == "HECI not available, AMT data will be limited" {
+			foundWarning = true
+		}
+	}
+
+	assert.Equal(t, utils.IsElevated(), foundWarning, "C-shared execution should retain warn-level HECI logging only when elevated")
 }
 
 func TestParseBatchesCredentialWarnings(t *testing.T) {
