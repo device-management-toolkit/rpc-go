@@ -17,6 +17,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -220,6 +221,9 @@ func TestNewLocalActivationService(t *testing.T) {
 
 // Mock AMT Command for testing
 type MockAMTCommand struct {
+	// TEP commands are unused by these tests; calling one panics.
+	upid.TEPInterface
+
 	controlMode      int
 	changeEnabled    MockChangeEnabled
 	shouldErrorOn    string
@@ -470,6 +474,18 @@ func (m *MockAMTCommand) StopConfiguration() (amt.StopConfigurationResponse, err
 
 func (m *MockAMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	return pthi.GetCiraLogResponse{}, nil
+}
+
+func (m *MockAMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	return pthi.ProvisioningLog{}, nil
+}
+
+func (m *MockAMTCommand) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	return 0, nil
+}
+
+func (m *MockAMTCommand) GetUPIDFullCertificateChain(_ upid.CertIndex) ([][]byte, error) {
+	return nil, nil
 }
 
 func (m *MockAMTCommand) Close() error {
