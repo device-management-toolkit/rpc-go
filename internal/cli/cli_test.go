@@ -120,7 +120,7 @@ func TestExecuteWithAMTPreservesLibraryWarningLogging(t *testing.T) {
 		}
 	}
 
-	assert.True(t, foundWarning, "C-shared execution should retain warn-level HECI logging")
+	assert.Equal(t, utils.IsElevated(), foundWarning, "C-shared execution should retain warn-level HECI logging only when elevated")
 }
 
 func TestParseBatchesCredentialWarnings(t *testing.T) {

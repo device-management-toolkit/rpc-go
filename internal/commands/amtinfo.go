@@ -388,7 +388,7 @@ func (cmd *AmtInfoCmd) Collect(ctx *Context) (*InfoResult, error) {
 }
 
 func (cmd *AmtInfoCmd) logHECIWarning() {
-	if !cmd.HECIAvailable {
+	if !cmd.HECIAvailable && isElevated() {
 		log.Warn("HECI not available, AMT data will be limited")
 	}
 }
@@ -439,6 +439,8 @@ func (cmd *AmtInfoCmd) readInfo(ctx *Context, deferWarnings bool) (*InfoService,
 			var customErr utils.CustomError
 			if !errors.As(err, &customErr) || customErr.Code != utils.IncorrectPermissions.Code {
 				if deferWarnings {
+					cmd.logHECIWarning()
+
 					for _, warning := range result.Warnings {
 						log.Warn(warning)
 					}
