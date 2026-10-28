@@ -31,6 +31,14 @@ type TEPInterface interface {
 	TEPGetOwnershipState(reqID TEPNonce, voucherID TEPVoucherID) (*TEPOwnershipState, error)
 	// TEPGetTimeSyncNonce returns a CSME-signed nonce to include in OCSP requests.
 	TEPGetTimeSyncNonce(reqID TEPNonce) (*TEPTimeSyncNonce, error)
+	// TEPSetTimeAndCerts sets TEP time and the Ownership Service certificate status from OCSP responses.
+	TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error
+	// TEPRequestOwnershipVoucher returns a CSME-signed CMS voucher request.
+	TEPRequestOwnershipVoucher(request *TEPBinaryVoucherRequest) ([]byte, error)
+	// TEPSetOwnershipVoucher installs a voucher signed by the Ownership Service.
+	TEPSetOwnershipVoucher(voucherID TEPVoucherID, voucherCMS []byte) error
+	// TEPRemoveOwnershipVoucher removes a voucher that is not ACTIVE.
+	TEPRemoveOwnershipVoucher(voucherID TEPVoucherID) error
 }
 
 var _ TEPInterface = (*Command)(nil)
@@ -135,7 +143,14 @@ func (c *Command) tepCall(command uint8, request any) ([]byte, error) {
 	}
 	defer c.Close()
 
-	log.Tracef("TEP command %d: MEI client max message length %d", command, c.Heci.GetBufferSize())
+	maxSize := int(c.Heci.GetBufferSize())
+	log.Tracef("TEP command %d: MEI client max message length %d", command, maxSize)
+
+	// A zero maximum (for example on a closed handle) also refuses the request,
+	// so a state-changing command is never sent without room for the reply.
+	if size := binary.Size(request); size > maxSize {
+		return nil, fmt.Errorf("TEP command %d: %w: request is %d bytes, MEI client accepts %d", command, ErrMessageTooLarge, size, maxSize)
+	}
 
 	response, err := c.call(request)
 	if err != nil {

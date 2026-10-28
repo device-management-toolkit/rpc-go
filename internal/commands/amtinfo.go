@@ -215,6 +215,7 @@ type AmtInfoCmd struct {
 	// Identity flags
 	UUID      bool `help:"Show Unique Identifier" short:"u"`
 	UPID      bool `help:"Show Intel Unique Platform ID"`
+	TEP       bool `help:"Show Intel Trusted Endpoint Provisioning (TEP) status" name:"tep"`
 	Mode      bool `help:"Show Current Control Mode" short:"m"`
 	ProvState bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
 
@@ -282,7 +283,7 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
+	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.TEP && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState && !cmd.Proxy
 }
 
@@ -481,6 +482,7 @@ type InfoResult struct {
 	WiredAdapter      *amt.InterfaceSettings       `json:"wiredAdapter,omitempty"`
 	WirelessAdapter   *amt.InterfaceSettings       `json:"wirelessAdapter,omitempty"`
 	UPID              *upid.UPID                   `json:"upid,omitempty"`
+	TEP               *TEPInfo                     `json:"tep,omitempty"`
 	CertificateHashes map[string]amt.CertHashEntry `json:"certificateHashes,omitempty"`
 	UserCerts         map[string]UserCert          `json:"userCerts,omitempty"`
 	ProxyAccessPoints *[]ProxyAccessPoint          `json:"proxyAccessPoints,omitempty"`
@@ -1543,6 +1545,11 @@ func (s *InfoService) GetAMTInfo(cmd *AmtInfoCmd) (*InfoResult, error) {
 		}
 	}
 
+	// Get Intel TEP status (requires HECI; CSME 18 and later)
+	if showAll || cmd.TEP {
+		s.addTEPInfo(result, cmd, showAll)
+	}
+
 	// Get DNS information
 	if showAll || cmd.DNS {
 		// AMT DNS suffix (requires HECI)
@@ -1854,6 +1861,18 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 		}
 	}
 
+	// --- Intel TEP ---
+	if (showAll || cmd.TEP) && result.TEP != nil {
+		for _, r := range tepRows(result.TEP) {
+			value := r.value
+			if r.unavailable {
+				value = unavailableValue(value)
+			}
+
+			add(tepSectionTitle, tepFlag, r.label, value)
+		}
+	}
+
 	// --- Certificate Hashes ---
 	if showAll || cmd.Cert {
 		for name, cert := range result.CertificateHashes {
@@ -2040,11 +2059,12 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 	wiredSec := buildWiredSection(result, cmd, showAll, false)
 	wirelessSec := buildWirelessSection(result, cmd, showAll, false)
 	upidSec := buildUPIDSection(result, cmd, showAll)
+	tepSec := buildTEPSection(result, cmd, showAll)
 	userCertsSec := buildUserCertsSection(result, cmd)
 
 	// Only use boxed two-column layout when the terminal is wide enough AND
 	// both sides have content to display. Otherwise fall through to single-column.
-	leftHasContent := deviceSec != "" || upidSec != "" || rasSec != "" || proxySec != ""
+	leftHasContent := deviceSec != "" || upidSec != "" || tepSec != "" || rasSec != "" || proxySec != ""
 	rightHasContent := wiredSec != "" || wirelessSec != ""
 
 	termW := getTerminalWidth()
@@ -2064,7 +2084,7 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 		wiredBoxed := buildWiredSection(result, cmd, showAll, true)
 		wirelessBoxed := buildWirelessSection(result, cmd, showAll, true)
 
-		left = strings.Trim(deviceBoxed+upidSec+rasSec+proxySec, "\n")
+		left = strings.Trim(deviceBoxed+upidSec+tepSec+rasSec+proxySec, "\n")
 		right = strings.Trim(wiredBoxed+wirelessBoxed, "\n")
 
 		// Baseline colWidth from upper content (+2 for Padding(1, 1) horizontal).
@@ -2124,6 +2144,7 @@ func (s *InfoService) OutputText(w io.Writer, result *InfoResult, cmd *AmtInfoCm
 		b.WriteString(wiredSec)
 		b.WriteString(wirelessSec)
 		b.WriteString(upidSec)
+		b.WriteString(tepSec)
 		b.WriteString(userCertsSec)
 		b.WriteString(buildCertsSection(result, cmd, showAll, false))
 	}

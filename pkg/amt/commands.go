@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/hotham"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -204,15 +205,22 @@ type Interface interface {
 	Unprovision() (mode int, err error)
 	StartConfigurationHBased(params SecureHBasedParameters) (SecureHBasedResponse, error)
 	GetUPID() (*upid.UPID, error)
+	GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error)
 	TEPGetCapabilities() (*upid.TEPCapabilities, error)
 	TEPGetVouchers() ([]upid.TEPVoucherID, error)
 	TEPGetAllVoucherIDs() ([]upid.TEPVoucherID, error)
 	TEPGetVoucherStateByFeature(feature upid.TEPFeature) (*upid.TEPVoucherState, error)
 	TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.TEPVoucherID) (*upid.TEPOwnershipState, error)
 	TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error)
+	TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error
+	TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error)
+	TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error
+	TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error
 	GetFlog() ([]byte, error)
 	StopConfiguration() (StopConfigurationResponse, error)
 	GetCiraLog() (pthi.GetCiraLogResponse, error)
+	GetProvisioningLog() (pthi.ProvisioningLog, error)
+	GetFWCapabilities() (mkhi.FWCapabilities, error)
 	Close() error
 }
 
@@ -229,6 +237,7 @@ type AMTCommand struct {
 	PTHI   pthi.Interface
 	HOTHAM hotham.Interface
 	UPID   upid.Interface
+	MKHI   mkhi.Interface
 }
 
 func NewAMTCommand() AMTCommand {
@@ -236,7 +245,14 @@ func NewAMTCommand() AMTCommand {
 		PTHI:   pthi.NewCommand(),
 		HOTHAM: hotham.NewCommand(),
 		UPID:   upid.NewCommand(),
+		MKHI:   mkhi.NewCommand(),
 	}
+}
+
+// GetFWCapabilities returns the CSME FW caps SKU bitmask. Combine it with the
+// CSME major version via mkhi.TEPSupported to check for TEP support.
+func (amt AMTCommand) GetFWCapabilities() (mkhi.FWCapabilities, error) {
+	return amt.MKHI.GetFWCapabilities()
 }
 
 // Initialize determines if rpc is able to initialize the heci driver
@@ -643,6 +659,11 @@ func (amt AMTCommand) GetUPID() (*upid.UPID, error) {
 	return amt.UPID.GetUPID()
 }
 
+// GetUPIDFullCertificateChain returns the CSME on-die CA certificate chain (DER, leaf first).
+func (amt AMTCommand) GetUPIDFullCertificateChain(index upid.CertIndex) ([][]byte, error) {
+	return amt.UPID.GetFullCertificateChain(index)
+}
+
 // TEPGetCapabilities returns the features that can be provisioned via Intel TEP.
 func (amt AMTCommand) TEPGetCapabilities() (*upid.TEPCapabilities, error) {
 	return amt.UPID.TEPGetCapabilities()
@@ -671,6 +692,26 @@ func (amt AMTCommand) TEPGetOwnershipState(reqID upid.TEPNonce, voucherID upid.T
 // TEPGetTimeSyncNonce returns a CSME-signed nonce for TEP time sync / OCSP requests.
 func (amt AMTCommand) TEPGetTimeSyncNonce(reqID upid.TEPNonce) (*upid.TEPTimeSyncNonce, error) {
 	return amt.UPID.TEPGetTimeSyncNonce(reqID)
+}
+
+// TEPSetTimeAndCerts sets TEP time and the Ownership Service certificate status from OCSP responses.
+func (amt AMTCommand) TEPSetTimeAndCerts(certChain, ocspResponses [][]byte) error {
+	return amt.UPID.TEPSetTimeAndCerts(certChain, ocspResponses)
+}
+
+// TEPRequestOwnershipVoucher returns a CSME-signed CMS TEP ownership voucher request.
+func (amt AMTCommand) TEPRequestOwnershipVoucher(request *upid.TEPBinaryVoucherRequest) ([]byte, error) {
+	return amt.UPID.TEPRequestOwnershipVoucher(request)
+}
+
+// TEPSetOwnershipVoucher installs a TEP ownership voucher signed by the Ownership Service.
+func (amt AMTCommand) TEPSetOwnershipVoucher(voucherID upid.TEPVoucherID, voucherCMS []byte) error {
+	return amt.UPID.TEPSetOwnershipVoucher(voucherID, voucherCMS)
+}
+
+// TEPRemoveOwnershipVoucher removes a TEP ownership voucher that is not ACTIVE.
+func (amt AMTCommand) TEPRemoveOwnershipVoucher(voucherID upid.TEPVoucherID) error {
+	return amt.UPID.TEPRemoveOwnershipVoucher(voucherID)
 }
 
 // GetFlog retrieves the CSME Flash Log (FLOG)
@@ -721,4 +762,22 @@ func (amt AMTCommand) GetCiraLog() (pthi.GetCiraLogResponse, error) {
 	}
 
 	return result, nil
+}
+
+// GetProvisioningLog returns the latest host-based provisioning attempt,
+// including TEP-specific failure reasons for ACM activation.
+func (amt AMTCommand) GetProvisioningLog() (pthi.ProvisioningLog, error) {
+	err := amt.PTHI.Open(false)
+	if err != nil {
+		return pthi.ProvisioningLog{}, err
+	}
+
+	defer amt.PTHI.Close()
+
+	result, err := amt.PTHI.GetProvisioningLog()
+	if err != nil {
+		return pthi.ProvisioningLog{}, err
+	}
+
+	return result.ProvisioningLog, nil
 }

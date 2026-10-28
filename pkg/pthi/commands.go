@@ -40,6 +40,7 @@ type Interface interface {
 	StartConfigurationHBased(serverHashAlgorithm uint8, serverCertHash [CERT_HASH_MAX_LENGTH]byte, hostVPNEnable bool, suffixListLen int32, networkDNSSuffixList [MAX_SUFFIX_LENGTH * MAX_DNS_SUFFIXES]byte) (StartConfigurationHBasedResponse, error)
 	StopConfiguration() (response StopConfigurationResponse, err error)
 	GetCiraLog() (response GetCiraLogResponse, err error)
+	GetProvisioningLog() (response GetProvisioningLogResponse, err error)
 }
 
 func NewCommand() Command {
