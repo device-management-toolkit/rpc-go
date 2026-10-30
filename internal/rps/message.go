@@ -44,6 +44,24 @@ type StatusMessage struct {
 	// introduced by RPS (rps#2665). Older RPS releases omit it; in that case the flat
 	// fields above remain the source of truth.
 	Components *ComponentResults `json:"Components,omitempty"`
+	// Error carries the structured description of the failure that ended the flow
+	// (RPS structured provisioning failures). Present only on failure; older RPS
+	// releases omit it, in which case Status remains the only failure text.
+	Error *ProvisioningError `json:"Error,omitempty"`
+}
+
+// ProvisioningError is RPS's structured description of the failure that ended a flow:
+// a stable code from the RPS error catalog, the component and state-machine step that
+// failed, a human-readable reason, and the raw AMT / HTTP detail when available.
+type ProvisioningError struct {
+	Code           string `json:"Code"`                     // e.g. AMT_PT_UNSUPPORTED, WSMAN_TIMEOUT, RPS_DB_PROFILE_NOT_FOUND
+	Component      string `json:"Component"`                // Activation, WiredNetwork, WirelessNetwork, TLS, CIRAProxy, CIRAConnection, Features, Unconfiguration, Deactivation, Maintenance, TimeSync
+	Step           string `json:"Step"`                     // state machine step that failed, e.g. ADD_WIFI_SETTINGS
+	Reason         string `json:"Reason"`                   // human-readable description of Code
+	AmtReturnValue *int   `json:"AmtReturnValue,omitempty"` // raw AMT / CIM method ReturnValue when the failure came from a method response
+	HttpStatus     *int   `json:"HttpStatus,omitempty"`     // HTTP status when the failure came from an HTTP-level WSMAN response
+	WsmanCall      string `json:"WsmanCall,omitempty"`      // WSMAN call AMT was answering, as Class.Method, when the device is what failed
+	Detail         string `json:"Detail,omitempty"`         // underlying error text when it adds information beyond Reason
 }
 
 // Component result status values, mirroring the RPS ComponentResultStatus enum (rps#2665).
@@ -58,6 +76,10 @@ type ComponentResult struct {
 	Result  string `json:"Result"`            // Success, Failure, or NotApplicable
 	Mode    string `json:"Mode,omitempty"`    // optional mode, e.g. ACM or LocalProfileSync
 	Details string `json:"Details,omitempty"` // optional human-readable note (failure reason on failure)
+	// Structured failure detail added by RPS alongside Details; present only on Failure.
+	Code           string `json:"Code,omitempty"`           // failure code from the RPS error catalog
+	Step           string `json:"Step,omitempty"`           // state machine step that failed
+	AmtReturnValue *int   `json:"AmtReturnValue,omitempty"` // raw AMT / CIM method ReturnValue when applicable
 }
 
 // ComponentResults groups the structured per-component activation results.
