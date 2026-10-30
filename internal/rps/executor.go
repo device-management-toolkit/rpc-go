@@ -36,6 +36,7 @@ type Executor struct {
 	stream           <-chan lm.StreamEvent
 	streamGeneration uint64
 	tlsSessionID     string
+	abortErr         error // why this side ended the session early (e.g. the LMS connection failed)
 }
 
 func NewExecutor(flags flags.Flags) (Executor, error) {
@@ -86,7 +87,11 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	return client, err
 }
 
-func (e *Executor) MakeItSo(messageRequest Message) {
+// MakeItSo drives the RPS session to completion. It returns the exit-code error for a failure RPS
+// reported (see AMTActivationServer.LastError; this includes an `error` message from an RPS
+// release that sends no failure block), the send error when the request never reached RPS, an
+// error when the session ended before RPS reported a result (see sessionResult), or nil on success.
+func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -96,9 +101,9 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 
 	err := e.server.Send(messageRequest)
 	if err != nil {
-		log.Error(err.Error())
-
-		return
+		// The request never reached RPS, so nothing was provisioned: report it instead of exiting 0.
+		// The caller logs the returned error.
+		return err
 	}
 
 	defer func() { e.localManagement.Close() }()
@@ -115,7 +120,7 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 					log.Error("RPS connection close failed", err)
 				}
 
-				return
+				return e.sessionResult()
 			}
 
 			shallIReturn := e.HandleDataFromRPS(dataFromServer)
@@ -123,7 +128,7 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 				close(e.data)
 				close(e.errors)
 
-				return
+				return e.sessionResult()
 			}
 		case dataFromLM, ok := <-e.data:
 			// TLS-tunnel mode: AMT's bytes arrive here from the streaming reader at any time,
@@ -143,7 +148,7 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 		case <-interrupt:
 			e.HandleInterrupt()
 
-			return
+			return e.sessionResult()
 		}
 	}
 }
@@ -169,6 +174,30 @@ func (e *Executor) HandleInterrupt() {
 	}
 }
 
+// sessionResult is the error MakeItSo returns when the session ends. A failure RPS reported wins.
+// Without one, the run only succeeded if RPS sent its final success message; otherwise the
+// session stopped early and the exit code must say so: the LMS connection failed on this side
+// (abortErr), or RPS went away, the run was interrupted or a frame could not be read, in which
+// case the command being run names the flow that did not finish.
+func (e *Executor) sessionResult() error {
+	if e.server.LastError != nil {
+		return e.server.LastError
+	}
+
+	if e.server.Completed {
+		return nil
+	}
+
+	if e.abortErr != nil {
+		return e.abortErr
+	}
+
+	code := e.server.exitCodeForUnstructuredError()
+	code.Details = "session ended before RPS reported a result"
+
+	return code
+}
+
 func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	msgPayload := e.server.ProcessMessage(dataFromServer)
 	if msgPayload == nil {
@@ -189,6 +218,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		err := e.handlePortSwitch(jsonData)
 		if err != nil {
 			log.Error("Port switch failed: ", err)
+
+			e.abortErr = utils.AMTConnectionFailed
 
 			return true
 		}
@@ -240,6 +271,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		if err != nil {
 			log.Error(err)
 
+			e.abortErr = utils.AMTConnectionFailed
+
 			return true
 		}
 
@@ -261,6 +294,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			reader, ok := e.localManagement.(lm.TLSStreamReader)
 			if !ok {
 				log.Error("local management does not support TLS streaming")
+
+				e.abortErr = utils.AMTConnectionFailed
 
 				return true
 			}
@@ -286,6 +321,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	err := e.localManagement.Send(msgPayload)
 	if err != nil {
 		log.Error(err)
+
+		e.abortErr = utils.AMTConnectionFailed
 
 		return true
 	}
@@ -341,6 +378,8 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 					return false
 				}
+
+				e.abortErr = utils.AMTConnectionFailed
 
 				return true
 			}
