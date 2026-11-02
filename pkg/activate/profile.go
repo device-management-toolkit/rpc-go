@@ -13,6 +13,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	internalact "github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/drive"
 )
 
 var (
@@ -102,7 +103,7 @@ func Profile(opts ProfileOptions) error {
 
 	cmd, ctx := newProfileCommand(opts)
 
-	return run(cmd, ctx)
+	return drive.Run(cmd, ctx)
 }
 
 // validate rejects options that would leave the profile source ambiguous, run

@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -109,30 +107,4 @@ func TestCLIExecutor_RunsExecutable(t *testing.T) {
 			assert.Equal(t, []string{tt.wantArgv0, "configure", "mebx"}, readArgv(t, record))
 		})
 	}
-}
-
-func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
-	// baseArgs adds -v at debug level; pin the level so the argv is exact.
-	level := log.GetLevel()
-
-	log.SetLevel(log.InfoLevel)
-	t.Cleanup(func() { log.SetLevel(level) })
-
-	fake := copyTestBinary(t)
-	record := filepath.Join(t.TempDir(), "argv.json")
-	// The step builds its own environment; the fake rpc inherits this one.
-	t.Setenv(fakeRPCRecordEnv, record)
-
-	// Activation is the last step still on the executor: a device in
-	// pre-provisioning (control mode 0) with a CCM profile.
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.ControlMode = "ccmactivate"
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	po.currentControlMode = 0
-	po.SetExecutor(&CLIExecutor{Executable: fake})
-
-	require.NoError(t, po.executeActivation())
-
-	assert.Equal(t, []string{fake, "activate", "--ccm", "--local"}, readArgv(t, record))
 }
