@@ -270,6 +270,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			name:        "AMT features",
 			controlMode: 2,
 			token:       "amtfeatures",
+			inProcess:   true,
 			err:         stepErr("amtfeatures step"),
 		},
 		{
@@ -351,6 +352,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 
 			passwordChanges := stubChangeAMTPassword(t, inProcessErrs["amtpassword"])
 			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
+			amtFeaturesCalls := stubSetAMTFeatures(t, inProcessErrs["amtfeatures"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -367,6 +369,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				failed = map[string]bool{
 					"amtpassword": len(*passwordChanges) > 0,
 					"mebx":        len(*mebxCalls) > 0,
+					"amtfeatures": len(*amtFeaturesCalls) > 0,
 				}[tt.token]
 			}
 
