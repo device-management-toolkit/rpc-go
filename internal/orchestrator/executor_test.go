@@ -123,10 +123,13 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	// The step builds its own environment; the fake rpc inherits this one.
 	t.Setenv(fakeRPCRecordEnv, record)
 
-	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
+	cfg := config.Configuration{}
+	cfg.Configuration.TLS.Enabled = true
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeWirelessConfigurations())
+	require.NoError(t, po.executeTLSConfiguration())
 
-	assert.Equal(t, []string{fake, "configure", "wireless", "--purge"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "configure", "tls", "--mode", "Server"}, readArgv(t, record))
 }
