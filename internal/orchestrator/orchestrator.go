@@ -29,8 +29,7 @@ var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 var newAMTCommand = func() amt.Interface { return amt.NewAMTCommand() }
 
 const (
-	ACMMODE          = "acmactivate"
-	commandConfigure = "configure"
+	ACMMODE = "acmactivate"
 
 	// Environment variable names for passing credentials securely to subprocesses.
 	// Using env vars avoids credential exposure in /proc/<pid>/cmdline and ps output.
@@ -859,20 +858,26 @@ func (po *ProfileOrchestrator) executeHTTPProxyConfiguration() error {
 
 // executeHTTPProxy configures a single HTTP proxy
 func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "proxy")
+	opts := configure.ProxyOptions{
+		Address:          proxy.Address,
+		NetworkDnsSuffix: proxy.NetworkDnsSuffix,
+	}
 
-	args = append(args, "--address", proxy.Address)
-
+	// The old child got --port only when > 0, else the CLI default of 80; a
+	// zero Port gets the same default from pkg/configure.
 	if proxy.Port > 0 {
-		args = append(args, "--port", strconv.Itoa(proxy.Port))
+		opts.Port = proxy.Port
 	}
 
-	if proxy.NetworkDnsSuffix != "" {
-		args = append(args, "--networkdnssuffix", proxy.NetworkDnsSuffix)
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureProxy(opts)
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	return po.executeWithPasswordFallback(step)
 }
 
 // verifyAndAlignAMTPassword ensures the AMT admin password matches the profile value.
