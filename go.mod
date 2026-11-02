@@ -33,7 +33,7 @@ require (
 )
 
 require (
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/alecthomas/kong-yaml v0.2.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.5
