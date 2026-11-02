@@ -10,6 +10,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	internalact "github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/drive"
 )
 
 var (
@@ -98,7 +99,7 @@ func Local(opts LocalOptions) error {
 
 	cmd, ctx := newLocalCommand(opts)
 
-	return run(cmd, ctx)
+	return drive.Run(cmd, ctx)
 }
 
 // validate rejects options the command rejects only after touching AMT, or not at all.
@@ -166,7 +167,7 @@ type StopConfigurationOptions struct{}
 func StopConfiguration(opts StopConfigurationOptions) error {
 	cmd, ctx := newStopConfigurationCommand(opts)
 
-	return run(cmd, ctx)
+	return drive.Run(cmd, ctx)
 }
 
 // newStopConfigurationCommand builds the stop-configuration command and its

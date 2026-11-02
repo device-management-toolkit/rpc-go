@@ -12,6 +12,7 @@ import (
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	internalact "github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/drive"
 )
 
 var errMissingRPSURL = errors.New("RPS server URL is required")
@@ -66,7 +67,7 @@ func Remote(opts RemoteOptions) error {
 
 	cmd, ctx := newRemoteCommand(opts)
 
-	return run(cmd, ctx)
+	return drive.Run(cmd, ctx)
 }
 
 // validate rejects a URL the command would run in another mode, and a proxy
