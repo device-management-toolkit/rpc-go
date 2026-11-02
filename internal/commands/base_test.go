@@ -298,6 +298,8 @@ func TestAMTBaseCmd_AfterApplyAmtInfoPreservesProbeFailure(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.ErrorIs(t, cmd.GetHECIInitError(), probeErr)
+}
+
 func TestAMTBaseCmd_AfterApplyAmtInfoMissingHECINoDuplicateWarning(t *testing.T) {
 	hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 

@@ -106,6 +106,8 @@ func TestParseStatusAliases(t *testing.T) {
 			assert.True(t, hasCommand([]string{"rpc", name}))
 		})
 	}
+}
+
 func TestExecuteWithAMTPreservesLibraryWarningLogging(t *testing.T) {
 	hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 

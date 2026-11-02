@@ -294,11 +294,10 @@ func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
 func (cmd *AmtInfoCmd) Run(ctx *Context) error {
 	log.Trace("Running amtinfo command")
 
-	service, result, syncResult, err := cmd.readInfo(ctx)
-	defer service.closeWSMAN()
 	renderWarnings := ctx.RenderWarnings && !ctx.JsonOutput
 
 	service, result, syncResult, err := cmd.readInfo(ctx, renderWarnings)
+	defer service.closeWSMAN()
 
 	if !renderWarnings {
 		cmd.logHECIWarning()
@@ -583,9 +582,6 @@ type InfoService struct {
 	mpsErr            error
 	heciAvailable     bool
 	cachedControlMode *int
-	skipAMTCertCheck bool
-	wsman            interfaces.WSMANer
-	heciAvailable    bool
 	// deferWarnings lets human-readable CLI output render diagnostics instead of logging them.
 	deferWarnings bool
 	// autoRegister controls whether a sync that 404s creates the device.
