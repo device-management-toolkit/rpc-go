@@ -16,4 +16,5 @@ var (
 	configureWired             = configure.ConfigureWired
 	configureWiFiSync          = configure.ConfigureWiFiSync
 	configureWireless          = configure.ConfigureWireless
+	configureTLS               = configure.ConfigureTLS
 )
