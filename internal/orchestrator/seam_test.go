@@ -140,16 +140,16 @@ func TestExecStep_PasswordFromArgumentOverridesStaleEnv(t *testing.T) {
 	mock := newMockExecutor()
 	po.executor = mock
 
-	extra := map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}
+	extra := map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}
 	step := po.execStep([]string{"rpc", "amtinfo"}, extra)
 
 	require.NoError(t, step("fresh"))
 	require.NoError(t, step(""))
 
-	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMPSPassword: "mps"}, mock.executedEnv[0])
-	require.Equal(t, map[string]string{envMPSPassword: "mps"}, mock.executedEnv[1])
+	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMEBXPassword: "mps"}, mock.executedEnv[0])
+	require.Equal(t, map[string]string{envMEBXPassword: "mps"}, mock.executedEnv[1])
 	// The caller's map is not mutated.
-	require.Equal(t, map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}, extra)
+	require.Equal(t, map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}, extra)
 }
 
 func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
@@ -314,9 +314,10 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
 				c.Configuration.AMTSpecific.CIRA.MPSCert = "cert"
 			},
-			token:    "cira",
-			err:      &ExecError{ExitCode: utils.CIRAConfigurationFailed.Code, Err: errors.New("cira step exit status 104")},
-			wantCIRA: true,
+			token:     "cira",
+			inProcess: true,
+			err:       stepErr("cira step"),
+			wantCIRA:  true,
 		},
 		{
 			name:        "proxy",
@@ -325,7 +326,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com", Port: 8080}}
 			},
 			token: "proxy",
-			err:   stepErr("proxy step"),
+			err:   &ExecError{ExitCode: utils.WSMANMessageError.Code, Err: errors.New("proxy step exit status 105")},
 		},
 	}
 
@@ -361,6 +362,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			wifiSyncCalls := stubConfigureWiFiSync(t, inProcessErrs["wifisync"])
 			wirelessCalls := stubConfigureWireless(t, inProcessErrs["wireless"])
 			tlsCalls := stubConfigureTLS(t, inProcessErrs["tls"])
+			ciraCalls := stubConfigureCIRA(t, inProcessErrs["cira"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -382,6 +384,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 					"wifisync":    len(*wifiSyncCalls) > 0,
 					"wireless":    len(*wirelessCalls) > 0,
 					"tls":         len(*tlsCalls) > 0,
+					"cira":        len(*ciraCalls) > 0,
 				}[tt.token]
 			}
 
