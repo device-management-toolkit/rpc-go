@@ -15,6 +15,8 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -281,6 +283,36 @@ func TestAMTBaseCmd_AfterApplyAmtInfoDegradedPath(t *testing.T) {
 	assert.Equal(t, -1, cmd.ControlMode)
 	assert.False(t, cmd.HECIAvailable)
 	assert.True(t, cmd.afterApplied)
+}
+
+func TestAMTBaseCmd_AfterApplyAmtInfoMissingHECINoDuplicateWarning(t *testing.T) {
+	hooks := logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
+
+	t.Cleanup(func() { logrus.StandardLogger().ReplaceHooks(hooks) })
+
+	hook := logtest.NewGlobal()
+	level := logrus.GetLevel()
+
+	logrus.SetLevel(logrus.DebugLevel)
+	t.Cleanup(func() { logrus.SetLevel(level) })
+
+	amtCommand := mock.NewMockInterface(gomock.NewController(t))
+	amtCommand.EXPECT().Close().Return(nil)
+	amtCommand.EXPECT().GetControlMode().Return(0, heci.ErrDeviceNotFound)
+
+	cmd := &AMTBaseCmd{SkipWSMANSetup: true}
+	require.NoError(t, cmd.afterApply(amtCommand, true, "amd64", func(time.Duration) {
+		t.Fatal("permanent HECI failure should not retry")
+	}))
+	assert.False(t, cmd.HECIAvailable)
+	assert.Equal(t, -1, cmd.ControlMode)
+	require.NotNil(t, hook.LastEntry())
+	assert.Equal(t, logrus.DebugLevel, hook.LastEntry().Level)
+	assert.Contains(t, hook.LastEntry().Message, heci.ErrDeviceNotFound.Error())
+
+	for _, entry := range hook.AllEntries() {
+		assert.NotEqual(t, logrus.WarnLevel, entry.Level)
+	}
 }
 
 func TestAMTBaseCmd_AfterApplyPermanentErrorsAreClassifiedWithoutRetry(t *testing.T) {
