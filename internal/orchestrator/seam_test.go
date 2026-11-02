@@ -14,6 +14,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -82,6 +83,8 @@ func TestHideStepCode_KeepsCIRASentinel(t *testing.T) {
 }
 
 func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
+	rotations := stubChangeAMTPassword(t)
+
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
@@ -107,10 +110,9 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	require.Equal(t, []string{"stale-pass", "new-pass"}, got)
 	require.Equal(t, "new-pass", po.globalPassword)
 
-	// The only executor call is the rotation through changeAMTPassword.
-	require.Equal(t, 1, mock.callCount)
-	require.Equal(t, []string{rpcExecutableName, commandConfigure, commandAMTPassword, "--skip-amt-cert-check"}, mock.executedArgs[0])
-	require.Equal(t, map[string]string{envAMTPassword: "old-pass", envNewAMTPassword: "new-pass"}, mock.executedEnv[0])
+	// The rotation runs in-process; nothing reaches the executor.
+	require.Equal(t, 0, mock.callCount)
+	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", true)}, *rotations)
 }
 
 func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
@@ -151,6 +153,8 @@ func TestExecStep_PasswordFromArgumentOverridesStaleEnv(t *testing.T) {
 }
 
 func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
+	rotations := stubChangeAMTPassword(t)
+
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
@@ -182,7 +186,8 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 	// Initial call with the stale password, the post-rotation call, then the
 	// settle retry: both later calls must see the rotated password.
 	require.Equal(t, []string{"stale-pass", "new-pass", "new-pass"}, got)
-	require.Equal(t, 1, executor.callCount, "only the rotation reaches the executor")
+	require.Equal(t, 0, executor.callCount, "nothing reaches the executor")
+	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}, *rotations)
 }
 
 // stepFailingExecutor fails only the command whose arguments contain token.
@@ -205,7 +210,8 @@ func (e *stepFailingExecutor) Execute(args []string, _ map[string]string) error 
 // TestExecuteProfile_HidesStepCodes pins that ExecuteProfile hides every
 // step's failure code, so a failed profile run exits with the generic code.
 // Rows that reach the configuration steps pay the 1s initial utils.Pause
-// (no seam); activation and password verification fail before it.
+// (no seam); activation and password verification fail before it. Rows with
+// inProcess set fail through their stubbed pkg call instead of the executor.
 func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 	stepErr := func(details string) error {
 		return utils.CustomError{Code: utils.WSMANMessageError.Code, Message: utils.WSMANMessageError.Message, Details: details}
@@ -216,6 +222,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 		controlMode int
 		profile     func(*config.Configuration)
 		token       string
+		inProcess   bool
 		err         error
 		wantCIRA    bool
 	}{
@@ -243,8 +250,8 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
 			},
-			token: commandAMTPassword,
-			err:   stepErr("password step"),
+			inProcess: true,
+			err:       stepErr("password step"),
 		},
 		{
 			name:        "MEBx",
@@ -332,6 +339,13 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				tt.profile(&cfg)
 			}
 
+			var inProcessErr error
+			if tt.inProcess {
+				inProcessErr = tt.err
+			}
+
+			passwordChanges := stubChangeAMTPassword(t, inProcessErr)
+
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
 			exec := &stepFailingExecutor{token: tt.token, err: tt.err}
@@ -343,6 +357,10 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			failed := slices.ContainsFunc(exec.executedArgs, func(args []string) bool {
 				return slices.Contains(args, tt.token)
 			})
+			if tt.inProcess {
+				failed = len(*passwordChanges) > 0
+			}
+
 			require.True(t, failed, "the %s step must run", tt.name)
 
 			var customErr utils.CustomError
