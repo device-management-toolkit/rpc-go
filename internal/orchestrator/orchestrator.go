@@ -513,17 +513,16 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 
 	log.Info("Executing MEBx password configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "mebx")
-
-	// Pass MEBx password via per-subprocess environment to avoid
-	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-	// and to prevent global process environment pollution in c-shared library mode.
-	env := map[string]string{
-		envMEBXPassword: po.profile.Configuration.AMTSpecific.MEBXPassword,
+	// Both passwords travel in the options struct; the AMT password is the
+	// current po.globalPassword the fallback wrapper passes in.
+	step := func(amtPassword string) error {
+		return configureSetMEBx(configure.MEBxOptions{
+			BaseOptions:  configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			MEBxPassword: po.profile.Configuration.AMTSpecific.MEBXPassword,
+		})
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, env))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
