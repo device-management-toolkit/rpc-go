@@ -370,7 +370,7 @@ func TestExecuteWithPasswordFallback_SkippedWhenPreProvisioning(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 0 // pre-provisioning: rotation must not happen
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected auth error to surface, got nil")
 	}
@@ -390,7 +390,7 @@ func TestExecuteWithPasswordFallback_NonExecErrorDoesNotRotate(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -410,7 +410,7 @@ func TestExecuteWithPasswordFallback_NonAuthExitCodeDoesNotRotate(t *testing.T) 
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -433,7 +433,7 @@ func TestExecuteWithPasswordFallback_AuthExitCodeTriggersRotationAndRetry(t *tes
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v", err)
 	}
@@ -484,7 +484,7 @@ func TestExecuteWithPasswordFallback_NoSettleRetryWhenNotActivatedThisRun(t *tes
 	// activatedThisRun defaults to false: device was already activated, so a
 	// configuration failure is genuine and must fail fast without settle retries.
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -506,7 +506,7 @@ func TestExecuteWithPasswordFallback_SettleRetryRecoversAfterActivation(t *testi
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v, want nil after settle retry", err)
 	}
@@ -527,7 +527,7 @@ func TestExecuteWithPasswordFallback_SettleRetryBounded(t *testing.T) {
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
 	}
@@ -548,7 +548,7 @@ func TestExecuteWithPasswordFallback_SettleRetrySkippedForDeviceNotActivated(t *
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected device-not-activated error to surface, got nil")
 	}
@@ -600,7 +600,7 @@ func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 	po.activatedThisRun = true
 	po.currentControlMode = 2
 
-	if err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil); err == nil {
+	if err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil)); err == nil {
 		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
 	}
 
@@ -669,7 +669,7 @@ func TestExecuteWithEnv_PassesEnvironmentVariables(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v", err)
 	}
@@ -732,7 +732,7 @@ func TestPasswordRotation_PassesPasswordsViaEnv(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v", err)
 	}
