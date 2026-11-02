@@ -279,14 +279,15 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.Network.Wired.DHCPEnabled = true
 			},
-			token: "wired",
-			err:   &ExecError{ExitCode: utils.NetworkConfigurationFailed.Code, Err: errors.New("wired step exit status 103")},
+			token:     "wired",
+			inProcess: true,
+			err:       stepErr("wired step"),
 		},
 		{
 			name:        "wifisync",
 			controlMode: 2,
 			token:       "wifisync",
-			err:         stepErr("wifisync step"),
+			err:         &ExecError{ExitCode: utils.WiFiConfigurationFailed.Code, Err: errors.New("wifisync step exit status 106")},
 		},
 		{
 			name:        "wireless",
@@ -353,6 +354,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			passwordChanges := stubChangeAMTPassword(t, inProcessErrs["amtpassword"])
 			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
 			amtFeaturesCalls := stubSetAMTFeatures(t, inProcessErrs["amtfeatures"])
+			wiredCalls := stubConfigureWired(t, inProcessErrs["wired"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -370,6 +372,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 					"amtpassword": len(*passwordChanges) > 0,
 					"mebx":        len(*mebxCalls) > 0,
 					"amtfeatures": len(*amtFeaturesCalls) > 0,
+					"wired":       len(*wiredCalls) > 0,
 				}[tt.token]
 			}
 
