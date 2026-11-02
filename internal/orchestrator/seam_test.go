@@ -211,7 +211,8 @@ func (e *stepFailingExecutor) Execute(args []string, _ map[string]string) error 
 // step's failure code, so a failed profile run exits with the generic code.
 // Rows that reach the configuration steps pay the 1s initial utils.Pause
 // (no seam); activation and password verification fail before it. Rows with
-// inProcess set fail through their stubbed pkg call instead of the executor.
+// inProcess set fail through the stubbed pkg call their token names instead
+// of the executor.
 func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 	stepErr := func(details string) error {
 		return utils.CustomError{Code: utils.WSMANMessageError.Code, Message: utils.WSMANMessageError.Message, Details: details}
@@ -250,6 +251,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
 			},
+			token:     "amtpassword",
 			inProcess: true,
 			err:       stepErr("password step"),
 		},
@@ -260,8 +262,9 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.ControlMode = ACMMODE
 				c.Configuration.AMTSpecific.MEBXPassword = "mebx-pass"
 			},
-			token: "mebx",
-			err:   stepErr("mebx step"),
+			token:     "mebx",
+			inProcess: true,
+			err:       stepErr("mebx step"),
 		},
 		{
 			name:        "AMT features",
@@ -339,12 +342,15 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				tt.profile(&cfg)
 			}
 
-			var inProcessErr error
+			// Every row stubs every in-process call so none can reach AMT; an
+			// in-process row's token names the call that fails.
+			inProcessErrs := map[string]error{}
 			if tt.inProcess {
-				inProcessErr = tt.err
+				inProcessErrs[tt.token] = tt.err
 			}
 
-			passwordChanges := stubChangeAMTPassword(t, inProcessErr)
+			passwordChanges := stubChangeAMTPassword(t, inProcessErrs["amtpassword"])
+			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -358,7 +364,10 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				return slices.Contains(args, tt.token)
 			})
 			if tt.inProcess {
-				failed = len(*passwordChanges) > 0
+				failed = map[string]bool{
+					"amtpassword": len(*passwordChanges) > 0,
+					"mebx":        len(*mebxCalls) > 0,
+				}[tt.token]
 			}
 
 			require.True(t, failed, "the %s step must run", tt.name)
