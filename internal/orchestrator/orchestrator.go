@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alecthomas/kong"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
@@ -37,7 +38,6 @@ const (
 	envMEBXPassword        = "MEBX_PASSWORD"
 	envProvisioningCertPwd = "PROVISIONING_CERT_PASSWORD"
 	envProvisioningCert    = "PROVISIONING_CERT"
-	envMPSPassword         = "MPS_PASSWORD"
 
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
 	// because the device is not yet activated; activation continues afterward.
@@ -808,35 +808,32 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 
 	log.Info("Executing CIRA configuration")
 
-	args := po.baseArgs()
-
-	args = append(args, commandConfigure, "cira")
-
-	// MPS Address is required
-	args = append(args, "--mpsaddress", cira.MPSAddress)
-
-	// MPS Certificate is required
-	args = append(args, "--mpscert", cira.MPSCert)
-
-	// MPS Password - if not provided, the CLI will prompt
-	extraEnv := map[string]string{}
-
-	if cira.MPSPassword != "" {
-		extraEnv[envMPSPassword] = cira.MPSPassword
+	// Every CIRA field comes from the profile only: unlike the old child, none
+	// is filled from the operator's environment (MPS_PASSWORD,
+	// GENERATE_RANDOM_PASSWORD, ENVIRONMENT_DETECTION, RPC_*) or config.yaml.
+	opts := configure.CIRAOptions{
+		MPSAddress:             cira.MPSAddress,
+		MPSCert:                cira.MPSCert,
+		MPSPassword:            cira.MPSPassword,
+		GenerateRandomPassword: cira.GenerateRandomPassword,
 	}
 
-	if cira.GenerateRandomPassword {
-		args = append(args, "--generateRandomPassword")
+	// The old child got the list comma-joined in one --envdetection flag and
+	// Kong split it with SplitEscaped: a comma inside one profile entry yields
+	// two strings, a backslash-escaped comma stays literal and a trailing
+	// empty entry is dropped. Use Kong's own splitter for the same strings; an
+	// empty list (or [""]) stays nil, as the child got no value.
+	opts.EnvironmentDetection = kong.SplitEscaped(strings.Join(cira.EnvironmentDetection, ","), ',')
+
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureCIRA(opts)
 	}
 
-	// Environment Detection - optional
-	if len(cira.EnvironmentDetection) > 0 {
-		// Join multiple environment detection strings with comma
-		envDetection := strings.Join(cira.EnvironmentDetection, ",")
-		args = append(args, "--envdetection", envDetection)
-	}
-
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
