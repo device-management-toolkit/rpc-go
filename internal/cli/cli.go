@@ -254,7 +254,7 @@ func Execute(args []string) error {
 		args = newArgs
 	}
 
-	err := ExecuteWithAMT(args, amt.NewAMTCommand())
+	err := executeWithAMT(args, amt.NewAMTCommand(), true)
 
 	// If a command failed due to insufficient privileges, offer auto-elevation.
 	// Use errors.As to unwrap any Kong error wrapping.
@@ -283,6 +283,10 @@ func Execute(args []string) error {
 // Used by the C library entry point (lib.go) which manages its own
 // pre-initialization before calling this function.
 func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
+	return executeWithAMT(args, amtCommand, false)
+}
+
+func executeWithAMT(args []string, amtCommand amt.Interface, renderWarnings bool) error {
 	kctx, cli, err := Parse(args, amtCommand)
 	if err != nil {
 		return err
@@ -297,6 +301,7 @@ func ExecuteWithAMT(args []string, amtCommand amt.Interface) error {
 		LogLevel:         cli.LogLevel,
 		JsonOutput:       cli.JsonOutput,
 		TableOutput:      cli.TableOutput,
+		RenderWarnings:   renderWarnings,
 		NoColor:          cli.NoColor,
 		Verbose:          cli.Verbose,
 		SkipCertCheck:    cli.SkipCertCheck,
