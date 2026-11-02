@@ -535,39 +535,36 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 
 	log.Info("Executing AMT features configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "amtfeatures")
+	// User consent is set only in ACM. In CCM it stays empty and pkg
+	// SetAMTFeatures defaults it to "all", as Kong's default did for the old
+	// child. That non-empty consent also lets an all-false profile pass
+	// validation, so no DisableAll option is needed to turn every feature off.
+	var userConsent string
 
-	if redirection.Services.KVM {
-		args = append(args, "--kvm")
-	}
-
-	if redirection.Services.SOL {
-		args = append(args, "--sol")
-	}
-
-	if redirection.Services.IDER {
-		args = append(args, "--ider")
-	}
-
-	// If all features are explicitly false, request explicit disable behavior
-	if !redirection.Services.KVM && !redirection.Services.SOL && !redirection.Services.IDER {
-		args = append(args, "--disableAll")
-	}
-
-	// Set user consent if in ACM mode
 	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE {
 		switch redirection.UserConsent {
 		case "None":
-			args = append(args, "--userConsent", "none")
+			userConsent = "none"
 		case "KVM":
-			args = append(args, "--userConsent", "kvm")
+			userConsent = "kvm"
 		default:
-			args = append(args, "--userConsent", "all")
+			userConsent = "all"
 		}
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		return configureSetAMTFeatures(configure.AMTFeaturesOptions{
+			BaseOptions: configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			UserConsent: userConsent,
+			KVM:         redirection.Services.KVM,
+			SOL:         redirection.Services.SOL,
+			IDER:        redirection.Services.IDER,
+		})
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeWiredNetworkConfiguration performs wired network configuration
