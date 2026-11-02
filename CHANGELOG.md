@@ -1,3 +1,10 @@
+# [3.0.0-beta.77](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.76...v3.0.0-beta.77) (2026-11-02)
+
+
+### Bug Fixes
+
+* unify amtinfo warning styling ([#1643](https://github.com/device-management-toolkit/rpc-go/issues/1643)) ([b8d2371](https://github.com/device-management-toolkit/rpc-go/commit/b8d2371520b204d8524bc4687fef43b7ad855a47)), closes [#1638](https://github.com/device-management-toolkit/rpc-go/issues/1638)
+
 # [3.0.0-beta.76](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.75...v3.0.0-beta.76) (2026-10-27)
 
 
