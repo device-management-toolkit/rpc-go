@@ -143,6 +143,9 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 
 		switch len(got) {
 		case 1:
+			// Something else keeps the password current meanwhile.
+			po.globalPassword = "new-pass"
+
 			return utils.AMTAuthenticationFailed
 		case 2:
 			return errors.New("connection reset while AMT settles")
@@ -153,10 +156,10 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 
 	require.NoError(t, po.executeWithPasswordFallback(step))
 
-	// Initial call with the stale password, the post-rotation call, then the
-	// settle retry: both later calls must see the rotated password.
+	// The settle retries read the current password at each call; a 401 in the
+	// settle window does not rotate.
 	require.Equal(t, []string{"stale-pass", "new-pass", "new-pass"}, got)
-	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}, *rotations)
+	require.Empty(t, *rotations)
 }
 
 // TestExecuteProfile_HidesStepCodes pins that ExecuteProfile hides every
