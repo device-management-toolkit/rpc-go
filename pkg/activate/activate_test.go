@@ -99,13 +99,6 @@ func failedOnAMTAccess(err error) bool {
 		errors.Is(err, utils.AmtNotDetected)
 }
 
-// missingExecutable is an rpc path that does not exist, so no test can run a real binary.
-func missingExecutable(t *testing.T) string {
-	t.Helper()
-
-	return filepath.Join(t.TempDir(), "rpc")
-}
-
 func TestHECIAbsent(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -178,8 +171,6 @@ func TestRequireReachedAMT_SkipsWithoutCallingWhenAMTIsReachable(t *testing.T) {
 }
 
 func TestValidOptionsReachAMT(t *testing.T) {
-	executable := missingExecutable(t)
-
 	tests := []struct {
 		name string
 		call func() error
@@ -209,24 +200,24 @@ func TestValidOptionsReachAMT(t *testing.T) {
 			return Remote(RemoteOptions{URL: "WS://rps.example.com/activate", Profile: "ccm", Proxy: "http://proxy.example.com:8080"})
 		}},
 		{"Profile file", func() error {
-			return Profile(ProfileOptions{File: "profiles/acm.yaml", Executable: executable})
+			return Profile(ProfileOptions{File: "profiles/acm.yaml"})
 		}},
 		{"Profile bare file name", func() error {
 			// The command would take a bare name as an RPS profile name and reject it without a ws(s) URL.
-			return Profile(ProfileOptions{File: "acm", Executable: executable})
+			return Profile(ProfileOptions{File: "acm"})
 		}},
 		{"Profile file with Console", func() error {
 			return Profile(ProfileOptions{
-				File: "profiles/acm.yaml", Key: "key", Executable: executable,
+				File: "profiles/acm.yaml", Key: "key",
 				AuthEndpoint: authEndpoint, AuthToken: "token",
 			})
 		}},
 		{"Profile URL", func() error {
-			return Profile(ProfileOptions{URL: profileURL, AuthToken: "token", Executable: executable})
+			return Profile(ProfileOptions{URL: profileURL, AuthToken: "token"})
 		}},
 		{"Profile URL with an auth endpoint relative to the URL", func() error {
 			return Profile(ProfileOptions{
-				URL: profileURL, Executable: executable,
+				URL:          profileURL,
 				AuthEndpoint: "/api/v1/authorize", AuthUsername: "user", AuthPassword: "pass",
 			})
 		}},
@@ -242,8 +233,6 @@ func TestValidOptionsReachAMT(t *testing.T) {
 }
 
 func TestInvalidOptionsRejectedBeforeAMTAccess(t *testing.T) {
-	executable := missingExecutable(t)
-
 	tests := []struct {
 		name    string
 		call    func() error
@@ -313,31 +302,26 @@ func TestInvalidOptionsRejectedBeforeAMTAccess(t *testing.T) {
 		},
 		{
 			name:    "Profile without file or URL",
-			call:    func() error { return Profile(ProfileOptions{Executable: executable}) },
+			call:    func() error { return Profile(ProfileOptions{}) },
 			wantErr: "exactly one of File and URL must be set",
 		},
 		{
 			name: "Profile with file and URL",
 			call: func() error {
-				return Profile(ProfileOptions{File: "acm.yaml", URL: profileURL, Executable: executable})
+				return Profile(ProfileOptions{File: "acm.yaml", URL: profileURL})
 			},
 			wantErr: "exactly one of File and URL must be set",
 		},
 		{
 			name:    "Profile with WebSocket URL",
-			call:    func() error { return Profile(ProfileOptions{URL: rpsURL, Executable: executable}) },
+			call:    func() error { return Profile(ProfileOptions{URL: rpsURL}) },
 			wantErr: "unsupported url scheme: " + rpsURL,
-		},
-		{
-			name:    "Profile without executable",
-			call:    func() error { return Profile(ProfileOptions{File: "acm.yaml"}) },
-			wantErr: "missing Executable",
 		},
 		{
 			name: "Profile file with relative auth endpoint",
 			call: func() error {
 				return Profile(ProfileOptions{
-					File: "acm.yaml", Executable: executable, AuthEndpoint: "/api/v1/authorize", AuthToken: "token",
+					File: "acm.yaml", AuthEndpoint: "/api/v1/authorize", AuthToken: "token",
 				})
 			},
 			wantErr: "AuthEndpoint must be an absolute HTTP(S) URL",
@@ -345,7 +329,7 @@ func TestInvalidOptionsRejectedBeforeAMTAccess(t *testing.T) {
 		{
 			name: "Profile with username but no password",
 			call: func() error {
-				return Profile(ProfileOptions{URL: profileURL, Executable: executable, AuthUsername: "user"})
+				return Profile(ProfileOptions{URL: profileURL, AuthUsername: "user"})
 			},
 			wantErr: "--auth-username requires --auth-password",
 		},
@@ -456,7 +440,6 @@ func TestNewProfileCommand_MapsOptions(t *testing.T) {
 	cmd, ctx := newProfileCommand(ProfileOptions{
 		URL:              profileURL,
 		Key:              "key",
-		Executable:       "/opt/rpc/rpc",
 		AMTPassword:      "amt-pass",
 		MEBxPassword:     "mebx-pass",
 		SkipAMTCertCheck: true,
@@ -475,7 +458,6 @@ func TestNewProfileCommand_MapsOptions(t *testing.T) {
 	assert.Equal(t, &internalact.ActivateCmd{
 		URL:          profileURL,
 		Key:          "key",
-		Executable:   "/opt/rpc/rpc",
 		MEBxPassword: "mebx-pass",
 		UUID:         deviceUUID,
 		Hostname:     "10.0.0.5",
@@ -512,9 +494,9 @@ func TestNewProfileCommand_FileIsAlwaysAPath(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.name, func(t *testing.T) {
-			cmd, _ := newProfileCommand(ProfileOptions{File: tt.file, Executable: "/opt/rpc/rpc"})
+			cmd, _ := newProfileCommand(ProfileOptions{File: tt.file})
 
-			assert.Equal(t, &internalact.ActivateCmd{Profile: tt.wantProfile, Executable: "/opt/rpc/rpc"}, cmd)
+			assert.Equal(t, &internalact.ActivateCmd{Profile: tt.wantProfile}, cmd)
 		})
 	}
 }

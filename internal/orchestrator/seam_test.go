@@ -27,7 +27,6 @@ func TestFailureCode(t *testing.T) {
 		wantOK   bool
 	}{
 		{name: "nil", err: nil, wantCode: 0, wantOK: false},
-		{name: "exec error", err: &ExecError{ExitCode: 100, Err: errors.New("exit status 100")}, wantCode: 100, wantOK: true},
 		{name: "custom error", err: utils.AMTAuthenticationFailed, wantCode: utils.AMTAuthenticationFailed.Code, wantOK: true},
 		{name: "wrapped custom error", err: fmt.Errorf("x: %w", utils.DeviceNotActivated), wantCode: utils.DeviceNotActivated.Code, wantOK: true},
 		{name: "plain error", err: errors.New("boom"), wantCode: 0, wantOK: false},
@@ -50,7 +49,8 @@ func TestHideStepCode(t *testing.T) {
 		err  error
 	}{
 		{name: "custom error", err: utils.AMTAuthenticationFailed},
-		{name: "wrapped exec error", err: fmt.Errorf("step: %w", authExecError())},
+		{name: "wrapped custom error", err: fmt.Errorf("step: %w", utils.AMTAuthenticationFailed)},
+		{name: "plain error", err: errors.New("boom")},
 	}
 
 	for _, tt := range tests {
@@ -61,9 +61,6 @@ func TestHideStepCode(t *testing.T) {
 
 			var customErr utils.CustomError
 			require.False(t, errors.As(hidden, &customErr), "CustomError must not be reachable")
-
-			var execErr *ExecError
-			require.False(t, errors.As(hidden, &execErr), "*ExecError must not be reachable")
 
 			_, ok := failureCode(hidden)
 			require.False(t, ok)
@@ -88,8 +85,6 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
 	po := NewProfileOrchestrator(cfg, "old-pass", "", true)
-	mock := newMockExecutor()
-	po.executor = mock
 	po.currentControlMode = 1
 	po.globalPassword = "stale-pass"
 
@@ -109,15 +104,11 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	require.Equal(t, []string{"stale-pass", "new-pass"}, got)
 	require.Equal(t, "new-pass", po.globalPassword)
 
-	// The rotation runs in-process; nothing reaches the executor.
-	require.Equal(t, 0, mock.callCount)
 	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", true)}, *rotations)
 }
 
 func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
 	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
@@ -131,24 +122,6 @@ func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
 	err := po.executeWithPasswordFallback(step)
 	require.ErrorIs(t, err, utils.DeviceNotActivated)
 	require.Equal(t, 1, calls)
-	require.Equal(t, 0, mock.callCount)
-}
-
-func TestExecStep_PasswordFromArgumentOverridesStaleEnv(t *testing.T) {
-	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-
-	extra := map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}
-	step := po.execStep([]string{"rpc", "amtinfo"}, extra)
-
-	require.NoError(t, step("fresh"))
-	require.NoError(t, step(""))
-
-	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMEBXPassword: "mps"}, mock.executedEnv[0])
-	require.Equal(t, map[string]string{envMEBXPassword: "mps"}, mock.executedEnv[1])
-	// The caller's map is not mutated.
-	require.Equal(t, map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}, extra)
 }
 
 func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
@@ -158,8 +131,6 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
 	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 1
 	po.activatedThisRun = true
 	po.settleDelaySeconds = 0
@@ -185,7 +156,6 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 	// Initial call with the stale password, the post-rotation call, then the
 	// settle retry: both later calls must see the rotated password.
 	require.Equal(t, []string{"stale-pass", "new-pass", "new-pass"}, got)
-	require.Equal(t, 0, executor.callCount, "nothing reaches the executor")
 	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}, *rotations)
 }
 
@@ -193,8 +163,7 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 // step's failure code, so a failed profile run exits with the generic code.
 // Rows that reach the configuration steps pay the 1s initial utils.Pause
 // (no seam); activation and password verification fail before it. Each row
-// fails through the stubbed call its token names; nothing reaches the
-// executor.
+// fails through the stubbed call its token names.
 func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 	stepErr := func(details string) error {
 		return utils.CustomError{Code: utils.WSMANMessageError.Code, Message: utils.WSMANMessageError.Message, Details: details}
@@ -338,12 +307,9 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
 			activations := stubActivator(po, inProcessErrs["activate"])
-			executor := newMockExecutor()
-			po.SetExecutor(executor)
 
 			err := po.ExecuteProfile()
 			require.Error(t, err)
-			require.Equal(t, 0, executor.callCount, "nothing reaches the executor")
 
 			failed := map[string]bool{
 				"activate":    len(*activations) > 0,
@@ -362,9 +328,6 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 
 			var customErr utils.CustomError
 			require.False(t, errors.As(err, &customErr), "CustomError must not be reachable: %v", err)
-
-			var execErr *ExecError
-			require.False(t, errors.As(err, &execErr), "*ExecError must not be reachable: %v", err)
 
 			require.Contains(t, err.Error(), tt.err.Error())
 

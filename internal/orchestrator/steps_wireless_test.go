@@ -181,15 +181,12 @@ func TestExecuteWirelessConfigurations_MapsOptions(t *testing.T) {
 				calls := stubConfigureWireless(t)
 
 				po := NewProfileOrchestrator(wirelessProfileConfig(tt.profiles...), "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
 				require.NoError(t, po.executeWirelessConfigurations())
 
 				require.Equal(t, tt.want("current-pass", skip), *calls)
-				require.Equal(t, 0, executor.callCount, "the wireless step must not run the CLI")
 			})
 		}
 	}
@@ -201,7 +198,6 @@ func TestExecuteWirelessConfigurations_Logs(t *testing.T) {
 		stubConfigureWireless(t)
 
 		po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-		po.executor = newMockExecutor()
 
 		require.NoError(t, po.executeWirelessConfigurations())
 
@@ -214,7 +210,6 @@ func TestExecuteWirelessConfigurations_Logs(t *testing.T) {
 		stubConfigureWireless(t)
 
 		po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "", "", false)
-		po.executor = newMockExecutor()
 
 		require.NoError(t, po.executeWirelessConfigurations())
 
@@ -228,14 +223,11 @@ func TestExecuteWirelessConfigurations_PurgeFailureStops(t *testing.T) {
 	calls := stubConfigureWireless(t, errors.New("purge broke"))
 
 	po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 
 	err := po.executeWirelessConfigurations()
 	require.EqualError(t, err, "wireless purge failed: purge broke")
 
 	require.Equal(t, []configure.WirelessOptions{wirelessPurgeOpts("admin-pass", false)}, *calls)
-	require.Equal(t, 0, executor.callCount)
 }
 
 func TestExecuteWirelessConfigurations_RejectsBeforeCall(t *testing.T) {
@@ -294,8 +286,6 @@ func TestExecuteWirelessConfigurations_RejectsBeforeCall(t *testing.T) {
 			tt.profile(&profile)
 
 			po := NewProfileOrchestrator(wirelessProfileConfig(profile), "", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 			po.currentControlMode = 2
 			po.globalPassword = "current-pass"
 
@@ -304,7 +294,6 @@ func TestExecuteWirelessConfigurations_RejectsBeforeCall(t *testing.T) {
 
 			require.Equal(t, []configure.WirelessOptions{wirelessPurgeOpts("current-pass", false)}, *calls,
 				"the profile's pkg call must not run")
-			require.Equal(t, 0, executor.callCount)
 		})
 	}
 }
@@ -314,8 +303,6 @@ func TestExecuteWirelessConfigurations_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureWireless(t, nil, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -328,7 +315,6 @@ func TestExecuteWirelessConfigurations_AuthFailureRotates(t *testing.T) {
 		pskWirelessOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteWirelessConfigurations_PurgeAuthFailureRotates(t *testing.T) {
@@ -336,8 +322,6 @@ func TestExecuteWirelessConfigurations_PurgeAuthFailureRotates(t *testing.T) {
 	calls := stubConfigureWireless(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "old-pass", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -349,7 +333,6 @@ func TestExecuteWirelessConfigurations_PurgeAuthFailureRotates(t *testing.T) {
 		wirelessPurgeOpts("admin-pass", false),
 		pskWirelessOpts("admin-pass", false),
 	}, *calls)
-	require.Equal(t, 0, executor.callCount)
 }
 
 func TestExecuteWirelessConfigurations_SettleRetry(t *testing.T) {
@@ -357,8 +340,6 @@ func TestExecuteWirelessConfigurations_SettleRetry(t *testing.T) {
 		calls := stubConfigureWireless(t, nil, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -371,15 +352,12 @@ func TestExecuteWirelessConfigurations_SettleRetry(t *testing.T) {
 			pskWirelessOpts("admin-pass", false),
 			pskWirelessOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureWireless(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(wirelessProfileConfig(pskWirelessProfile()), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -387,6 +365,5 @@ func TestExecuteWirelessConfigurations_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeWirelessConfigurations(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }

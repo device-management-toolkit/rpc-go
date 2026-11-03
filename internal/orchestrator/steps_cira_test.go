@@ -129,8 +129,6 @@ func TestExecuteCIRAConfiguration_MapsOptions(t *testing.T) {
 				cfg.Configuration.AMTSpecific.CIRA.EnvironmentDetection = tt.envDetection
 
 				po := NewProfileOrchestrator(cfg, "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
@@ -142,7 +140,6 @@ func TestExecuteCIRAConfiguration_MapsOptions(t *testing.T) {
 				want.EnvironmentDetection = tt.wantEnvDetection
 
 				require.Equal(t, []configure.CIRAOptions{want}, *calls)
-				require.Equal(t, 0, executor.callCount, "the CIRA step must not run the CLI")
 			})
 		}
 	}
@@ -170,13 +167,10 @@ func TestExecuteCIRAConfiguration_SkipsWhenNotConfigured(t *testing.T) {
 			cfg.Configuration.AMTSpecific.CIRA.MPSPassword = "mps-secret"
 
 			po := NewProfileOrchestrator(cfg, "pwd", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 
 			require.NoError(t, po.executeCIRAConfiguration())
 
 			require.Empty(t, *calls)
-			require.Equal(t, 0, executor.callCount)
 			require.True(t, loggedMessage(hook, "No CIRA configuration specified, skipping"))
 		})
 	}
@@ -187,8 +181,6 @@ func TestExecuteCIRAConfiguration_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureCIRA(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(ciraProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -200,7 +192,6 @@ func TestExecuteCIRAConfiguration_AuthFailureRotates(t *testing.T) {
 		ciraOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteCIRAConfiguration_SettleRetry(t *testing.T) {
@@ -208,8 +199,6 @@ func TestExecuteCIRAConfiguration_SettleRetry(t *testing.T) {
 		calls := stubConfigureCIRA(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(ciraProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -221,15 +210,12 @@ func TestExecuteCIRAConfiguration_SettleRetry(t *testing.T) {
 			ciraOpts("admin-pass", false),
 			ciraOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureCIRA(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(ciraProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -237,6 +223,5 @@ func TestExecuteCIRAConfiguration_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeCIRAConfiguration(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }

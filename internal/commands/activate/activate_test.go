@@ -996,11 +996,11 @@ func TestActivateCmd_Run_ProfileFileSkipsPasswordPrompt(t *testing.T) {
 }
 
 func TestActivateCmd_Run_ProfileFileDoesNotOpenParentWSMAN(t *testing.T) {
-	// Regression: the profile fullflow orchestrates AMT operations in subprocesses,
-	// each of which opens its own LME/MEI handle. If the parent opens a WSMAN/LME
+	// Regression: the profile fullflow runs AMT operations in orchestrator steps,
+	// each of which opens its own LME/MEI handle. If the command opens a WSMAN/LME
 	// handle here (via EnsureWSMAN) it holds /dev/mei0 across ExecuteProfile and every
-	// subprocess fails with EBUSY ("mei connect busy" → "device or resource busy").
-	// A password being available in ctx must NOT cause the parent to open a handle
+	// step fails with EBUSY ("mei connect busy" → "device or resource busy").
+	// A password being available in ctx must NOT cause the command to open a handle
 	// when the target is a profile file.
 	spy := &MockPasswordReaderSpy{}
 	origPR := utils.PR
