@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,6 +28,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+func TestStatusCmd_BeforeApplyQuietsSetupLogs(t *testing.T) {
+	cmd := &StatusCmd{}
+
+	require.NoError(t, cmd.BeforeApply())
+	assert.True(t, cmd.SkipWSMANSetup)
+	assert.True(t, cmd.QuietSetupLogs)
+}
 
 func TestEvaluateVerdict(t *testing.T) {
 	tests := []struct {
@@ -353,6 +362,42 @@ func TestRedirectionStateDoesNotImplyKVMEnabled(t *testing.T) {
 	assert.Equal(t, checkPass, redirectionCheck(snapshot).Status)
 	assert.Equal(t, checkPass, solCheck(snapshot).Status)
 	assert.Equal(t, checkWarn, kvmCheck(snapshot).Status)
+}
+
+func TestKVMEnabledButOfflineReadiness(t *testing.T) {
+	for _, listener := range []bool{true, false} {
+		t.Run(fmt.Sprintf("listener=%t", listener), func(t *testing.T) {
+			snapshot := &commands.PostActivationSnapshot{
+				KVMRead: true, KVMState: "enabled but offline", KVMEnabledState: 6,
+				RedirectionRead: true, RedirectionState: "32768", RedirectionListenerEnabled: listener,
+			}
+			check := kvmCheck(snapshot)
+			assert.Equal(t, checkPass, check.Status)
+			assert.Contains(t, check.Message, "an active KVM session is not verified")
+			verdict := EvaluateVerdict([]Check{
+				{ID: checkIDWSMAN, Status: checkPass},
+				redirectionCheck(snapshot), solCheck(snapshot), check,
+			})
+			if listener {
+				assert.Equal(t, resultReady, verdict.Result)
+				assert.True(t, verdict.ReadyForManagement)
+			} else {
+				assert.Equal(t, resultNotReady, verdict.Result)
+				assert.False(t, verdict.ReadyForManagement)
+			}
+		})
+	}
+}
+
+func TestKVMUnsupportedStateIncludesRawValue(t *testing.T) {
+	check := kvmCheck(&commands.PostActivationSnapshot{
+		KVMRead: true, KVMState: "unknown", KVMEnabledState: 999,
+	})
+	assert.Equal(t, checkUnavailable, check.Status)
+	assert.Contains(t, check.Message, "EnabledState 999")
+	assert.Equal(t, resultUnknown, EvaluateVerdict([]Check{
+		{ID: checkIDWSMAN, Status: checkPass}, check,
+	}).Result)
 }
 
 func TestKVMOnlyConfigurationIsReadyWhenSOLAndIDERAreDisabled(t *testing.T) {

@@ -38,6 +38,7 @@ func (cmd *StatusCmd) RequiresAMTPassword() bool { return false }
 
 func (cmd *StatusCmd) BeforeApply() error {
 	cmd.SkipWSMANSetup = true
+	cmd.QuietSetupLogs = true
 
 	return nil
 }

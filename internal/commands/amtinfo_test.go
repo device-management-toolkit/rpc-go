@@ -23,7 +23,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/amterror"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/managementpresence"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/redirection"
+	cimkvm "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/kvm"
 	ipshttp "github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/http"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/optin"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
@@ -36,6 +39,38 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+func TestPostActivationSnapshotPreservesKVMState(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		state cimkvm.EnabledState
+		want  string
+	}{
+		{"enabled", cimkvm.EnabledStateEnabled, "enabled"},
+		{"disabled", cimkvm.EnabledStateDisabled, "disabled"},
+		{"enabled but offline", cimkvm.EnabledStateEnabledButOffline, "enabled but offline"},
+		{"unknown", cimkvm.EnabledStateUnknown, "unknown"},
+		{"unsupported", cimkvm.EnabledState(999), "unknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			wsman := mock.NewMockWSMANer(ctrl)
+			wsman.EXPECT().GetKVMRedirectionSAP().Return(cimkvm.Response{Body: cimkvm.Body{
+				GetResponse: cimkvm.KVMRedirectionSAP{EnabledState: test.state, RequestedState: 2},
+			}}, nil)
+			wsman.EXPECT().GetRedirectionService().Return(redirection.Response{}, nil)
+			wsman.EXPECT().GetIpsOptInService().Return(optin.Response{}, nil)
+			service := NewInfoService(nil, WithWSMANClient(wsman))
+			snapshot := &PostActivationSnapshot{}
+
+			service.collectPostActivationSnapshot(snapshot, "", "", true)
+
+			assert.True(t, snapshot.KVMRead)
+			assert.Equal(t, test.want, snapshot.KVMState)
+			assert.Equal(t, int(test.state), snapshot.KVMEnabledState)
+		})
+	}
+}
 
 func TestAmtInfoCmd_Run(t *testing.T) {
 	tests := []struct {
