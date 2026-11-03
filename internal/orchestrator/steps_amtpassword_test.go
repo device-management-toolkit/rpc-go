@@ -94,13 +94,10 @@ func TestChangeAMTPassword_MapsOptions(t *testing.T) {
 			calls := stubChangeAMTPassword(t)
 
 			po := NewProfileOrchestrator(config.Configuration{}, "", "", skip)
-			executor := newMockExecutor()
-			po.executor = executor
 
 			require.NoError(t, po.changeAMTPassword("old-pass", "new-pass"))
 
 			require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", skip)}, *calls)
-			require.Equal(t, 0, executor.callCount, "the password change must not run the CLI")
 		})
 	}
 }

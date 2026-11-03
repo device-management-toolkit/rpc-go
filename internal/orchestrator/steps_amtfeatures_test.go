@@ -146,15 +146,12 @@ func TestExecuteAMTFeaturesConfiguration_MapsOptions(t *testing.T) {
 				cfg.Configuration.Redirection.Services.IDER = tt.ider
 
 				po := NewProfileOrchestrator(cfg, "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
 				require.NoError(t, po.executeAMTFeaturesConfiguration())
 
 				require.Equal(t, []configure.AMTFeaturesOptions{tt.want(skip)}, *calls)
-				require.Equal(t, 0, executor.callCount, "the AMT features step must not run the CLI")
 			})
 		}
 	}
@@ -166,13 +163,10 @@ func TestExecuteAMTFeaturesConfiguration_AlwaysRuns(t *testing.T) {
 	calls := stubSetAMTFeatures(t)
 
 	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 
 	require.NoError(t, po.executeAMTFeaturesConfiguration())
 
 	require.Len(t, *calls, 1)
-	require.Equal(t, 0, executor.callCount)
 	require.True(t, loggedMessage(hook, "Executing AMT features configuration"))
 }
 
@@ -181,8 +175,6 @@ func TestExecuteAMTFeaturesConfiguration_AuthFailureRotates(t *testing.T) {
 	calls := stubSetAMTFeatures(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(amtFeaturesProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -194,7 +186,6 @@ func TestExecuteAMTFeaturesConfiguration_AuthFailureRotates(t *testing.T) {
 		amtFeaturesOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteAMTFeaturesConfiguration_SettleRetry(t *testing.T) {
@@ -202,8 +193,6 @@ func TestExecuteAMTFeaturesConfiguration_SettleRetry(t *testing.T) {
 		calls := stubSetAMTFeatures(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(amtFeaturesProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -215,15 +204,12 @@ func TestExecuteAMTFeaturesConfiguration_SettleRetry(t *testing.T) {
 			amtFeaturesOpts("admin-pass", false),
 			amtFeaturesOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubSetAMTFeatures(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(amtFeaturesProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -231,6 +217,5 @@ func TestExecuteAMTFeaturesConfiguration_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeAMTFeaturesConfiguration(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }

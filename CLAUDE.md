@@ -8,7 +8,7 @@ Canonical guide for AI coding assistants working on the `main` (v3.x) branch of 
 
 **This file is the v3 (`main`) guide. It is not accurate for the `2.x.x` maintenance branch.**
 
-- **`main` — v3.0.0 beta (this file).** Refactored around Kong CLI, a `commands/` package hierarchy, the **`orchestrator/` subprocess driver**, and the new RESTful profile-export activation flow. Publishes to the `beta` channel.
+- **`main` — v3.0.0 beta (this file).** Refactored around Kong CLI, a `commands/` package hierarchy, the **in-process `orchestrator/` profile driver**, and the new RESTful profile-export activation flow. Publishes to the `beta` channel.
 - **`2.x.x` — v2.x maintenance.** Different architecture: flat `internal/flags/` parser, `cleanenv` for config, no `commands/`/`orchestrator/` packages, legacy ws/wss-only remote activation. That branch will get its own `CLAUDE.md`; do not port v3 guidance there and do not port v2 patterns here.
 
 When in doubt about which branch you're on: `go.mod` declares module `github.com/device-management-toolkit/rpc-go/v2` on both (the major in the module path is historical and will not be bumped for v3). The discriminators are package layout (`internal/commands/`, `internal/orchestrator/`, `internal/cli/cli.go` with Kong) and `v3.0-changes.md` at the repo root.
@@ -18,7 +18,7 @@ When in doubt about which branch you're on: `go.mod` declares module `github.com
 Remote Provisioning Client (RPC) is a single-binary tool — and optional C-shared library — that activates, configures, deactivates, and reports on Intel® AMT devices. It runs **on the managed device itself**, talking to AMT firmware locally through the HECI/MEI driver (admin/root required), and optionally to a remote server (RPS or Console) for orchestration or profile delivery. Same binary, three deployment shapes:
 
 - **Local CLI:** `rpc <command>` on the target device. Default invocation with no command runs `amtinfo`.
-- **Subprocess orchestrator:** the same binary re-invokes itself (`rpc activate --acm …`, `rpc configure cira …`, …) to execute a multi-step profile end-to-end. See [Profile orchestration](#profile-orchestration-the-subprocess-model).
+- **Profile orchestrator:** the same binary runs a multi-step profile end-to-end (activation, then each `configure` step) in one process. See [Profile orchestration](#profile-orchestration).
 - **C-shared library:** `cmd/rpc/lib.go` exports `rpcExec` and `rpcCheckAccess` for embedding in C/C++/.NET/etc. consumers (`go build -buildmode=c-shared`).
 
 **v3 is a breaking release.** Three things changed at the surface (full detail in `v3.0-changes.md`):
@@ -32,7 +32,7 @@ Activation has three distinct code paths and the flag combinations choose betwee
 | Mode | Trigger | Code path | What rpc-go does |
 |---|---|---|---|
 | **Legacy remote (RPS)** | `--url wss://…` + `--profile <name>` | `internal/rps/` | Opens WebSocket to RPS; RPS sends WSMAN messages, rpc-go relays them to AMT. rpc-go is a dumb pipe. |
-| **HTTP profile fullflow** | `--url https://…/api/v1/admin/profiles/export/<name>` | `internal/profile/fetcher.go` + `internal/orchestrator/` | rpc-go authenticates, fetches the encrypted profile, decrypts, registers the device with Console, then orchestrates the steps itself by re-invoking `rpc <subcmd>`. |
+| **HTTP profile fullflow** | `--url https://…/api/v1/admin/profiles/export/<name>` | `internal/profile/fetcher.go` + `internal/orchestrator/` | rpc-go authenticates, fetches the encrypted profile, decrypts, registers the device with Console, then orchestrates the steps itself, in-process. |
 | **Local profile file** | `--profile path/to/profile.yaml` (with `--key` if encrypted) | `internal/profile/local.go` + `internal/orchestrator/` | Same orchestrator as HTTP fullflow, but the profile is loaded from disk. |
 | **Local direct** | `--local --ccm` / `--local --acm` (no profile) | `internal/commands/activate/local.go` | Direct single-step activation using flags. No orchestrator. |
 
@@ -172,9 +172,9 @@ internal/commands/             // every CLI verb lives here
   │       proxy.go / synchostname.go
   └─ diagnostics/              // diagnostics (alias: diag)
 
-internal/orchestrator/         // profile driver — re-invokes the rpc binary per step
+internal/orchestrator/         // profile driver — runs each step in-process
   ├─ orchestrator.go           //   ProfileOrchestrator.ExecuteProfile()
-  └─ executor.go               //   CLIExecutor (exec.Command-based) + ExecError + DirectExecutor (tests)
+  └─ steps.go                  //   pkg/configure calls the steps use (tests replace them)
 
 internal/profile/              // profile loading: local YAML, encrypted local, HTTP(S) fetch + auth
 internal/rps/                  // legacy WebSocket client to RPS (the ws/wss activation path)
@@ -239,31 +239,28 @@ Almost every command that touches AMT embeds `commands.AMTBaseCmd`. Its `AfterAp
 1. Aborts early with `utils.IncorrectPermissions` when not elevated (the outer `cli.Execute` then offers to self-elevate on interactive TTYs). Commands that tolerate missing privileges set `SkipWSMANSetup = true` and get a degraded path (this is how `amtinfo` works without root).
 2. Calls `amtCommand.GetControlMode()` with retries (4 attempts, 4s backoff) so transient HECI busyness doesn't fail the whole command.
 3. Reads `GetChangeEnabled()` to detect TLS-enforced local ports (`LocalTLSEnforced`); this changes how WSMAN clients are dialed downstream.
-4. Closes the MEI handle (`defer amtCommand.Close()`) — **holding it in the parent process blocks orchestrator subprocesses on Windows**, see comment in `orchestrator.go`.
+4. Closes the MEI handle (`defer amtCommand.Close()`) — **holding it blocks the orchestrator's steps, which each open their own handle, on Windows**, see comment in `orchestrator.go`.
 
 `AMTBaseCmd` does **not** set up the WSMAN client during `AfterApply` (we don't have the password yet). Instead each command's `Run` calls `EnsureAMTPassword(ctx, cmd)` (which prompts if needed, with confirm-on-typo when control mode 0) and then `EnsureWSMAN(ctx)` to lazily build the WSMAN client. `ConfigureBaseCmd.EnsureRuntime` is the standard helper that runs both. **Call it at the top of every new `configure` subcommand `Run`** — don't try to set up WSMAN earlier.
 
 Commands that conditionally need a password override `RequiresAMTPassword() bool` (e.g. `ActivateCmd` returns `false` when `--stopConfig` is set; `amtinfo` returns `false` unless `--userCert` is asked for).
 
-### Profile orchestration (the subprocess model)
+### Profile orchestration
 
-When activation is driven by a profile (HTTP fullflow or local file), `internal/orchestrator/orchestrator.go:ProfileOrchestrator.ExecuteProfile` runs the steps **by re-invoking the same `rpc` binary as a subprocess for each step** (`internal/orchestrator/executor.go:CLIExecutor`). The argv looks like `rpc --password <new> configure cira --mpsaddress … --mpscert …`.
+When activation is driven by a profile (HTTP fullflow or local file), `internal/orchestrator/orchestrator.go:ProfileOrchestrator.ExecuteProfile` runs the steps **in-process**: activation goes through the activator set with `SetActivator`, and each configuration step calls its `pkg/configure` function (`internal/orchestrator/steps.go`) with an options struct built from the profile. Steps do not read the process environment or `config.yaml`; the AMT password reaches each step through its options struct.
 
-This is unusual and intentional:
-
-- **Each step is isolated.** A WSMAN session leak, an AMT firmware quirk, or a HECI lock won't bleed into the next step.
-- **Failures are typed by exit code.** `ExecError.ExitCode` matches `utils.CustomError.Code` — the orchestrator gates retries on the code (e.g. `AMTAuthenticationFailed` triggers the password-rotation fallback in `executeWithPasswordFallback`). **Never substring-match subprocess output** — verbose Digest logs make that unreliable.
-- **Password rotation is interleaved.** Mid-orchestration, if a step authenticates and fails with `AMTAuthenticationFailed`, the orchestrator prompts (up to 3 attempts) for the current AMT password, calls `rpc configure amtpassword --password <old> --newamtpassword <new>`, and retries the original step.
+- **Each step opens its own connection.** Every `pkg/configure` call builds and closes its own AMT/WSMAN session, so a session from one step does not carry into the next.
+- **Failures are typed by `utils.CustomError` code.** `failureCode` reads the code with `errors.As` — the orchestrator gates retries on it (e.g. `AMTAuthenticationFailed` triggers the password rotation in `executeWithPasswordRotation`). **Never substring-match error text** — verbose Digest logs make that unreliable. A failed profile run exits with the generic failure code (10).
+- **Password rotation is interleaved.** Mid-orchestration, if a step fails with `AMTAuthenticationFailed`, the orchestrator prompts (up to 3 attempts) for the current AMT password, changes it to the profile's admin password with `configure.ChangeAMTPassword`, and retries the original step. Steps always get the current password from `po.stepPassword()`.
 - **Step order is fixed** (`ExecuteProfile` sequence): activation → MEBx → AMT features → wired → WiFi enable → wireless profiles (with `--purge` first) → TLS → CIRA → HTTP proxy. CIRA failures wrap `ErrCIRAConfiguration` so callers can clear the MPS password from Console on failure.
 
 When adding a new orchestrated step:
 
 1. Implement the underlying `configure <name>` subcommand the normal way (struct in `internal/commands/configure/`, validate, run, tests).
-2. Add an `executeXxx()` method on `ProfileOrchestrator` that calls `po.baseArgs()` then appends `"configure", "<name>", "--flag", value, …` and finishes with `po.executeWithPasswordFallback(args)`.
-3. Splice it into `ExecuteProfile()` in the correct position relative to AMT firmware dependencies.
-4. Test it with `DirectExecutor` (the test-only `CommandExecutor` that swallows args) — never shell out in unit tests.
-
-`baseArgs()` is the canonical argv prefix and already includes `--skip-amt-cert-check` and `--password` and propagates verbose. Use it.
+2. Expose it in `pkg/configure` with an options struct, and add the function to the variables in `internal/orchestrator/steps.go`.
+3. Add an `executeXxx()` method on `ProfileOrchestrator` that builds the options from the profile, wraps the call in a `stepFunc` that sets `BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}`, and finishes with `po.executeWithPasswordFallback(step)`.
+4. Splice it into `ExecuteProfile()` in the correct position relative to AMT firmware dependencies.
+5. Test it by replacing the `steps.go` variable with a recorder — never reach AMT in unit tests.
 
 ### Legacy RPS path (`internal/rps`)
 
@@ -300,7 +297,7 @@ The library exports `rpcExec(Input, **Output, **ErrOutput) int` and `rpcCheckAcc
 
 - **Never hand-author WSMAN XML.** All WSMAN goes through `github.com/device-management-toolkit/go-wsman-messages/v2`. Use the existing `internal/interfaces/WSMANer` seam and `internal/local/amt` adapter. If a needed message isn't in `go-wsman-messages`, **fix it upstream** rather than crafting raw XML here — `go-wsman-messages` is a sibling repo in the device-management-toolkit org and accepts contributions.
 - **Embed `AMTBaseCmd` on every command that touches AMT; embed `ConfigureBaseCmd` on every `configure` subcommand.** Don't try to set up the WSMAN client outside the documented `EnsureRuntime` / `EnsureAMTPassword` / `EnsureWSMAN` flow — you'll race with the lifecycle and break the test mocks.
-- **Don't substring-match subprocess output in the orchestrator.** Use `ExecError.ExitCode` (it matches `utils.CustomError.Code`). Add a new `utils.CustomError` if you need a new signal.
+- **Don't substring-match step errors in the orchestrator.** Use the `utils.CustomError` code (`failureCode`). Add a new `utils.CustomError` if you need a new signal.
 - **Keep the two activation paths cleanly separated.** `internal/rps/` is the legacy ws/wss path and must keep working. The HTTP-fullflow path lives in `internal/profile/`, `internal/orchestrator/`, and `internal/commands/activate/activate.go:runHttpProfileFullflow`. Don't fork them with shared mutable state; if you need shared helpers put them in `internal/device/` or `internal/profile/`.
 - **CLI tags and YAML keys must match.** `kong-yaml` looks up config keys by the flag's `name:` tag (or kebab-cased field name when `name:` is absent). When you rename a flag, audit `config.yaml`/`config.sample.yaml` and any `env:` tags in the same change — environment variables override YAML and CLI overrides both.
 - **Magic numbers and strings are linter-enforced.** `mnd` and `goconst` (≥3 occurrences, ≥2 chars) will catch the obvious cases. Constants live next to the consumer (e.g. `configure.RemoteTLSInstanceId`) or in `pkg/utils` when truly shared.

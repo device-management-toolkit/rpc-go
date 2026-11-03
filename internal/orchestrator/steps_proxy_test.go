@@ -103,8 +103,6 @@ func TestExecuteHTTPProxyConfiguration_MapsOptions(t *testing.T) {
 				cfg.Configuration.Network.Proxies = []config.Proxy{tt.proxy}
 
 				po := NewProfileOrchestrator(cfg, "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
@@ -114,7 +112,6 @@ func TestExecuteHTTPProxyConfiguration_MapsOptions(t *testing.T) {
 				want.BaseOptions = configure.BaseOptions{AMTPassword: "current-pass", SkipAMTCertCheck: skip}
 
 				require.Equal(t, []configure.ProxyOptions{want}, *calls)
-				require.Equal(t, 0, executor.callCount, "the proxy step must not run the CLI")
 			})
 		}
 	}
@@ -137,8 +134,6 @@ func TestExecuteHTTPProxyConfiguration_OneCallPerProxy(t *testing.T) {
 		calls := stubConfigureProxy(t)
 
 		po := NewProfileOrchestrator(twoProxies(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "current-pass"
 
@@ -148,7 +143,6 @@ func TestExecuteHTTPProxyConfiguration_OneCallPerProxy(t *testing.T) {
 			{BaseOptions: base, Address: "first.example.com", Port: 8080},
 			{BaseOptions: base, Address: "second.example.com", NetworkDnsSuffix: "corp.example.com"},
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the proxy step must not run the CLI")
 	})
 
 	t.Run("failure on the first stops the loop", func(t *testing.T) {
@@ -156,8 +150,6 @@ func TestExecuteHTTPProxyConfiguration_OneCallPerProxy(t *testing.T) {
 		calls := stubConfigureProxy(t, stepErr)
 
 		po := NewProfileOrchestrator(twoProxies(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "current-pass"
 
@@ -168,7 +160,6 @@ func TestExecuteHTTPProxyConfiguration_OneCallPerProxy(t *testing.T) {
 		require.Equal(t, []configure.ProxyOptions{
 			{BaseOptions: base, Address: "first.example.com", Port: 8080},
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the proxy step must not run the CLI")
 	})
 }
 
@@ -182,13 +173,10 @@ func TestExecuteHTTPProxyConfiguration_SkipsWhenNotConfigured(t *testing.T) {
 			cfg.Configuration.Network.Proxies = proxies
 
 			po := NewProfileOrchestrator(cfg, "pwd", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 
 			require.NoError(t, po.executeHTTPProxyConfiguration())
 
 			require.Empty(t, *calls)
-			require.Equal(t, 0, executor.callCount)
 			require.True(t, loggedMessage(hook, "No HTTP proxy configurations specified, skipping"))
 		})
 	}
@@ -199,8 +187,6 @@ func TestExecuteHTTPProxyConfiguration_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureProxy(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(proxyProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -212,7 +198,6 @@ func TestExecuteHTTPProxyConfiguration_AuthFailureRotates(t *testing.T) {
 		proxyOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteHTTPProxyConfiguration_SettleRetry(t *testing.T) {
@@ -220,8 +205,6 @@ func TestExecuteHTTPProxyConfiguration_SettleRetry(t *testing.T) {
 		calls := stubConfigureProxy(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(proxyProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -233,15 +216,12 @@ func TestExecuteHTTPProxyConfiguration_SettleRetry(t *testing.T) {
 			proxyOpts("admin-pass", false),
 			proxyOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureProxy(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(proxyProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -249,6 +229,5 @@ func TestExecuteHTTPProxyConfiguration_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeHTTPProxyConfiguration(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }

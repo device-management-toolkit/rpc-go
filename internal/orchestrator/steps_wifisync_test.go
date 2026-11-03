@@ -73,8 +73,6 @@ func TestExecuteEnableWiFi_MapsOptions(t *testing.T) {
 					cfg.Configuration.Network.Wireless.UEFIWiFiSyncEnabled = uefiSync
 
 					po := NewProfileOrchestrator(cfg, "", "", skip)
-					executor := newMockExecutor()
-					po.executor = executor
 					po.currentControlMode = 2
 					po.globalPassword = "current-pass"
 
@@ -85,7 +83,6 @@ func TestExecuteEnableWiFi_MapsOptions(t *testing.T) {
 						OSWiFiSync:   osSync,
 						UEFIWiFiSync: uefiSync,
 					}}, *calls)
-					require.Equal(t, 0, executor.callCount, "the wifisync step must not run the CLI")
 				})
 			}
 		}
@@ -99,13 +96,10 @@ func TestExecuteEnableWiFi_AlwaysRuns(t *testing.T) {
 	calls := stubConfigureWiFiSync(t)
 
 	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 
 	require.NoError(t, po.executeEnableWiFi())
 
 	require.Equal(t, []configure.WiFiSyncOptions{{}}, *calls)
-	require.Equal(t, 0, executor.callCount)
 	require.True(t, loggedMessage(hook, "Executing WiFi sync configuration"))
 }
 
@@ -114,8 +108,6 @@ func TestExecuteEnableWiFi_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureWiFiSync(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(wifiSyncProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -127,7 +119,6 @@ func TestExecuteEnableWiFi_AuthFailureRotates(t *testing.T) {
 		wifiSyncOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteEnableWiFi_SettleRetry(t *testing.T) {
@@ -135,8 +126,6 @@ func TestExecuteEnableWiFi_SettleRetry(t *testing.T) {
 		calls := stubConfigureWiFiSync(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(wifiSyncProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -148,15 +137,12 @@ func TestExecuteEnableWiFi_SettleRetry(t *testing.T) {
 			wifiSyncOpts("admin-pass", false),
 			wifiSyncOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureWiFiSync(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(wifiSyncProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -164,6 +150,5 @@ func TestExecuteEnableWiFi_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeEnableWiFi(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }
