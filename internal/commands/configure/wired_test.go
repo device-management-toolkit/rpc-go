@@ -8,8 +8,12 @@ package configure
 import (
 	"testing"
 
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/ips/ieee8021x"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
 func TestWiredCmd_Validate(t *testing.T) {
@@ -145,5 +149,57 @@ func TestWiredCmd_Run(t *testing.T) {
 		assert.NotEmpty(t, cmd.IEEE8021xPassword)
 		assert.Equal(t, 2, cmd.IEEE8021xAuthenticationProtocol)
 		assert.NotEmpty(t, cmd.IEEE8021xCACert)
+	})
+}
+
+func TestWiredCmd_Run_PortSelection(t *testing.T) {
+	dhcp := true
+
+	newCmd := func(w *mock.MockWSMANer) *WiredCmd {
+		return &WiredCmd{
+			ConfigureBaseCmd: ConfigureBaseCmd{AMTBaseCmd: commands.AMTBaseCmd{WSMan: w}},
+			DHCPEnabled:      &dhcp,
+		}
+	}
+
+	t.Run("wireless_only_device_skips_without_writing", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		// LAN-less device: the only port is the wireless NIC. Writing wired
+		// settings to it fails with e:UnsupportedFeature and aborts the profile.
+		mockWSMAN.EXPECT().GetEthernetSettings().Return([]ethernetport.SettingsResponse{
+			{InstanceID: wirelessPortInstanceID, MACAddress: "e0-d0-45-c2-fd-fd", PhysicalConnectionType: ethernetport.PhysicalConnectionWirelessLAN},
+		}, nil)
+
+		err := newCmd(mockWSMAN).Run(&commands.Context{AMTPassword: "test-pass"})
+		assert.NoError(t, err)
+	})
+
+	t.Run("targets_wired_port_not_first_entry", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+
+		mockWSMAN.EXPECT().GetEthernetSettings().Return([]ethernetport.SettingsResponse{
+			{InstanceID: wirelessPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-02", PhysicalConnectionType: ethernetport.PhysicalConnectionWirelessLAN},
+			{InstanceID: wiredPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-01"},
+		}, nil)
+		mockWSMAN.EXPECT().PutEthernetSettings(gomock.Any(), wiredPortInstanceID).Return(ethernetport.Response{}, nil)
+
+		var settings ieee8021x.Response
+		settings.Body.IEEE8021xSettingsResponse.Enabled = 3
+		mockWSMAN.EXPECT().GetIPSIEEE8021xSettings().Return(settings, nil)
+
+		err := newCmd(mockWSMAN).Run(&commands.Context{AMTPassword: "test-pass"})
+		assert.NoError(t, err)
+	})
+
+	t.Run("no_ports_is_an_error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockWSMAN := mock.NewMockWSMANer(ctrl)
+		mockWSMAN.EXPECT().GetEthernetSettings().Return(nil, nil)
+
+		err := newCmd(mockWSMAN).Run(&commands.Context{AMTPassword: "test-pass"})
+		assert.Error(t, err)
 	})
 }
