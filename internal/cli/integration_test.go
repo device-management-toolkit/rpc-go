@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/alecthomas/kong"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
@@ -19,6 +20,41 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
+
+func TestActivateTLSTunnelDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "enabled by default", want: true},
+		{name: "can be explicitly disabled", args: []string{"--tls-tunnel=false"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
+			mockAMT.EXPECT().GetControlMode().Return(0, nil).AnyTimes()
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+
+			cli := &CLI{}
+			cli.Activate.SkipWSMANSetup = true
+
+			parser, err := kong.New(cli, kong.BindToProvider(func() amt.Interface { return mockAMT }))
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			args := []string{"activate", "--url", "wss://rps.example", "--profile", "test-profile"}
+			args = append(args, tt.args...)
+			_, err = parser.Parse(args)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, cli.Activate.TLSTunnel)
+		})
+	}
+}
 
 // prMockSuccess returns a stable password to avoid prompting failures in tests
 type prMockSuccess struct{}

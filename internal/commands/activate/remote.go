@@ -33,7 +33,7 @@ type RemoteActivateCmd struct {
 	Proxy        string `help:"Proxy server URL for RPS connection" env:"PROXY" name:"proxy"`
 
 	// TLS tunnel support
-	TLSTunnel        bool `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
+	TLSTunnel        bool `help:"Enable end-to-end TLS tunneling through RPS (enabled by default)" name:"tls-tunnel" default:"true"`
 	LocalTLSEnforced bool `kong:"-"` // Detected from device, not a CLI flag
 
 	// Authentication to the remote server (optional for websockets today but reserved for future)
