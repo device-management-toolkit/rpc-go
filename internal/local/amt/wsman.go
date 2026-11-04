@@ -309,8 +309,12 @@ func isDialTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-// Close closes any open local transport connections
+// Close closes idle HTTP keep-alive connections and any open local transport connections
 func (g *GoWSMANMessages) Close() error {
+	if idle, ok := g.wsmanMessages.Client.(interface{ CloseIdleConnections() }); ok {
+		idle.CloseIdleConnections()
+	}
+
 	if g.localTransport != nil {
 		return g.localTransport.Close()
 	}
