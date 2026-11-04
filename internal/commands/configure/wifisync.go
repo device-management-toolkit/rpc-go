@@ -7,21 +7,43 @@ package configure
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	log "github.com/sirupsen/logrus"
 )
 
+// wirelessPortInstanceIDSuffix identifies the wireless NIC's
+// AMT_EthernetPortSettings instance ("Intel(r) AMT Ethernet Port Settings 1").
+const wirelessPortInstanceIDSuffix = "Port Settings 1"
+
 // hasWiFiHardware reports whether the device has a wireless adapter.
-// AMT convention: index 0 = wired, index 1 = wireless when present.
+//
+// The wireless port is matched by identity, not by position: a wireless-only
+// platform enumerates just the wireless entry at index 0. AMT 15+ reports
+// PhysicalConnectionType=Wireless LAN; older firmware is matched by InstanceID.
+// A port with no MAC address has no hardware bound to it.
 func hasWiFiHardware(w interfaces.WSMANer) (bool, error) {
 	ports, err := w.GetEthernetSettings()
 	if err != nil {
 		return false, err
 	}
 
-	return len(ports) >= 2 && ports[1].MACAddress != "", nil
+	for _, port := range ports {
+		if port.MACAddress == "" {
+			continue
+		}
+
+		if port.PhysicalConnectionType == ethernetport.PhysicalConnectionWirelessLAN ||
+			strings.HasSuffix(port.InstanceID, wirelessPortInstanceIDSuffix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // WifiSyncCmd represents WiFi port enablement
