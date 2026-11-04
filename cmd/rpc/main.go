@@ -39,15 +39,24 @@ func main() {
 
 func handleErrorAndExit(err error) {
 	if customErr, ok := customErrorFrom(err); ok {
-		if !errors.Is(err, utils.HelpRequested) {
+		if !errors.Is(err, utils.HelpRequested) && shouldLogError(err) {
 			log.Error(err.Error())
 		}
 
 		os.Exit(customErr.Code)
 	} else {
-		log.Error(err.Error())
+		if shouldLogError(err) {
+			log.Error(err.Error())
+		}
+
 		os.Exit(utils.GenericFailure.Code)
 	}
+}
+
+func shouldLogError(err error) bool {
+	var reported interface{ AlreadyReported() bool }
+
+	return !errors.As(err, &reported) || !reported.AlreadyReported()
 }
 
 func customErrorFrom(err error) (utils.CustomError, bool) {

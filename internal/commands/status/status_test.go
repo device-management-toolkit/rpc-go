@@ -93,6 +93,14 @@ func TestEvaluateVerdict(t *testing.T) {
 	}
 }
 
+func TestStatusCmdBeforeApplyQuietsSetupLogs(t *testing.T) {
+	cmd := &StatusCmd{}
+
+	require.NoError(t, cmd.BeforeApply())
+	assert.True(t, cmd.SkipWSMANSetup)
+	assert.True(t, cmd.QuietSetupLogs)
+}
+
 func TestPostActivationFailureVerdictUsesManagementWording(t *testing.T) {
 	verdict := EvaluateVerdict([]Check{
 		{ID: checkIDWSMAN, Status: checkPass},
@@ -260,6 +268,19 @@ func TestVerdictErrorUsesCustomExitCodes(t *testing.T) {
 	}
 }
 
+func TestReportedVerdictErrorKeepsExitCodeAndMarksRenderedOutput(t *testing.T) {
+	err := reportedVerdictError(Verdict{Result: resultUnknown, Status: "activated but unverified"})
+
+	var reported interface{ AlreadyReported() bool }
+	require.ErrorAs(t, err, &reported)
+	assert.True(t, reported.AlreadyReported())
+
+	var customErr utils.CustomError
+	require.ErrorAs(t, err, &customErr)
+	assert.Equal(t, utils.AmtStatusUnknown.Code, customErr.Code)
+	assert.Equal(t, "activated but unverified", customErr.Details)
+}
+
 func TestUnknownVerdictErrorsDoNotShareDetails(t *testing.T) {
 	firstErr := verdictError(Verdict{Result: resultUnknown, Status: "first failure"})
 	secondErr := verdictError(Verdict{Result: resultUnknown, Status: "second failure"})
@@ -373,6 +394,46 @@ func TestKVMOnlyConfigurationIsReadyWhenSOLAndIDERAreDisabled(t *testing.T) {
 	verdict := EvaluateVerdict(checks)
 	assert.Equal(t, resultReady, verdict.Result)
 	assert.True(t, verdict.ReadyForManagement)
+}
+
+func TestKVMEnabledButOfflineReadiness(t *testing.T) {
+	tests := []struct {
+		name             string
+		listenerEnabled  bool
+		wantResult       string
+		wantReadyForMgmt bool
+	}{
+		{name: "listener enabled", listenerEnabled: true, wantResult: resultReady, wantReadyForMgmt: true},
+		{name: "listener disabled", wantResult: resultNotReady},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := &commands.PostActivationSnapshot{
+				KVMRead: true, KVMState: stateEnabledButOffline, KVMEnabledState: int(cimkvm.EnabledStateEnabledButOffline),
+				RedirectionRead: true, RedirectionState: "32768", RedirectionListenerEnabled: test.listenerEnabled,
+			}
+			kvm := kvmCheck(snapshot)
+			assert.Equal(t, checkPass, kvm.Status)
+			assert.Contains(t, kvm.Message, "an active KVM session is not verified")
+
+			verdict := EvaluateVerdict([]Check{
+				{ID: checkIDWSMAN, Status: checkPass},
+				redirectionCheck(snapshot), solCheck(snapshot), kvm,
+			})
+			assert.Equal(t, test.wantResult, verdict.Result)
+			assert.Equal(t, test.wantReadyForMgmt, verdict.ReadyForManagement)
+		})
+	}
+}
+
+func TestKVMUnsupportedStateIncludesRawValue(t *testing.T) {
+	check := kvmCheck(&commands.PostActivationSnapshot{KVMRead: true, KVMState: "unknown", KVMEnabledState: 999})
+	assert.Equal(t, checkUnavailable, check.Status)
+	assert.Contains(t, check.Message, "EnabledState 999")
+	assert.Equal(t, resultUnknown, EvaluateVerdict([]Check{
+		{ID: checkIDWSMAN, Status: checkPass}, check,
+	}).Result)
 }
 
 func TestSOLCheckUsesRedirectionEnum(t *testing.T) {

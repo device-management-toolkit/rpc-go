@@ -31,6 +31,7 @@ var (
 const (
 	stateEnabled                   = "enabled"
 	stateDisabled                  = "disabled"
+	stateEnabledButOffline         = "enabled but offline"
 	directHostProbeTimeout         = 3 * time.Second
 	maxLegacyOperationalStateMajor = 11
 )
@@ -342,7 +343,7 @@ func redirectionCheck(snapshot *commands.PostActivationSnapshot) Check {
 
 		return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkFail, Message: message + "; listener is disabled"}
 	case int(redirection.IDERAndSOLAreDisabled):
-		if snapshot.KVMRead && strings.EqualFold(snapshot.KVMState, stateEnabled) && !snapshot.RedirectionListenerEnabled {
+		if snapshot.KVMRead && kvmEnabled(snapshot.KVMState) && !snapshot.RedirectionListenerEnabled {
 			return Check{ID: checkIDRedirection, Name: checkNameRedirection, Status: checkFail, Message: message + "; KVM cannot accept remote connections"}
 		}
 
@@ -433,6 +434,10 @@ func tlsRequiresTrustedRoots(mode string) bool {
 	}
 }
 
+func kvmEnabled(state string) bool {
+	return strings.EqualFold(state, stateEnabled) || strings.EqualFold(state, stateEnabledButOffline)
+}
+
 func kvmCheck(snapshot *commands.PostActivationSnapshot) Check {
 	if snapshot == nil || !snapshot.KVMRead {
 		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkUnavailable, Message: "KVM Redirection SAP state could not be read"}
@@ -441,10 +446,12 @@ func kvmCheck(snapshot *commands.PostActivationSnapshot) Check {
 	switch strings.ToLower(snapshot.KVMState) {
 	case stateEnabled:
 		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkPass, Message: "KVM is enabled"}
+	case stateEnabledButOffline:
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkPass, Message: fmt.Sprintf("KVM is enabled but offline (EnabledState %d); an active KVM session is not verified", snapshot.KVMEnabledState)}
 	case stateDisabled:
 		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkWarn, Message: "KVM is disabled"}
 	default:
-		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkUnavailable, Message: "KVM Redirection SAP returned an unknown state"}
+		return Check{ID: checkIDKVM, Name: checkNameKVM, Status: checkUnavailable, Message: fmt.Sprintf("KVM Redirection SAP returned an unknown or unsupported state (EnabledState %d)", snapshot.KVMEnabledState)}
 	}
 }
 

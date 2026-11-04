@@ -38,6 +38,7 @@ func (cmd *StatusCmd) RequiresAMTPassword() bool { return false }
 
 func (cmd *StatusCmd) BeforeApply() error {
 	cmd.SkipWSMANSetup = true
+	cmd.QuietSetupLogs = true
 
 	return nil
 }
@@ -64,7 +65,32 @@ func run(w io.Writer, cmd *StatusCmd, ctx *commands.Context) error {
 		return renderErr
 	}
 
-	return verdictError(result.Verdict)
+	return reportedVerdictError(result.Verdict)
+}
+
+func reportedVerdictError(verdict Verdict) error {
+	err := verdictError(verdict)
+	if err == nil {
+		return nil
+	}
+
+	return statusReportedError{err: err}
+}
+
+type statusReportedError struct {
+	err error
+}
+
+func (e statusReportedError) Error() string {
+	return e.err.Error()
+}
+
+func (e statusReportedError) Unwrap() error {
+	return e.err
+}
+
+func (statusReportedError) AlreadyReported() bool {
+	return true
 }
 
 func verdictError(verdict Verdict) error {

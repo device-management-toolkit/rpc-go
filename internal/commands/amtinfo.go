@@ -501,7 +501,9 @@ type InfoResult struct {
 	Warnings []string `json:"-"`
 }
 
-// InfoSnapshot combines the shared amtinfo result with optional WSMAN TLS data.
+// InfoSnapshot combines the shared amtinfo result with optional management-health
+// data: TLS mode, WSMAN availability, redirection, KVM, user consent, CIRA,
+// trusted-root inventory, and monitor detection.
 type InfoSnapshot struct {
 	Info                      *InfoResult
 	TLSMode                   string
@@ -527,6 +529,7 @@ type PostActivationSnapshot struct {
 	TLSModeRead                bool
 	KVMRead                    bool
 	KVMState                   string
+	KVMEnabledState            int
 	RedirectionRead            bool
 	RedirectionState           string
 	RedirectionListenerEnabled bool
@@ -1640,12 +1643,15 @@ func (s *InfoService) collectPostActivationSnapshot(snapshot *PostActivationSnap
 			}
 		} else {
 			snapshot.KVMRead = true
+			snapshot.KVMEnabledState = int(kvmResponse.Body.GetResponse.EnabledState)
 
 			switch int(kvmResponse.Body.GetResponse.EnabledState) {
 			case int(cimkvm.EnabledStateEnabled):
 				snapshot.KVMState = "enabled"
 			case int(cimkvm.EnabledStateDisabled):
 				snapshot.KVMState = "disabled"
+			case int(cimkvm.EnabledStateEnabledButOffline):
+				snapshot.KVMState = "enabled but offline"
 			default:
 				snapshot.KVMState = "unknown"
 			}
