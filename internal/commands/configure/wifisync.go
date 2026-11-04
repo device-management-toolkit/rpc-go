@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/amt/ethernetport"
-
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	log "github.com/sirupsen/logrus"
@@ -33,17 +32,19 @@ func hasWiFiHardware(w interfaces.WSMANer) (bool, error) {
 	}
 
 	for _, port := range ports {
-		if port.MACAddress == "" {
-			continue
-		}
-
-		if port.PhysicalConnectionType == ethernetport.PhysicalConnectionWirelessLAN ||
-			strings.HasSuffix(port.InstanceID, wirelessPortInstanceIDSuffix) {
+		if port.MACAddress != "" && isWirelessPort(port) {
 			return true, nil
 		}
 	}
 
 	return false, nil
+}
+
+// isWirelessPort reports whether an AMT_EthernetPortSettings entry is the
+// wireless NIC, by PhysicalConnectionType (AMT 15+) or InstanceID.
+func isWirelessPort(port ethernetport.SettingsResponse) bool {
+	return port.PhysicalConnectionType == ethernetport.PhysicalConnectionWirelessLAN ||
+		strings.HasSuffix(port.InstanceID, wirelessPortInstanceIDSuffix)
 }
 
 // WifiSyncCmd represents WiFi port enablement
