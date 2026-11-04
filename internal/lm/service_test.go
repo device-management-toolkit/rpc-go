@@ -100,16 +100,53 @@ func TestListen(t *testing.T) {
 	lms.Close() // should close client pipe
 }
 
-// TestListenTLSTimeoutNoData verifies that when useTls is true and the
-// first-byte read deadline expires before any bytes arrive, Listen sends
-// ErrLMSReadTimeoutNoData on the errors channel and does NOT push an empty
-// buffer onto the data channel.
-func TestListenTLSTimeoutNoData(t *testing.T) {
+// TestListenTLSStreamsChunksImmediately verifies that in TLS-tunnel mode Listen forwards
+// each chunk as soon as it is read instead of waiting for a silence gap, and keeps reading.
+func TestListenTLSStreamsChunksImmediately(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
 	defer server.Close()
 
-	data := make(chan []byte, 1)
+	data := make(chan []byte, 4)
+	errCh := make(chan error, 1)
+	lms := &LMSConnection{
+		Connection: server,
+		useTls:     true,
+		data:       data,
+		errors:     errCh,
+	}
+
+	go lms.Listen()
+
+	for _, chunk := range []string{"first", "second"} {
+		written := time.Now()
+
+		go func(c string) {
+			_, _ = client.Write([]byte(c))
+		}(chunk)
+
+		select {
+		case d := <-data:
+			assert.Equal(t, []byte(chunk), d)
+			assert.Less(t, time.Since(written), 500*time.Millisecond, "chunk must be forwarded without a silence wait")
+		case err := <-errCh:
+			t.Fatalf("unexpected error: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("chunk %q was not forwarded", chunk)
+		}
+
+		time.Sleep(300 * time.Millisecond) // longer than any former silence window; reader must still be alive
+	}
+}
+
+// TestListenTLSPeerCloseSignalsEmptyBuffer verifies that when AMT closes the tunnel
+// connection the reader delivers an empty buffer (the executor's connection_reset trigger)
+// and exits.
+func TestListenTLSPeerCloseSignalsEmptyBuffer(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+
+	data := make(chan []byte, 2)
 	errCh := make(chan error, 1)
 	lms := &LMSConnection{
 		Connection: server,
@@ -125,21 +162,61 @@ func TestListenTLSTimeoutNoData(t *testing.T) {
 		close(done)
 	}()
 
+	client.Close()
+
 	select {
-	case err := <-errCh:
-		assert.ErrorIs(t, err, ErrLMSReadTimeoutNoData)
 	case d := <-data:
-		t.Fatalf("expected ErrLMSReadTimeoutNoData on errors channel, got data: %v", d)
+		assert.Equal(t, 0, len(d))
+	case err := <-errCh:
+		t.Fatalf("expected empty data on peer close, got error: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("Listen did not return within timeout")
+		t.Fatal("peer close was not signalled")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Listen goroutine did not exit after peer close")
+	}
+}
+
+// TestListenTLSLocalCloseIsSilent verifies that a deliberate Close() (port switch, new
+// handshake, shutdown) ends the reader without signalling an error or a peer close.
+func TestListenTLSLocalCloseIsSilent(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+
+	data := make(chan []byte, 2)
+	errCh := make(chan error, 1)
+	lms := &LMSConnection{
+		Connection: server,
+		useTls:     true,
+		data:       data,
+		errors:     errCh,
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		lms.Listen()
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	assert.NoError(t, lms.Close())
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Listen goroutine did not exit after local close")
 	}
 
 	select {
 	case d := <-data:
-		t.Fatalf("expected no data, got: %v", d)
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Listen goroutine did not exit")
+		t.Fatalf("expected nothing on the data channel after a local close, got %v", d)
+	case err := <-errCh:
+		t.Fatalf("expected nothing on the errors channel after a local close, got %v", err)
+	default:
 	}
 }
 
