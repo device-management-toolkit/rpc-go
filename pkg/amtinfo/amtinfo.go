@@ -54,6 +54,8 @@ type Options struct {
 	// UUID reads the device UUID, falling back to the SMBIOS system UUID when
 	// AMT cannot provide it.
 	UUID bool
+	// SerialNumber reads the OEM system serial number from SMBIOS.
+	SerialNumber bool
 	// UPID reads the Intel Unique Platform ID.
 	UPID bool
 	// TEP reads the Intel Trusted Endpoint Provisioning (TEP) status. When set,
@@ -217,23 +219,24 @@ func matchPermissions(err error) error {
 // newCommand builds the amtinfo command and its context from opts.
 func newCommand(opts Options) (*commands.AmtInfoCmd, *commands.Context) {
 	cmd := &commands.AmtInfoCmd{
-		Ver:       opts.Version,
-		Bld:       opts.BuildNumber,
-		Sku:       opts.SKU,
-		UUID:      opts.UUID,
-		UPID:      opts.UPID,
-		TEP:       opts.TEP,
-		Mode:      opts.ControlMode,
-		ProvState: opts.ProvisioningState,
-		DNS:       opts.DNSSuffix,
-		Hostname:  opts.Hostname,
-		Lan:       opts.LAN,
-		Ras:       opts.RemoteAccess,
-		OpState:   opts.OperationalState,
-		Cert:      opts.CertificateHashes,
-		UserCert:  opts.UserCertificates,
-		Proxy:     opts.Proxy,
-		All:       opts.All,
+		Ver:          opts.Version,
+		Bld:          opts.BuildNumber,
+		Sku:          opts.SKU,
+		UUID:         opts.UUID,
+		UPID:         opts.UPID,
+		SerialNumber: opts.SerialNumber,
+		TEP:          opts.TEP,
+		Mode:         opts.ControlMode,
+		ProvState:    opts.ProvisioningState,
+		DNS:          opts.DNSSuffix,
+		Hostname:     opts.Hostname,
+		Lan:          opts.LAN,
+		Ras:          opts.RemoteAccess,
+		OpState:      opts.OperationalState,
+		Cert:         opts.CertificateHashes,
+		UserCert:     opts.UserCertificates,
+		Proxy:        opts.Proxy,
+		All:          opts.All,
 	}
 
 	ctx := &commands.Context{

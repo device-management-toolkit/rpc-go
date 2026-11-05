@@ -336,3 +336,9 @@ func TestNewSyncCommand_MapsOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestSerialNumberOption(t *testing.T) {
+	cmd, _ := newCommand(Options{SerialNumber: true})
+	assert.True(t, cmd.SerialNumber)
+	assert.False(t, cmd.HasNoFlagsSet())
+}
