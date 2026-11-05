@@ -13,6 +13,14 @@ type Interface interface {
 	Close()
 }
 
+// GUIDInterface adds arbitrary MEI client initialization without extending the
+// existing Interface contract used by PTHI and LME drivers.
+type GUIDInterface interface {
+	Interface
+	// InitWithGUID accepts a GUID in registry form, with optional braces.
+	InitWithGUID(guid string) error
+}
+
 type MEIConnectClientData struct {
 	MaxMessageLength uint32
 	ProtocolVersion  uint8
