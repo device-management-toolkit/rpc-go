@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -23,6 +24,9 @@ type LMSConnection struct {
 	errors        chan error
 	controlMode   int
 	skipCertCheck bool
+	// closing is set by Close() so a streaming reader can tell a deliberate local close
+	// (port switch, new TLS handshake, shutdown) from a failure that RPS must hear about.
+	closing atomic.Bool
 }
 
 // ErrLMSReadTimeoutNoData indicates the socket hit a read timeout before
@@ -68,6 +72,9 @@ func (lms *LMSConnection) Connect() error {
 			// handle error
 			return err
 		}
+
+		// A fresh socket: read errors on it are real until Close() is called again.
+		lms.closing.Store(false)
 	}
 
 	log.Debug("connected to lms")
@@ -85,6 +92,11 @@ func (lms *LMSConnection) Send(data []byte) error {
 // Close closes the LMS socket connection
 func (lms *LMSConnection) Close() error {
 	log.Debug("closing connection to lms")
+
+	// Set before the socket is closed so the streaming reader, which is blocked in Read and
+	// will wake with a "use of closed network connection" error, knows this close was ours
+	// and must not report it to RPS as a connection reset.
+	lms.closing.Store(true)
 
 	if lms.Connection != nil {
 		err := lms.Connection.Close()
@@ -116,6 +128,15 @@ func (lms *LMSConnection) Close() error {
 // ends the current message and the accumulated buffer (possibly empty) is
 // delivered on the data channel.
 func (lms *LMSConnection) Listen() {
+	// TLS-tunnel mode: a streaming reader that runs for the life of the connection (see
+	// listenStream). The request/response read below, which ends a message after a silence
+	// gap, remains for the plain LMS path and is unchanged.
+	if lms.useTls {
+		lms.listenStream()
+
+		return
+	}
+
 	readTimeout := 1500 * time.Millisecond
 	subsequentReadTimeout := 1000 * time.Millisecond
 
@@ -155,6 +176,58 @@ func (lms *LMSConnection) Listen() {
 
 	if !timedOutNoData {
 		lms.safeSendData(buf)
+	}
+}
+
+// listenStream is the TLS-tunnel reader. The bytes on this socket are TLS records that RPS
+// terminates, so rpc-go cannot see HTTP framing and must not try to guess where a response
+// ends. It forwards every chunk the moment it arrives and keeps reading for the life of the
+// connection; the old mode waited for 1 s of silence after every response, which added about
+// one second to every WS-Man call of a provisioning run.
+//
+// An empty buffer on the data channel means the peer closed the connection (the executor
+// turns that into connection_reset). A deliberate local Close() ends the reader silently.
+func (lms *LMSConnection) listenStream() {
+	conn := lms.Connection
+	if conn == nil {
+		log.Debug("lms stream reader: no connection")
+
+		return
+	}
+
+	log.Debug("listening for lms messages (tls tunnel, streaming)...")
+
+	tmp := make([]byte, 16384)
+
+	for {
+		n, err := conn.Read(tmp)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, tmp[:n])
+			lms.safeSendData(chunk)
+		}
+
+		if err == nil {
+			continue
+		}
+
+		if lms.closing.Load() {
+			log.Debug("lms stream reader exiting after local close")
+
+			return
+		}
+
+		if errors.Is(err, io.EOF) {
+			log.Debug("lms closed the tunnel connection")
+			lms.safeSendData([]byte{})
+
+			return
+		}
+
+		log.Println("LMS read error:", err)
+		lms.safeSendError(err)
+
+		return
 	}
 }
 
