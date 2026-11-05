@@ -23,11 +23,14 @@ const DefaultCommandTimeout = 10 * time.Second
 // Command wraps a HECI interface for UPID operations.
 // Follows the same pattern as pthi.Command.
 type Command struct {
-	Heci heci.Interface
+	Heci heci.GUIDInterface
 	// Timeout bounds each HECI round-trip; zero means DefaultCommandTimeout.
 	Timeout time.Duration
 
 	timedOut bool
+	closed   bool
+	// newHECI supplies a separate connection for restoration after a timeout.
+	newHECI func() heci.GUIDInterface
 }
 
 // NewCommand creates a new UPID command backed by the platform HECI driver.
@@ -68,7 +71,9 @@ func (c *Command) withFeatureEnabled(fn func() error) error {
 
 	enabled, err := c.getFeatureState()
 	if err != nil {
-		log.Tracef("Unable to read UPID feature state, enabling it anyway: %v", err)
+		log.Tracef("Unable to read UPID feature state; reading without changing it: %v", err)
+
+		return fn()
 	}
 
 	if !enabled {
@@ -79,7 +84,7 @@ func (c *Command) withFeatureEnabled(fn func() error) error {
 		} else {
 			// Disable it again afterwards (security best practice); non-fatal
 			defer func() {
-				if err := c.setFeatureState(false); err != nil {
+				if err := c.restoreFeatureState(); err != nil {
 					log.Debugf("Failed to disable UPID feature: %v", err)
 				}
 			}()
@@ -91,9 +96,35 @@ func (c *Command) withFeatureEnabled(fn func() error) error {
 
 // Close releases resources held by the UPID command.
 func (c *Command) Close() {
-	if c.Heci != nil {
+	if c.Heci != nil && !c.closed {
 		c.Heci.Close()
+		c.closed = true
 	}
+}
+
+// restoreFeatureState disables a feature this request observed disabled and enabled.
+// A timed-out connection cannot be reused: its outstanding receive could consume
+// a later response. Close it and restore through a fresh, independently bounded
+// connection, without clearing the original command's timeout guard.
+func (c *Command) restoreFeatureState() error {
+	if !c.timedOut {
+		return c.setFeatureState(false)
+	}
+
+	c.Close()
+
+	driver := heci.GUIDInterface(heci.NewDriver())
+	if c.newHECI != nil {
+		driver = c.newHECI()
+	}
+
+	recovery := &Command{Heci: driver, Timeout: c.timeout()}
+	if err := recovery.initGUID(); err != nil {
+		return err
+	}
+	defer recovery.Close()
+
+	return recovery.setFeatureState(false)
 }
 
 // initGUID connects the HECI driver to the UPID MEI client.
@@ -103,6 +134,8 @@ func (c *Command) initGUID() error {
 
 		return ErrUPIDNotSupported
 	}
+
+	c.closed = false
 
 	return nil
 }
