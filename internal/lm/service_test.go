@@ -170,7 +170,7 @@ func TestListenTLSPeerCloseSignalsEmptyBuffer(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("expected empty data on peer close, got error: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("peer close was not signalled")
+		t.Fatal("peer close was not signaled")
 	}
 
 	select {
@@ -181,7 +181,7 @@ func TestListenTLSPeerCloseSignalsEmptyBuffer(t *testing.T) {
 }
 
 // TestListenTLSLocalCloseIsSilent verifies that a deliberate Close() (port switch, new
-// handshake, shutdown) ends the reader without signalling an error or a peer close.
+// handshake, shutdown) ends the reader without signaling an error or a peer close.
 func TestListenTLSLocalCloseIsSilent(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
