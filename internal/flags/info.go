@@ -12,19 +12,21 @@ import (
 )
 
 type AmtInfoFlags struct {
-	Ver      bool
-	Bld      bool
-	Sku      bool
-	UUID     bool
-	Mode     bool
-	DNS      bool
-	Cert     bool
-	UserCert bool
-	Ras      bool
-	Lan      bool
-	Hostname bool
-	OpState  bool
-	All      bool
+	UPID         bool
+	SerialNumber bool
+	Ver          bool
+	Bld          bool
+	Sku          bool
+	UUID         bool
+	Mode         bool
+	DNS          bool
+	Cert         bool
+	UserCert     bool
+	Ras          bool
+	Lan          bool
+	Hostname     bool
+	OpState      bool
+	All          bool
 }
 
 func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
@@ -34,6 +36,8 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 	amtInfoCommand.BoolVar(&f.AmtInfo.Ver, "ver", false, "BIOS Version")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Bld, "bld", false, "Build Number")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Sku, "sku", false, "Product SKU")
+	amtInfoCommand.BoolVar(&f.AmtInfo.UPID, "upid", false, "Intel Unique Platform ID")
+	amtInfoCommand.BoolVar(&f.AmtInfo.SerialNumber, "serial-number", false, "OEM system serial number")
 	amtInfoCommand.BoolVar(&f.AmtInfo.UUID, "uuid", false, "Unique Identifier")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Mode, "mode", false, "Current Control Mode")
 	amtInfoCommand.BoolVar(&f.AmtInfo.DNS, "dns", false, "Domain Name Suffix")
@@ -60,6 +64,8 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 		f.AmtInfo.Bld = true
 		f.AmtInfo.Sku = true
 		f.AmtInfo.UUID = true
+		f.AmtInfo.UPID = true
+		f.AmtInfo.SerialNumber = true
 		f.AmtInfo.Mode = true
 		f.AmtInfo.DNS = true
 		f.AmtInfo.Ras = true
