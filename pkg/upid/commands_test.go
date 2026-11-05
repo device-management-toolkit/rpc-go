@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -162,8 +163,9 @@ type mockHECI struct {
 	// block, when non-nil, makes ReceiveMessage wait until it is closed.
 	block chan struct{}
 
-	sent   [][]byte
-	closed bool
+	sent       [][]byte
+	closed     bool
+	closeCount int
 }
 
 func (m *mockHECI) Init(useLME, useWD bool) error { return nil }
@@ -207,7 +209,7 @@ func (m *mockHECI) ReceiveMessage(buffer []byte, done *uint32) (uint32, error) {
 	return uint32(copy(buffer, response)), nil
 }
 
-func (m *mockHECI) Close() { m.closed = true }
+func (m *mockHECI) Close() { m.closed = true; m.closeCount++ }
 
 // commands returns the command codes sent so far, in order.
 func (m *mockHECI) commands() []uint8 {
@@ -324,14 +326,13 @@ func TestGetUPID(t *testing.T) {
 			wantSets:     []uint8{FeatureStateEnabled, FeatureStateDisabled},
 		},
 		{
-			name: "feature state unreadable - falls back to enable, read, disable (v3 flow)",
+			name: "feature state unreadable - read without toggling",
 			setup: func(m *mockHECI, sets *[]uint8) {
 				m.responses[CommandFeatureStateGet] = respond(statusResponse(CommandFeatureStateGet, StatusFeatureNotSupported))
 				m.responses[CommandFeatureStateSet] = featureStateSet(sets)
 				m.responses[CommandPlatformIDGet] = respond(platformIDResponse(PlatformIDTypeNotSet, 0x00, 0xCC))
 			},
-			wantCommands: []uint8{CommandFeatureStateGet, CommandFeatureStateSet, CommandPlatformIDGet, CommandFeatureStateSet},
-			wantSets:     []uint8{FeatureStateEnabled, FeatureStateDisabled},
+			wantCommands: []uint8{CommandFeatureStateGet, CommandPlatformIDGet},
 			checkUPID: func(t *testing.T, u *UPID) {
 				assert.Equal(t, byte(0xCC), u.HWSerialNum[0])
 			},
@@ -493,4 +494,60 @@ func TestRequestWireFormat(t *testing.T) {
 	assert.Equal(t, []byte{CommandFeaturePlatformID, CommandFeatureStateSet, 1, 0, FeatureStateEnabled}, mock.sent[1])
 	assert.Equal(t, []byte{CommandFeaturePlatformID, CommandPlatformIDGet, 0, 0}, mock.sent[2])
 	assert.Equal(t, []byte{CommandFeaturePlatformID, CommandFeatureStateSet, 1, 0, FeatureStateDisabled}, mock.sent[3])
+}
+
+func TestGetUPIDRestoresAfterReadTimeout(t *testing.T) {
+	blocked := make(chan struct{})
+	finished := make(chan struct{})
+	mock := &mockHECI{responses: map[uint8]func([]byte) ([]byte, error){
+		CommandFeatureStateGet: featureState(false),
+		CommandFeatureStateSet: respond(statusResponse(CommandFeatureStateSet, StatusSuccess)),
+		CommandPlatformIDGet: func([]byte) ([]byte, error) {
+			<-blocked
+			close(finished)
+
+			return nil, errors.New("read canceled")
+		},
+	}}
+
+	t.Cleanup(func() { close(blocked); <-finished })
+
+	var restored []uint8
+
+	recovery := &mockHECI{responses: map[uint8]func([]byte) ([]byte, error){
+		CommandFeatureStateSet: featureStateSet(&restored),
+	}}
+	cmd := &Command{
+		Heci:    mock,
+		Timeout: 20 * time.Millisecond,
+		newHECI: func() heci.GUIDInterface {
+			assert.True(t, mock.closed, "close timed-out connection before recovery")
+
+			return recovery
+		},
+	}
+
+	u, err := cmd.GetUPID()
+	assert.ErrorIs(t, err, ErrCommandTimeout)
+	assert.Nil(t, u)
+	assert.Equal(t, []uint8{FeatureStateDisabled}, restored)
+	assert.Equal(t, UPIDGUID, recovery.guid)
+	assert.True(t, recovery.closed)
+	assert.True(t, cmd.timedOut, "recovery must not reuse the timed-out connection")
+	assert.Equal(t, []uint8{CommandFeatureStateGet, CommandFeatureStateSet, CommandPlatformIDGet}, mock.commands())
+}
+
+func TestGetUPIDClosesEachConnection(t *testing.T) {
+	mock := &mockHECI{responses: map[uint8]func([]byte) ([]byte, error){
+		CommandFeatureStateGet: featureState(true),
+		CommandPlatformIDGet:   respond(platformIDResponse(PlatformIDTypeBinary, 0xAA, 0xBB)),
+	}}
+	cmd := &Command{Heci: mock}
+
+	for range 2 {
+		_, err := cmd.GetUPID()
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 2, mock.closeCount)
 }
