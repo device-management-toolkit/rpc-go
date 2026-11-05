@@ -15,16 +15,18 @@ import (
 
 func TestParseFlagsAmtInfo(t *testing.T) {
 	defaultFlags := AmtInfoFlags{
-		Ver:      true,
-		Bld:      true,
-		Sku:      true,
-		UUID:     true,
-		Mode:     true,
-		DNS:      true,
-		Ras:      true,
-		Lan:      true,
-		Hostname: true,
-		OpState:  true,
+		UPID:         true,
+		SerialNumber: true,
+		Ver:          true,
+		Bld:          true,
+		Sku:          true,
+		UUID:         true,
+		Mode:         true,
+		DNS:          true,
+		Ras:          true,
+		Lan:          true,
+		Hostname:     true,
+		OpState:      true,
 	}
 
 	tests := map[string]struct {
@@ -32,6 +34,14 @@ func TestParseFlagsAmtInfo(t *testing.T) {
 		wantResult error
 		wantFlags  AmtInfoFlags
 	}{
+		"serial number only": {
+			cmdLine:   "./rpc amtinfo -serial-number",
+			wantFlags: AmtInfoFlags{SerialNumber: true},
+		},
+		"UPID only": {
+			cmdLine:   "./rpc amtinfo -upid",
+			wantFlags: AmtInfoFlags{UPID: true},
+		},
 		"expect success for basic command": {
 			cmdLine:    "./rpc amtinfo -json",
 			wantResult: nil,

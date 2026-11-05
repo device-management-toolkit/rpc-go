@@ -8,11 +8,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
@@ -411,4 +413,145 @@ func TestCreateMessageRequestCustomInvalidUUID(t *testing.T) {
 	_, createErr := p.CreateMessageRequest(flags)
 	assert.Error(t, createErr)
 	assert.Equal(t, utils.InvalidUUID, createErr)
+}
+
+type MockUPID struct {
+	upid *upid.UPID
+	err  error
+}
+
+func (m MockUPID) GetUPID() (*upid.UPID, error) { return m.upid, m.err }
+
+// inventoryPayload builds a Payload whose host inventory sources return the
+// given values.
+func inventoryPayload(osInfo utils.OSInfo, serial string, serialErr error, u upid.Interface) Payload {
+	return Payload{
+		AMT:          MockAMT{},
+		UPID:         u,
+		OSInfo:       func() utils.OSInfo { return osInfo },
+		SerialNumber: func() (string, error) { return serial, serialErr },
+	}
+}
+
+func decodeMessagePayload(t *testing.T, msg Message) MessagePayload {
+	t.Helper()
+
+	raw, err := base64.StdEncoding.DecodeString(msg.Payload)
+	assert.NoError(t, err)
+
+	payload := MessagePayload{}
+	assert.NoError(t, json.Unmarshal(raw, &payload))
+
+	return payload
+}
+
+func TestCreateMessageRequestActivateIncludesHostInventory(t *testing.T) {
+	raw := make([]byte, upid.UPIDSize)
+	for i := upid.OEMPlatformIDSize; i < upid.UPIDSize; i++ {
+		raw[i] = 0xAB
+	}
+
+	platformID, err := upid.NewUPID(raw, upid.PlatformIDTypeNotSet)
+	assert.NoError(t, err)
+
+	payload := inventoryPayload(utils.OSInfo{Name: "linux", Version: "6.8.0-45-generic", Distro: "Ubuntu 24.04.1 LTS"}, "PF4ABCDE", nil, MockUPID{upid: platformID})
+
+	result, err := payload.CreateMessageRequest(expandedFlags(flags.Flags{Command: utils.CommandActivate, Profile: "profile1"}))
+	assert.NoError(t, err)
+
+	decoded := decodeMessagePayload(t, result)
+	assert.Equal(t, "linux", decoded.OSName)
+	assert.Equal(t, "6.8.0-45-generic", decoded.OSVersion)
+	assert.Equal(t, "Ubuntu 24.04.1 LTS", decoded.OSDistro)
+	assert.Equal(t, "PF4ABCDE", decoded.SerialNumber)
+	assert.NotNil(t, decoded.UPID)
+	assert.Equal(t, strings.Repeat("AB", upid.HWSerialNumSize), decoded.UPID.CSMEId)
+	assert.Equal(t, strings.Repeat("00", upid.OEMPlatformIDSize), decoded.UPID.OEMId, "unprovisioned OEM ID is reported as zeros, as v3 amtinfo --sync does")
+	assert.Equal(t, "Not Set (0)", decoded.UPID.OEMPlatformIdType)
+}
+
+func TestCreateMessageRequestActivateInventoryFailuresAreNonFatal(t *testing.T) {
+	payload := inventoryPayload(utils.OSInfo{Name: "windows"}, "", utils.ErrSerialNumberUnavailable, MockUPID{err: upid.ErrUPIDNotSupported})
+
+	result, err := payload.CreateMessageRequest(expandedFlags(flags.Flags{Command: utils.CommandActivate, Profile: "profile1"}))
+	assert.NoError(t, err)
+
+	raw, err := base64.StdEncoding.DecodeString(result.Payload)
+	assert.NoError(t, err)
+	assert.NotContains(t, string(raw), "serialNumber")
+	assert.NotContains(t, string(raw), "upid")
+
+	decoded := decodeMessagePayload(t, result)
+	assert.Equal(t, "windows", decoded.OSName)
+}
+
+func TestCreateMessageRequestNonActivateSkipsHostInventory(t *testing.T) {
+	payload := inventoryPayload(utils.OSInfo{Name: "linux"}, "PF4ABCDE", nil, MockUPID{err: errors.New("should not be called")})
+
+	result, err := payload.CreateMessageRequest(expandedFlags(flags.Flags{Command: utils.CommandDeactivate, Password: "password"}))
+	assert.NoError(t, err)
+
+	decoded := decodeMessagePayload(t, result)
+	assert.Empty(t, decoded.OSName)
+	assert.Empty(t, decoded.SerialNumber)
+	assert.Nil(t, decoded.UPID)
+}
+
+func TestCreateMessageRequestActivateWithoutInventorySources(t *testing.T) {
+	payload := Payload{AMT: MockAMT{}}
+
+	result, err := payload.CreateMessageRequest(expandedFlags(flags.Flags{Command: utils.CommandActivate, Profile: "profile1"}))
+	assert.NoError(t, err)
+
+	decoded := decodeMessagePayload(t, result)
+	assert.Empty(t, decoded.OSName)
+	assert.Empty(t, decoded.SerialNumber)
+	assert.Nil(t, decoded.UPID)
+}
+
+// expandedFlags applies setCommandMethod, as ExecuteCommand does before the
+// initial message is built.
+func expandedFlags(f flags.Flags) flags.Flags {
+	setCommandMethod(&f)
+
+	return f
+}
+
+func TestReportsHostInventory(t *testing.T) {
+	tests := []struct {
+		name  string
+		flags flags.Flags
+		want  bool
+	}{
+		{"activate", flags.Flags{Command: utils.CommandActivate, Profile: "p"}, true},
+		{"activate with force", flags.Flags{Command: utils.CommandActivate, Profile: "p", Force: true}, true},
+		{"maintenance syncdeviceinfo", flags.Flags{Command: utils.CommandMaintenance, SubCommand: utils.SubCommandSyncDeviceInfo, Password: "pw"}, true},
+		{"maintenance synchostname", flags.Flags{Command: utils.CommandMaintenance, SubCommand: utils.SubCommandSyncHostname, Password: "pw"}, false},
+		{"deactivate", flags.Flags{Command: utils.CommandDeactivate, Password: "pw"}, false},
+		{"empty", flags.Flags{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, reportsHostInventory(expandedFlags(tt.flags)))
+		})
+	}
+}
+
+func TestCreateMessageRequestSyncDeviceInfoIncludesHostInventory(t *testing.T) {
+	controlMode = 2
+	defer func() { controlMode = 0 }()
+
+	payload := inventoryPayload(utils.OSInfo{Name: "linux", Distro: "Ubuntu 24.04.1 LTS"}, "PF4ABCDE", nil, MockUPID{err: upid.ErrUPIDNotSupported})
+
+	result, err := payload.CreateMessageRequest(expandedFlags(flags.Flags{
+		Command:    utils.CommandMaintenance,
+		SubCommand: utils.SubCommandSyncDeviceInfo,
+		Password:   "password",
+	}))
+	assert.NoError(t, err)
+
+	decoded := decodeMessagePayload(t, result)
+	assert.Equal(t, "linux", decoded.OSName)
+	assert.Equal(t, "PF4ABCDE", decoded.SerialNumber)
 }

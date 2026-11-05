@@ -21,9 +21,14 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
+
+var readSystemSerialNumber = utils.GetSystemSerialNumber
+
+var readUPID = func() (*upid.UPID, error) { return upid.NewCommand().GetUPID() }
 
 const zeroIP = "0.0.0.0"
 
@@ -166,6 +171,8 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 		dataStruct["uuid"] = result
 		service.PrintOutput("UUID			: " + result)
 	}
+
+	service.addPhysicalIdentifiers(dataStruct)
 
 	if service.flags.AmtInfo.Mode {
 		result, err := cmd.GetControlMode()
@@ -509,4 +516,30 @@ func GetMajorVersion(version string) (int, error) {
 	}
 
 	return majorVersion, nil
+}
+
+// addPhysicalIdentifiers reads optional identifiers without blocking other AMT details.
+func (service *ProvisioningService) addPhysicalIdentifiers(data map[string]interface{}) {
+	if service.flags.AmtInfo.SerialNumber {
+		serial, err := readSystemSerialNumber()
+		if err != nil {
+			log.Debug("System serial number not available: ", err)
+		} else if serial != "" {
+			data["serialNumber"] = serial
+			service.PrintOutput("Serial Number\t\t: " + serial)
+		}
+	}
+
+	if service.flags.AmtInfo.UPID {
+		platformID, err := readUPID()
+		if err != nil {
+			log.Debug("Intel UPID not available: ", err)
+		} else if platformID != nil {
+			info := platformID.Info()
+			data["upid"] = info
+			service.PrintOutput("UPID CSME ID\t\t: " + info.CSMEId)
+			service.PrintOutput("UPID OEM ID\t\t: " + info.OEMId)
+			service.PrintOutput("UPID Platform ID Type\t: " + info.OEMPlatformIdType)
+		}
+	}
 }
