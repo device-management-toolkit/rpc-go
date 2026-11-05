@@ -8,7 +8,10 @@ package upid
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"testing"
+
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 )
 
 func TestNewUPID(t *testing.T) {
@@ -580,11 +583,21 @@ func TestGetUPID(t *testing.T) {
 			name: "UPID not supported",
 			setupMock: func(m *MockHECI) {
 				m.initWithGUIDFunc = func(guid interface{}) error {
-					return errors.New("device not found")
+					return fmt.Errorf("%w: no client", heci.ErrUnsupportedDevice)
 				}
 			},
 			wantErr:     true,
 			wantErrType: ErrUPIDNotSupported,
+		},
+		{
+			name: "MEI access failure is a connection error, not unsupported",
+			setupMock: func(m *MockHECI) {
+				m.initWithGUIDFunc = func(guid interface{}) error {
+					return fmt.Errorf("%w: access is denied", heci.ErrPermissionDenied)
+				}
+			},
+			wantErr:     true,
+			wantErrType: ErrConnectionFailed,
 		},
 		{
 			name: "UPID not provisioned - short response",
@@ -704,7 +717,7 @@ func TestGetUPID(t *testing.T) {
 					t.Fatal("Expected error, got nil")
 				}
 
-				if tt.wantErrType != nil && err != tt.wantErrType {
+				if tt.wantErrType != nil && !errors.Is(err, tt.wantErrType) {
 					t.Errorf("Expected error %v, got %v", tt.wantErrType, err)
 				}
 			} else {
@@ -717,8 +730,8 @@ func TestGetUPID(t *testing.T) {
 				}
 			}
 
-			// Verify Close was called (except for "not supported" case where close may not be reached)
-			if tt.name != "UPID not supported" && !mockHECI.closed {
+			// Verify Close was called (except when the MEI client never connected, where close is not reached)
+			if !errors.Is(err, ErrUPIDNotSupported) && !errors.Is(err, ErrConnectionFailed) && !mockHECI.closed {
 				t.Error("Expected HECI to be closed")
 			}
 		})

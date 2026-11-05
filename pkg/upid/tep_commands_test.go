@@ -12,10 +12,10 @@ import (
 	"crypto/sha512"
 	"crypto/x509"
 	"encoding/binary"
-	"errors"
 	"math/big"
 	"testing"
 
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -89,7 +89,7 @@ func TestTEPCall(t *testing.T) {
 	})
 
 	t.Run("MEI client not available", func(t *testing.T) {
-		m := &MockHECI{initWithGUIDFunc: func(any) error { return errors.New("no device") }}
+		m := &MockHECI{initWithGUIDFunc: func(any) error { return heci.ErrUnsupportedDevice }}
 
 		_, err := (&Command{Heci: m}).TEPGetCapabilities()
 		require.ErrorIs(t, err, ErrUPIDNotSupported)

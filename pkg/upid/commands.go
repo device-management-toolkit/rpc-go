@@ -73,6 +73,16 @@ func (c *Command) Close() {
 	}
 }
 
+// classifyInitError keeps "not supported" for a platform without the UPID
+// client and reports every other failure as a connection error.
+func classifyInitError(err error, clientMissing bool) error {
+	if clientMissing {
+		return fmt.Errorf("%w: %w", ErrUPIDNotSupported, err)
+	}
+
+	return fmt.Errorf("%w: %w", ErrConnectionFailed, err)
+}
+
 // setFeatureState enables or disables the UPID feature
 func (c *Command) setFeatureState(enable bool) error {
 	var featureEnabled uint8
