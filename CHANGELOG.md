@@ -1,3 +1,17 @@
+# [3.0.0-beta.79](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.78...v3.0.0-beta.79) (2026-11-04)
+
+
+### Bug Fixes
+
+* close idle WSMAN connections on client Close ([#1670](https://github.com/device-management-toolkit/rpc-go/issues/1670)) ([5200bbf](https://github.com/device-management-toolkit/rpc-go/commit/5200bbf414b22855cef4dead78abbf2a81208b6c)), closes [#1581](https://github.com/device-management-toolkit/rpc-go/issues/1581)
+
+# [3.0.0-beta.78](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.77...v3.0.0-beta.78) (2026-11-04)
+
+
+### Bug Fixes
+
+* detect WiFi hardware on wireless-only devices ([#1669](https://github.com/device-management-toolkit/rpc-go/issues/1669)) ([77dae52](https://github.com/device-management-toolkit/rpc-go/commit/77dae52530a78644fe5d032ea928956f1d09a2ad))
+
 # [3.0.0-beta.77](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.76...v3.0.0-beta.77) (2026-11-02)
 
 
