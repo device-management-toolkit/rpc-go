@@ -16,7 +16,11 @@ import (
 	gnet "github.com/shirou/gopsutil/v4/net"
 )
 
-const loopbackInterfaceName = "lo"
+const (
+	loopbackInterfaceName = "lo"
+	adapterLinkStatusUp   = "up"
+	adapterLinkStatusDown = "down"
+)
 
 // OSInfo holds operating system metadata.
 type OSInfo struct {
@@ -28,6 +32,7 @@ type OSInfo struct {
 // OSNetworkInterface holds OS-reported network adapter details.
 type OSNetworkInterface struct {
 	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
 	IPAddress   string `json:"ipAddress,omitempty"`
 	DHCPEnabled *bool  `json:"dhcpEnabled,omitempty"`
 	LinkStatus  string `json:"linkStatus,omitempty"`
@@ -242,12 +247,12 @@ func firstUsableIPv4(addrs []gnet.InterfaceAddr) string {
 
 func linkStatusFromFlags(flags []string) string {
 	for _, flag := range flags {
-		if strings.EqualFold(flag, "up") {
-			return "up"
+		if strings.EqualFold(flag, adapterLinkStatusUp) {
+			return adapterLinkStatusUp
 		}
 	}
 
-	return "down"
+	return adapterLinkStatusDown
 }
 
 func adapterDisplayName(interfaceName string) string {
