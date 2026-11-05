@@ -1,3 +1,10 @@
+# [3.0.0-beta.80](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.79...v3.0.0-beta.80) (2026-11-05)
+
+
+### Features
+
+* add status command for pre and post activation checks ([#1630](https://github.com/device-management-toolkit/rpc-go/issues/1630)) ([3e8b18d](https://github.com/device-management-toolkit/rpc-go/commit/3e8b18d8b24051f4f6a5319e8dad3c33d718d5a0))
+
 # [3.0.0-beta.79](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.78...v3.0.0-beta.79) (2026-11-04)
 
 
