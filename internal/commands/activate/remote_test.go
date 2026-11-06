@@ -69,6 +69,7 @@ func TestRemoteActivateCmd_toActivationConfig(t *testing.T) {
 				UUID:         "test-uuid",
 				FriendlyName: "test-device",
 				Proxy:        "http://proxy.server:8080",
+				TLSTunnel:    true,
 			},
 			want: RemoteActivationConfig{
 				URL:          "https://rps.server",
@@ -78,6 +79,7 @@ func TestRemoteActivateCmd_toActivationConfig(t *testing.T) {
 				UUID:         "test-uuid",
 				FriendlyName: "test-device",
 				Proxy:        "http://proxy.server:8080",
+				TLSTunnel:    true,
 			},
 		},
 		{
