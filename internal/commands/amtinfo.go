@@ -111,6 +111,8 @@ var (
 // test seam for SMBIOS UUID fallback in GetAMTInfo.
 var getSMBIOSSystemUUID = utils.GetSMBIOSSystemUUID
 
+var getSystemSerialNumber = utils.GetSystemSerialNumber
+
 // test seam for privilege checking.
 var isElevated = utils.IsElevated
 
@@ -216,11 +218,12 @@ type AmtInfoCmd struct {
 	Sku bool `help:"Show Product SKU" short:"s"`
 
 	// Identity flags
-	UUID      bool `help:"Show Unique Identifier" short:"u"`
-	UPID      bool `help:"Show Intel Unique Platform ID"`
-	TEP       bool `help:"Show Intel Trusted Endpoint Provisioning (TEP) status" name:"tep"`
-	Mode      bool `help:"Show Current Control Mode" short:"m"`
-	ProvState bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
+	SerialNumber bool `help:"Show OEM system serial number" name:"serial-number"`
+	UUID         bool `help:"Show Unique Identifier" short:"u"`
+	UPID         bool `help:"Show Intel Unique Platform ID"`
+	TEP          bool `help:"Show Intel Trusted Endpoint Provisioning (TEP) status" name:"tep"`
+	Mode         bool `help:"Show Current Control Mode" short:"m"`
+	ProvState    bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
 
 	// Network flags
 	DNS      bool `help:"Show Domain Name Suffix" short:"d"`
@@ -286,7 +289,7 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.TEP && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
+	return !cmd.SerialNumber && !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.TEP && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState && !cmd.Proxy
 }
 
@@ -472,6 +475,7 @@ func (cmd *AmtInfoCmd) elevationErr() error {
 
 // InfoResult holds the complete AMT information result
 type InfoResult struct {
+	SerialNumber      string                       `json:"serialNumber,omitempty"`
 	AMT               string                       `json:"amt,omitempty"`
 	BuildNumber       string                       `json:"buildNumber,omitempty"`
 	SKU               string                       `json:"sku,omitempty"`
@@ -711,6 +715,7 @@ type syncPayload struct {
 }
 
 type syncDeviceInfo struct {
+	SerialNumber         string                   `json:"serialNumber,omitempty"`
 	FWVersion            string                   `json:"fwVersion"`
 	FWBuild              string                   `json:"fwBuild"`
 	FWSku                string                   `json:"fwSku"`
@@ -808,9 +813,10 @@ func (s *InfoService) SyncDeviceInfoWithResult(ctx *Context, result *InfoResult,
 		GUID:     result.UUID,
 		Hostname: s.getCreateHostname(result),
 		DeviceInfo: syncDeviceInfo{
-			FWVersion: result.AMT,
-			FWBuild:   result.BuildNumber,
-			FWSku:     result.SKU,
+			SerialNumber: result.SerialNumber,
+			FWVersion:    result.AMT,
+			FWBuild:      result.BuildNumber,
+			FWSku:        result.SKU,
 			// Discovered is NOT set here - only sent during device creation, never in updates
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
@@ -1910,6 +1916,16 @@ func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd, postActivation bool) (*Inf
 		}
 	}
 
+	// OEM serial number is independent of HECI and optional.
+	if showAll || cmd.SerialNumber {
+		serial, err := getSystemSerialNumber()
+		if err != nil {
+			log.Debug("System serial number not available: ", err)
+		} else {
+			result.SerialNumber = serial
+		}
+	}
+
 	// Get hostname from OS (no admin required)
 	if showAll || cmd.Hostname {
 		hostname, err := os.Hostname()
@@ -2138,6 +2154,10 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 
 	if (showAll || cmd.Hostname) && result.HostnameOS != "" {
 		add("Device", "--hostname", "Hostname (OS)", result.HostnameOS)
+	}
+
+	if (showAll || cmd.SerialNumber) && result.SerialNumber != "" {
+		add("Device", "--serial-number", "Serial Number", result.SerialNumber)
 	}
 
 	// --- Remote Access ---
@@ -2563,6 +2583,10 @@ func buildDeviceSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool
 
 	if (showAll || cmd.Hostname) && result.HostnameOS != "" {
 		main.WriteString(renderInfoRow("Hostname (OS)", result.HostnameOS))
+	}
+
+	if (showAll || cmd.SerialNumber) && result.SerialNumber != "" {
+		main.WriteString(renderInfoRow("Serial Number", result.SerialNumber))
 	}
 
 	if main.Len() == 0 {
