@@ -56,6 +56,41 @@ func TestActivateTLSTunnelDefault(t *testing.T) {
 	}
 }
 
+func TestDeactivateTLSTunnelDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "enabled by default", want: true},
+		{name: "can be explicitly disabled", args: []string{"--tls-tunnel=false"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockAMT := mock.NewMockInterface(ctrl)
+			mockAMT.EXPECT().Close().Return(nil).AnyTimes()
+			mockAMT.EXPECT().GetControlMode().Return(0, nil).AnyTimes()
+			mockAMT.EXPECT().GetChangeEnabled().Return(amt.ChangeEnabledResponse(0), nil).AnyTimes()
+
+			cli := &CLI{}
+			cli.Deactivate.SkipWSMANSetup = true
+
+			parser, err := kong.New(cli, kong.BindToProvider(func() amt.Interface { return mockAMT }))
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			args := []string{"deactivate", "--url", "wss://rps.example", "--password", "test-password"}
+			args = append(args, tt.args...)
+			_, err = parser.Parse(args)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, cli.Deactivate.TLSTunnel)
+		})
+	}
+}
+
 // prMockSuccess returns a stable password to avoid prompting failures in tests
 type prMockSuccess struct{}
 
