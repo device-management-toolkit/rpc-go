@@ -223,7 +223,7 @@ func (heci *Driver) openAndConnect(data *CMEIConnectClientData, attempts int, ra
 	}
 
 	if errors.Is(lastErr, ErrDeviceNotFound) {
-		log.Error("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
+		log.Debug("AMT not found: MEI/driver is missing or the call to the HECI driver failed")
 	}
 
 	return lastErr

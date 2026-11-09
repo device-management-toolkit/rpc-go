@@ -20,6 +20,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/activate"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/diagnostics"
+	statuscmd "github.com/device-management-toolkit/rpc-go/v2/internal/commands/status"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/muesli/termenv"
@@ -36,6 +37,9 @@ const (
 	commandConfigure   = "configure"
 	commandDiagnostics = "diagnostics"
 	commandDiag        = "diag"
+	commandStatus      = "status"
+	commandHealth      = "health"
+	commandDoctor      = "doctor"
 )
 
 var parseMu sync.Mutex
@@ -64,6 +68,7 @@ type CLI struct {
 	commands.ServerAuthFlags
 
 	AmtInfo     commands.AmtInfoCmd        `cmd:"" name:"amtinfo" help:"Display information about AMT status and configuration"`
+	Status      statuscmd.StatusCmd        `cmd:"status" aliases:"health,doctor" help:"Check AMT activation readiness"`
 	Version     commands.VersionCmd        `cmd:"version" help:"Display the current version of RPC and the RPC Protocol version"`
 	Activate    activate.ActivateCmd       `cmd:"activate" help:"Activate AMT on the local device or via remote server"`
 	Deactivate  commands.DeactivateCmd     `cmd:"deactivate" help:"Deactivate AMT on the local device or via remote server"`
@@ -208,6 +213,7 @@ func PrintHelp(parser *kong.Kong, opts kong.HelpOptions, args []string) error {
 var knownCommands = map[string]bool{
 	commandAmtInfo: true, commandVersion: true, commandActivate: true,
 	commandDeactivate: true, commandConfigure: true, commandDiagnostics: true, commandDiag: true,
+	commandStatus: true, commandHealth: true, commandDoctor: true,
 }
 
 // hasCommand checks if args contain a recognized command name.

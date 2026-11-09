@@ -88,11 +88,7 @@ func TestAmtInfoCmd_Run_SignalsElevationAfterPrinting(t *testing.T) {
 	}
 }
 
-// TestAmtInfoCmd_Run_Characterization_LeavesWSMANClientToProcessExit pins
-// today's CLI behavior, not a requirement: Run never closes the WSMAN client
-// and leaves it to process exit (Collect closes it). Delete this test, or
-// invert it to expect Close, once Run closes the client.
-func TestAmtInfoCmd_Run_Characterization_LeavesWSMANClientToProcessExit(t *testing.T) {
+func TestAmtInfoCmd_Run_ClosesWSMANClient(t *testing.T) {
 	tests := []struct {
 		name string
 		ctx  Context
@@ -111,9 +107,9 @@ func TestAmtInfoCmd_Run_Characterization_LeavesWSMANClientToProcessExit(t *testi
 			mockAMT := mock.NewMockInterface(ctrl)
 			mockAMT.EXPECT().GetControlMode().Return(1, nil)
 
-			// No Close expectation: a Close call fails the test.
 			mockWSMAN := mock.NewMockWSMANer(ctrl)
 			mockWSMAN.EXPECT().GetHTTPProxyAccessPoints().Return(nil, nil)
+			mockWSMAN.EXPECT().Close().Return(nil).Times(1)
 
 			cmd := &AmtInfoCmd{AMTBaseCmd: AMTBaseCmd{HECIAvailable: true, WSMan: mockWSMAN}, Proxy: true}
 			ctx := tt.ctx

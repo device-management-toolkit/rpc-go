@@ -865,6 +865,21 @@ func (mr *MockWSMANerMockRecorder) RequestKVMStateChange(requestedState any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestKVMStateChange", reflect.TypeOf((*MockWSMANer)(nil).RequestKVMStateChange), requestedState)
 }
 
+// GetKVMRedirectionSAP mocks base method.
+func (m *MockWSMANer) GetKVMRedirectionSAP() (kvm.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetKVMRedirectionSAP")
+	ret0, _ := ret[0].(kvm.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetKVMRedirectionSAP indicates an expected call of GetKVMRedirectionSAP.
+func (mr *MockWSMANerMockRecorder) GetKVMRedirectionSAP() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetKVMRedirectionSAP", reflect.TypeOf((*MockWSMANer)(nil).GetKVMRedirectionSAP))
+}
+
 // RequestRedirectionStateChange mocks base method.
 func (m *MockWSMANer) RequestRedirectionStateChange(requestedState redirection.RequestedState) (redirection.Response, error) {
 	m.ctrl.T.Helper()

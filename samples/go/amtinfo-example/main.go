@@ -50,6 +50,8 @@ func report(name string, result *amtinfo.Result, err error) {
 	fmt.Printf("=== %s ===\n", name)
 
 	switch {
+	case errors.Is(err, utils.IncorrectPermissions) && errors.Is(err, amtinfo.ErrSyncUUIDUnavailable):
+		fmt.Fprintf(os.Stderr, "%s: nothing was sent (%v); run elevated (administrator or root) to sync; showing what was read\n", name, err)
 	case errors.Is(err, utils.IncorrectPermissions):
 		fmt.Fprintf(os.Stderr, "%s: run elevated (administrator or root) for full AMT data; showing what was read\n", name)
 	case err != nil:

@@ -131,6 +131,7 @@ var (
 	AmtNotDetected        = CustomError{Code: 3, Message: "AmtNotDetected"}
 	AmtNotReady           = CustomError{Code: 4, Message: "AmtNotReady"}
 	HelpRequested         = CustomError{Code: 5, Message: "flag: help requested"}
+	AmtStatusUnknown      = CustomError{Code: 6, Message: "AmtStatusUnknown"}
 	GenericFailure        = CustomError{Code: 10, Message: "GenericFailure"}
 )
 

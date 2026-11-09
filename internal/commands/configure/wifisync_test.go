@@ -16,25 +16,83 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// AMT exposes one AMT_EthernetPortSettings instance per NIC. InstanceID
+// "... Port Settings 0" is the wired NIC and "... Port Settings 1" is the
+// wireless NIC. A wireless-only platform enumerates just the wireless entry.
+const (
+	wiredPortInstanceID    = "Intel(r) AMT Ethernet Port Settings 0"
+	wirelessPortInstanceID = "Intel(r) AMT Ethernet Port Settings 1"
+)
+
 // wifiCapablePorts mimics the EthernetPortSettings enumeration on a device
 // that has WiFi hardware: index 0 is wired, index 1 is wireless with a real
 // MAC address bound to the NIC.
 var wifiCapablePorts = []ethernetport.SettingsResponse{
-	{MACAddress: "aa-bb-cc-dd-ee-01"},
-	{MACAddress: "aa-bb-cc-dd-ee-02"},
+	{InstanceID: wiredPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-01"},
+	{InstanceID: wirelessPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-02", PhysicalConnectionType: ethernetport.PhysicalConnectionWirelessLAN},
 }
 
 // wifiAbsentPorts mimics a device with only a wired port and no WiFi hardware.
 var wifiAbsentPorts = []ethernetport.SettingsResponse{
-	{MACAddress: "aa-bb-cc-dd-ee-01"},
+	{InstanceID: wiredPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-01"},
 }
 
 // wifiSlotEmptyPorts mimics a device where the wireless slot exists in the
 // enumeration but no hardware is bound (empty MACAddress). Treated as "no
 // WiFi hardware" — matches the isWifiSupportedOnDevice guard pattern.
 var wifiSlotEmptyPorts = []ethernetport.SettingsResponse{
-	{MACAddress: "aa-bb-cc-dd-ee-01"},
-	{MACAddress: ""},
+	{InstanceID: wiredPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-01"},
+	{InstanceID: wirelessPortInstanceID, MACAddress: ""},
+}
+
+func TestHasWiFiHardware(t *testing.T) {
+	tests := []struct {
+		name  string
+		ports []ethernetport.SettingsResponse
+		want  bool
+	}{
+		{"wired_and_wireless", wifiCapablePorts, true},
+		{"wired_only", wifiAbsentPorts, false},
+		{"wireless_slot_without_mac", wifiSlotEmptyPorts, false},
+		{"no_ports", nil, false},
+		{
+			// Wireless-only platform (no wired NIC): the wireless NIC is the
+			// only entry, so it sits at index 0.
+			"wireless_only_by_instance_id",
+			[]ethernetport.SettingsResponse{
+				{InstanceID: wirelessPortInstanceID, MACAddress: "e0-d0-45-c2-fd-fd"},
+			},
+			true,
+		},
+		{
+			"wireless_only_by_connection_type",
+			[]ethernetport.SettingsResponse{
+				{InstanceID: wiredPortInstanceID, MACAddress: "e0-d0-45-c2-fd-fd", PhysicalConnectionType: ethernetport.PhysicalConnectionWirelessLAN},
+			},
+			true,
+		},
+		{
+			// A second wired NIC (Thunderbolt dock) at index 1 is not WiFi.
+			"wired_and_thunderbolt_dock",
+			[]ethernetport.SettingsResponse{
+				{InstanceID: wiredPortInstanceID, MACAddress: "aa-bb-cc-dd-ee-01"},
+				{InstanceID: "Intel(r) AMT Ethernet Port Settings 2", MACAddress: "aa-bb-cc-dd-ee-03", PhysicalConnectionType: ethernetport.PhysicalConnectionLANviaThunderboltDock},
+			},
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockWSMAN := mock.NewMockWSMANer(ctrl)
+			mockWSMAN.EXPECT().GetEthernetSettings().Return(tt.ports, nil)
+
+			got, err := hasWiFiHardware(mockWSMAN)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestEnableWifiPortCmd_Structure(t *testing.T) {
