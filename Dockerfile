@@ -6,13 +6,13 @@
 # syntax=docker/dockerfile:1.7
 
 # Step 1: Download dependencies
-FROM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS dependencies
+FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS dependencies
 WORKDIR /rpc
 COPY go.mod go.sum ./
 RUN go mod download
 
 # Step 2: Builder
-FROM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS builder
+FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS builder
 ARG TARGETARCH=amd64
 ARG TARGETVARIANT
 RUN apk add --no-cache git ca-certificates
