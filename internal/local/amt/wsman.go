@@ -309,8 +309,12 @@ func isDialTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-// Close closes any open local transport connections
+// Close closes idle HTTP keep-alive connections and any open local transport connections
 func (g *GoWSMANMessages) Close() error {
+	if idle, ok := g.wsmanMessages.Client.(interface{ CloseIdleConnections() }); ok {
+		idle.CloseIdleConnections()
+	}
+
 	if g.localTransport != nil {
 		return g.localTransport.Close()
 	}
@@ -641,6 +645,10 @@ func (g *GoWSMANMessages) RequestRedirectionStateChange(requestedState redirecti
 
 func (g *GoWSMANMessages) RequestKVMStateChange(requestedState kvm.KVMRedirectionSAPRequestStateChangeInput) (response kvm.Response, err error) {
 	return g.wsmanMessages.CIM.KVMRedirectionSAP.RequestStateChange(requestedState)
+}
+
+func (g *GoWSMANMessages) GetKVMRedirectionSAP() (response kvm.Response, err error) {
+	return g.wsmanMessages.CIM.KVMRedirectionSAP.Get()
 }
 
 func (g *GoWSMANMessages) PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error) {

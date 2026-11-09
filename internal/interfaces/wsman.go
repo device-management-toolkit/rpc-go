@@ -100,6 +100,7 @@ type WSMANer interface {
 
 	RequestRedirectionStateChange(requestedState redirection.RequestedState) (response redirection.Response, err error)
 	RequestKVMStateChange(requestedState kvm.KVMRedirectionSAPRequestStateChangeInput) (response kvm.Response, err error)
+	GetKVMRedirectionSAP() (response kvm.Response, err error)
 	PutRedirectionState(requestedState *redirection.RedirectionRequest) (response redirection.Response, err error)
 	GetRedirectionService() (response redirection.Response, err error)
 	GetIpsOptInService() (response optin.Response, err error)
