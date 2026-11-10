@@ -949,6 +949,9 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature, service.isUpgrade)
 	if err != nil {
 		err = service.handleACMSetupError(err)
+		// Only a TEP flow adds CSME's provisioning-log reason: there CSME made
+		// the decision. In the traditional flow the root-hash check has already
+		// accepted the certificate, so the existing error is kept as is.
 		if err != nil && tepVoucher {
 			return service.withProvisioningLogReason(err)
 		}
@@ -966,7 +969,9 @@ const tepVoucherReadTimeout = 2 * time.Minute
 // AMT, so that CSME, not rpc-go, decides whether the provisioning certificate
 // is trusted. A voucher that is only requested does not count: CSME has no
 // owner credential yet. Any read failure means no voucher, which keeps the
-// traditional root-hash check. Devices older than CSME 18 get only the
+// traditional root-hash check; a failed firmware-capabilities or voucher read
+// is logged at warn level, because on a TEP device the fallback can reject a
+// certificate CSME would accept. Devices older than CSME 18 get only the
 // version read.
 func (service *LocalActivationService) tepVoucherInstalled() bool {
 	version, err := service.amtCommand.GetVersionDataFromME("AMT", tepVoucherReadTimeout)
@@ -983,7 +988,7 @@ func (service *LocalActivationService) tepVoucherInstalled() bool {
 
 	caps, err := service.amtCommand.GetFWCapabilities()
 	if err != nil {
-		log.Debug("TEP: could not read firmware capabilities: ", err)
+		log.Warn("TEP: could not read firmware capabilities; falling back to the provisioning certificate root-hash check: ", err)
 
 		return false
 	}
@@ -995,7 +1000,7 @@ func (service *LocalActivationService) tepVoucherInstalled() bool {
 	state, err := service.amtCommand.TEPGetVoucherStateByFeature(upid.TEPFeatureAMT)
 	if err != nil {
 		if !errors.Is(err, upid.ErrTEPInvalidVoucher) {
-			log.Debug("TEP: could not read the AMT voucher state: ", err)
+			log.Warn("TEP: could not read the AMT voucher state; falling back to the provisioning certificate root-hash check: ", err)
 		}
 
 		return false

@@ -18,6 +18,8 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
+	log "github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -186,6 +188,69 @@ func TestActivateACMLegacy_NoTEPVoucher_ChecksRootHash(t *testing.T) {
 
 			err := newTEPTestService(t, mockAMT, mockWSMAN).activateACMLegacy(nil)
 			assert.Equal(t, utils.ActivationFailedProvCertNoMatch, err)
+		})
+	}
+}
+
+// A failed read on a TEP-capable device means the voucher could not be
+// checked, so the root-hash fallback may reject a certificate CSME would
+// accept (error 128). That must show at warn level; a device that simply has
+// no voucher stays quiet.
+func TestTEPVoucherInstalled_ReadFailureWarns(t *testing.T) {
+	tests := []struct {
+		name     string
+		expect   func(*mock.MockInterface)
+		wantWarn bool
+	}{
+		{
+			name: "voucher state unreadable",
+			expect: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("21.0.10", nil)
+				m.EXPECT().GetFWCapabilities().Return(mkhi.FWCapsTEP, nil)
+				m.EXPECT().TEPGetVoucherStateByFeature(upid.TEPFeatureAMT).Return(nil, errors.New("heci timeout"))
+			},
+			wantWarn: true,
+		},
+		{
+			name: "firmware capabilities unreadable",
+			expect: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("21.0.10", nil)
+				m.EXPECT().GetFWCapabilities().Return(mkhi.FWCapabilities(0), errors.New("heci timeout"))
+			},
+			wantWarn: true,
+		},
+		{
+			name: "no voucher installed",
+			expect: func(m *mock.MockInterface) {
+				m.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("21.0.10", nil)
+				m.EXPECT().GetFWCapabilities().Return(mkhi.FWCapsTEP, nil)
+				m.EXPECT().TEPGetVoucherStateByFeature(upid.TEPFeatureAMT).Return(nil, upid.ErrTEPInvalidVoucher)
+			},
+			wantWarn: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hook := logtest.NewGlobal()
+			defer hook.Reset()
+
+			ctrl := gomock.NewController(t)
+			mockAMT := mock.NewMockInterface(ctrl)
+			tt.expect(mockAMT)
+
+			service := &LocalActivationService{amtCommand: mockAMT}
+			assert.False(t, service.tepVoucherInstalled())
+
+			warned := false
+
+			for _, entry := range hook.AllEntries() {
+				if entry.Level == log.WarnLevel {
+					warned = true
+				}
+			}
+
+			assert.Equal(t, tt.wantWarn, warned)
 		})
 	}
 }
