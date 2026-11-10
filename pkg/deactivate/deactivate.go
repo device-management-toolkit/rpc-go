@@ -3,7 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  **********************************************************************/
 
-// Package deactivate provides a public API for local AMT deactivation.
+// Package deactivate provides a public API for AMT deactivation.
+//
+// Each mode of the rpc deactivate command has its own function and options:
+// Run deactivates AMT on this device directly, Remote lets an RPS server
+// drive deactivation, and Console deactivates AMT on this device and then
+// deletes the device from Console. Every function needs elevated privileges
+// (admin/root) to access the HECI driver.
 package deactivate
 
 import (
@@ -11,7 +17,9 @@ import (
 	"net/url"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	log "github.com/sirupsen/logrus"
 )
 
 var errRelativeAuthEndpoint = errors.New("AuthEndpoint must be an absolute HTTP(S) URL")
@@ -55,29 +63,14 @@ type Options struct {
 func Run(opts Options) error {
 	cmd, ctx := newCommand(opts)
 
-	// Validate is the embedded ServerAuthFlags', which Kong calls on the CLI root.
-	if err := ctx.Validate(); err != nil {
-		return err
-	}
-
 	// No server URL exists to resolve a relative endpoint against, so cleanup would be skipped.
-	if opts.AuthEndpoint != "" && !isAbsoluteHTTPURL(opts.AuthEndpoint) {
-		return errRelativeAuthEndpoint
-	}
+	return run(cmd, ctx, func() error {
+		if opts.AuthEndpoint != "" && !isAbsoluteHTTPURL(opts.AuthEndpoint) {
+			return errRelativeAuthEndpoint
+		}
 
-	if err := cmd.Validate(); err != nil {
-		return err
-	}
-
-	amtCommand := amt.NewAMTCommand()
-
-	if err := cmd.AfterApply(&amtCommand); err != nil {
-		return err
-	}
-
-	ctx.AMTCommand = &amtCommand
-
-	return cmd.Run(ctx)
+		return nil
+	})
 }
 
 // newCommand builds the local deactivate command and its context from opts.
@@ -103,6 +96,62 @@ func newCommand(opts Options) (*commands.DeactivateCmd, *commands.Context) {
 	}
 
 	return cmd, ctx
+}
+
+// runner is the internal deactivate command, run through Kong's hooks.
+type runner interface {
+	Validate() error
+	AfterApply(amt.Interface) error
+	Run(*commands.Context) error
+	GetWSManClient() interfaces.WSMANer
+}
+
+// run calls the hooks in Kong's order: the CLI root's Validate, which checks
+// the ServerAuthFlags in ctx, then the command's Validate, AfterApply and Run.
+// checks are the package's own option checks; they run after the root's
+// Validate and before the command's, so every option is checked before any
+// AMT access. run then closes the WSMAN client the command still holds,
+// which the CLI leaves to process exit.
+func run(cmd runner, ctx *commands.Context, checks ...func() error) error {
+	if err := ctx.Validate(); err != nil {
+		return err
+	}
+
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+
+	if err := cmd.Validate(); err != nil {
+		return err
+	}
+
+	amtCommand := amt.NewAMTCommand()
+
+	if err := cmd.AfterApply(&amtCommand); err != nil {
+		return err
+	}
+
+	ctx.AMTCommand = &amtCommand
+
+	// Read the client after Run: it is created lazily inside Run.
+	defer func() { closeWSMAN(cmd.GetWSManClient()) }()
+
+	return cmd.Run(ctx)
+}
+
+// closeWSMAN releases a WSMAN client's connection. Over LME a held connection
+// keeps the MEI device open, and the next call fails with "device busy".
+func closeWSMAN(client interfaces.WSMANer) {
+	if client == nil {
+		return
+	}
+
+	// Only log a close failure so it never replaces Run's result.
+	if err := client.Close(); err != nil {
+		log.Debugf("closing WSMAN client: %v", err)
+	}
 }
 
 func isAbsoluteHTTPURL(raw string) bool {
