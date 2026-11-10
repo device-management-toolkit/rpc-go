@@ -3238,3 +3238,121 @@ func TestClassifyStatusWSMANFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestInfoService_SyncDeviceInfoWithResult_VerifiesServerResponse(t *testing.T) {
+	const guid = "12345678-1234-1234-1234-123456789ABC"
+
+	const html = "<!doctype html><html><body>console</body></html>"
+
+	type reply struct {
+		code        int
+		contentType string
+		body        string
+	}
+
+	tests := []struct {
+		name       string
+		patch      []reply
+		post       reply
+		wantErr    string
+		wantStatus string
+	}{
+		{
+			name:    "rejects an HTML page returned for PATCH",
+			patch:   []reply{{http.StatusOK, "text/html; charset=utf-8", html}},
+			wantErr: "did not return a device record",
+		},
+		{
+			name:    "rejects a device record for another GUID",
+			patch:   []reply{{http.StatusOK, "application/json", `{"guid":"00000000-0000-0000-0000-000000000001"}`}},
+			wantErr: "returned device 00000000-0000-0000-0000-000000000001",
+		},
+		{
+			name:       "accepts the device record whatever the GUID case",
+			patch:      []reply{{http.StatusOK, "application/json", `{"guid":"12345678-1234-1234-1234-123456789abc","hostname":"h"}`}},
+			wantStatus: "updated",
+		},
+		{
+			name:    "rejects a JSON null body",
+			patch:   []reply{{http.StatusOK, "application/json", "null"}},
+			wantErr: "did not return a device record",
+		},
+		{
+			name:    "rejects an oversized body instead of checking a prefix",
+			patch:   []reply{{http.StatusOK, "text/html", strings.Repeat(" ", maxDeviceResponseBytes) + html}},
+			wantErr: "too large",
+		},
+		{
+			name:       "accepts an empty success body",
+			patch:      []reply{{http.StatusNoContent, "", ""}},
+			wantStatus: "updated",
+		},
+		{
+			name:    "rejects an HTML page returned for the registration POST",
+			patch:   []reply{{http.StatusNotFound, "application/json", `{"error":"not found"}`}},
+			post:    reply{http.StatusOK, "text/html", html},
+			wantErr: "did not return a device record",
+		},
+		{
+			name: "rejects an HTML page returned for the PATCH after registration",
+			patch: []reply{
+				{http.StatusNotFound, "application/json", `{"error":"not found"}`},
+				{http.StatusOK, "text/html", html},
+			},
+			post:    reply{http.StatusCreated, "application/json", `{"guid":"` + guid + `"}`},
+			wantErr: "did not return a device record",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var patchCount int
+
+			write := func(w http.ResponseWriter, rp reply) {
+				if rp.contentType != "" {
+					w.Header().Set("Content-Type", rp.contentType)
+				}
+
+				w.WriteHeader(rp.code)
+				_, _ = io.WriteString(w, rp.body)
+			}
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				_ = r.Body.Close()
+
+				switch r.Method {
+				case http.MethodPatch:
+					rp := tt.patch[len(tt.patch)-1]
+					if patchCount < len(tt.patch) {
+						rp = tt.patch[patchCount]
+					}
+
+					patchCount++
+
+					write(w, rp)
+				case http.MethodPost:
+					write(w, tt.post)
+				default:
+					w.WriteHeader(http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+
+			service := NewInfoService(nil, WithAutoRegister(true), WithHECIAvailable(false))
+			result, err := service.SyncDeviceInfoWithResult(&Context{}, &InfoResult{UUID: guid}, server.URL+"/api/v1/devices", nil, nil)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Nil(t, result)
+
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, tt.wantStatus, result.Status)
+		})
+	}
+}
