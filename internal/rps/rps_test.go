@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -520,8 +519,10 @@ func TestPartialBytesAreFollowedBySessionScopedEOF(t *testing.T) {
 }
 
 func TestClosedTLSRequestsWaitForNewSession(t *testing.T) {
-	for _, writeFailure := range []bool{false, true} {
-		t.Run(fmt.Sprint(writeFailure), func(t *testing.T) {
+	for _, failure := range []string{"closed", "write", "read"} {
+		t.Run(failure, func(t *testing.T) {
+			writeFailure := failure == "write"
+
 			conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
 			if response != nil {
 				defer response.Body.Close()
@@ -536,7 +537,19 @@ func TestClosedTLSRequestsWaitForNewSession(t *testing.T) {
 			assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
 
 			local := &streamTestLM{events: make(chan lm.StreamEvent)}
+
 			executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: local, localTlsEnforced: true, lmConnected: writeFailure, lmListening: writeFailure, peerClosed: !writeFailure, tlsSessionID: "closed"}
+			if failure == "read" {
+				executor.peerClosed = false
+				executor.handleStreamedEvent(lm.StreamEvent{Err: net.ErrClosed})
+
+				var reset Message
+				assert.NoError(t, conn.ReadJSON(&reset))
+				assert.Equal(t, MethodConnectionReset, reset.Method)
+				assert.Equal(t, "closed", reset.TLSSessionID)
+				assert.False(t, reset.StreamClosed)
+			}
+
 			request, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "closed", Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
 			assert.NoError(t, err)
 
@@ -618,4 +631,108 @@ func TestPortSwitchReplacesLMEWithSingleTLSReader(t *testing.T) {
 	assert.True(t, executor.lmListening)
 	assert.NotNil(t, executor.stream)
 	assert.NotZero(t, executor.streamGeneration)
+}
+
+func TestExecutorShutdownClosesPortSwitchReplacement(t *testing.T) {
+	listenConfig := net.ListenConfig{}
+
+	listener, err := listenConfig.Listen(context.Background(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	assert.NoError(t, err)
+
+	helloBytes := []byte{0x16, 3, 3, 0, 1, 1}
+	requestRead := make(chan struct{})
+	peerResult := make(chan error, 1)
+
+	go func() {
+		probe, err := listener.Accept()
+		if err != nil {
+			peerResult <- err
+
+			return
+		}
+
+		probe.Close()
+
+		peer, err := listener.Accept()
+		if err != nil {
+			peerResult <- err
+
+			return
+		}
+		defer peer.Close()
+
+		peer.SetDeadline(time.Now().Add(5 * time.Second))
+
+		buffer := make([]byte, len(helloBytes))
+		if _, err := io.ReadFull(peer, buffer); err != nil {
+			peerResult <- err
+
+			return
+		}
+
+		close(requestRead)
+
+		_, err = peer.Read(make([]byte, 1))
+		peerResult <- err
+	}()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.Close()
+
+		ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+		var message Message
+		if ws.ReadJSON(&message) != nil {
+			return
+		}
+
+		payload, _ := json.Marshal(PortSwitchPayload{Port: port})
+		ws.WriteJSON(Message{Method: MethodPortSwitch, Payload: string(payload)})
+
+		if ws.ReadJSON(&message) != nil {
+			return
+		}
+
+		ws.WriteJSON(Message{Method: MethodTLSData, TLSSessionID: "replacement", Payload: base64.StdEncoding.EncodeToString(helloBytes)})
+
+		select {
+		case <-requestRead:
+			ws.WriteJSON(Message{Method: "success", Message: "configured"})
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer server.Close()
+
+	conn, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer conn.Close()
+
+	original := &streamTestLM{}
+	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: original, data: make(chan []byte), errors: make(chan error)}
+	executor.MakeItSo(Message{Method: "activation"})
+	assert.Equal(t, 1, original.closed)
+
+	select {
+	case err := <-peerResult:
+		assert.ErrorIs(t, err, io.EOF)
+	case <-time.After(6 * time.Second):
+		t.Fatal("replacement socket did not close on executor shutdown")
+	}
 }

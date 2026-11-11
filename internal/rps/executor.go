@@ -101,7 +101,7 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 		return
 	}
 
-	defer e.localManagement.Close()
+	defer func() { e.localManagement.Close() }()
 
 	for {
 		select {
@@ -268,7 +268,6 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		if err := e.localManagement.Send(msgPayload); err != nil {
 			log.Error(err)
 			e.handleStreamedEvent(lm.StreamEvent{Generation: e.streamGeneration, Err: err})
-			e.peerClosed = true
 
 			return false
 		}
@@ -468,7 +467,7 @@ func (e *Executor) handleStreamedEvent(event lm.StreamEvent) {
 		resetMsg.TLSSessionID = e.tlsSessionID
 		resetMsg.StreamClosed = errors.Is(event.Err, io.EOF)
 
-		e.peerClosed = resetMsg.StreamClosed
+		e.peerClosed = true
 		if err := e.server.Send(resetMsg); err != nil {
 			log.Error(err)
 		}
