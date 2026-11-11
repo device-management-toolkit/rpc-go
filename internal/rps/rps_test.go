@@ -6,8 +6,10 @@ package rps
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -427,12 +429,18 @@ type streamTestLM struct {
 	generation uint64
 	events     chan lm.StreamEvent
 	closed     int
+	connected  int
 	writes     [][]byte
+	sendErr    error
 }
 
 func (m *streamTestLM) Initialize() error { return nil }
-func (m *streamTestLM) Connect() error    { return nil }
-func (m *streamTestLM) Listen()           {}
+func (m *streamTestLM) Connect() error {
+	m.connected++
+
+	return nil
+}
+func (m *streamTestLM) Listen() {}
 func (m *streamTestLM) Close() error {
 	m.closed++
 
@@ -441,7 +449,7 @@ func (m *streamTestLM) Close() error {
 func (m *streamTestLM) Send(data []byte) error {
 	m.writes = append(m.writes, append([]byte(nil), data...))
 
-	return nil
+	return m.sendErr
 }
 func (m *streamTestLM) StartTLSStream() (uint64, <-chan lm.StreamEvent) {
 	m.generation++
@@ -509,4 +517,105 @@ func TestPartialBytesAreFollowedBySessionScopedEOF(t *testing.T) {
 	assert.True(t, eof.StreamClosed)
 	assert.Equal(t, 1, local.closed)
 	assert.False(t, executor.lmConnected)
+}
+
+func TestClosedTLSRequestsWaitForNewSession(t *testing.T) {
+	for _, writeFailure := range []bool{false, true} {
+		t.Run(fmt.Sprint(writeFailure), func(t *testing.T) {
+			conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
+			if response != nil {
+				defer response.Body.Close()
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer conn.Close()
+
+			assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+			local := &streamTestLM{events: make(chan lm.StreamEvent)}
+			executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: local, localTlsEnforced: true, lmConnected: writeFailure, lmListening: writeFailure, peerClosed: !writeFailure, tlsSessionID: "closed"}
+			request, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "closed", Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
+			assert.NoError(t, err)
+
+			if writeFailure {
+				local.sendErr = net.ErrClosed
+
+				assert.False(t, executor.HandleDataFromRPS(request))
+
+				var reset Message
+				assert.NoError(t, conn.ReadJSON(&reset))
+				assert.Equal(t, MethodConnectionReset, reset.Method)
+				assert.Equal(t, "closed", reset.TLSSessionID)
+				assert.False(t, reset.StreamClosed)
+				assert.False(t, executor.lmConnected)
+			}
+
+			writes := len(local.writes)
+
+			for range 2 {
+				assert.False(t, executor.HandleDataFromRPS(request))
+
+				var reset Message
+				assert.NoError(t, conn.ReadJSON(&reset))
+				assert.Equal(t, MethodConnectionReset, reset.Method)
+				assert.Equal(t, "closed", reset.TLSSessionID)
+				assert.True(t, executor.peerClosed)
+			}
+
+			assert.Zero(t, local.connected)
+			assert.Len(t, local.writes, writes)
+			local.sendErr = nil
+			hello, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "new", Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
+			assert.NoError(t, err)
+			assert.False(t, executor.HandleDataFromRPS(hello))
+			assert.Equal(t, 1, local.connected)
+			assert.Len(t, local.writes, writes+1)
+			assert.False(t, executor.peerClosed)
+		})
+	}
+}
+
+func TestPortSwitchReplacesLMEWithSingleTLSReader(t *testing.T) {
+	listenConfig := net.ListenConfig{}
+
+	listener, err := listenConfig.Listen(context.Background(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer conn.Close()
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	assert.NoError(t, err)
+
+	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: &streamTestLM{}, isLME: true}
+	payload, err := json.Marshal(PortSwitchPayload{Port: port})
+	assert.NoError(t, err)
+
+	assert.NoError(t, executor.handlePortSwitch(string(payload)))
+	defer executor.localManagement.Close()
+
+	assert.False(t, executor.isLME)
+
+	hello, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "new", Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
+	assert.NoError(t, err)
+	assert.False(t, executor.HandleDataFromRPS(hello))
+	assert.True(t, executor.lmListening)
+	assert.NotNil(t, executor.stream)
+	assert.NotZero(t, executor.streamGeneration)
 }

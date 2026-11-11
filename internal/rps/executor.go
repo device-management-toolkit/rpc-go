@@ -219,8 +219,6 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	// session (ClientHello) simply reconnects; any other record belongs to the dead session,
 	// so tell RPS now instead of writing it to a fresh socket and waiting for a timeout.
 	if e.localTlsEnforced && e.peerClosed && !isTLSClientHello && !newTLSSession {
-		e.peerClosed = false
-
 		log.Warn("LMS connection was closed by AMT after its last response - sending connection_reset")
 
 		resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
@@ -269,8 +267,10 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 
 		if err := e.localManagement.Send(msgPayload); err != nil {
 			log.Error(err)
+			e.handleStreamedEvent(lm.StreamEvent{Generation: e.streamGeneration, Err: err})
+			e.peerClosed = true
 
-			return true
+			return false
 		}
 
 		return false
@@ -399,6 +399,7 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 
 	// Replace the LMS connection
 	e.localManagement = newLM
+	e.isLME = false
 	e.data = lmDataChannel
 	e.errors = lmErrorChannel
 	e.lmConnected = true
