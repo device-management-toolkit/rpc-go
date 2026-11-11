@@ -13,7 +13,7 @@ require (
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 	software.sslmate.com/src/go-pkcs12 v0.7.4
@@ -31,3 +31,5 @@ require (
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3 // indirect
 )
+
+replace golang.org/x/crypto => github.com/golang/crypto v0.58.1-0.20261009181718-2f1f834330b2
