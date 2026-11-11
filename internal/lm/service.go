@@ -56,6 +56,7 @@ func (lms *LMSConnection) Initialize() error {
 func (lms *LMSConnection) Connect() error {
 	lms.mu.Lock()
 	defer lms.mu.Unlock()
+
 	var err error
 
 	if lms.Connection == nil {
@@ -104,6 +105,7 @@ func (lms *LMSConnection) Send(data []byte) error {
 func (lms *LMSConnection) Close() error {
 	lms.mu.Lock()
 	defer lms.mu.Unlock()
+
 	log.Debug("closing connection to lms")
 
 	// Set before the socket is closed so the streaming reader, which is blocked in Read and
@@ -290,6 +292,7 @@ func (lms *LMSConnection) readStream(conn net.Conn, stop <-chan struct{}, emit f
 		select {
 		case <-stop:
 			log.Debug("lms stream reader exiting after local close")
+
 			return
 		default:
 		}

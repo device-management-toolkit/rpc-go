@@ -438,6 +438,7 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 func (e *Executor) handleStreamedEvent(event lm.StreamEvent) {
 	if event.Generation != e.streamGeneration {
 		log.Debug("discarding obsolete LMS stream event")
+
 		return
 	}
 
@@ -453,6 +454,7 @@ func (e *Executor) handleStreamedEvent(event lm.StreamEvent) {
 	if event.Err == nil {
 		return
 	}
+
 	e.localManagement.Close()
 	e.lmConnected = false
 	e.lmListening = false
