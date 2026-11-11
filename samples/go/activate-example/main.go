@@ -19,9 +19,9 @@ Inputs are read from environment variables:
   ccm      AMT_PASSWORD
   acm      AMT_PASSWORD, PROVISIONING_CERT, PROVISIONING_CERT_PASSWORD, MEBX_PASSWORD
   stop     (none)
-  remote   RPS_URL, RPS_PROFILE, AMT_PASSWORD (activated devices), TENANT_ID,
-           RPS_PROXY, TLS_TUNNEL=true (AMT 11-18), DNS_SUFFIX, HOSTNAME_OVERRIDE,
-           DEVICE_UUID, FRIENDLY_NAME
+	remote   RPS_URL, RPS_PROFILE, AMT_PASSWORD (activated devices), TENANT_ID,
+					 RPS_PROXY, optional TLS_TUNNEL=false to disable (enabled by default),
+					 DNS_SUFFIX, HOSTNAME_OVERRIDE, DEVICE_UUID, FRIENDLY_NAME
   profile  PROFILE_PATH or PROFILE_URL, RPC_EXECUTABLE, CONFIG_ENCRYPTION_KEY,
            AMT_PASSWORD, MEBX_PASSWORD
 
@@ -91,7 +91,7 @@ func remoteOptions() activate.RemoteOptions {
 		UUID:             os.Getenv("DEVICE_UUID"),
 		FriendlyName:     os.Getenv("FRIENDLY_NAME"),
 		Proxy:            os.Getenv("RPS_PROXY"),
-		TLSTunnel:        envBool("TLS_TUNNEL"),
+		TLSTunnel:        envOptionalBool("TLS_TUNNEL"),
 		TenantID:         os.Getenv("TENANT_ID"),
 		SkipCertCheck:    envBool("SKIP_CERT_CHECK"),
 		SkipAMTCertCheck: envBool("SKIP_AMT_CERT_CHECK"),
@@ -122,4 +122,18 @@ func envBool(name string) bool {
 	value, _ := strconv.ParseBool(os.Getenv(name))
 
 	return value
+}
+
+func envOptionalBool(name string) *bool {
+	value := os.Getenv(name)
+	if value == "" {
+		return nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil
+	}
+
+	return &parsed
 }

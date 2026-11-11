@@ -38,9 +38,9 @@ type RemoteOptions struct {
 	// Proxy is the URL of the proxy for the RPS connection. If empty, the proxy
 	// from the environment (HTTPS_PROXY, HTTP_PROXY, NO_PROXY) is used.
 	Proxy string
-	// TLSTunnel provisions TLS on AMT 11 to 18 devices and switches the
-	// connection to RPS to an encrypted channel.
-	TLSTunnel bool
+	// TLSTunnel controls end-to-end TLS tunneling through RPS. A nil value
+	// enables tunneling by default; set it to false to opt out.
+	TLSTunnel *bool
 	// TenantID is the RPS tenant the device belongs to.
 	TenantID string
 	// SkipCertCheck skips TLS certificate verification when connecting to RPS.
@@ -91,6 +91,11 @@ func (opts RemoteOptions) validate() error {
 
 // newRemoteCommand builds the remote activate command and its context from opts.
 func newRemoteCommand(opts RemoteOptions) (*internalact.ActivateCmd, *commands.Context) {
+	tlsTunnel := true
+	if opts.TLSTunnel != nil {
+		tlsTunnel = *opts.TLSTunnel
+	}
+
 	cmd := &internalact.ActivateCmd{
 		URL:          opts.URL,
 		Profile:      opts.Profile,
@@ -99,7 +104,7 @@ func newRemoteCommand(opts RemoteOptions) (*internalact.ActivateCmd, *commands.C
 		UUID:         opts.UUID,
 		FriendlyName: opts.FriendlyName,
 		Proxy:        opts.Proxy,
-		TLSTunnel:    opts.TLSTunnel,
+		TLSTunnel:    tlsTunnel,
 	}
 
 	ctx := &commands.Context{
