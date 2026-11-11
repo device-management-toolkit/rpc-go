@@ -5,6 +5,9 @@
 package lm
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -259,5 +262,99 @@ func TestListenNonTLSTimeoutSendsEmptyBuf(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Listen goroutine did not exit")
+	}
+}
+
+// Hold an old socket's read result until the replacement is connected.
+type delayedReadConn struct {
+	net.Conn
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *delayedReadConn) Read(data []byte) (int, error) {
+	close(c.entered)
+	n, err := c.Conn.Read(data)
+	<-c.release
+
+	return n, err
+}
+
+func TestOldReaderCloseCannotAffectReconnectedSocket(t *testing.T) {
+	var listenConfig net.ListenConfig
+
+	listener, err := listenConfig.Listen(context.Background(), "tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	oldSocket, oldPeer := net.Pipe()
+	defer oldPeer.Close()
+
+	delayed := &delayedReadConn{Conn: oldSocket, entered: make(chan struct{}), release: make(chan struct{})}
+	address := listener.Addr().(*net.TCPAddr)
+	lms := NewLMSConnection("127.0.0.1", fmt.Sprint(address.Port), true, nil, nil, 0, false)
+	lms.Connection = delayed
+	oldGeneration, _ := lms.StartTLSStream()
+
+	select {
+	case <-delayed.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("old reader did not start")
+	}
+
+	assert.NoError(t, lms.Close())
+
+	assert.NoError(t, lms.Connect())
+	defer lms.Close()
+
+	peer, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+
+	generation, events := lms.StartTLSStream()
+	assert.Greater(t, generation, oldGeneration)
+	close(delayed.release)
+
+	_, err = peer.Write([]byte("replacement data"))
+	assert.NoError(t, err)
+
+	select {
+	case event := <-events:
+		assert.Equal(t, generation, event.Generation)
+		assert.Equal(t, []byte("replacement data"), event.Data)
+		assert.NoError(t, event.Err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("replacement reader did not forward data")
+	}
+}
+
+func TestStreamKeepsFinalBytesBeforeEOF(t *testing.T) {
+	socket, peer := net.Pipe()
+
+	lms := &LMSConnection{Connection: socket, useTls: true}
+	defer lms.Close()
+
+	generation, events := lms.StartTLSStream()
+
+	go func() { _, _ = peer.Write([]byte("partial TLS record")); _ = peer.Close() }()
+
+	for _, expectEOF := range []bool{false, true} {
+		select {
+		case event := <-events:
+			assert.Equal(t, generation, event.Generation)
+
+			if expectEOF {
+				assert.ErrorIs(t, event.Err, io.EOF)
+			} else {
+				assert.Equal(t, []byte("partial TLS record"), event.Data)
+				assert.NoError(t, event.Err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("stream event not delivered")
+		}
 	}
 }

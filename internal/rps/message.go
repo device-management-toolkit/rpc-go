@@ -32,6 +32,8 @@ type Message struct {
 	Fqdn            string `json:"fqdn"`
 	Payload         string `json:"payload"`
 	TenantID        string `json:"tenantId"`
+	TLSSessionID    string `json:"tlsSessionId,omitempty"`
+	StreamClosed    bool   `json:"streamClosed,omitempty"`
 }
 
 // Status Message is used for displaying and parsing status messages from RPS

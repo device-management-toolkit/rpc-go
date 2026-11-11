@@ -8,13 +8,17 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/lm"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -416,4 +420,93 @@ func TestProcessMessagePortSwitch(t *testing.T) {
 	server.Connect(true)
 	decodedMessage := server.ProcessMessage(activation)
 	assert.Equal(t, []byte(PortSwitchSentinel+portSwitchJSON), decodedMessage)
+}
+
+// streamTestLM keeps executor tests independent of hardware socket timing.
+type streamTestLM struct {
+	generation uint64
+	events     chan lm.StreamEvent
+	closed     int
+	writes     [][]byte
+}
+
+func (m *streamTestLM) Initialize() error { return nil }
+func (m *streamTestLM) Connect() error    { return nil }
+func (m *streamTestLM) Listen()           {}
+func (m *streamTestLM) Close() error {
+	m.closed++
+
+	return nil
+}
+func (m *streamTestLM) Send(data []byte) error {
+	m.writes = append(m.writes, append([]byte(nil), data...))
+
+	return nil
+}
+func (m *streamTestLM) StartTLSStream() (uint64, <-chan lm.StreamEvent) {
+	m.generation++
+
+	return m.generation, m.events
+}
+
+func TestObsoleteStreamEventsCannotResetReplacement(t *testing.T) {
+	for _, event := range []lm.StreamEvent{
+		{Generation: 1, Data: []byte("old bytes")},
+		{Generation: 1, Err: io.EOF},
+		{Generation: 1, Err: net.ErrClosed},
+	} {
+		local := &streamTestLM{}
+		executor := Executor{localManagement: local, localTlsEnforced: true, lmConnected: true, lmListening: true, streamGeneration: 2, tlsSessionID: "replacement"}
+		// An attempted send would also fail because there is deliberately no server socket.
+		executor.handleStreamedEvent(event)
+		assert.Zero(t, local.closed)
+		assert.True(t, executor.lmConnected)
+		assert.True(t, executor.lmListening)
+	}
+}
+
+func TestClientHelloReplacesGenerationBeforeOldEOF(t *testing.T) {
+	local := &streamTestLM{generation: 2, events: make(chan lm.StreamEvent)}
+	executor := Executor{localManagement: local, localTlsEnforced: true, lmConnected: true, lmListening: true, streamGeneration: 2, tlsSessionID: "old"}
+	request, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "new", Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
+	assert.NoError(t, err)
+	assert.False(t, executor.HandleDataFromRPS(request))
+	assert.Equal(t, uint64(3), executor.streamGeneration)
+	assert.Equal(t, "new", executor.tlsSessionID)
+	assert.Equal(t, 1, local.closed)
+	assert.Len(t, local.writes, 1)
+	executor.handleStreamedEvent(lm.StreamEvent{Generation: 2, Err: io.EOF})
+	assert.Equal(t, 1, local.closed)
+	assert.True(t, executor.lmConnected)
+}
+
+func TestPartialBytesAreFollowedBySessionScopedEOF(t *testing.T) {
+	conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer conn.Close()
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+	local := &streamTestLM{}
+	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: local, localTlsEnforced: true, lmConnected: true, lmListening: true, streamGeneration: 7, tlsSessionID: "tls-session"}
+	executor.handleStreamedEvent(lm.StreamEvent{Generation: 7, Data: []byte{0x17, 3}})
+	executor.handleStreamedEvent(lm.StreamEvent{Generation: 7, Err: io.EOF})
+
+	var data, eof Message
+	assert.NoError(t, conn.ReadJSON(&data))
+	assert.NoError(t, conn.ReadJSON(&eof))
+	assert.Equal(t, MethodTLSData, data.Method)
+	assert.Equal(t, "tls-session", data.TLSSessionID)
+	assert.Equal(t, MethodConnectionReset, eof.Method)
+	assert.Equal(t, "tls-session", eof.TLSSessionID)
+	assert.True(t, eof.StreamClosed)
+	assert.Equal(t, 1, local.closed)
+	assert.False(t, executor.lmConnected)
 }
