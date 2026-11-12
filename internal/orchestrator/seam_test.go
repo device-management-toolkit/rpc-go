@@ -287,13 +287,14 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			name:        "wifisync",
 			controlMode: 2,
 			token:       "wifisync",
-			err:         &ExecError{ExitCode: utils.WiFiConfigurationFailed.Code, Err: errors.New("wifisync step exit status 106")},
+			inProcess:   true,
+			err:         stepErr("wifisync step"),
 		},
 		{
 			name:        "wireless",
 			controlMode: 2,
 			token:       "wireless",
-			err:         stepErr("wireless step"),
+			err:         &ExecError{ExitCode: utils.WiFiConfigurationFailed.Code, Err: errors.New("wireless step exit status 106")},
 		},
 		{
 			name:        "TLS",
@@ -355,6 +356,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
 			amtFeaturesCalls := stubSetAMTFeatures(t, inProcessErrs["amtfeatures"])
 			wiredCalls := stubConfigureWired(t, inProcessErrs["wired"])
+			wifiSyncCalls := stubConfigureWiFiSync(t, inProcessErrs["wifisync"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -373,6 +375,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 					"mebx":        len(*mebxCalls) > 0,
 					"amtfeatures": len(*amtFeaturesCalls) > 0,
 					"wired":       len(*wiredCalls) > 0,
+					"wifisync":    len(*wifiSyncCalls) > 0,
 				}[tt.token]
 			}
 

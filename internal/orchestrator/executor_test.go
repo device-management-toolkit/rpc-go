@@ -126,7 +126,7 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeEnableWiFi())
+	require.NoError(t, po.executeWirelessConfigurations())
 
-	assert.Equal(t, []string{fake, "configure", "wifisync", "--oswifisync=false", "--uefiwifisync=false"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "configure", "wireless", "--purge"}, readArgv(t, record))
 }
