@@ -16,10 +16,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/drive"
 )
 
-var (
-	errProfileSource     = errors.New("exactly one of File and URL must be set")
-	errMissingExecutable = errors.New("missing Executable, the path of the rpc binary that runs each profile step")
-)
+var errProfileSource = errors.New("exactly one of File and URL must be set")
 
 // ProfileOptions configures an AMT activation from a profile.
 // Exactly one of File and URL must be set.
@@ -32,13 +29,10 @@ type ProfileOptions struct {
 	// Key is the 32-byte key that decrypts an encrypted File, or an encrypted
 	// profile from URL; for URL it replaces any key the response carries.
 	Key string
-	// Executable is the path of the rpc binary, built from the same rpc-go
-	// version as this package, that runs each profile step (required). A name
-	// without a path separator is looked up in PATH.
-	Executable string
 	// AMTPassword is the device's current AMT admin password, needed when the
 	// device is already activated; the run then changes it to the profile's
-	// admin password. If it is empty, the user will be prompted on stdin when
+	// admin password. When the profile has no admin password, the steps use
+	// this password as is. If it is empty, the user will be prompted on stdin when
 	// Console registration reads TLS settings from an activated device. If it
 	// is empty or wrong, the user will be prompted on stdin for the current
 	// password, up to three times, when a step fails to authenticate.
@@ -85,10 +79,10 @@ type ProfileOptions struct {
 // Profile activates and configures AMT on this device from a profile, like
 // "rpc activate --profile <file>" and "rpc activate --url https://…".
 //
-// As in the CLI, each step (activation, MEBx, AMT features, network, TLS,
-// CIRA, proxy) runs as a subprocess, here of opts.Executable. The steps share
-// this process's environment, working directory (where rpc reads
-// config.yaml), stdin, stdout and stderr: their output is printed, and a step
+// Each step (activation, MEBx, AMT features, network, TLS, CIRA, proxy) runs
+// in this process with the values from the profile and opts. The steps do not
+// read the process environment, RPC_* variables or config.yaml. They share
+// this process's stdin, stdout and stderr: their output is printed, and a step
 // that lacks a value it needs prompts on stdin.
 //
 // When the profile asks for random AMT, MEBx or MPS passwords, they are
@@ -107,7 +101,7 @@ func Profile(opts ProfileOptions) error {
 }
 
 // validate rejects options that would leave the profile source ambiguous, run
-// another mode, run this process as rpc, or skip Console registration silently.
+// another mode, or skip Console registration silently.
 func (opts ProfileOptions) validate() error {
 	if (opts.File == "") == (opts.URL == "") {
 		return errProfileSource
@@ -116,11 +110,6 @@ func (opts ProfileOptions) validate() error {
 	// The command runs RPS activation for a ws(s) URL.
 	if opts.URL != "" && !isHTTPURL(opts.URL) {
 		return fmt.Errorf("unsupported url scheme: %s", opts.URL)
-	}
-
-	// Left empty, every step would run this process's executable as rpc.
-	if opts.Executable == "" {
-		return errMissingExecutable
 	}
 
 	// No server URL exists to resolve a relative endpoint against, so registration would be skipped.
@@ -141,7 +130,6 @@ func newProfileCommand(opts ProfileOptions) (*internalact.ActivateCmd, *commands
 		UUID:         opts.UUID,
 		Hostname:     opts.Hostname,
 		FriendlyName: opts.FriendlyName,
-		Executable:   opts.Executable,
 	}
 
 	ctx := &commands.Context{
