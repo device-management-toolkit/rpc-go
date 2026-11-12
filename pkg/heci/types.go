@@ -5,12 +5,27 @@
 
 package heci
 
+import "errors"
+
+// ErrClientNotFound reports that the MEI device was opened but the firmware
+// hosts no client with the requested GUID. InitWithGUID wraps the driver
+// error with it so callers can tell "feature absent" from a driver failure.
+var ErrClientNotFound = errors.New("MEI client not found")
+
 type Interface interface {
 	Init(useLME, useWD bool) error
 	GetBufferSize() uint32
 	SendMessage(buffer []byte, done *uint32) (bytesWritten uint32, err error)
 	ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error)
 	Close()
+}
+
+// GUIDInterface adds arbitrary MEI client initialization without extending the
+// existing Interface contract used by PTHI and LME drivers.
+type GUIDInterface interface {
+	Interface
+	// InitWithGUID accepts a GUID in registry form, with optional braces.
+	InitWithGUID(guid string) error
 }
 
 type MEIConnectClientData struct {
