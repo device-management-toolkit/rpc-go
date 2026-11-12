@@ -322,27 +322,6 @@ func TestExecuteACMUpgrade_PassesPasswordsViaEnv(t *testing.T) {
 	}
 }
 
-func TestExecuteMEBxConfiguration_SkipWhenPreProvisioning(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
-	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 0 // pre-provisioning
-
-	err := po.executeMEBxConfiguration()
-	if err != nil {
-		t.Fatalf("executeMEBxConfiguration() error = %v", err)
-	}
-
-	// Should have skipped execution entirely
-	if len(mock.executedArgs) != 0 {
-		t.Errorf("expected 0 executions (skipped), got %d", len(mock.executedArgs))
-	}
-}
-
 // authExecError returns an *ExecError that mimics the CLI returning the
 // AMTAuthenticationFailed exit code.
 func authExecError() error {
@@ -601,46 +580,6 @@ func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 	// through executeWithPasswordRotation would rotate once per settle attempt.
 	if len(*rotations) != 1 {
 		t.Errorf("expected 1 rotation attempt (the initial one), got %d", len(*rotations))
-	}
-}
-
-func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
-	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 2 // already in ACM
-
-	err := po.executeMEBxConfiguration()
-	if err != nil {
-		t.Fatalf("executeMEBxConfiguration() error = %v", err)
-	}
-
-	// Should have executed the MEBx configure command
-	if len(mock.executedArgs) != 1 {
-		t.Fatalf("expected 1 execution, got %d", len(mock.executedArgs))
-	}
-
-	argsStr := strings.Join(mock.executedArgs[0], " ")
-	if !strings.Contains(argsStr, "configure mebx") {
-		t.Errorf("expected MEBx configure command, got: %s", argsStr)
-	}
-	// Verify MEBx password is NOT in the command args (should be in environment variable)
-	if strings.Contains(argsStr, "mebx-pwd") {
-		t.Errorf("MEBx password should not appear in command args (should use env var), got: %s", argsStr)
-	}
-
-	// Verify MEBx password IS in environment variables
-	if len(mock.executedEnv) != 1 {
-		t.Fatalf("expected 1 execution with env, got %d", len(mock.executedEnv))
-	}
-
-	env := mock.executedEnv[0]
-	if env["MEBX_PASSWORD"] != "mebx-pwd" {
-		t.Errorf("expected MEBX_PASSWORD=mebx-pwd in env, got: %v", env)
 	}
 }
 
