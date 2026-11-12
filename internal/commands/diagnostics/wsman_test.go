@@ -99,7 +99,7 @@ func TestWSManGetCmd_ResolveClasses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			classes, err := tt.cmd.resolveClasses()
+			classes, err := tt.cmd.ResolveClasses()
 			if tt.wantErr {
 				assert.Error(t, err)
 
