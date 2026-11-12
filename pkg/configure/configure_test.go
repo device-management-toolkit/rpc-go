@@ -102,6 +102,7 @@ func TestValidOptionsReachAMTWithoutPrompting(t *testing.T) {
 		}},
 		{"SetMEBx", func() error { return SetMEBx(MEBxOptions{MEBxPassword: "P@ssw0rd"}) }},
 		{"SetAMTFeatures", func() error { return SetAMTFeatures(AMTFeaturesOptions{KVM: true}) }},
+		{"SetAMTFeatures all off", func() error { return SetAMTFeatures(AMTFeaturesOptions{}) }},
 		{"ConfigureWiFiSync", func() error { return ConfigureWiFiSync(WiFiSyncOptions{OSWiFiSync: true}) }},
 		{"ConfigureWireless", func() error {
 			return ConfigureWireless(WirelessOptions{
