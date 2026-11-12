@@ -50,8 +50,10 @@ func matchedAdapterDetails(adapter *amt.InterfaceSettings, inventory []utils.OSN
 }
 
 func hostNetworkCheck(adapters []*amt.InterfaceSettings, inventory []utils.OSNetworkInterface, inventoryErr error) Check {
-	check := Check{ID: checkIDHostNetwork, Name: "Host networking for remote activation", Status: checkUnavailable,
-		Message: "Host networking on the AMT adapters could not be verified; RPS/Console-profile activation requires host networking"}
+	check := Check{
+		ID: checkIDHostNetwork, Name: "Host networking for remote activation", Status: checkUnavailable,
+		Message: "Host networking on the AMT adapters could not be verified; RPS/Console-profile activation requires host networking",
+	}
 	if inventoryErr != nil {
 		return check
 	}
