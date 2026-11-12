@@ -33,7 +33,8 @@ func expectTEPVoucher(mockAMT *mock.MockInterface, status upid.TEPOwnershipStatu
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("21.0.10", nil)
 	mockAMT.EXPECT().GetFWCapabilities().Return(mkhi.FWCapsTEP, nil)
 	mockAMT.EXPECT().TEPGetVoucherStateByFeature(upid.TEPFeatureAMT).Return(
-		&upid.TEPVoucherState{Context: upid.TEPOwnershipContext{OwnershipStatus: status}}, nil)
+		&upid.TEPVoucherState{Context: upid.TEPOwnershipContext{OwnershipStatus: status}}, nil,
+	)
 }
 
 // expectHostBasedSetup sets up the WSMAN calls of a legacy ACM activation up
