@@ -273,13 +273,11 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(step stepFunc) error 
 			attempt, postActivationSettleAttempts, err, po.settleDelaySeconds)
 		utils.Pause(po.settleDelaySeconds)
 
-		// Retry the step directly rather than through executeWithPasswordRotation.
-		// Rotation already ran on the initial execution above; re-entering it here
-		// would prompt for the current password again on every settle attempt
-		// (worst case attempts × maxTries prompts) and, on success, recurse back
-		// into this loop. Settle retries exist to wait out a restarting port stack,
-		// which needs no credential interaction. The AMT password always comes
-		// from po.stepPassword(), which is kept current across rotations.
+		// Retry the step directly. Rotation never runs in this loop: it is
+		// skipped when this run activated the device (activatedThisRun), the
+		// only case that reaches here. Settle retries wait out a restarting port
+		// stack and need no credential interaction. The AMT password comes from
+		// po.stepPassword() at each call.
 		err = step(po.stepPassword())
 		if err == nil {
 			return nil
@@ -299,8 +297,10 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error 
 		return nil
 	}
 
-	// Do not prompt/rotate when device is in pre-provisioning (control mode 0)
-	if po.currentControlMode == 0 {
+	// Do not prompt/rotate when device is in pre-provisioning (control mode 0),
+	// or when this run activated it: a 401 then is the transient post-activation
+	// lockout the settle retries wait out, not a wrong password.
+	if po.currentControlMode == 0 || po.activatedThisRun {
 		return err
 	}
 
@@ -310,8 +310,8 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error 
 		return err
 	}
 
-	// Gate rotation on the utils.CustomError code; verbose Digest logs make substring-matching unreliable.
-	if code, ok := failureCode(err); !ok || code != utils.AMTAuthenticationFailed.Code {
+	// Gate rotation on an AMT authentication failure (see isAMTUnauthorized).
+	if !isAMTUnauthorized(err) {
 		return err
 	}
 
@@ -357,7 +357,7 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error 
 		}
 
 		if cerr := po.changeAMTPassword(oldPass, newPass); cerr != nil {
-			if code, ok := failureCode(cerr); attempt < maxTries && ok && code == utils.AMTAuthenticationFailed.Code {
+			if attempt < maxTries && isAMTUnauthorized(cerr) {
 				log.Warn("Incorrect AMT password. Please try again.")
 
 				continue
@@ -873,6 +873,36 @@ func isDeviceNotActivatedErr(err error) bool {
 	code, ok := failureCode(err)
 
 	return ok && code == utils.DeviceNotActivated.Code
+}
+
+// The text AMT 401 failures carry in-process. go-wsman-messages returns an
+// HTTP 401 untyped, as fmt.Errorf("%w: %v\n%v", errPostResponse, res.Status,
+// body) with an unexported errPostResponse (pkg/wsman/client/wsman.go:531-535,
+// v2.50.5), and the amtpassword step flattens any error containing "401" to a
+// plain string (internal/commands/configure/amtpassword.go:127-129). Matching
+// this text is acceptable here: it is the error's own text from a pinned
+// dependency and from our own sanitizer, not log output.
+//
+// TODO: match a typed error once go-wsman-messages exports one for a 401.
+const (
+	wsmanUnauthorizedMarker     = "wsman.Client post received: 401"
+	amtPasswordUnauthorizedText = "Received 401 unauthorized"
+)
+
+// isAMTUnauthorized reports whether err is an AMT authentication failure: a
+// utils.AMTAuthenticationFailed code or the WSMAN 401 text above.
+func isAMTUnauthorized(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if code, ok := failureCode(err); ok && code == utils.AMTAuthenticationFailed.Code {
+		return true
+	}
+
+	msg := err.Error()
+
+	return strings.Contains(msg, wsmanUnauthorizedMarker) || strings.Contains(msg, amtPasswordUnauthorizedText)
 }
 
 // failureCode returns the code of the utils.CustomError err carries. ok is

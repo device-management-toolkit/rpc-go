@@ -265,9 +265,8 @@ func (r *failingPasswordReader) ReadPasswordWithConfirmation(prompt, confirmProm
 }
 
 // TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt pins the retry path:
-// rotation runs once, on the initial execution. Routing settle retries back
-// through executeWithPasswordRotation would re-prompt on every attempt and, on
-// success, recurse into the settle loop again.
+// an auth failure in the settle window neither rotates nor prompts, on the
+// initial execution or on any settle retry.
 func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 	originalPR := utils.PR
 	utils.PR = &failingPasswordReader{}
@@ -295,10 +294,9 @@ func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
 	}
 
-	// Exactly one: the initial execution's rotation. Routing the retries back
-	// through executeWithPasswordRotation would rotate once per settle attempt.
-	if len(*rotations) != 1 {
-		t.Errorf("expected 1 rotation attempt (the initial one), got %d", len(*rotations))
+	// None: this run activated the device, so a 401 is the settle lockout.
+	if len(*rotations) != 0 {
+		t.Errorf("expected no rotation attempt in the settle window, got %d", len(*rotations))
 	}
 }
 
