@@ -13,4 +13,5 @@ var (
 	configureChangeAMTPassword = configure.ChangeAMTPassword
 	configureSetMEBx           = configure.SetMEBx
 	configureSetAMTFeatures    = configure.SetAMTFeatures
+	configureWired             = configure.ConfigureWired
 )
