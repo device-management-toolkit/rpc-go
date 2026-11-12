@@ -18,4 +18,5 @@ var (
 	configureWireless          = configure.ConfigureWireless
 	configureTLS               = configure.ConfigureTLS
 	configureCIRA              = configure.ConfigureCIRA
+	configureProxy             = configure.ConfigureProxy
 )
