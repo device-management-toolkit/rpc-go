@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/interfaces"
 	localamt "github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/mkhi"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/pthi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
@@ -897,9 +900,13 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 	if err != nil {
 		return err
 	}
-	// Check provisioning certificate is accepted by AMT
-	err = service.compareCertHashes()
-	if err != nil {
+	// In a TEP voucher flow CSME validates the provisioning certificate
+	// against the voucher's owner credential, and the owner's root is not in
+	// AMT's trusted root hashes. Only the traditional flow checks the root here.
+	tepVoucher := service.tepVoucherInstalled()
+	if tepVoucher {
+		log.Info("TEP ownership voucher installed for AMT; CSME validates the provisioning certificate")
+	} else if err = service.compareCertHashes(); err != nil {
 		return err
 	}
 
@@ -941,10 +948,92 @@ func (service *LocalActivationService) activateACMLegacy(tlsConfig *tls.Config) 
 	// Perform host-based setup with admin credentials
 	_, err = service.wsman.HostBasedSetupServiceAdmin(service.config.AMTPassword, generalSettings.Body.GetResponse.DigestRealm, nonce, signedSignature, service.isUpgrade)
 	if err != nil {
-		return service.handleACMSetupError(err)
+		err = service.handleACMSetupError(err)
+		// Only a TEP flow adds CSME's provisioning-log reason: there CSME made
+		// the decision. In the traditional flow the root-hash check has already
+		// accepted the certificate, so the existing error is kept as is.
+		if err != nil && tepVoucher {
+			return service.withProvisioningLogReason(err)
+		}
+
+		return err
 	}
 
 	return nil
+}
+
+// tepVoucherReadTimeout matches the timeout amtinfo uses for its version reads.
+const tepVoucherReadTimeout = 2 * time.Minute
+
+// tepVoucherInstalled reports whether CSME holds a TEP ownership voucher for
+// AMT, so that CSME, not rpc-go, decides whether the provisioning certificate
+// is trusted. A voucher that is only requested does not count: CSME has no
+// owner credential yet. Any read failure means no voucher, which keeps the
+// traditional root-hash check; a failed firmware-capabilities or voucher read
+// is logged at warn level, because on a TEP device the fallback can reject a
+// certificate CSME would accept. Devices older than CSME 18 get only the
+// version read.
+func (service *LocalActivationService) tepVoucherInstalled() bool {
+	version, err := service.amtCommand.GetVersionDataFromME("AMT", tepVoucherReadTimeout)
+	if err != nil {
+		log.Debug("TEP: could not read the AMT version: ", err)
+
+		return false
+	}
+
+	major, err := strconv.Atoi(strings.SplitN(version, ".", 2)[0])
+	if err != nil || major < mkhi.MinTEPCSMEMajor {
+		return false
+	}
+
+	caps, err := service.amtCommand.GetFWCapabilities()
+	if err != nil {
+		log.Warn("TEP: could not read firmware capabilities; falling back to the provisioning certificate root-hash check: ", err)
+
+		return false
+	}
+
+	if !mkhi.TEPSupported(major, caps) {
+		return false
+	}
+
+	state, err := service.amtCommand.TEPGetVoucherStateByFeature(upid.TEPFeatureAMT)
+	if err != nil {
+		if !errors.Is(err, upid.ErrTEPInvalidVoucher) {
+			log.Warn("TEP: could not read the AMT voucher state; falling back to the provisioning certificate root-hash check: ", err)
+		}
+
+		return false
+	}
+
+	status := state.Context.OwnershipStatus
+
+	return status != upid.TEPOwnershipNotSet && status != upid.TEPOwnershipRequested
+}
+
+// withProvisioningLogReason adds CSME's reason for the last failed ACM
+// attempt (for example a TEP owner credential hash mismatch) to err.
+func (service *LocalActivationService) withProvisioningLogReason(err error) error {
+	var customErr utils.CustomError
+	if !errors.As(err, &customErr) {
+		return err
+	}
+
+	provLog, logErr := service.amtCommand.GetProvisioningLog()
+	if logErr != nil {
+		log.Debug("could not read the provisioning log: ", logErr)
+
+		return err
+	}
+
+	status := provLog.AcmProvisioningStatus
+	if status == pthi.PROV_RES_INVALID || status == pthi.PROV_RES_SUCCESS {
+		return err
+	}
+
+	customErr.Details = fmt.Sprintf("%s; CSME provisioning log: %s", customErr.Details, status)
+
+	return customErr
 }
 
 // handleACMSetupError checks whether AMT entered ACM even if the WSMAN response errored.
