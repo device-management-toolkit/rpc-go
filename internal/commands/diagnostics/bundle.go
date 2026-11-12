@@ -38,16 +38,42 @@ type bundleCollector struct {
 	collect  func(string) error
 }
 
-type bundleManifest struct {
+// BundleManifest is the manifest.json a diagnostics bundle carries: when it
+// was created and how each collector fared.
+type BundleManifest struct {
 	CreatedAt  time.Time               `json:"createdAt"`
-	Collectors []bundleCollectorResult `json:"collectors"`
+	Collectors []BundleCollectorResult `json:"collectors"`
 }
 
-type bundleCollectorResult struct {
+// Incomplete counts the collectors whose status is not "success".
+func (manifest BundleManifest) Incomplete() int {
+	failures := 0
+
+	for _, result := range manifest.Collectors {
+		if result.Status != "success" {
+			failures++
+		}
+	}
+
+	return failures
+}
+
+// BundleCollectorResult is one collector's entry in a BundleManifest. Status
+// is "success", "partial" (File is in the bundle but incomplete, Error says
+// why) or "failed" (no File, Error says why).
+type BundleCollectorResult struct {
 	Name   string `json:"name"`
 	File   string `json:"file,omitempty"`
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
+}
+
+// BundleResult is what BundleCmd.Collect wrote: the bundle's path and its manifest.
+type BundleResult struct {
+	// Path is the zip file the bundle was written to.
+	Path string
+	// Manifest is the manifest.json stored in the bundle.
+	Manifest BundleManifest
 }
 
 type partialCollectionError struct {
@@ -64,6 +90,24 @@ func (err partialCollectionError) Unwrap() error {
 
 // Run executes the diagnostics bundle collection command.
 func (cmd *BundleCmd) Run(ctx *commands.Context) error {
+	result, err := cmd.Collect(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Diagnostics bundle successfully created\nOutput file: %s\n", result.Path)
+
+	if failures := result.Manifest.Incomplete(); failures > 0 {
+		fmt.Printf("Warning: %d diagnostic collector(s) were incomplete; see manifest.json for details\n", failures)
+	}
+
+	return nil
+}
+
+// Collect runs every collector and writes the bundle, the work Run reports
+// on. When no collector produced a file, it still writes the bundle with its
+// manifest and returns the result together with an error naming each failure.
+func (cmd *BundleCmd) Collect(ctx *commands.Context) (*BundleResult, error) {
 	now := time.Now
 	if cmd.now != nil {
 		now = cmd.now
@@ -77,12 +121,12 @@ func (cmd *BundleCmd) Run(ctx *commands.Context) error {
 	}
 
 	if err := ensureParentDir(cmd.Output); err != nil {
-		return err
+		return nil, err
 	}
 
 	tempDir, err := os.MkdirTemp("", "rpc-diagnostics-")
 	if err != nil {
-		return fmt.Errorf("failed to create temporary diagnostics directory: %w", err)
+		return nil, fmt.Errorf("failed to create temporary diagnostics directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
@@ -91,14 +135,14 @@ func (cmd *BundleCmd) Run(ctx *commands.Context) error {
 		collectors = cmd.defaultCollectors(ctx)
 	}
 
-	manifest := bundleManifest{
+	manifest := BundleManifest{
 		CreatedAt:  createdAt,
-		Collectors: make([]bundleCollectorResult, 0, len(collectors)),
+		Collectors: make([]BundleCollectorResult, 0, len(collectors)),
 	}
 	archiveFiles := []string{"manifest.json"}
 
 	for _, collector := range collectors {
-		result := bundleCollectorResult{Name: collector.name, File: collector.fileName, Status: "success"}
+		result := BundleCollectorResult{Name: collector.name, File: collector.fileName, Status: "success"}
 		collectorOutput := filepath.Join(tempDir, collector.fileName)
 
 		collectErr := collector.collect(collectorOutput)
@@ -132,41 +176,29 @@ func (cmd *BundleCmd) Run(ctx *commands.Context) error {
 
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to create diagnostics manifest: %w", err)
+		return nil, fmt.Errorf("failed to create diagnostics manifest: %w", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(tempDir, "manifest.json"), manifestData, 0o644); err != nil {
-		return fmt.Errorf("failed to write diagnostics manifest: %w", err)
+		return nil, fmt.Errorf("failed to write diagnostics manifest: %w", err)
 	}
 
 	if err := zipDirectory(cmd.Output, tempDir, archiveFiles); err != nil {
-		return err
+		return nil, err
 	}
+
+	result := &BundleResult{Path: cmd.Output, Manifest: manifest}
 
 	if len(archiveFiles) == 1 {
 		collectorErrors := make([]string, 0, len(manifest.Collectors))
-		for _, result := range manifest.Collectors {
-			collectorErrors = append(collectorErrors, fmt.Sprintf("%s: %s", result.Name, result.Error))
+		for _, collectorResult := range manifest.Collectors {
+			collectorErrors = append(collectorErrors, fmt.Sprintf("%s: %s", collectorResult.Name, collectorResult.Error))
 		}
 
-		return fmt.Errorf("no diagnostics were collected (manifest written to %s): %s", cmd.Output, strings.Join(collectorErrors, "; "))
+		return result, fmt.Errorf("no diagnostics were collected (manifest written to %s): %s", cmd.Output, strings.Join(collectorErrors, "; "))
 	}
 
-	failures := 0
-
-	for _, result := range manifest.Collectors {
-		if result.Status != "success" {
-			failures++
-		}
-	}
-
-	fmt.Printf("Diagnostics bundle successfully created\nOutput file: %s\n", cmd.Output)
-
-	if failures > 0 {
-		fmt.Printf("Warning: %d diagnostic collector(s) were incomplete; see manifest.json for details\n", failures)
-	}
-
-	return nil
+	return result, nil
 }
 
 func (cmd *BundleCmd) defaultCollectors(ctx *commands.Context) []bundleCollector {

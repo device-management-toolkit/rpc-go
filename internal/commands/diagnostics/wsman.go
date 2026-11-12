@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"reflect"
 	"sort"
@@ -46,7 +47,7 @@ type WSManListCmd struct{}
 
 // Run executes the WSMAN class list command.
 func (cmd *WSManListCmd) Run(ctx *commands.Context) error {
-	for _, className := range supportedWSMANClassNames() {
+	for _, className := range SupportedWSMANClasses() {
 		fmt.Println(className)
 	}
 
@@ -175,75 +176,22 @@ func (cmd *WSManGetCmd) Run(ctx *commands.Context) error {
 
 // collect writes the selected classes and returns *wsmanFetchError when any class fails.
 func (cmd *WSManGetCmd) collect(ctx *commands.Context) error {
-	selectedClasses, err := cmd.resolveClasses()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.ensureAMTPassword(ctx); err != nil {
-		return err
-	}
-
-	messages, err := cmd.newWSMANMessages(ctx)
-	if err != nil {
-		return err
-	}
-
-	if messages.Client != nil {
-		defer func() {
-			if closeErr := messages.Client.CloseConnection(); closeErr != nil {
-				log.Debugf("failed to close WSMAN client connection: %v", closeErr)
-			}
-		}()
-	}
-
-	results := make([]classResult, 0, len(selectedClasses))
+	classes, err := cmd.Fetch(ctx)
 
 	var fetchFailure *wsmanFetchError
-
-	for _, className := range selectedClasses {
-		fetcher := wsmanClassFetchers[className]
-
-		data, fetchErr := fetcher(messages)
-		if fetchErr != nil {
-			if len(selectedClasses) == 1 {
-				return fmt.Errorf("failed to retrieve WSMAN class %s: %w", className, fetchErr)
-			}
-
-			if cmd.quiet {
-				log.Debugf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
-			} else {
-				log.Warnf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
-			}
-
-			if fetchFailure == nil {
-				fetchFailure = &wsmanFetchError{total: len(selectedClasses)}
-			}
-
-			fetchFailure.failed++
-			fetchFailure.last = fetchErr
-
-			results = append(results, classResult{Class: className, Data: classFetchErrorData{
-				Class:   className,
-				Status:  "fetch_failed",
-				Message: fetchErr.Error(),
-			}})
-
-			continue
-		}
-
-		results = append(results, classResult{Class: className, Data: data})
+	if err != nil && !errors.As(err, &fetchFailure) {
+		return err
 	}
 
-	rendered, err := renderResults(results, strings.ToLower(strings.TrimSpace(cmd.Format)))
-	if err != nil {
-		return err
+	rendered, renderErr := RenderWSMANClasses(classes, strings.ToLower(strings.TrimSpace(cmd.Format)))
+	if renderErr != nil {
+		return renderErr
 	}
 
 	if strings.EqualFold(strings.TrimSpace(cmd.Output), "stdout") {
 		fmt.Println(string(rendered))
 
-		return fetchFailureOrNil(fetchFailure)
+		return err
 	}
 
 	outputPath := strings.TrimSpace(cmd.Output)
@@ -260,7 +208,96 @@ func (cmd *WSManGetCmd) collect(ctx *commands.Context) error {
 		fmt.Printf("WSMAN class data written to %s\n", outputPath)
 	}
 
-	return fetchFailureOrNil(fetchFailure)
+	return err
+}
+
+// WSMANClassData is one WSMAN class read by WSManGetCmd.Fetch: its data, or
+// the error that kept it from being read.
+type WSMANClassData struct {
+	// Class is the WSMAN class name.
+	Class string
+	// Data is the go-wsman-messages response for the class; nil when Err is set.
+	Data any
+	// Err is why the class could not be read; nil when it was read.
+	Err error
+}
+
+// Fetch reads the selected classes over WSMAN, the data collect renders. It
+// returns every selected class with its data or its error. A non-nil result
+// with an error means class reads failed: the error is the class's own error
+// when one class was selected, otherwise a *wsmanFetchError. Fetch closes the
+// connections it opens.
+func (cmd *WSManGetCmd) Fetch(ctx *commands.Context) ([]WSMANClassData, error) {
+	selectedClasses, err := cmd.ResolveClasses()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.ensureAMTPassword(ctx); err != nil {
+		return nil, err
+	}
+
+	messages, transport := cmd.newWSMANMessages(ctx)
+	defer closeWSMANClient(messages.Client, transport)
+
+	classes := make([]WSMANClassData, 0, len(selectedClasses))
+
+	var fetchFailure *wsmanFetchError
+
+	for _, className := range selectedClasses {
+		fetcher := wsmanClassFetchers[className]
+
+		data, fetchErr := fetcher(messages)
+		if fetchErr == nil {
+			classes = append(classes, WSMANClassData{Class: className, Data: data})
+
+			continue
+		}
+
+		classes = append(classes, WSMANClassData{Class: className, Err: fetchErr})
+
+		if len(selectedClasses) == 1 {
+			return classes, fmt.Errorf("failed to retrieve WSMAN class %s: %w", className, fetchErr)
+		}
+
+		if cmd.quiet {
+			log.Debugf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+		} else {
+			log.Warnf("failed to retrieve WSMAN class %s: %v", className, fetchErr)
+		}
+
+		if fetchFailure == nil {
+			fetchFailure = &wsmanFetchError{total: len(selectedClasses)}
+		}
+
+		fetchFailure.failed++
+		fetchFailure.last = fetchErr
+	}
+
+	return classes, fetchFailureOrNil(fetchFailure)
+}
+
+// RenderWSMANClasses renders classes in format (json, xml or table) as
+// collect writes them; a class that could not be read is rendered as a
+// fetch_failed entry.
+func RenderWSMANClasses(classes []WSMANClassData, format string) ([]byte, error) {
+	results := make([]classResult, 0, len(classes))
+
+	for _, class := range classes {
+		if class.Err != nil {
+			results = append(results, classResult{Class: class.Class, Data: classFetchErrorData{
+				Class:   class.Class,
+				Status:  "fetch_failed",
+				Message: class.Err.Error(),
+			}})
+
+			continue
+		}
+
+		results = append(results, classResult{Class: class.Class, Data: class.Data})
+	}
+
+	return renderResults(results, format)
 }
 
 // fetchFailureOrNil avoids returning a typed nil pointer as a non-nil error.
@@ -272,7 +309,10 @@ func fetchFailureOrNil(fetchFailure *wsmanFetchError) error {
 	return fetchFailure
 }
 
-func (cmd *WSManGetCmd) resolveClasses() ([]string, error) {
+// ResolveClasses returns the WSMAN classes the command reads: every supported
+// class with --all, otherwise the --class values. It rejects both or neither,
+// and unknown class names, with the CLI's messages.
+func (cmd *WSManGetCmd) ResolveClasses() ([]string, error) {
 	if cmd.All && len(cmd.Class) > 0 {
 		return nil, fmt.Errorf("--all cannot be used with --class")
 	}
@@ -282,7 +322,7 @@ func (cmd *WSManGetCmd) resolveClasses() ([]string, error) {
 	}
 
 	if cmd.All {
-		return supportedWSMANClassNames(), nil
+		return SupportedWSMANClasses(), nil
 	}
 
 	seen := map[string]struct{}{}
@@ -342,7 +382,8 @@ func (cmd *WSManGetCmd) ensureAMTPassword(ctx *commands.Context) error {
 	return nil
 }
 
-func supportedWSMANClassNames() []string {
+// SupportedWSMANClasses returns the WSMAN class names `wsman list` prints.
+func SupportedWSMANClasses() []string {
 	classes := make([]string, 0, len(wsmanClassFetchers))
 	for className := range wsmanClassFetchers {
 		classes = append(classes, className)
@@ -539,7 +580,42 @@ func extractXMLOutput(data any) string {
 	return field.String()
 }
 
-func (cmd *WSManGetCmd) newWSMANMessages(ctx *commands.Context) (wsman.Messages, error) {
+// lmeTransport is the transport newWSMANMessages falls back to when no LMS
+// listens: it reaches AMT over LME and holds the MEI device until closed.
+type lmeTransport interface {
+	http.RoundTripper
+	Close() error
+}
+
+// newLMETransport opens the LME fallback transport; tests replace it.
+var newLMETransport = func() lmeTransport { return localamt.NewLocalTransport() }
+
+// closeWSMANClient releases what newWSMANMessages opened: the client's TCP
+// connection, its idle keep-alive connections to LMS and the LME transport,
+// which would otherwise keep the MEI device open after Fetch returns.
+func closeWSMANClient(wsmanClient interface{ CloseConnection() error }, transport lmeTransport) {
+	if wsmanClient != nil {
+		if closeErr := wsmanClient.CloseConnection(); closeErr != nil {
+			log.Debugf("failed to close WSMAN client connection: %v", closeErr)
+		}
+
+		if idle, ok := wsmanClient.(interface{ CloseIdleConnections() }); ok {
+			idle.CloseIdleConnections()
+		}
+	}
+
+	if transport != nil {
+		if closeErr := transport.Close(); closeErr != nil {
+			log.Debugf("failed to close LME transport: %v", closeErr)
+		}
+	}
+}
+
+// newWSMANMessages builds the WSMAN client. The returned transport is the LME
+// fallback it opened, or nil; the caller closes both with closeWSMANClient.
+func (cmd *WSManGetCmd) newWSMANMessages(ctx *commands.Context) (wsman.Messages, lmeTransport) {
+	var transport lmeTransport
+
 	tlsConfig := certs.GetTLSConfig(&cmd.ControlMode, nil, ctx.SkipAMTCertCheck, nil)
 
 	clientParams := client.Parameters{
@@ -574,13 +650,14 @@ func (cmd *WSManGetCmd) newWSMANMessages(ctx *commands.Context) (wsman.Messages,
 
 		conn, err := dialer.DialContext(connectCtx, "tcp4", utils.LMSAddress+":"+utils.LMSPort)
 		if err != nil {
-			clientParams.Transport = localamt.NewLocalTransport()
+			transport = newLMETransport()
+			clientParams.Transport = transport
 		} else {
 			_ = conn.Close()
 		}
 	}
 
-	return wsman.NewMessages(clientParams), nil
+	return wsman.NewMessages(clientParams), transport
 }
 
 func fetchAMTGeneralSettings(messages wsman.Messages) (any, error) {
