@@ -400,8 +400,8 @@ func TestAreWeakAlgorithmsRemoved(t *testing.T) {
 		{name: "AMT 20", value: 0xE2, expected: false},
 		{name: "AMT 21", value: 0xE2, expected: false},
 		{name: "AMT 22", value: 0xF2, expected: true},
-		{name: "hardened with the old interface version", value: 0x10, expected: true},
-		{name: "hardened AMT 16 after a firmware update", value: 0x12, expected: true},
+		{name: "bit 4 ignored with the old interface version", value: 0x10, expected: false},
+		{name: "bit 4 ignored on AMT 16 without the new interface bit", value: 0x12, expected: false},
 		{name: "new interface without hardening", value: 0x80, expected: false},
 	}
 	for _, tt := range tests {

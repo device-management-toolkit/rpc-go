@@ -109,10 +109,10 @@ func (r ChangeEnabledResponse) IsNewInterfaceVersion() bool {
 }
 
 // AreWeakAlgorithmsRemoved reports bit 4: the firmware dropped AES-128,
-// SHA-256, RSA-2K and ECC-256. Not gated on bit 7, because the hardening can
-// reach an older platform through a firmware update.
+// SHA-256, RSA-2K and ECC-256. Bit 4 is valid only when the new interface
+// version bit (bit 7) is set; otherwise it is ignored.
 func (r ChangeEnabledResponse) AreWeakAlgorithmsRemoved() bool {
-	return ((r >> 4) & 1) == 1
+	return r.IsNewInterfaceVersion() && ((r>>4)&1) == 1
 }
 
 func (r ChangeEnabledResponse) IsTlsEnforcedOnLocalPorts() bool {

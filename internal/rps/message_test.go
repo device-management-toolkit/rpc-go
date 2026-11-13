@@ -385,7 +385,7 @@ func TestCreatePayloadWeakAlgorithmsRemoved(t *testing.T) {
 		{name: "AMT 22 reports hardened crypto", value: 0xF2, expected: true},
 		{name: "AMT 21 does not", value: 0xE2, expected: false},
 		{name: "AMT 11 does not", value: 0x01, expected: false},
-		{name: "older platform updated to hardened firmware", value: 0x12, expected: true},
+		{name: "bit 4 ignored without the new interface bit", value: 0x12, expected: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
