@@ -1,3 +1,10 @@
+# [2.53.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.8...v2.53.0) (2026-11-13)
+
+
+### Features
+
+* **rps:** report AMT crypto capabilities to RPS ([#1623](https://github.com/device-management-toolkit/rpc-go/issues/1623)) ([fd214c9](https://github.com/device-management-toolkit/rpc-go/commit/fd214c94a42c73fbb6e8a60c050184af10602f4f)), closes [#1615](https://github.com/device-management-toolkit/rpc-go/issues/1615)
+
 ## [2.52.8](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.7...v2.52.8) (2026-10-26)
 
 ## [2.52.7](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.6...v2.52.7) (2026-09-24)
