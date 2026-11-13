@@ -388,7 +388,7 @@ func FuzzActivate(f *testing.F) {
 		"--acm",
 		"--acm --password admin --provisioningCert MIIabc== --provisioningCertPwd certpass",
 		"--acm --password admin --provisioningCert MIIabc== --provisioningCertPwd certpass --mebxpassword Mebx123!",
-		"--acm --tls-tunnel --password admin",
+		"--acm --tls-tunnel=false --password admin",
 
 		// Stop configuration
 		"--local --stopConfig",
@@ -643,6 +643,8 @@ func FuzzActivateFlagCombinations(f *testing.F) {
 
 		if tlsTunnel {
 			args = append(args, "--tls-tunnel")
+		} else {
+			args = append(args, "--tls-tunnel=false")
 		}
 
 		if skipIPRenew {
