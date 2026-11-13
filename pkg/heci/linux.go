@@ -11,9 +11,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	log "github.com/sirupsen/logrus"
@@ -24,7 +28,17 @@ type Driver struct {
 	meiDevice       *os.File
 	bufferSize      uint32
 	protocolVersion uint8
+
+	// interruptible makes ReceiveMessage give up when Close is called, so a
+	// client that never answers does not keep the connection open. Set by
+	// InitWithGUID; PTHI, LME and watchdog connections keep the blocking read.
+	interruptible bool
+	closing       atomic.Bool
+	receiveMu     sync.Mutex
 }
+
+// receivePollInterval is how often an interruptible receive checks for Close.
+const receivePollInterval = 100 * time.Millisecond
 
 const (
 	Device                   = "/dev/mei0"
@@ -65,6 +79,37 @@ func (heci *Driver) Init(useLME, useWD bool) error {
 		return err
 	}
 
+	return heci.parseConnectClientData(data)
+}
+
+// InitWithGUID initializes the HECI driver for the MEI client identified by guid,
+// given in registry form, e.g. "{92136C79-5FEA-4CFD-980E-23BE07FA5E9F}".
+func (heci *Driver) InitWithGUID(guid string) error {
+	guidBytes, err := meiGUIDFromString(guid)
+	if err != nil {
+		return err
+	}
+
+	data := CMEIConnectClientData{data: guidBytes}
+
+	if err := heci.openAndConnect(&data); err != nil {
+		// The MEI driver answers ENOTTY when no client has this GUID.
+		if errors.Is(err, syscall.ENOTTY) {
+			return fmt.Errorf("%w: %w", ErrClientNotFound, err)
+		}
+
+		return err
+	}
+
+	heci.closing.Store(false)
+	heci.interruptible = true
+
+	return heci.parseConnectClientData(data)
+}
+
+// parseConnectClientData reads the MEI_CONNECT_CLIENT response out of data and
+// records the negotiated buffer size and protocol version on the driver.
+func (heci *Driver) parseConnectClientData(data CMEIConnectClientData) error {
 	t := MEIConnectClientData{}
 
 	err := binary.Read(bytes.NewBuffer(data.data[:]), binary.LittleEndian, &t)
@@ -156,6 +201,15 @@ func (heci *Driver) SendMessage(buffer []byte, done *uint32) (bytesWritten uint3
 }
 
 func (heci *Driver) ReceiveMessage(buffer []byte, done *uint32) (bytesRead uint32, err error) {
+	if heci.interruptible {
+		heci.receiveMu.Lock()
+		defer heci.receiveMu.Unlock()
+
+		if err := heci.waitReadable(); err != nil {
+			return 0, err
+		}
+	}
+
 	read, err := unix.Read(int(heci.meiDevice.Fd()), buffer)
 	if err != nil {
 		return 0, err
@@ -173,7 +227,37 @@ func Ioctl(fd, op, arg uintptr) error {
 	return nil
 }
 
+// waitReadable blocks until the client has data to read or Close is called.
+// A read blocked in the kernel keeps the MEI connection open even after the
+// descriptor is closed, so the wait is done with a bounded poll instead.
+func (heci *Driver) waitReadable() error {
+	fds := []unix.PollFd{{Fd: int32(heci.meiDevice.Fd()), Events: unix.POLLIN}}
+
+	for {
+		if heci.closing.Load() {
+			return os.ErrClosed
+		}
+
+		n, err := unix.Poll(fds, int(receivePollInterval/time.Millisecond))
+		if err != nil && !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+
+		if n > 0 {
+			return nil
+		}
+	}
+}
+
 func (heci *Driver) Close() {
+	if heci.interruptible {
+		// Stop a pending receive and wait for it to return before the
+		// descriptor is closed, so the connection is really released.
+		heci.closing.Store(true)
+		heci.receiveMu.Lock()
+		defer heci.receiveMu.Unlock()
+	}
+
 	err := heci.meiDevice.Close()
 	if err != nil {
 		log.Error(err)
