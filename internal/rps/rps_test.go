@@ -417,3 +417,364 @@ func TestProcessMessagePortSwitch(t *testing.T) {
 	decodedMessage := server.ProcessMessage(activation)
 	assert.Equal(t, []byte(PortSwitchSentinel+portSwitchJSON), decodedMessage)
 }
+
+func intPtr(v int) *int { return &v }
+
+// errorMessage builds an RPS `error` ClientMsg whose message field is the given Status JSON.
+func errorMessage(t *testing.T, status StatusMessage) []byte {
+	t.Helper()
+
+	statusJSON, err := json.Marshal(status)
+	assert.NoError(t, err)
+
+	activation, err := json.Marshal(Message{Method: "error", Status: "failed", Message: string(statusJSON)})
+	assert.NoError(t, err)
+
+	return activation
+}
+
+func TestProcessMessageErrorStructured(t *testing.T) {
+	// RPS structured failure: Components summary plus the Error block are rendered, and the
+	// failing component selects the exit code with the catalog code in Details.
+	status := StatusMessage{
+		Status:  "Failed to add corp-wifi",
+		Network: "Failed to add corp-wifi",
+		Error: &ProvisioningError{
+			Code:           "AMT_PT_UNSUPPORTED",
+			Component:      "WirelessNetwork",
+			Step:           "ADD_WIFI_SETTINGS",
+			Reason:         "Operation or value is not supported by this AMT firmware",
+			AmtReturnValue: intPtr(2066),
+		},
+		Components: &ComponentResults{
+			Activation: &ComponentResult{Result: ComponentResultSuccess, Mode: "ACM", Details: "Device activated in admin control mode"},
+			WirelessNetwork: &ComponentResult{
+				Result:         ComponentResultFailure,
+				Details:        "Failed to add corp-wifi",
+				Code:           "AMT_PT_UNSUPPORTED",
+				Step:           "ADD_WIFI_SETTINGS",
+				AmtReturnValue: intPtr(2066),
+			},
+			TLS: &ComponentResult{Result: ComponentResultNotApplicable, Details: "TLS not part of this configuration"},
+		},
+	}
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	var decodedMessage []byte
+
+	out := captureLogOutput(func() { decodedMessage = server.ProcessMessage(errorMessage(t, status)) })
+
+	assert.Nil(t, decodedMessage)
+
+	// Components summary rendered, with the structured suffix on the failed row only.
+	assert.Contains(t, out, "Activation:")
+	assert.Contains(t, out, "[ACM]")
+	assert.NotContains(t, out, "Activation: Device activated in admin control mode [ACM] [")
+	assert.Contains(t, out, "Wireless Network:")
+	assert.Contains(t, out, "[AMT_PT_UNSUPPORTED @ ADD_WIFI_SETTINGS, ReturnValue 2066]")
+	assert.NotContains(t, out, "TLS not part of this configuration")
+
+	// One readable line naming where and why the flow failed.
+	assert.Contains(t, out, "level=error")
+	assert.Contains(t, out,
+		"Provisioning failed [WirelessNetwork/ADD_WIFI_SETTINGS] AMT_PT_UNSUPPORTED: Operation or value is not supported by this AMT firmware (AMT ReturnValue 2066)")
+
+	// Exit code mapped from the failing component, catalog code carried in Details.
+	customErr, ok := server.LastError.(utils.CustomError)
+	assert.True(t, ok)
+	assert.Equal(t, utils.WiFiConfigurationFailed.Code, customErr.Code)
+	assert.Equal(t, utils.WiFiConfigurationFailed.Message, customErr.Message)
+	assert.Equal(t, "AMT_PT_UNSUPPORTED", customErr.Details)
+}
+
+func TestProcessMessageErrorStructuredWithoutComponents(t *testing.T) {
+	// Error block without Components (e.g. a pre-activation database failure).
+	status := StatusMessage{
+		Status: "Failed to get amt profile from database",
+		Error: &ProvisioningError{
+			Code:       "RPS_DB_PROFILE_NOT_FOUND",
+			Component:  "Activation",
+			Step:       "GET_AMT_PROFILE",
+			Reason:     "AMT profile could not be read from the database",
+			HttpStatus: intPtr(500),
+			Detail:     "connection refused",
+		},
+	}
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	out := captureLogOutput(func() { server.ProcessMessage(errorMessage(t, status)) })
+	assert.NotContains(t, out, "Provisioning and Configuration Result")
+	assert.Contains(t, out,
+		"Provisioning failed [Activation/GET_AMT_PROFILE] RPS_DB_PROFILE_NOT_FOUND: AMT profile could not be read from the database (HTTP 500; connection refused)")
+
+	customErr, ok := server.LastError.(utils.CustomError)
+	assert.True(t, ok)
+	assert.Equal(t, utils.ActivationFailed.Code, customErr.Code)
+}
+
+func TestProcessMessageErrorLegacy(t *testing.T) {
+	// Older RPS without the Error block: single-line Status at error level, no exit code change.
+	activation := `{
+        "method": "error",
+        "message": "{\"Status\":\"Failed to add mps\",\"Network\":\"Wired configured\"}"
+    }`
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	logHook := test.NewGlobal()
+	defer logHook.Reset()
+
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	assert.Nil(t, decodedMessage)
+	assert.Nil(t, server.LastError)
+
+	entry := logHook.LastEntry()
+	assert.NotNil(t, entry)
+	assert.Equal(t, log.ErrorLevel, entry.Level)
+	assert.Equal(t, "Failed to add mps", entry.Message)
+}
+
+func TestProcessMessageErrorUnmarshalFailure(t *testing.T) {
+	// Message is not Status JSON: logged verbatim, no exit code change.
+	activation := `{
+        "method": "error",
+        "message": "request failed"
+    }`
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	logHook := test.NewGlobal()
+	defer logHook.Reset()
+
+	decodedMessage := server.ProcessMessage([]byte(activation))
+	assert.Nil(t, decodedMessage)
+	assert.Nil(t, server.LastError)
+
+	entry := logHook.LastEntry()
+	assert.NotNil(t, entry)
+	assert.Equal(t, log.ErrorLevel, entry.Level)
+	assert.Equal(t, "request failed", entry.Message)
+}
+
+func TestLogStatusMessageSuccessWithFailedComponentSuffix(t *testing.T) {
+	// A success message with a partially failed component renders the structured suffix on the
+	// failed row and leaves the success rows untouched.
+	statusMessage := StatusMessage{
+		Status: "Admin control mode.",
+		Components: &ComponentResults{
+			Activation: &ComponentResult{Result: ComponentResultSuccess, Mode: "ACM"},
+			CIRAProxy: &ComponentResult{
+				Result:  ComponentResultFailure,
+				Details: "Failed to add proxy-1",
+				Code:    "AMT_PT_DUPLICATE",
+				Step:    "ADD_PROXY_ACCESS_POINT",
+			},
+		},
+	}
+
+	out := captureLogOutput(func() { logStatusMessage(statusMessage) })
+	assert.Contains(t, out, "Activation: [ACM]")
+	assert.Contains(t, out, "CIRA Proxy: Failed to add proxy-1 [AMT_PT_DUPLICATE @ ADD_PROXY_ACCESS_POINT]")
+}
+
+func TestFailureSuffix(t *testing.T) {
+	assert.Equal(t, "", failureSuffix(&ComponentResult{Result: ComponentResultFailure, Details: "legacy"}))
+	assert.Equal(t, " [X]", failureSuffix(&ComponentResult{Code: "X"}))
+	assert.Equal(t, " [@ STEP]", failureSuffix(&ComponentResult{Step: "STEP"}))
+	assert.Equal(t, " [X @ STEP, ReturnValue 1]", failureSuffix(&ComponentResult{Code: "X", Step: "STEP", AmtReturnValue: intPtr(1)}))
+}
+
+func TestFormatProvisioningError(t *testing.T) {
+	assert.Equal(t,
+		"Provisioning failed [TLS] WSMAN_TIMEOUT: Timed out",
+		formatProvisioningError(&ProvisioningError{Code: "WSMAN_TIMEOUT", Component: "TLS", Reason: "Timed out"}))
+	assert.Equal(t,
+		"Provisioning failed [TLS/ADD_CERT] WSMAN_TIMEOUT: Timed out (AMT ReturnValue 2; HTTP 504; Gateway Timeout)",
+		formatProvisioningError(&ProvisioningError{
+			Code:           "WSMAN_TIMEOUT",
+			Component:      "TLS",
+			Step:           "ADD_CERT",
+			Reason:         "Timed out",
+			AmtReturnValue: intPtr(2),
+			HttpStatus:     intPtr(504),
+			Detail:         "Gateway Timeout",
+		}))
+}
+
+func TestExitCodeForFailure(t *testing.T) {
+	server := NewAMTActivationServer(testFlags)
+
+	cases := map[string]utils.CustomError{
+		"Activation":      utils.ActivationFailed,
+		"WiredNetwork":    utils.NetworkConfigurationFailed,
+		"WirelessNetwork": utils.WiFiConfigurationFailed,
+		"TLS":             utils.TLSConfigurationFailed,
+		"CIRAProxy":       utils.CIRAConfigurationFailed,
+		"CIRAConnection":  utils.CIRAConfigurationFailed,
+		"Features":        utils.AMTFeaturesConfigurationFailed,
+		"Unconfiguration": utils.DeleteConfigsFailed,
+		"Deactivation":    utils.DeactivationFailed,
+		"TimeSync":        utils.ActivationFailed, // activation run: the clock step of activation failed
+		"Maintenance":     utils.GenericFailure,
+		"SomethingNew":    utils.GenericFailure,
+	}
+
+	for component, expected := range cases {
+		got := server.exitCodeForFailure(&ProvisioningError{Code: "C", Component: component, Reason: "R"})
+		assert.Equal(t, expected.Code, got.Code, component)
+		assert.Equal(t, expected.Message, got.Message, component)
+		assert.Equal(t, "C", got.Details, component)
+	}
+}
+
+func TestExitCodeForMaintenanceFailureUsesSubCommand(t *testing.T) {
+	cases := map[string]utils.CustomError{
+		utils.SubCommandSyncClock:      utils.SyncClockFailed,
+		utils.SubCommandSyncTime:       utils.SyncClockFailed,
+		utils.SubCommandSyncHostname:   utils.SyncHostnameFailed,
+		utils.SubCommandSyncIP:         utils.SyncIpFailed,
+		utils.SubCommandChangePassword: utils.ChangePasswordFailed,
+		utils.SubCommandSyncDeviceInfo: utils.SyncDeviceInfoFailed,
+	}
+
+	for subCommand, expected := range cases {
+		maintenanceFlags := flags.NewFlags([]string{}, MockPRSuccess)
+		maintenanceFlags.SubCommand = subCommand
+		server := NewAMTActivationServer(maintenanceFlags)
+
+		got := server.exitCodeForFailure(&ProvisioningError{Code: "AMT_PT_INVALID_TIME", Component: "Maintenance", Reason: "Time value is invalid"})
+		assert.Equal(t, expected.Code, got.Code, subCommand)
+		assert.Equal(t, "AMT_PT_INVALID_TIME", got.Details, subCommand)
+
+		// RPS reports the time machine under TimeSync; in a maintenance run it maps the same way.
+		gotTimeSync := server.exitCodeForFailure(&ProvisioningError{Code: "WSMAN_TIMEOUT", Component: "TimeSync", Reason: "Timed out"})
+		assert.Equal(t, expected.Code, gotTimeSync.Code, subCommand)
+	}
+}
+
+func TestFormatProvisioningErrorNamesWsmanCall(t *testing.T) {
+	assert.Equal(t,
+		"Provisioning failed [WirelessNetwork/ADD_WIFI_SETTINGS] AMT_PT_UNSUPPORTED: Not supported (AMT_WiFiPortConfigurationService.AddWiFiSettings; AMT ReturnValue 2066)",
+		formatProvisioningError(&ProvisioningError{
+			Code:           "AMT_PT_UNSUPPORTED",
+			Component:      "WirelessNetwork",
+			Step:           "ADD_WIFI_SETTINGS",
+			Reason:         "Not supported",
+			WsmanCall:      "AMT_WiFiPortConfigurationService.AddWiFiSettings",
+			AmtReturnValue: intPtr(2066),
+		}))
+}
+
+func TestProcessMessageErrorSanitizesServerText(t *testing.T) {
+	// Control characters from the server must not reach the terminal or forge extra log lines.
+	status := StatusMessage{
+		Status: "Failed",
+		Error: &ProvisioningError{
+			Code:      "WSMAN_TIMEOUT",
+			Component: "TLS",
+			Step:      "ADD_CERT\x1b[2J",
+			Reason:    "Timed out\nlevel=info msg=\"Activation succeeded\"",
+			Detail:    "bell\x07",
+		},
+	}
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	out := captureLogOutput(func() { server.ProcessMessage(errorMessage(t, status)) })
+	assert.Contains(t, out,
+		"Provisioning failed [TLS/ADD_CERT [2J] WSMAN_TIMEOUT: Timed out level=info msg=\\\"Activation succeeded\\\" (bell )")
+
+	customErr, ok := server.LastError.(utils.CustomError)
+	assert.True(t, ok)
+	assert.Equal(t, utils.TLSConfigurationFailed.Code, customErr.Code)
+	assert.Equal(t, "WSMAN_TIMEOUT", customErr.Details)
+	assert.Equal(t, "", sanitizeText(""))
+	assert.Equal(t, "a b", sanitizeText("a\tb"))
+	// Bidirectional overrides, zero-width characters and Unicode line separators are neutralized too.
+	assert.Equal(t, "a b c d e", sanitizeText("a\u202eb\u200bc\u2028d\u2066e"))
+}
+
+func TestProcessMessageSanitizesComponentRows(t *testing.T) {
+	// Details and Mode of every component row are server text too.
+	status := StatusMessage{
+		Status: "Admin control mode.\x1b[2J",
+		Components: &ComponentResults{
+			Activation: &ComponentResult{Result: ComponentResultSuccess, Mode: "ACM\x1b[31m"},
+			TLS: &ComponentResult{
+				Result:  ComponentResultSuccess,
+				Details: "Configured\nlevel=error msg=forged",
+			},
+		},
+	}
+	statusJSON, err := json.Marshal(status)
+	assert.NoError(t, err)
+
+	activation, err := json.Marshal(Message{Method: "success", Message: string(statusJSON)})
+	assert.NoError(t, err)
+
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	out := captureLogOutput(func() { server.ProcessMessage(activation) })
+	assert.NotContains(t, out, "\x1b")
+	assert.NotContains(t, out, "\nlevel=error msg=forged")
+	assert.Contains(t, out, "Configured level=error msg=forged")
+	assert.Nil(t, server.LastError)
+}
+
+func TestProcessMessageSuccessWithFailedComponentSetsExitCode(t *testing.T) {
+	// Network, TLS and CIRA failures do not end the flow in RPS, so they arrive on "success":
+	// the exit code still has to say that part of the configuration was not applied.
+	cases := []struct {
+		components ComponentResults
+		expected   utils.CustomError
+	}{
+		{ComponentResults{WiredNetwork: &ComponentResult{Result: ComponentResultFailure, Code: "AMT_PT_INVALID_IP_ADDRESS"}}, utils.NetworkConfigurationFailed},
+		{ComponentResults{WirelessNetwork: &ComponentResult{Result: ComponentResultFailure, Code: "AMT_PT_UNSUPPORTED"}}, utils.WiFiConfigurationFailed},
+		{ComponentResults{TLS: &ComponentResult{Result: ComponentResultFailure, Code: "WSMAN_TIMEOUT"}}, utils.TLSConfigurationFailed},
+		{ComponentResults{CIRAConnection: &ComponentResult{Result: ComponentResultFailure, Code: "AMT_PT_DUPLICATE"}}, utils.CIRAConfigurationFailed},
+	}
+
+	for _, tc := range cases {
+		tc.components.Activation = &ComponentResult{Result: ComponentResultSuccess, Mode: "ACM"}
+		statusJSON, err := json.Marshal(StatusMessage{Status: "Admin control mode.", Components: &tc.components})
+		assert.NoError(t, err)
+
+		activation, err := json.Marshal(Message{Method: "success", Message: string(statusJSON)})
+		assert.NoError(t, err)
+
+		server := NewAMTActivationServer(testFlags)
+		server.Connect(true)
+		server.ProcessMessage(activation)
+
+		customErr, ok := server.LastError.(utils.CustomError)
+		assert.True(t, ok)
+		assert.Equal(t, tc.expected.Code, customErr.Code)
+		assert.NotEmpty(t, customErr.Details)
+	}
+}
+
+func TestProcessMessageErrorKeepsStatusTextAndNamesTheFlow(t *testing.T) {
+	// A failed maintenance task keeps its task-specific Status text and is not called provisioning.
+	status := StatusMessage{
+		Status: "Failed to update AMT admin password",
+		Error: &ProvisioningError{
+			Code:      "WSMAN_AUTH_FAILED",
+			Component: "Maintenance",
+			Step:      "SET_ADMIN_ACL_ENTRY",
+			Reason:    "AMT rejected the digest credentials (HTTP 401)",
+		},
+	}
+	server := NewAMTActivationServer(testFlags)
+	server.Connect(true)
+
+	out := captureLogOutput(func() { server.ProcessMessage(errorMessage(t, status)) })
+	assert.Contains(t, out, "Failed to update AMT admin password")
+	assert.Contains(t, out, "Maintenance failed [Maintenance/SET_ADMIN_ACL_ENTRY] WSMAN_AUTH_FAILED")
+	assert.NotContains(t, out, "Provisioning failed")
+
+	assert.Equal(t, "Deactivation failed [Deactivation] RPS_DEACTIVATION_FAILED: Device deactivation failed",
+		formatProvisioningError(&ProvisioningError{Code: "RPS_DEACTIVATION_FAILED", Component: "Deactivation", Reason: "Device deactivation failed"}))
+}
