@@ -2821,6 +2821,12 @@ func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	origSerial := getSystemSerialNumber
+
+	t.Cleanup(func() { getSystemSerialNumber = origSerial })
+
+	getSystemSerialNumber = func() (string, error) { return "PF4ABCDE", nil }
+
 	mockAMT := mock.NewMockInterface(ctrl)
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
@@ -2860,6 +2866,7 @@ func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Equal(t, "PF4ABCDE", gotBody.DeviceInfo.SerialNumber)
 	require.NotNil(t, gotBody.DeviceInfo.UPID)
 	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.CSMEId)
 	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.OEMId)

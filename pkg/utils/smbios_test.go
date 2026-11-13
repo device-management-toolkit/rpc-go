@@ -177,3 +177,130 @@ func TestGetSMBIOSSystemUUID(t *testing.T) {
 		assert.Contains(t, err.Error(), "not supported")
 	})
 }
+
+func TestGetSystemSerialNumber(t *testing.T) {
+	origFile := readSMBIOSUUIDFile
+	origOS := currentGOOS
+	origCmd := runSMBIOSUUIDCommand
+
+	t.Cleanup(func() { readSMBIOSUUIDFile = origFile })
+	t.Cleanup(func() { currentGOOS = origOS })
+	t.Cleanup(func() { runSMBIOSUUIDCommand = origCmd })
+
+	t.Run("linux reads product_serial", func(t *testing.T) {
+		currentGOOS = goosLinux
+		readSMBIOSUUIDFile = func(path string) ([]byte, error) {
+			assert.Equal(t, productSerialPath, path)
+
+			return []byte("PF4ABCDE\n"), nil
+		}
+
+		serial, err := GetSystemSerialNumber()
+		require.NoError(t, err)
+		assert.Equal(t, "PF4ABCDE", serial)
+	})
+
+	t.Run("linux read failure", func(t *testing.T) {
+		currentGOOS = goosLinux
+		readSMBIOSUUIDFile = func(_ string) ([]byte, error) {
+			return nil, errors.New("permission denied")
+		}
+
+		_, err := GetSystemSerialNumber()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read system serial number")
+	})
+
+	t.Run("linux placeholder is unavailable", func(t *testing.T) {
+		currentGOOS = goosLinux
+		readSMBIOSUUIDFile = func(_ string) ([]byte, error) {
+			return []byte("To Be Filled By O.E.M.\n"), nil
+		}
+
+		_, err := GetSystemSerialNumber()
+		assert.ErrorIs(t, err, ErrSerialNumberUnavailable)
+	})
+
+	t.Run("windows queries Win32_BIOS", func(t *testing.T) {
+		currentGOOS = goosWindows
+		runSMBIOSUUIDCommand = func(_ string, args ...string) ([]byte, error) {
+			assert.Contains(t, args[len(args)-1], "Win32_BIOS")
+
+			return []byte("45ZFVD3\r\n"), nil
+		}
+
+		serial, err := GetSystemSerialNumber()
+		require.NoError(t, err)
+		assert.Equal(t, "45ZFVD3", serial)
+	})
+
+	t.Run("windows falls back to the next PowerShell host", func(t *testing.T) {
+		currentGOOS = goosWindows
+		calls := 0
+		runSMBIOSUUIDCommand = func(_ string, _ ...string) ([]byte, error) {
+			calls++
+			if calls == 1 {
+				return nil, errors.New("not found")
+			}
+
+			return []byte("45ZFVD3"), nil
+		}
+
+		serial, err := GetSystemSerialNumber()
+		require.NoError(t, err)
+		assert.Equal(t, "45ZFVD3", serial)
+		assert.Equal(t, 2, calls)
+	})
+
+	t.Run("windows query failure", func(t *testing.T) {
+		currentGOOS = goosWindows
+		runSMBIOSUUIDCommand = func(_ string, _ ...string) ([]byte, error) {
+			return nil, errors.New("powershell missing")
+		}
+
+		_, err := GetSystemSerialNumber()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to read system serial number")
+	})
+
+	t.Run("macOS reads IOPlatformSerialNumber", func(t *testing.T) {
+		currentGOOS = goosDarwin
+		runSMBIOSUUIDCommand = func(_ string, _ ...string) ([]byte, error) {
+			return []byte("    \"IOPlatformUUID\" = \"D83E613D-3B03-6BC0-36BD-48210B3594EC\"\n" +
+				"    \"IOPlatformSerialNumber\" = \"C02ABC123XYZ\"\n"), nil
+		}
+
+		serial, err := GetSystemSerialNumber()
+		require.NoError(t, err)
+		assert.Equal(t, "C02ABC123XYZ", serial)
+	})
+
+	t.Run("macOS serial missing from ioreg output", func(t *testing.T) {
+		currentGOOS = goosDarwin
+		runSMBIOSUUIDCommand = func(_ string, _ ...string) ([]byte, error) {
+			return []byte("    \"IOPlatformUUID\" = \"D83E613D-3B03-6BC0-36BD-48210B3594EC\"\n"), nil
+		}
+
+		_, err := GetSystemSerialNumber()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "IOPlatformSerialNumber not found")
+	})
+
+	t.Run("unsupported OS", func(t *testing.T) {
+		currentGOOS = "plan9"
+
+		_, err := GetSystemSerialNumber()
+		assert.ErrorIs(t, err, ErrSerialNumberUnavailable)
+	})
+}
+
+func TestSanitizeSerialNumber(t *testing.T) {
+	serial, err := sanitizeSerialNumber("  PF4ABCDE \n")
+	require.NoError(t, err)
+	assert.Equal(t, "PF4ABCDE", serial)
+
+	for _, placeholder := range []string{"", "   ", "To Be Filled By O.E.M.", "Default string", "System Serial Number", "0"} {
+		_, err := sanitizeSerialNumber(placeholder)
+		assert.ErrorIs(t, err, ErrSerialNumberUnavailable, placeholder)
+	}
+}

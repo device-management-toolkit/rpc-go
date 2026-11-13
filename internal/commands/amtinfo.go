@@ -113,6 +113,14 @@ var (
 // test seam for SMBIOS UUID fallback in GetAMTInfo.
 var getSMBIOSSystemUUID = utils.GetSMBIOSSystemUUID
 
+var getSystemSerialNumber = utils.GetSystemSerialNumber
+
+// Text shown in place of a requested identifier that could not be read.
+const (
+	upidNotSupported       = "Not Supported"
+	identifierNotAvailable = "Not Available"
+)
+
 // test seam for privilege checking.
 var isElevated = utils.IsElevated
 
@@ -128,6 +136,11 @@ func renderInfoRow(label, value string) string {
 // renderUnavailableRow renders a field that could not be read, with the reason.
 func renderUnavailableRow(label, reason string) string {
 	return infoIndent + infoLabelStyle.Render(label) + " " + infoYellowStyle.Render(unavailableValue(reason)) + "\n"
+}
+
+// renderNoticeRow renders a field whose value is a status, not data.
+func renderNoticeRow(label, status string) string {
+	return infoIndent + infoLabelStyle.Render(label) + " " + infoYellowStyle.Render(status) + "\n"
 }
 
 func unavailableValue(reason string) string {
@@ -218,11 +231,12 @@ type AmtInfoCmd struct {
 	Sku bool `help:"Show Product SKU" short:"s"`
 
 	// Identity flags
-	UUID      bool `help:"Show Unique Identifier" short:"u"`
-	UPID      bool `help:"Show Intel Unique Platform ID"`
-	TEP       bool `help:"Show Intel Trusted Endpoint Provisioning (TEP) status" name:"tep"`
-	Mode      bool `help:"Show Current Control Mode" short:"m"`
-	ProvState bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
+	SerialNumber bool `help:"Show OEM system serial number" name:"serial-number"`
+	UUID         bool `help:"Show Unique Identifier" short:"u"`
+	UPID         bool `help:"Show Intel Unique Platform ID"`
+	TEP          bool `help:"Show Intel Trusted Endpoint Provisioning (TEP) status" name:"tep"`
+	Mode         bool `help:"Show Current Control Mode" short:"m"`
+	ProvState    bool `help:"Show Provisioning State" name:"provisioningState" short:"p"`
 
 	// Network flags
 	DNS      bool `help:"Show Domain Name Suffix" short:"d"`
@@ -288,7 +302,7 @@ func (cmd *AmtInfoCmd) Validate(kctx *kong.Context) error {
 
 // HasNoFlagsSet checks if no specific flags are set (meaning show all)
 func (cmd *AmtInfoCmd) HasNoFlagsSet() bool {
-	return !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.TEP && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
+	return !cmd.SerialNumber && !cmd.Ver && !cmd.Bld && !cmd.Sku && !cmd.UUID && !cmd.UPID && !cmd.TEP && !cmd.Mode && !cmd.ProvState && !cmd.DNS &&
 		!cmd.Cert && !cmd.UserCert && !cmd.Ras && !cmd.Lan && !cmd.Hostname && !cmd.OpState && !cmd.Proxy
 }
 
@@ -474,6 +488,7 @@ func (cmd *AmtInfoCmd) elevationErr() error {
 
 // InfoResult holds the complete AMT information result
 type InfoResult struct {
+	SerialNumber      string                       `json:"serialNumber,omitempty"`
 	AMT               string                       `json:"amt,omitempty"`
 	BuildNumber       string                       `json:"buildNumber,omitempty"`
 	SKU               string                       `json:"sku,omitempty"`
@@ -499,6 +514,12 @@ type InfoResult struct {
 	WSMANUnavailable string `json:"wsmanUnavailable,omitempty"`
 	// mpsUnavailable marks the MPS port as unread, as opposed to not configured.
 	mpsUnavailable bool
+	// upidStatus says why a requested UPID is missing ("Not Supported" or
+	// "Not Available ..."); text output only.
+	upidStatus string
+	// serialUnavailable marks a requested serial number that could not be read;
+	// text output only.
+	serialUnavailable bool
 	// Warnings holds non-fatal diagnostics, omitted from JSON output.
 	Warnings []string `json:"-"`
 }
@@ -713,6 +734,7 @@ type syncPayload struct {
 }
 
 type syncDeviceInfo struct {
+	SerialNumber         string                   `json:"serialNumber,omitempty"`
 	FWVersion            string                   `json:"fwVersion"`
 	FWBuild              string                   `json:"fwBuild"`
 	FWSku                string                   `json:"fwSku"`
@@ -810,9 +832,10 @@ func (s *InfoService) SyncDeviceInfoWithResult(ctx *Context, result *InfoResult,
 		GUID:     result.UUID,
 		Hostname: s.getCreateHostname(result),
 		DeviceInfo: syncDeviceInfo{
-			FWVersion: result.AMT,
-			FWBuild:   result.BuildNumber,
-			FWSku:     result.SKU,
+			SerialNumber: result.SerialNumber,
+			FWVersion:    result.AMT,
+			FWBuild:      result.BuildNumber,
+			FWSku:        result.SKU,
 			// Discovered is NOT set here - only sent during device creation, never in updates
 			CurrentMode:  result.ControlMode,
 			Features:     result.Features,
@@ -1187,16 +1210,17 @@ func SyncDeviceInfoHelper(ctx *Context, baseCmd *AMTBaseCmd, wsman interfaces.WS
 	log.Debug("Starting device info collection for sync")
 
 	infoCmd := &AmtInfoCmd{
-		AMTBaseCmd: AMTBaseCmd{HECIAvailable: baseCmd.HECIAvailable},
-		Ver:        true,
-		Bld:        true,
-		Sku:        true,
-		UUID:       true,
-		UPID:       true,
-		Mode:       true,
-		Lan:        true,
-		DNS:        true,
-		Cert:       true,
+		AMTBaseCmd:   AMTBaseCmd{HECIAvailable: baseCmd.HECIAvailable},
+		Ver:          true,
+		Bld:          true,
+		Sku:          true,
+		UUID:         true,
+		SerialNumber: true,
+		UPID:         true,
+		Mode:         true,
+		Lan:          true,
+		DNS:          true,
+		Cert:         true,
 	}
 
 	log.Debug("Initializing info service for sync")
@@ -1873,9 +1897,18 @@ func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd, postActivation bool) (*Inf
 	// Get UPID (Intel Unique Platform ID) — uses its own HECI client, handles errors internally
 	if showAll || cmd.UPID {
 		upidData, err := s.amtCommand.GetUPID()
-		if err != nil {
+		switch {
+		case errors.Is(err, upid.ErrUPIDNotSupported):
 			log.Trace("Failed to get UPID: ", err)
-		} else if upidData != nil {
+
+			result.upidStatus = upidNotSupported
+		case err != nil:
+			log.Trace("Failed to get UPID: ", err)
+
+			result.upidStatus = fmt.Sprintf("%s (%v)", identifierNotAvailable, err)
+		case upidData == nil:
+			result.upidStatus = identifierNotAvailable
+		default:
 			result.UPID = upidData
 		}
 	}
@@ -1969,6 +2002,18 @@ func (s *InfoService) collectAMTInfo(cmd *AmtInfoCmd, postActivation bool) (*Inf
 		if err == nil {
 			result.DNSSuffixOS = osDnsSuffix
 		}
+	}
+
+	// OEM serial number is independent of HECI and optional.
+	if showAll || cmd.SerialNumber {
+		serial, err := getSystemSerialNumber()
+		if err != nil {
+			log.Debug("System serial number not available: ", err)
+		} else {
+			result.SerialNumber = serial
+		}
+
+		result.serialUnavailable = result.SerialNumber == ""
 	}
 
 	// Get hostname from OS (no admin required)
@@ -2201,6 +2246,12 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 		add("Device", "--hostname", "Hostname (OS)", result.HostnameOS)
 	}
 
+	if (showAll || cmd.SerialNumber) && result.SerialNumber != "" {
+		add("Device", "--serial-number", "Serial Number", result.SerialNumber)
+	} else if result.serialUnavailable {
+		add("Device", "--serial-number", "Serial Number", identifierNotAvailable)
+	}
+
 	// --- Remote Access ---
 	if (showAll || cmd.Ras) && result.RAS != nil {
 		add("Remote Access", "-a", "Network", result.RAS.NetworkStatus)
@@ -2255,6 +2306,8 @@ func (s *InfoService) OutputTable(w io.Writer, result *InfoResult, cmd *AmtInfoC
 				add("Intel UPID", "--upid", label, value)
 			}
 		}
+	} else if result.upidStatus != "" {
+		add("Intel UPID", "--upid", "UPID", result.upidStatus)
 	}
 
 	// --- Intel TEP ---
@@ -2626,6 +2679,12 @@ func buildDeviceSection(result *InfoResult, cmd *AmtInfoCmd, showAll, boxed bool
 		main.WriteString(renderInfoRow("Hostname (OS)", result.HostnameOS))
 	}
 
+	if (showAll || cmd.SerialNumber) && result.SerialNumber != "" {
+		main.WriteString(renderInfoRow("Serial Number", result.SerialNumber))
+	} else if result.serialUnavailable {
+		main.WriteString(renderNoticeRow("Serial Number", identifierNotAvailable))
+	}
+
 	if main.Len() == 0 {
 		return ""
 	}
@@ -2757,6 +2816,10 @@ func buildProxySection(result *InfoResult, cmd *AmtInfoCmd, showAll, heciAvailab
 }
 
 func buildUPIDSection(result *InfoResult, cmd *AmtInfoCmd, showAll bool) string {
+	if result.UPID == nil && result.upidStatus != "" {
+		return renderInfoHeader("Intel UPID") + renderNoticeRow("UPID", result.upidStatus)
+	}
+
 	if (!showAll && !cmd.UPID) || result.UPID == nil {
 		return ""
 	}

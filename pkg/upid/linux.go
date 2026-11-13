@@ -8,6 +8,8 @@
 package upid
 
 import (
+	"errors"
+
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/heci"
 	log "github.com/sirupsen/logrus"
 )
@@ -25,8 +27,15 @@ func (c *Command) initGUID() error {
 	if err != nil {
 		log.Tracef("Failed to initialize UPID MEI client: %v", err)
 
-		return ErrUPIDNotSupported
+		return classifyInitError(err, upidClientMissing(err))
 	}
 
 	return nil
+}
+
+// upidClientMissing reports whether err means the MEI device was reached but
+// hosts no UPID client (the driver answers ENOTTY, classified by heci as
+// ErrUnsupportedDevice).
+func upidClientMissing(err error) bool {
+	return errors.Is(err, heci.ErrUnsupportedDevice)
 }
