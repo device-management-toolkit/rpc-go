@@ -24,7 +24,11 @@ type AmtInfoFlags struct {
 	Lan      bool
 	Hostname bool
 	OpState  bool
-	All      bool
+	// SerialNumber and UPID are the physical machine identifiers reported
+	// alongside the AMT UUID.
+	SerialNumber bool
+	UPID         bool
+	All          bool
 }
 
 func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
@@ -35,6 +39,8 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 	amtInfoCommand.BoolVar(&f.AmtInfo.Bld, "bld", false, "Build Number")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Sku, "sku", false, "Product SKU")
 	amtInfoCommand.BoolVar(&f.AmtInfo.UUID, "uuid", false, "Unique Identifier")
+	amtInfoCommand.BoolVar(&f.AmtInfo.SerialNumber, "serialNumber", false, "OEM System Serial Number")
+	amtInfoCommand.BoolVar(&f.AmtInfo.UPID, "upid", false, "Intel Unique Platform ID")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Mode, "mode", false, "Current Control Mode")
 	amtInfoCommand.BoolVar(&f.AmtInfo.DNS, "dns", false, "Domain Name Suffix")
 	amtInfoCommand.BoolVar(&f.AmtInfo.Cert, "cert", false, "System Certificate Hashes (and User Certificates if AMT password is provided)")
@@ -66,6 +72,8 @@ func (f *Flags) handleAMTInfo(amtInfoCommand *flag.FlagSet) error {
 		f.AmtInfo.Lan = true
 		f.AmtInfo.Hostname = true
 		f.AmtInfo.OpState = true
+		f.AmtInfo.SerialNumber = true
+		f.AmtInfo.UPID = true
 	}
 
 	if f.AmtInfo.All {
