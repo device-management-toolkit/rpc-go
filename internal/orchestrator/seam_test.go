@@ -234,7 +234,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.ControlMode = "ccmactivate"
 			},
 			token: "activate",
-			err:   stepErr("activation step"),
+			err:   &ExecError{ExitCode: utils.WSMANMessageError.Code, Err: errors.New("activation step exit status 105")},
 		},
 		{
 			name:        "ACM upgrade",
@@ -325,8 +325,9 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com", Port: 8080}}
 			},
-			token: "proxy",
-			err:   &ExecError{ExitCode: utils.WSMANMessageError.Code, Err: errors.New("proxy step exit status 105")},
+			token:     "proxy",
+			inProcess: true,
+			err:       stepErr("proxy step"),
 		},
 	}
 
@@ -363,6 +364,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			wirelessCalls := stubConfigureWireless(t, inProcessErrs["wireless"])
 			tlsCalls := stubConfigureTLS(t, inProcessErrs["tls"])
 			ciraCalls := stubConfigureCIRA(t, inProcessErrs["cira"])
+			proxyCalls := stubConfigureProxy(t, inProcessErrs["proxy"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
@@ -385,6 +387,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 					"wireless":    len(*wirelessCalls) > 0,
 					"tls":         len(*tlsCalls) > 0,
 					"cira":        len(*ciraCalls) > 0,
+					"proxy":       len(*proxyCalls) > 0,
 				}[tt.token]
 			}
 

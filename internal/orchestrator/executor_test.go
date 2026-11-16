@@ -123,13 +123,16 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	// The step builds its own environment; the fake rpc inherits this one.
 	t.Setenv(fakeRPCRecordEnv, record)
 
+	// Activation is the last step still on the executor: a device in
+	// pre-provisioning (control mode 0) with a CCM profile.
 	cfg := config.Configuration{}
-	cfg.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com"}}
+	cfg.Configuration.AMTSpecific.ControlMode = "ccmactivate"
 
 	po := NewProfileOrchestrator(cfg, "", "", false)
+	po.currentControlMode = 0
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeHTTPProxyConfiguration())
+	require.NoError(t, po.executeActivation())
 
-	assert.Equal(t, []string{fake, "configure", "proxy", "--address", "proxy.example.com"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "activate", "--ccm", "--local"}, readArgv(t, record))
 }
