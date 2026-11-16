@@ -581,35 +581,31 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	log.Info("Executing wired network configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wired")
+	// DHCP sets only DHCPEnabled, as the old child got only --dhcp; a static
+	// profile copies its address fields and leaves DHCPEnabled nil. IP sync,
+	// 802.1x and EA fields stay unset because the old child never got them.
+	var opts configure.WiredOptions
 
 	if wired.DHCPEnabled {
-		args = append(args, "--dhcp")
+		dhcp := true
+		opts.DHCPEnabled = &dhcp
 	} else {
-		// Static IP configuration
-		if wired.IPAddress != "" {
-			args = append(args, "--ipaddress", wired.IPAddress)
-		}
-
-		if wired.SubnetMask != "" {
-			args = append(args, "--subnetmask", wired.SubnetMask)
-		}
-
-		if wired.DefaultGateway != "" {
-			args = append(args, "--gateway", wired.DefaultGateway)
-		}
-
-		if wired.PrimaryDNS != "" {
-			args = append(args, "--primarydns", wired.PrimaryDNS)
-		}
-
-		if wired.SecondaryDNS != "" {
-			args = append(args, "--secondarydns", wired.SecondaryDNS)
-		}
+		opts.IPAddress = wired.IPAddress
+		opts.SubnetMask = wired.SubnetMask
+		opts.Gateway = wired.DefaultGateway
+		opts.PrimaryDNS = wired.PrimaryDNS
+		opts.SecondaryDNS = wired.SecondaryDNS
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureWired(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeEnableWiFi enables WiFi port if needed
