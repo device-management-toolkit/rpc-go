@@ -14,6 +14,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -26,14 +27,12 @@ var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 var newAMTCommand = func() amt.Interface { return amt.NewAMTCommand() }
 
 const (
-	ACMMODE            = "acmactivate"
-	commandConfigure   = "configure"
-	commandAMTPassword = "amtpassword"
+	ACMMODE          = "acmactivate"
+	commandConfigure = "configure"
 
 	// Environment variable names for passing credentials securely to subprocesses.
 	// Using env vars avoids credential exposure in /proc/<pid>/cmdline and ps output.
 	envAMTPassword         = "AMT_PASSWORD"
-	envNewAMTPassword      = "NEW_AMT_PASSWORD"
 	envMEBXPassword        = "MEBX_PASSWORD"
 	envProvisioningCertPwd = "PROVISIONING_CERT_PASSWORD"
 	envProvisioningCert    = "PROVISIONING_CERT"
@@ -389,22 +388,13 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error 
 	return fmt.Errorf("failed to update AMT password after %d attempts", maxTries)
 }
 
-// changeAMTPassword changes the AMT admin password from current to next.
+// changeAMTPassword changes the AMT admin password from current to next
+// in-process; both passwords travel in the options struct.
 func (po *ProfileOrchestrator) changeAMTPassword(current, next string) error {
-	// Pass both old and new passwords via per-subprocess environment to avoid
-	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-	// and to prevent global process environment pollution in c-shared library mode.
-	changeEnv := map[string]string{
-		envAMTPassword:    current,
-		envNewAMTPassword: next,
-	}
-
-	change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
-	if po.skipAMTCertCheck {
-		change = append(change, "--skip-amt-cert-check")
-	}
-
-	return po.executor.Execute(change, changeEnv)
+	return configureChangeAMTPassword(configure.AMTPasswordOptions{
+		BaseOptions: configure.BaseOptions{AMTPassword: current, SkipAMTCertCheck: po.skipAMTCertCheck},
+		NewPassword: next,
+	})
 }
 
 // execStep returns a step that runs the rpc CLI with args. The step's AMT
@@ -898,15 +888,13 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// Use an idempotent password-change-to-same-value operation as an auth probe.
 	// If the provided password is already set, this succeeds and changes nothing.
 	// If authentication fails (wrong password), our fallback will prompt for the
-	// current password, rotate to the profile value, and retry.
-	args := po.baseArgs()
-	args = append(args, commandConfigure, commandAMTPassword)
+	// current password, rotate to the profile value, and retry. The probe gets
+	// the current po.globalPassword from the fallback wrapper.
+	probe := func(password string) error {
+		return po.changeAMTPassword(password, newPass)
+	}
 
-	// Pass passwords via per-subprocess environment to avoid credential exposure in ps/cmdline.
-	// The step sets AMT_PASSWORD from the current po.globalPassword.
-	env := map[string]string{envNewAMTPassword: newPass}
-
-	err := po.executeWithPasswordFallback(po.execStep(args, env))
+	err := po.executeWithPasswordFallback(probe)
 	if isDeviceNotActivatedErr(err) {
 		log.Warn(msgPasswordAlignSkipped)
 
