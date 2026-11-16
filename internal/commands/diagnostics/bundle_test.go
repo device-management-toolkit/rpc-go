@@ -71,7 +71,7 @@ func TestBundleCommand_DefaultCollectors(t *testing.T) {
 
 	manifestData := readZipEntry(t, archive, "manifest.json")
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(manifestData, &manifest))
 	require.Len(t, manifest.Collectors, 3)
 
@@ -133,10 +133,10 @@ func TestBundleCommand_DefaultCollectorsRecordsPartialWSMan(t *testing.T) {
 
 	manifestData := readZipEntry(t, archive, "manifest.json")
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(manifestData, &manifest))
 	require.Len(t, manifest.Collectors, 3)
-	assert.Equal(t, bundleCollectorResult{Name: "wsman", File: "wsman.json", Status: "partial", Error: "1 of 52 WSMAN classes failed to retrieve"}, manifest.Collectors[2])
+	assert.Equal(t, BundleCollectorResult{Name: "wsman", File: "wsman.json", Status: "partial", Error: "1 of 52 WSMAN classes failed to retrieve"}, manifest.Collectors[2])
 }
 
 func TestBundleCommand_DefaultCollectorsFailsWSManWhenAllClassesFail(t *testing.T) {
@@ -168,10 +168,10 @@ func TestBundleCommand_DefaultCollectorsFailsWSManWhenAllClassesFail(t *testing.
 		assert.NotEqual(t, "wsman.json", file.Name)
 	}
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(readZipEntry(t, archive, "manifest.json"), &manifest))
 	require.Len(t, manifest.Collectors, 3)
-	assert.Equal(t, bundleCollectorResult{Name: "wsman", Status: "failed", Error: "all 52 WSMAN classes failed to retrieve: connection refused"}, manifest.Collectors[2])
+	assert.Equal(t, BundleCollectorResult{Name: "wsman", Status: "failed", Error: "all 52 WSMAN classes failed to retrieve: connection refused"}, manifest.Collectors[2])
 }
 
 func TestBundleCommand_SuggestsSkipAMTCertCheckOnCertificateFailure(t *testing.T) {
@@ -203,7 +203,7 @@ func TestBundleCommand_SuggestsSkipAMTCertCheckOnCertificateFailure(t *testing.T
 
 	t.Cleanup(func() { require.NoError(t, archive.Close()) })
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(readZipEntry(t, archive, "manifest.json"), &manifest))
 	require.Len(t, manifest.Collectors, 3)
 	assert.Equal(t, "failed", manifest.Collectors[2].Status)
@@ -233,9 +233,9 @@ func TestBundleCommand_ReturnsErrorWhenNothingCollected(t *testing.T) {
 	require.Len(t, archive.File, 1)
 	assert.Equal(t, "manifest.json", archive.File[0].Name)
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(readZipEntry(t, archive, "manifest.json"), &manifest))
-	assert.Equal(t, []bundleCollectorResult{
+	assert.Equal(t, []BundleCollectorResult{
 		{Name: "cira", Status: "failed", Error: "not supported"},
 		{Name: "wsman", Status: "failed", Error: "all 52 WSMAN classes failed"},
 	}, manifest.Collectors)
@@ -307,16 +307,16 @@ func TestBundleCommand_CreatesBundleAndRecordsCollectorFailures(t *testing.T) {
 	assert.NotContains(t, files, "unsupported.txt")
 	assert.Equal(t, []byte(`{"partial":true}`), files["partial.json"])
 
-	var manifest bundleManifest
+	var manifest BundleManifest
 	require.NoError(t, json.Unmarshal(files["manifest.json"], &manifest))
 	assert.Equal(t, createdAt, manifest.CreatedAt)
 	require.Len(t, manifest.Collectors, 4)
-	assert.Equal(t, bundleCollectorResult{Name: "working", File: "working.txt", Status: "success"}, manifest.Collectors[0])
-	assert.Equal(t, bundleCollectorResult{Name: "unsupported", Status: "failed", Error: "not supported"}, manifest.Collectors[1])
+	assert.Equal(t, BundleCollectorResult{Name: "working", File: "working.txt", Status: "success"}, manifest.Collectors[0])
+	assert.Equal(t, BundleCollectorResult{Name: "unsupported", Status: "failed", Error: "not supported"}, manifest.Collectors[1])
 	assert.Equal(t, "missing-output", manifest.Collectors[2].Name)
 	assert.Equal(t, "failed", manifest.Collectors[2].Status)
 	assert.Contains(t, manifest.Collectors[2].Error, "collector did not create missing.txt")
-	assert.Equal(t, bundleCollectorResult{Name: "partial", File: "partial.json", Status: "partial", Error: "one class failed"}, manifest.Collectors[3])
+	assert.Equal(t, BundleCollectorResult{Name: "partial", File: "partial.json", Status: "partial", Error: "one class failed"}, manifest.Collectors[3])
 }
 
 func TestBundleCommand_DefaultOutputName(t *testing.T) {

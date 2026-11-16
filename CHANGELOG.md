@@ -1,3 +1,10 @@
+# [3.0.0-beta.81](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.80...v3.0.0-beta.81) (2026-11-09)
+
+
+### Bug Fixes
+
+* verify the server reply before reporting a device sync ([#1678](https://github.com/device-management-toolkit/rpc-go/issues/1678)) ([6efc968](https://github.com/device-management-toolkit/rpc-go/commit/6efc9689fc8998c344a24fa8cdb3d6b4c1c241b1)), closes [device-management-toolkit/console#1299](https://github.com/device-management-toolkit/console/issues/1299)
+
 # [3.0.0-beta.80](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.79...v3.0.0-beta.80) (2026-11-05)
 
 

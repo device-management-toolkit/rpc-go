@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"text/template"
 	"time"
 
@@ -22,6 +23,9 @@ const (
 	unknownValue = "Unknown"
 	zeroIP       = "0.0.0.0"
 )
+
+// ErrCIRALogNotSupported reports firmware that has no CIRA log.
+var ErrCIRALogNotSupported = errors.New("CIRA Log feature is not supported in this firmware version")
 
 // CIRACmd dumps CIRA-related firmware diagnostics.
 type CIRACmd struct {
@@ -44,14 +48,8 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 		return err
 	}
 
-	// Get CIRA log from firmware
-	result, err := ctx.AMTCommand.GetCiraLog()
+	result, err := cmd.Collect(ctx)
 	if err != nil {
-		// Empty response indicates this firmware version does not support CIRA Log
-		if err.Error() == "empty response from AMT" {
-			return fmt.Errorf("CIRA Log feature is not supported in this firmware version")
-		}
-
 		return err
 	}
 
@@ -87,6 +85,33 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 	}
 
 	return nil
+}
+
+// Collect reads the CIRA log from the firmware, the data Run writes to its
+// output file. It returns ErrCIRALogNotSupported when the firmware has no CIRA log.
+func (cmd *CIRACmd) Collect(ctx *commands.Context) (pthi.GetCiraLogResponse, error) {
+	result, err := ctx.AMTCommand.GetCiraLog()
+	if err != nil {
+		// Empty response indicates this firmware version does not support CIRA Log
+		if err.Error() == "empty response from AMT" {
+			return pthi.GetCiraLogResponse{}, ErrCIRALogNotSupported
+		}
+
+		return pthi.GetCiraLogResponse{}, err
+	}
+
+	return result, nil
+}
+
+// CIRALogText renders a CIRA log as the text Run writes to its output file.
+func CIRALogText(result pthi.GetCiraLogResponse) (string, error) {
+	var text strings.Builder
+
+	if err := outputCiraLogText(&text, result); err != nil {
+		return "", err
+	}
+
+	return text.String(), nil
 }
 
 func outputCiraLogText(w io.Writer, result pthi.GetCiraLogResponse) error {

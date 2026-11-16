@@ -31,10 +31,9 @@ func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 		cmd.Output = fmt.Sprintf("%s_csme_flash_log.bin", timestamp)
 	}
 
-	// Retrieve the FLOG data
-	flogData, err := ctx.AMTCommand.GetFlog()
+	flogData, err := cmd.Collect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve flash log: %w", err)
+		return err
 	}
 
 	if err := ensureParentDir(cmd.Output); err != nil {
@@ -55,4 +54,14 @@ func (cmd *CSMECmd) Run(ctx *commands.Context) error {
 	log.Debugf("FLOG data saved to: %s", cmd.Output)
 
 	return nil
+}
+
+// Collect reads the CSME flash log (FLOG), the bytes Run writes to its output file.
+func (cmd *CSMECmd) Collect(ctx *commands.Context) ([]byte, error) {
+	flogData, err := ctx.AMTCommand.GetFlog()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve flash log: %w", err)
+	}
+
+	return flogData, nil
 }

@@ -225,18 +225,28 @@ func (heci *Driver) FindDevices() (resultErr error) {
 		return err
 	}
 
-	err = heci.GetHeciVersion()
-	if err != nil {
-		heci.meiDevice = 0
+	return heci.connectOpenedDevice(heci.GetHeciVersion, heci.ConnectHeciClient)
+}
 
-		return err
-	}
+// closeMEIHandle closes the MEI device handle. Tests replace it to see which
+// handle is closed without opening a device.
+var closeMEIHandle = windows.CloseHandle
 
-	err = heci.ConnectHeciClient()
-	if err != nil {
-		heci.meiDevice = 0
+// connectOpenedDevice runs the handshake steps on the MEI device FindDevices
+// opened. If a step fails it closes the handle, which no caller can reach
+// once meiDevice is cleared: in a long-running process the device would stay
+// open until exit.
+func (heci *Driver) connectOpenedDevice(steps ...func() error) error {
+	for _, step := range steps {
+		if err := step(); err != nil {
+			if closeErr := closeMEIHandle(heci.meiDevice); closeErr != nil {
+				log.Debugf("MEI CloseHandle returned: %v", closeErr)
+			}
 
-		return err
+			heci.meiDevice = 0
+
+			return err
+		}
 	}
 
 	return nil

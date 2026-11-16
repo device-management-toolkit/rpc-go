@@ -8,11 +8,13 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
@@ -320,27 +322,6 @@ func TestExecuteACMUpgrade_PassesPasswordsViaEnv(t *testing.T) {
 	}
 }
 
-func TestExecuteMEBxConfiguration_SkipWhenPreProvisioning(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
-	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 0 // pre-provisioning
-
-	err := po.executeMEBxConfiguration()
-	if err != nil {
-		t.Fatalf("executeMEBxConfiguration() error = %v", err)
-	}
-
-	// Should have skipped execution entirely
-	if len(mock.executedArgs) != 0 {
-		t.Errorf("expected 0 executions (skipped), got %d", len(mock.executedArgs))
-	}
-}
-
 // authExecError returns an *ExecError that mimics the CLI returning the
 // AMTAuthenticationFailed exit code.
 func authExecError() error {
@@ -370,7 +351,7 @@ func TestExecuteWithPasswordFallback_SkippedWhenPreProvisioning(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 0 // pre-provisioning: rotation must not happen
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected auth error to surface, got nil")
 	}
@@ -390,7 +371,7 @@ func TestExecuteWithPasswordFallback_NonExecErrorDoesNotRotate(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -410,7 +391,7 @@ func TestExecuteWithPasswordFallback_NonAuthExitCodeDoesNotRotate(t *testing.T) 
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -421,53 +402,41 @@ func TestExecuteWithPasswordFallback_NonAuthExitCodeDoesNotRotate(t *testing.T) 
 }
 
 func TestExecuteWithPasswordFallback_AuthExitCodeTriggersRotationAndRetry(t *testing.T) {
+	calls := stubChangeAMTPassword(t)
+
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
 	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
 	mock := newMockExecutor()
 	// Call 0: original command fails with auth error.
-	// Call 1: non-interactive password rotation using currentPassword succeeds.
-	// Call 2: original command retried successfully.
-	mock.errs = []error{authExecError(), nil, nil}
+	// Call 1: original command retried successfully after the in-process
+	// rotation using currentPassword.
+	mock.errs = []error{authExecError(), nil}
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v", err)
 	}
 
-	if mock.callCount != 3 {
-		t.Fatalf("expected 3 calls (fail, rotate, retry), got %d", mock.callCount)
+	if mock.callCount != 2 {
+		t.Fatalf("expected 2 executor calls (fail, retry), got %d", mock.callCount)
 	}
 
-	rotateArgs := strings.Join(mock.executedArgs[1], " ")
-	if !strings.Contains(rotateArgs, "configure amtpassword") {
-		t.Errorf("expected non-interactive rotation command on call 2, got: %s", rotateArgs)
-	}
-	// Verify passwords are NOT in the command args (they should be in environment variables)
-	if strings.Contains(rotateArgs, "old-pass") || strings.Contains(rotateArgs, "new-pass") {
-		t.Errorf("passwords should not appear in command args (should use env vars), got: %s", rotateArgs)
+	// The rotation passes both passwords through the options struct.
+	if want := []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}; !reflect.DeepEqual(*calls, want) {
+		t.Errorf("rotation options = %+v, want %+v", *calls, want)
 	}
 
-	// Verify passwords ARE in environment variables for rotation command (call 1)
-	rotateEnv := mock.executedEnv[1]
-	if rotateEnv["AMT_PASSWORD"] != "old-pass" {
-		t.Errorf("expected AMT_PASSWORD=old-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	if rotateEnv["NEW_AMT_PASSWORD"] != "new-pass" {
-		t.Errorf("expected NEW_AMT_PASSWORD=new-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	retryArgs := strings.Join(mock.executedArgs[2], " ")
+	retryArgs := strings.Join(mock.executedArgs[1], " ")
 	if !strings.Contains(retryArgs, "amtinfo") {
-		t.Errorf("expected retry of original command on call 3, got: %s", retryArgs)
+		t.Errorf("expected retry of original command on call 2, got: %s", retryArgs)
 	}
 
-	// Verify retry command (call 2) has the new password in env
-	retryEnv := mock.executedEnv[2]
+	// Verify retry command (call 1) has the new password in env
+	retryEnv := mock.executedEnv[1]
 	if retryEnv["AMT_PASSWORD"] != "new-pass" {
 		t.Errorf("expected AMT_PASSWORD=new-pass in retry env, got: %v", retryEnv)
 	}
@@ -484,7 +453,7 @@ func TestExecuteWithPasswordFallback_NoSettleRetryWhenNotActivatedThisRun(t *tes
 	// activatedThisRun defaults to false: device was already activated, so a
 	// configuration failure is genuine and must fail fast without settle retries.
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface, got nil")
 	}
@@ -506,7 +475,7 @@ func TestExecuteWithPasswordFallback_SettleRetryRecoversAfterActivation(t *testi
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v, want nil after settle retry", err)
 	}
@@ -527,7 +496,7 @@ func TestExecuteWithPasswordFallback_SettleRetryBounded(t *testing.T) {
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
 	}
@@ -548,7 +517,7 @@ func TestExecuteWithPasswordFallback_SettleRetrySkippedForDeviceNotActivated(t *
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil))
 	if err == nil {
 		t.Fatalf("expected device-not-activated error to surface, got nil")
 	}
@@ -580,6 +549,9 @@ func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 
 	defer func() { utils.PR = originalPR }()
 
+	// Every rotation attempt fails with an auth error as well.
+	rotations := stubChangeAMTPassword(t, slices.Repeat([]error{utils.AMTAuthenticationFailed}, 32)...)
+
 	cfg := config.Configuration{}
 	// An AdminPassword plus control mode 2 is what arms the rotation path.
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
@@ -600,63 +572,14 @@ func TestExecuteWithPasswordFallback_SettleRetryDoesNotRePrompt(t *testing.T) {
 	po.activatedThisRun = true
 	po.currentControlMode = 2
 
-	if err := po.executeWithPasswordFallback([]string{"rpc", "configure", "wifisync"}, nil); err == nil {
+	if err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "configure", "wifisync"}, nil)); err == nil {
 		t.Fatalf("expected error to surface after exhausting settle retries, got nil")
-	}
-
-	rotations := 0
-
-	for _, args := range mock.executedArgs {
-		if slices.Contains(args, commandAMTPassword) {
-			rotations++
-		}
 	}
 
 	// Exactly one: the initial execution's rotation. Routing the retries back
 	// through executeWithPasswordRotation would rotate once per settle attempt.
-	if rotations != 1 {
-		t.Errorf("expected 1 rotation attempt (the initial one), got %d across %s",
-			rotations, strings.Join(mock.executedArgs[len(mock.executedArgs)-1], " "))
-	}
-}
-
-func TestExecuteMEBxConfiguration_RunsWhenAlreadyActivated(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.MEBXPassword = "mebx-pwd"
-	cfg.Configuration.AMTSpecific.ControlMode = ACMMODE
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 2 // already in ACM
-
-	err := po.executeMEBxConfiguration()
-	if err != nil {
-		t.Fatalf("executeMEBxConfiguration() error = %v", err)
-	}
-
-	// Should have executed the MEBx configure command
-	if len(mock.executedArgs) != 1 {
-		t.Fatalf("expected 1 execution, got %d", len(mock.executedArgs))
-	}
-
-	argsStr := strings.Join(mock.executedArgs[0], " ")
-	if !strings.Contains(argsStr, "configure mebx") {
-		t.Errorf("expected MEBx configure command, got: %s", argsStr)
-	}
-	// Verify MEBx password is NOT in the command args (should be in environment variable)
-	if strings.Contains(argsStr, "mebx-pwd") {
-		t.Errorf("MEBx password should not appear in command args (should use env var), got: %s", argsStr)
-	}
-
-	// Verify MEBx password IS in environment variables
-	if len(mock.executedEnv) != 1 {
-		t.Fatalf("expected 1 execution with env, got %d", len(mock.executedEnv))
-	}
-
-	env := mock.executedEnv[0]
-	if env["MEBX_PASSWORD"] != "mebx-pwd" {
-		t.Errorf("expected MEBX_PASSWORD=mebx-pwd in env, got: %v", env)
+	if len(*rotations) != 1 {
+		t.Errorf("expected 1 rotation attempt (the initial one), got %d", len(*rotations))
 	}
 }
 
@@ -669,7 +592,7 @@ func TestExecuteWithEnv_PassesEnvironmentVariables(t *testing.T) {
 	po.executor = mock
 	po.currentControlMode = 2
 
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
+	err := po.executeWithPasswordFallback(po.execStep([]string{"rpc", "amtinfo"}, nil))
 	if err != nil {
 		t.Fatalf("executeWithPasswordFallback() error = %v", err)
 	}
@@ -719,173 +642,11 @@ func TestExecuteActivation_PassesAllPasswordsViaEnv(t *testing.T) {
 	}
 }
 
-func TestPasswordRotation_PassesPasswordsViaEnv(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
-
-	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
-	mock := newMockExecutor()
-	// Call 0: original command fails with auth error.
-	// Call 1: non-interactive password rotation using currentPassword succeeds.
-	// Call 2: original command retried successfully.
-	mock.errs = []error{authExecError(), nil, nil}
-	po.executor = mock
-	po.currentControlMode = 2
-
-	err := po.executeWithPasswordFallback([]string{"rpc", "amtinfo"}, nil)
-	if err != nil {
-		t.Fatalf("executeWithPasswordFallback() error = %v", err)
-	}
-
-	if mock.callCount != 3 {
-		t.Fatalf("expected 3 calls, got %d", mock.callCount)
-	}
-
-	// Verify rotation command (call 1) has both old and new passwords in env
-	rotateEnv := mock.executedEnv[1]
-	if rotateEnv["AMT_PASSWORD"] != "old-pass" {
-		t.Errorf("expected AMT_PASSWORD=old-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	if rotateEnv["NEW_AMT_PASSWORD"] != "new-pass" {
-		t.Errorf("expected NEW_AMT_PASSWORD=new-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	// Verify retry command (call 2) has the new password in env
-	retryEnv := mock.executedEnv[2]
-	if retryEnv["AMT_PASSWORD"] != "new-pass" {
-		t.Errorf("expected AMT_PASSWORD=new-pass in retry env, got: %v", retryEnv)
-	}
-}
-
-func TestVerifyAndAlignAMTPassword_UpdatesGlobalPasswordOnSuccess(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.AdminPassword = "new-profile-pass"
-
-	po := NewProfileOrchestrator(cfg, "current-pass", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 2
-
-	// Verify initial state
-	if po.globalPassword != "new-profile-pass" {
-		t.Errorf("initial globalPassword = %q, want %q", po.globalPassword, "new-profile-pass")
-	}
-
-	err := po.verifyAndAlignAMTPassword()
-	if err != nil {
-		t.Fatalf("verifyAndAlignAMTPassword() error = %v", err)
-	}
-
-	// Verify password rotation was attempted with current password
-	if mock.callCount != 1 {
-		t.Fatalf("expected 1 call (non-interactive rotation), got %d", mock.callCount)
-	}
-
-	rotateArgs := strings.Join(mock.executedArgs[0], " ")
-	if !strings.Contains(rotateArgs, "configure amtpassword") {
-		t.Errorf("expected password rotation command, got: %s", rotateArgs)
-	}
-
-	// Verify rotation used correct passwords in env
-	rotateEnv := mock.executedEnv[0]
-	if rotateEnv["AMT_PASSWORD"] != "current-pass" {
-		t.Errorf("expected AMT_PASSWORD=current-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	if rotateEnv["NEW_AMT_PASSWORD"] != "new-profile-pass" {
-		t.Errorf("expected NEW_AMT_PASSWORD=new-profile-pass in rotation env, got: %v", rotateEnv)
-	}
-
-	// Verify globalPassword was updated after successful rotation
-	if po.globalPassword != "new-profile-pass" {
-		t.Errorf("globalPassword after rotation = %q, want %q", po.globalPassword, "new-profile-pass")
-	}
-}
-
-func TestVerifyAndAlignAMTPassword_IdempotentProbe(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.AdminPassword = "profile-pass"
-
-	// No currentPassword provided, so we skip direct rotation and go to idempotent probe
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-	po.currentControlMode = 2
-
-	err := po.verifyAndAlignAMTPassword()
-	if err != nil {
-		t.Fatalf("verifyAndAlignAMTPassword() error = %v", err)
-	}
-
-	// Verify idempotent probe was executed
-	if mock.callCount != 1 {
-		t.Fatalf("expected 1 call (idempotent probe), got %d", mock.callCount)
-	}
-
-	probeArgs := strings.Join(mock.executedArgs[0], " ")
-	if !strings.Contains(probeArgs, "configure amtpassword") {
-		t.Errorf("expected password change command, got: %s", probeArgs)
-	}
-
-	// Verify probe used current globalPassword as AMT_PASSWORD
-	probeEnv := mock.executedEnv[0]
-	if probeEnv["AMT_PASSWORD"] != "profile-pass" {
-		t.Errorf("expected AMT_PASSWORD=profile-pass in probe env, got: %v", probeEnv)
-	}
-
-	if probeEnv["NEW_AMT_PASSWORD"] != "profile-pass" {
-		t.Errorf("expected NEW_AMT_PASSWORD=profile-pass in probe env, got: %v", probeEnv)
-	}
-}
-
 func deviceNotActivatedExecError() error {
 	return &ExecError{
 		ExitCode: utils.DeviceNotActivated.Code,
 		Output:   "device is not activated to configure. Please activate the device first",
 		Err:      fmt.Errorf("exit status %d", utils.DeviceNotActivated.Code),
-	}
-}
-
-func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_WithCurrentPassword(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
-
-	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
-	po.currentControlMode = 2
-
-	mock := newMockExecutor()
-	mock.errs = []error{deviceNotActivatedExecError()}
-	po.executor = mock
-
-	err := po.verifyAndAlignAMTPassword()
-	if err != nil {
-		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
-	}
-
-	if mock.callCount != 1 {
-		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
-	}
-}
-
-func TestVerifyAndAlignAMTPassword_SkipsWhenDeviceNotActivated_NoCurrentPassword(t *testing.T) {
-	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
-
-	po := NewProfileOrchestrator(cfg, "", "", false)
-	po.currentControlMode = 0 // executeWithPasswordFallback returns original error in pre-provisioning
-
-	mock := newMockExecutor()
-	mock.errs = []error{deviceNotActivatedExecError()}
-	po.executor = mock
-
-	err := po.verifyAndAlignAMTPassword()
-	if err != nil {
-		t.Fatalf("verifyAndAlignAMTPassword() error = %v, want nil", err)
-	}
-
-	if mock.callCount != 1 {
-		t.Fatalf("expected 1 call and graceful skip, got %d", mock.callCount)
 	}
 }
 

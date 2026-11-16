@@ -710,8 +710,10 @@ func TestCertificateFailureCollapsesDependentChecks(t *testing.T) {
 
 func TestMonitorCheckSurvivesUnavailableWSMANAndNilPostSnapshot(t *testing.T) {
 	connected := true
-	snapshot := &commands.InfoSnapshot{Info: &commands.InfoResult{AMT: "16.1.25"},
-		PostActivation: &commands.PostActivationSnapshot{WSMANStatus: commands.WSMANStatusUnavailable, MonitorConnected: &connected}}
+	snapshot := &commands.InfoSnapshot{
+		Info:           &commands.InfoResult{AMT: "16.1.25"},
+		PostActivation: &commands.PostActivationSnapshot{WSMANStatus: commands.WSMANStatusUnavailable, MonitorConnected: &connected},
+	}
 	checks := postActivationChecks(&StatusCmd{}, snapshot)
 	found := false
 

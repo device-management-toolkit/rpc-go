@@ -58,6 +58,8 @@ const (
 	statusDisabled     = "disabled"
 	proxyInfoFQDN      = "FQDN"
 	httpRequestTimeout = 10 * time.Second
+	// maxDeviceResponseBytes caps how much of a sync reply is read to verify it.
+	maxDeviceResponseBytes = 1 << 20
 )
 
 var ErrSyncUUIDUnavailable = errors.New("cannot sync: device UUID unavailable (neither HECI nor SMBIOS accessible)")
@@ -906,6 +908,10 @@ func (s *InfoService) SyncDeviceInfoWithResult(ctx *Context, result *InfoResult,
 		return nil, fmt.Errorf("sync failed with status %s", resp.Status)
 	}
 
+	if err := verifyDeviceResponse(resp, endpoint, result.UUID); err != nil {
+		return nil, err
+	}
+
 	log.Infof("device %s synced successfully (PATCH)", result.UUID)
 
 	return &DeviceSyncResult{Status: "updated", UUID: result.UUID}, nil
@@ -950,6 +956,53 @@ func (s *InfoService) getAuthToken(endpoint string, auth *ServerAuthFlags, skipC
 	return token, nil
 }
 
+// verifyDeviceResponse checks that a 2xx sync reply is the device record and not
+// another page served at that URL, such as a web UI answering every unknown path.
+// An empty body is accepted; a body must be a JSON object (not null), and its guid, when
+// present, must match the device being synced.
+func verifyDeviceResponse(resp *http.Response, endpoint, guid string) error {
+	// Read one byte past the cap so an oversized reply is rejected, not checked by its prefix.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDeviceResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("failed to read sync response: %w", err)
+	}
+
+	if len(body) > maxDeviceResponseBytes {
+		return fmt.Errorf("sync failed: response from %s is too large to be a device record", endpoint)
+	}
+
+	if strings.TrimSpace(string(body)) == "" {
+		return nil
+	}
+
+	var record *struct {
+		GUID string `json:"guid"`
+	}
+
+	if err := json.Unmarshal(body, &record); err != nil || record == nil {
+		return fmt.Errorf("sync failed: %s did not return a device record (Content-Type %q); "+
+			"check that the URL is the devices API, for example https://<server>/api/v1/devices",
+			endpoint, resp.Header.Get("Content-Type"))
+	}
+
+	if record.GUID != "" && guid != "" && !strings.EqualFold(record.GUID, guid) {
+		return fmt.Errorf("sync failed: server returned device %s, expected %s", record.GUID, guid)
+	}
+
+	return nil
+}
+
+// guidFromPayload returns the guid field of a JSON sync payload, or "" if absent.
+func guidFromPayload(body []byte) string {
+	var payload struct {
+		GUID string `json:"guid"`
+	}
+
+	_ = json.Unmarshal(body, &payload)
+
+	return payload.GUID
+}
+
 // isHTTPSuccess checks if the response status code indicates success (2xx)
 func isHTTPSuccess(statusCode int) bool {
 	return statusCode >= 200 && statusCode < 300
@@ -973,6 +1026,10 @@ func (s *InfoService) doPatchRequest(client *http.Client, endpoint string, body 
 		log.Debugf("PATCH failed with status %s", resp.Status)
 
 		return fmt.Errorf("sync failed with status %s", resp.Status)
+	}
+
+	if err := verifyDeviceResponse(resp, endpoint, guidFromPayload(body)); err != nil {
+		return err
 	}
 
 	log.Debugf("device info updated successfully (HTTP %d)", resp.StatusCode)
@@ -999,7 +1056,7 @@ func (s *InfoService) createDevice(client *http.Client, endpoint string, result 
 	}
 	defer resp.Body.Close()
 
-	return s.handleDeviceCreateResponse(resp, result.UUID)
+	return s.handleDeviceCreateResponse(resp, endpoint, result.UUID)
 }
 
 // buildDeviceCreatePayload constructs the minimal JSON payload for device registration.
@@ -1056,7 +1113,7 @@ func (s *InfoService) buildDeviceCreatePayload(result *InfoResult, discovered *b
 }
 
 // handleDeviceCreateResponse interprets the HTTP response from device creation POST.
-func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid string) (bool, error) {
+func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, endpoint, guid string) (bool, error) {
 	if resp.StatusCode == http.StatusConflict {
 		log.Debugf("device %s already exists (HTTP 409), will proceed with update", guid)
 		// Device was created concurrently; proceed with retry PATCH.
@@ -1069,6 +1126,10 @@ func (s *InfoService) handleDeviceCreateResponse(resp *http.Response, guid strin
 		log.Debugf("device registration failed with status %s", resp.Status)
 
 		return false, fmt.Errorf("device creation failed with status %s", resp.Status)
+	}
+
+	if err := verifyDeviceResponse(resp, endpoint, guid); err != nil {
+		return false, err
 	}
 
 	log.Debugf("device %s registered successfully (HTTP %d)", guid, resp.StatusCode)
