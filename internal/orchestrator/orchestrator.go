@@ -21,6 +21,10 @@ import (
 // ErrCIRAConfiguration is returned when CIRA configuration fails.
 var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 
+// newAMTCommand opens the local AMT (MEI) command interface ExecuteProfile
+// reads the control mode from; replaced in tests.
+var newAMTCommand = func() amt.Interface { return amt.NewAMTCommand() }
+
 const (
 	ACMMODE            = "acmactivate"
 	commandConfigure   = "configure"
@@ -59,6 +63,11 @@ const (
 	// clear the transient account lock.
 	postActivationSettleDelaySeconds = 3
 )
+
+// stepFunc runs one profile step with the given AMT admin password. The
+// retry and rotation wrappers call it with po.globalPassword as read at the
+// moment of the call, so a step never sees a stale password after a rotation.
+type stepFunc func(amtPassword string) error
 
 // ProfileOrchestrator orchestrates the execution of commands from a profile configuration
 type ProfileOrchestrator struct {
@@ -139,7 +148,7 @@ func (po *ProfileOrchestrator) baseArgs() []string {
 func (po *ProfileOrchestrator) ExecuteProfile() error {
 	log.Info("Starting profile orchestration...")
 
-	amtCommand := amt.NewAMTCommand()
+	amtCommand := newAMTCommand()
 	if err := amtCommand.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize AMT command: %w", err)
 	}
@@ -162,7 +171,7 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	if po.currentControlMode != 0 {
 		if strings.TrimSpace(po.profile.Configuration.AMTSpecific.AdminPassword) != "" {
 			if err := po.verifyAndAlignAMTPassword(); err != nil {
-				return fmt.Errorf("password verification/rotation failed: %w", err)
+				return fmt.Errorf("password verification/rotation failed: %w", hideStepCode(err))
 			}
 		} else {
 			log.Debug("Device is activated but no AdminPassword provided in profile; skipping password alignment")
@@ -173,13 +182,13 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE && currentControlMode == 1 {
 		// Upgrade CCM -> ACM using local activation path with provisioning cert
 		if err := po.executeActivation(); err != nil {
-			return fmt.Errorf("activation failed: %w", err)
+			return fmt.Errorf("activation failed: %w", hideStepCode(err))
 		}
 
 		po.activatedThisRun = true
 	} else if currentControlMode == 0 {
 		if err := po.executeActivation(); err != nil {
-			return fmt.Errorf("activation failed: %w", err)
+			return fmt.Errorf("activation failed: %w", hideStepCode(err))
 		}
 
 		po.activatedThisRun = true
@@ -200,42 +209,42 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 
 	// Step 2: MEBx password configuration (ACM only)
 	if err := po.executeMEBxConfiguration(); err != nil {
-		return fmt.Errorf("MEBx configuration failed: %w", err)
+		return fmt.Errorf("MEBx configuration failed: %w", hideStepCode(err))
 	}
 
 	// Step 3: AMT Features configuration
 	if err := po.executeAMTFeaturesConfiguration(); err != nil {
-		return fmt.Errorf("AMT features configuration failed: %w", err)
+		return fmt.Errorf("AMT features configuration failed: %w", hideStepCode(err))
 	}
 
 	// Step 4: Wired network configuration
 	if err := po.executeWiredNetworkConfiguration(); err != nil {
-		return fmt.Errorf("wired network configuration failed: %w", err)
+		return fmt.Errorf("wired network configuration failed: %w", hideStepCode(err))
 	}
 
 	// Step 5: Enable WiFi port if needed
 	if err := po.executeEnableWiFi(); err != nil {
-		return fmt.Errorf("WiFi sync enable failed: %w", err)
+		return fmt.Errorf("WiFi sync enable failed: %w", hideStepCode(err))
 	}
 
 	// Step 6: Wireless profile configurations
 	if err := po.executeWirelessConfigurations(); err != nil {
-		return fmt.Errorf("wireless configuration failed: %w", err)
+		return fmt.Errorf("wireless configuration failed: %w", hideStepCode(err))
 	}
 
 	// Step 7: TLS configuration
 	if err := po.executeTLSConfiguration(); err != nil {
-		return fmt.Errorf("TLS configuration failed: %w", err)
+		return fmt.Errorf("TLS configuration failed: %w", hideStepCode(err))
 	}
 
 	// Step 8: CIRA configuration
 	if err := po.executeCIRAConfiguration(); err != nil {
-		return fmt.Errorf("%w: %w", ErrCIRAConfiguration, err)
+		return fmt.Errorf("%w: %w", ErrCIRAConfiguration, hideStepCode(err))
 	}
 
 	// Step 9: HTTP Proxy configuration
 	if err := po.executeHTTPProxyConfiguration(); err != nil {
-		return fmt.Errorf("HTTP proxy configuration failed: %w", err)
+		return fmt.Errorf("HTTP proxy configuration failed: %w", hideStepCode(err))
 	}
 
 	log.Info("Profile orchestration completed successfully!")
@@ -257,8 +266,8 @@ func (po *ProfileOrchestrator) ExecuteProfile() error {
 // run performed activation; on an already-activated device a failure is genuine
 // and returned immediately. The underlying state-set operations are idempotent,
 // so re-applying a step that partially succeeded is safe.
-func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string, extraEnv map[string]string) error {
-	err := po.executeWithPasswordRotation(args, extraEnv)
+func (po *ProfileOrchestrator) executeWithPasswordFallback(step stepFunc) error {
+	err := po.executeWithPasswordRotation(step)
 	if err == nil || !po.activatedThisRun {
 		return err
 	}
@@ -281,22 +290,9 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string, extraE
 		// would prompt for the current password again on every settle attempt
 		// (worst case attempts × maxTries prompts) and, on success, recurse back
 		// into this loop. Settle retries exist to wait out a restarting port stack,
-		// which needs no credential interaction.
-		settleEnv := map[string]string{}
-
-		// AMT_PASSWORD must come from po.globalPassword (kept current across rotations);
-		// callers may pass a now-stale AMT_PASSWORD in extraEnv, so it must not override it.
-		for k, v := range extraEnv {
-			if k != envAMTPassword {
-				settleEnv[k] = v
-			}
-		}
-
-		if po.globalPassword != "" {
-			settleEnv[envAMTPassword] = po.globalPassword
-		}
-
-		err = po.executor.Execute(args, settleEnv)
+		// which needs no credential interaction. The AMT password always comes
+		// from po.globalPassword, which is kept current across rotations.
+		err = step(po.globalPassword)
 		if err == nil {
 			return nil
 		}
@@ -305,24 +301,12 @@ func (po *ProfileOrchestrator) executeWithPasswordFallback(args []string, extraE
 	return err
 }
 
-// executeWithPasswordRotation executes a CLI command and, on authentication failure,
+// executeWithPasswordRotation runs a step and, on authentication failure,
 // prompts for the old AMT password to rotate it to the profile's new password, then retries.
-func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string, extraEnv map[string]string) error {
-	env := make(map[string]string)
-
-	// AMT_PASSWORD must come from po.globalPassword (kept current across rotations);
-	// callers may pass a now-stale AMT_PASSWORD in extraEnv, so it must not override it.
-	for k, v := range extraEnv {
-		if k != envAMTPassword {
-			env[k] = v
-		}
-	}
-
-	if po.globalPassword != "" {
-		env[envAMTPassword] = po.globalPassword
-	}
-
-	err := po.executor.Execute(args, env)
+// The step always receives po.globalPassword (kept current across rotations), never a
+// stale caller value.
+func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error {
+	err := step(po.globalPassword)
 	if err == nil {
 		return nil
 	}
@@ -339,8 +323,7 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string, extraE
 	}
 
 	// Gate rotation on the exit code; verbose Digest logs make substring-matching unreliable.
-	var execErr *ExecError
-	if !errors.As(err, &execErr) || execErr.ExitCode != utils.AMTAuthenticationFailed.Code {
+	if code, ok := failureCode(err); !ok || code != utils.AMTAuthenticationFailed.Code {
 		return err
 	}
 
@@ -348,26 +331,13 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string, extraE
 
 	// If caller supplied a currentPassword, try non-interactive rotation once
 	if po.currentPassword != "" {
-		// Pass both old and new passwords via per-subprocess environment to avoid
-		// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-		// and to prevent global process environment pollution in c-shared library mode.
-		changeEnv := map[string]string{
-			envAMTPassword:    po.currentPassword,
-			envNewAMTPassword: newPass,
-		}
-
-		change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
-		if po.skipAMTCertCheck {
-			change = append(change, "--skip-amt-cert-check")
-		}
-
-		if cerr := po.executor.Execute(change, changeEnv); cerr == nil {
+		if cerr := po.changeAMTPassword(po.currentPassword, newPass); cerr == nil {
 			log.Info("AMT password updated to profile value using provided current password; retrying previous operation")
 
 			// Update the password for subsequent subprocess invocations
 			po.globalPassword = newPass
 
-			return po.executeWithPasswordFallback(args, extraEnv)
+			return po.executeWithPasswordFallback(step)
 		}
 	}
 	// otherwise fall through to prompt loop
@@ -398,22 +368,8 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string, extraE
 			return fmt.Errorf("current AMT password cannot be empty")
 		}
 
-		// Pass password change via per-subprocess environment to avoid
-		// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-		// and to prevent global process environment pollution in c-shared library mode.
-		changeEnv := map[string]string{
-			envAMTPassword:    oldPass,
-			envNewAMTPassword: newPass,
-		}
-
-		change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
-		if po.skipAMTCertCheck {
-			change = append(change, "--skip-amt-cert-check")
-		}
-
-		if cerr := po.executor.Execute(change, changeEnv); cerr != nil {
-			var cexecErr *ExecError
-			if attempt < maxTries && errors.As(cerr, &cexecErr) && cexecErr.ExitCode == utils.AMTAuthenticationFailed.Code {
+		if cerr := po.changeAMTPassword(oldPass, newPass); cerr != nil {
+			if code, ok := failureCode(cerr); attempt < maxTries && ok && code == utils.AMTAuthenticationFailed.Code {
 				log.Warn("Incorrect AMT password. Please try again.")
 
 				continue
@@ -427,10 +383,49 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(args []string, extraE
 		// Update the password for subsequent subprocess invocations
 		po.globalPassword = newPass
 
-		return po.executeWithPasswordFallback(args, extraEnv)
+		return po.executeWithPasswordFallback(step)
 	}
 
 	return fmt.Errorf("failed to update AMT password after %d attempts", maxTries)
+}
+
+// changeAMTPassword changes the AMT admin password from current to next.
+func (po *ProfileOrchestrator) changeAMTPassword(current, next string) error {
+	// Pass both old and new passwords via per-subprocess environment to avoid
+	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
+	// and to prevent global process environment pollution in c-shared library mode.
+	changeEnv := map[string]string{
+		envAMTPassword:    current,
+		envNewAMTPassword: next,
+	}
+
+	change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
+	if po.skipAMTCertCheck {
+		change = append(change, "--skip-amt-cert-check")
+	}
+
+	return po.executor.Execute(change, changeEnv)
+}
+
+// execStep returns a step that runs the rpc CLI with args. The step's AMT
+// password argument is passed as AMT_PASSWORD (when non-empty); any
+// AMT_PASSWORD in extraEnv is dropped because it may be stale after a rotation.
+func (po *ProfileOrchestrator) execStep(args []string, extraEnv map[string]string) stepFunc {
+	return func(amtPassword string) error {
+		env := make(map[string]string, len(extraEnv)+1)
+
+		for k, v := range extraEnv {
+			if k != envAMTPassword {
+				env[k] = v
+			}
+		}
+
+		if amtPassword != "" {
+			env[envAMTPassword] = amtPassword
+		}
+
+		return po.executor.Execute(args, env)
+	}
 }
 
 // executeActivation performs the activation step
@@ -503,14 +498,9 @@ func (po *ProfileOrchestrator) executeACMUpgrade() error {
 	// exposing sensitive PFX content in command-line arguments (ps, /proc/<pid>/cmdline).
 	env := make(map[string]string)
 	env[envProvisioningCert] = po.profile.Configuration.AMTSpecific.ProvisioningCert
-
-	if po.globalPassword != "" {
-		env[envAMTPassword] = po.globalPassword
-	}
-
 	env[envProvisioningCertPwd] = po.profile.Configuration.AMTSpecific.ProvisioningCertPwd
 
-	return po.executeWithPasswordFallback(args, env)
+	return po.executeWithPasswordFallback(po.execStep(args, env))
 }
 
 // executeMEBxConfiguration performs MEBx password configuration
@@ -539,14 +529,11 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 	// Pass MEBx password via per-subprocess environment to avoid
 	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
 	// and to prevent global process environment pollution in c-shared library mode.
-	env := make(map[string]string)
-	if po.globalPassword != "" {
-		env[envAMTPassword] = po.globalPassword
+	env := map[string]string{
+		envMEBXPassword: po.profile.Configuration.AMTSpecific.MEBXPassword,
 	}
 
-	env[envMEBXPassword] = po.profile.Configuration.AMTSpecific.MEBXPassword
-
-	return po.executeWithPasswordFallback(args, env)
+	return po.executeWithPasswordFallback(po.execStep(args, env))
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
@@ -591,7 +578,7 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 		}
 	}
 
-	return po.executeWithPasswordFallback(args, nil)
+	return po.executeWithPasswordFallback(po.execStep(args, nil))
 }
 
 // executeWiredNetworkConfiguration performs wired network configuration
@@ -636,7 +623,7 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 		}
 	}
 
-	return po.executeWithPasswordFallback(args, nil)
+	return po.executeWithPasswordFallback(po.execStep(args, nil))
 }
 
 // executeEnableWiFi enables WiFi port if needed
@@ -650,7 +637,7 @@ func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	args = append(args, "--oswifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.WiFiSyncEnabled))
 	args = append(args, "--uefiwifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.UEFIWiFiSyncEnabled))
 
-	return po.executeWithPasswordFallback(args, nil)
+	return po.executeWithPasswordFallback(po.execStep(args, nil))
 }
 
 // executeWirelessConfigurations performs wireless profile configurations
@@ -661,7 +648,7 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	purgeArgs := po.baseArgs()
 	purgeArgs = append(purgeArgs, commandConfigure, "wireless", "--purge")
 
-	if err := po.executeWithPasswordFallback(purgeArgs, nil); err != nil {
+	if err := po.executeWithPasswordFallback(po.execStep(purgeArgs, nil)); err != nil {
 		return fmt.Errorf("wireless purge failed: %w", err)
 	}
 
@@ -742,7 +729,7 @@ func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessPro
 		}
 	}
 
-	return po.executeWithPasswordFallback(args, extraEnv)
+	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
 }
 
 // executeTLSConfiguration performs TLS configuration
@@ -794,7 +781,7 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 		}
 	}
 
-	return po.executeWithPasswordFallback(args, extraEnv)
+	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
 }
 
 // executeCIRAConfiguration performs CIRA (Cloud-Initiated Remote Access) configuration
@@ -838,7 +825,7 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 		args = append(args, "--envdetection", envDetection)
 	}
 
-	return po.executeWithPasswordFallback(args, extraEnv)
+	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
 }
 
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
@@ -877,7 +864,7 @@ func (po *ProfileOrchestrator) executeHTTPProxy(proxy config.Proxy) error {
 		args = append(args, "--networkdnssuffix", proxy.NetworkDnsSuffix)
 	}
 
-	return po.executeWithPasswordFallback(args, nil)
+	return po.executeWithPasswordFallback(po.execStep(args, nil))
 }
 
 // verifyAndAlignAMTPassword ensures the AMT admin password matches the profile value.
@@ -893,20 +880,7 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 
 	// If a current password was supplied by the caller, try a direct non-interactive rotation first
 	if po.currentPassword != "" {
-		// Pass both old and new passwords via per-subprocess environment to avoid
-		// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-		// and to prevent global process environment pollution in c-shared library mode.
-		changeEnv := map[string]string{
-			envAMTPassword:    po.currentPassword,
-			envNewAMTPassword: newPass,
-		}
-
-		change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
-		if po.skipAMTCertCheck {
-			change = append(change, "--skip-amt-cert-check")
-		}
-
-		if err := po.executor.Execute(change, changeEnv); err == nil {
+		if err := po.changeAMTPassword(po.currentPassword, newPass); err == nil {
 			log.Info("AMT password aligned to profile value using provided current password")
 
 			// Update globalPassword so subsequent subprocess invocations use the new password
@@ -929,14 +903,10 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	args = append(args, commandConfigure, commandAMTPassword)
 
 	// Pass passwords via per-subprocess environment to avoid credential exposure in ps/cmdline.
-	env := make(map[string]string)
-	if po.globalPassword != "" {
-		env[envAMTPassword] = po.globalPassword
-	}
+	// The step sets AMT_PASSWORD from the current po.globalPassword.
+	env := map[string]string{envNewAMTPassword: newPass}
 
-	env[envNewAMTPassword] = newPass
-
-	err := po.executeWithPasswordFallback(args, env)
+	err := po.executeWithPasswordFallback(po.execStep(args, env))
 	if isDeviceNotActivatedErr(err) {
 		log.Warn(msgPasswordAlignSkipped)
 
@@ -946,20 +916,47 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	return err
 }
 
-// isDeviceNotActivatedErr reports whether err signals that a configure subprocess
-// refused because the device is not yet activated. The orchestrator drives every
-// step through CLIExecutor, which reports failures as *ExecError, so we match on
-// the typed exit code rather than substring-matching subprocess output (verbose
-// Digest logs make substring matching unreliable — see CLAUDE.md).
+// isDeviceNotActivatedErr reports whether err signals that a step refused
+// because the device is not yet activated. It matches on the typed failure code
+// rather than substring-matching subprocess output (verbose Digest logs make
+// substring matching unreliable — see CLAUDE.md).
 func isDeviceNotActivatedErr(err error) bool {
+	code, ok := failureCode(err)
+
+	return ok && code == utils.DeviceNotActivated.Code
+}
+
+// failureCode returns the failure code err carries: the exit code of a
+// subprocess step (*ExecError) or the code of an in-process step's
+// utils.CustomError. ok is false when err carries neither.
+func failureCode(err error) (int, bool) {
 	if err == nil {
-		return false
+		return 0, false
 	}
 
 	var execErr *ExecError
 	if errors.As(err, &execErr) {
-		return execErr.ExitCode == utils.DeviceNotActivated.Code
+		return execErr.ExitCode, true
 	}
 
-	return false
+	var customErr utils.CustomError
+	if errors.As(err, &customErr) {
+		return customErr.Code, true
+	}
+
+	return 0, false
+}
+
+// hideStepCode returns an error with err's message that carries neither a
+// utils.CustomError nor an *ExecError, so a failed profile run keeps exiting
+// with the generic failure code (10) even when a step fails in-process.
+//
+// TODO: the step's own exit code could be surfaced to the CLI here instead of
+// the generic failure.
+func hideStepCode(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return errors.New(err.Error())
 }
