@@ -11,4 +11,5 @@ import "github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 // replace them to check the options each step builds.
 var (
 	configureChangeAMTPassword = configure.ChangeAMTPassword
+	configureSetMEBx           = configure.SetMEBx
 )
