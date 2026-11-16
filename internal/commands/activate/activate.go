@@ -18,6 +18,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/security"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/commands"
+	"github.com/device-management-toolkit/rpc-go/v2/internal/commands/drive"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/device"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/orchestrator"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/profile"
@@ -411,6 +412,7 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
+	orch.SetActivator(cmd.localActivator)
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
@@ -702,6 +704,7 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
 	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
+	orch.SetActivator(cmd.localActivator)
 
 	// Sync deviceInfo after activation completes (success or failure)
 	defer cmd.postActivationSync(ctx, consoleBaseURL, token, guid)
@@ -718,6 +721,35 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	log.Info("Profile fullflow completed successfully")
 
 	return nil
+}
+
+// driveRun runs the nested activate command; replaced in tests.
+var driveRun = drive.Run
+
+// localActivator runs the profile's activation step in-process as a local
+// activate command, as "rpc activate --local --ccm|--acm" did in a child. The
+// nested command inherits the outer command's SkipIPRenew, which the old
+// child read from the same RPC_SKIPIPRENEW / config.yaml source. The context
+// has no Console auth flags: unlike the old child, which inherited AUTH_* env
+// and registered a second time, the nested activation never touches Console;
+// the outer flow registers once.
+func (cmd *ActivateCmd) localActivator(a orchestrator.LocalActivation) error {
+	nested := &ActivateCmd{
+		Local:               true,
+		CCM:                 !a.ACM,
+		ACM:                 a.ACM,
+		ProvisioningCert:    a.ProvisioningCert,
+		ProvisioningCertPwd: a.ProvisioningCertPassword,
+		MEBxPassword:        a.MEBxPassword,
+		SkipIPRenew:         cmd.SkipIPRenew,
+	}
+
+	ctx := &commands.Context{
+		AMTPassword:      a.AMTPassword,
+		SkipAMTCertCheck: a.SkipAMTCertCheck,
+	}
+
+	return driveRun(nested, ctx)
 }
 
 // loadEncryptedProfile decrypts a local profile file using the provided key
