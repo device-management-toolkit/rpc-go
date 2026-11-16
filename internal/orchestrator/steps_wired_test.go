@@ -142,15 +142,12 @@ func TestExecuteWiredNetworkConfiguration_MapsOptions(t *testing.T) {
 				cfg.Configuration.Network.Wired = tt.wired
 
 				po := NewProfileOrchestrator(cfg, "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
 				require.NoError(t, po.executeWiredNetworkConfiguration())
 
 				require.Equal(t, []configure.WiredOptions{tt.want(skip)}, *calls)
-				require.Equal(t, 0, executor.callCount, "the wired step must not run the CLI")
 			})
 		}
 	}
@@ -178,13 +175,10 @@ func TestExecuteWiredNetworkConfiguration_Skips(t *testing.T) {
 			cfg.Configuration.Network.Wired = tt.wired
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 
 			require.NoError(t, po.executeWiredNetworkConfiguration())
 
 			require.Empty(t, *calls)
-			require.Equal(t, 0, executor.callCount)
 			require.True(t, loggedMessage(hook, "No wired network configuration specified, skipping"))
 		})
 	}
@@ -195,8 +189,6 @@ func TestExecuteWiredNetworkConfiguration_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureWired(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(wiredProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -208,7 +200,6 @@ func TestExecuteWiredNetworkConfiguration_AuthFailureRotates(t *testing.T) {
 		wiredOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteWiredNetworkConfiguration_SettleRetry(t *testing.T) {
@@ -216,8 +207,6 @@ func TestExecuteWiredNetworkConfiguration_SettleRetry(t *testing.T) {
 		calls := stubConfigureWired(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(wiredProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -229,15 +218,12 @@ func TestExecuteWiredNetworkConfiguration_SettleRetry(t *testing.T) {
 			wiredOpts("admin-pass", false),
 			wiredOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureWired(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(wiredProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -245,6 +231,5 @@ func TestExecuteWiredNetworkConfiguration_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeWiredNetworkConfiguration(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }

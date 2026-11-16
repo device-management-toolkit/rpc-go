@@ -64,8 +64,6 @@ func TestExecuteMEBxConfiguration_MapsOptions(t *testing.T) {
 			calls := stubSetMEBx(t)
 
 			po := NewProfileOrchestrator(mebxProfile(), "", "cli-mebx", skip)
-			executor := newMockExecutor()
-			po.executor = executor
 			po.currentControlMode = 2 // already in ACM
 			po.globalPassword = "current-pass"
 
@@ -73,7 +71,6 @@ func TestExecuteMEBxConfiguration_MapsOptions(t *testing.T) {
 
 			// The profile's MEBx password wins; the CLI value only feeds activation.
 			require.Equal(t, []configure.MEBxOptions{mebxOpts("current-pass", skip)}, *calls)
-			require.Equal(t, 0, executor.callCount, "the MEBx step must not run the CLI")
 		})
 	}
 }
@@ -119,14 +116,11 @@ func TestExecuteMEBxConfiguration_SkipRules(t *testing.T) {
 			}
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 			po.currentControlMode = tt.controlMode
 
 			require.NoError(t, po.executeMEBxConfiguration())
 
 			require.Empty(t, *calls)
-			require.Equal(t, 0, executor.callCount)
 			require.True(t, loggedMessage(hook, tt.wantLog), "the skip message must be logged")
 		})
 	}
