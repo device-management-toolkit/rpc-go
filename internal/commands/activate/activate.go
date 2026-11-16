@@ -62,10 +62,6 @@ type ActivateCmd struct {
 	TLSTunnel           bool   `help:"Provision TLS on AMT 11-18 devices and switch to encrypted channel" name:"tls-tunnel"`
 	SkipIPRenew         bool   `help:"Skip DHCP renewal of IP address if AMT becomes enabled" name:"skipIPRenew"`
 	StopConfig          bool   `help:"Transition AMT from in-provisioning to pre-provisioning state" name:"stopConfig"`
-
-	// Executable is the rpc binary that runs each profile step. Only library
-	// callers set it; empty runs the current executable, which is rpc in the CLI.
-	Executable string `kong:"-"`
 }
 
 // AfterApply prints CLI credential warnings and runs the embedded AMT setup hook.
@@ -234,11 +230,11 @@ func (cmd *ActivateCmd) Run(ctx *commands.Context) error {
 	isProfileFile := cmd.Profile != "" && looksLikeFilePath(cmd.Profile)
 
 	if (cmd.Local || cmd.hasLocalActivationFlags()) && cmd.RequiresAMTPassword() {
-		// Profile flows orchestrate every AMT operation in subprocesses, so the
-		// parent must not open an LME/MEI handle here — a handle held across
-		// ExecuteProfile blocks each subprocess with EBUSY ("mei connect busy" →
-		// "device or resource busy"). Only the direct --ccm/--acm path
-		// (runLocalActivation) needs the parent WSMAN client.
+		// Profile flows run every AMT operation in orchestrator steps that each
+		// open their own handle, so this command must not open an LME/MEI handle
+		// here — a handle held across ExecuteProfile blocks each step with EBUSY
+		// ("mei connect busy" → "device or resource busy"). Only the direct
+		// --ccm/--acm path (runLocalActivation) needs this WSMAN client.
 		//
 		// This guard covers the profile-*file* path only. The HTTP profile path
 		// never reaches it (it requires cmd.Local || hasLocalActivationFlags()),
@@ -399,10 +395,10 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 		ctx.AMTPassword = amtPassword
 	}
 
-	// Release any parent-held LME/MEI handle before orchestration; the subprocess
-	// steps each open their own handle and would otherwise fail with EBUSY
-	// ("mei connect busy" → "device or resource busy"). Whether the parent handle
-	// actually blocks a subprocess depends on the OS and the LMS build, so this
+	// Release any LME/MEI handle this command holds before orchestration; the
+	// in-process steps each open their own handle and would otherwise fail with
+	// EBUSY ("mei connect busy" → "device or resource busy"). Whether the held
+	// handle actually blocks a step depends on the OS and the LMS build, so this
 	// close reproduces as a failure only on some combinations — do not remove it
 	// as dead code because a given machine survives without it.
 	if cmd.WSMan != nil {
@@ -411,7 +407,6 @@ func (cmd *ActivateCmd) runHttpProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 	orch.SetActivator(cmd.localActivator)
 
 	// Sync deviceInfo after activation completes (success or failure)
@@ -691,10 +686,10 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 		ctx.AMTPassword = amtPassword
 	}
 
-	// Release any parent-held LME/MEI handle before orchestration; the subprocess
-	// steps each open their own handle and would otherwise fail with EBUSY
-	// ("mei connect busy" → "device or resource busy"). Whether the parent handle
-	// actually blocks a subprocess depends on the OS and the LMS build, so this
+	// Release any LME/MEI handle this command holds before orchestration; the
+	// in-process steps each open their own handle and would otherwise fail with
+	// EBUSY ("mei connect busy" → "device or resource busy"). Whether the held
+	// handle actually blocks a step depends on the OS and the LMS build, so this
 	// close reproduces as a failure only on some combinations — do not remove it
 	// as dead code because a given machine survives without it.
 	if cmd.WSMan != nil {
@@ -703,7 +698,6 @@ func (cmd *ActivateCmd) runLocalProfileFullflow(ctx *commands.Context) error {
 	}
 
 	orch := orchestrator.NewProfileOrchestrator(cfg, ctx.AMTPassword, cmd.MEBxPassword, ctx.SkipAMTCertCheck)
-	orch.SetExecutor(&orchestrator.CLIExecutor{Executable: cmd.Executable})
 	orch.SetActivator(cmd.localActivator)
 
 	// Sync deviceInfo after activation completes (success or failure)

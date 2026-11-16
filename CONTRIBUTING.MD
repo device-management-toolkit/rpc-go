@@ -167,4 +167,4 @@ Install `gofumpt` once:
 go install mvdan.cc/gofumpt@latest
 ```
 
-For deeper architectural and implementation guidance — the Kong CLI hierarchy, the `AMTBaseCmd` lifecycle, the subprocess orchestrator model, the four activation paths, HECI/LMS/WSMAN layering, the C-shared library entry points — see [CLAUDE.md](./CLAUDE.md).
+For deeper architectural and implementation guidance — the Kong CLI hierarchy, the `AMTBaseCmd` lifecycle, the in-process profile orchestrator, the four activation paths, HECI/LMS/WSMAN layering, the C-shared library entry points — see [CLAUDE.md](./CLAUDE.md).

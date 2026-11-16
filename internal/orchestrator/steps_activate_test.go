@@ -46,8 +46,6 @@ func TestExecuteActivation_ACM_WithMEBxFromProfile(t *testing.T) {
 	cfg.Configuration.AMTSpecific.MEBXPassword = "profile-mebx"
 
 	po := NewProfileOrchestrator(cfg, "", "cli-mebx", false)
-	executor := newMockExecutor()
-	po.executor = executor
 	calls := stubActivator(po)
 
 	require.NoError(t, po.executeActivation())
@@ -58,7 +56,6 @@ func TestExecuteActivation_ACM_WithMEBxFromProfile(t *testing.T) {
 		ProvisioningCertPassword: "cert-pwd",
 		MEBxPassword:             "profile-mebx",
 	}}, *calls)
-	require.Equal(t, 0, executor.callCount, "activation must not run the CLI")
 }
 
 func TestExecuteActivation_ACM_WithMEBxFromCLI(t *testing.T) {
@@ -161,16 +158,13 @@ func TestExecuteActivation_NoActivator(t *testing.T) {
 	cfg.Configuration.AMTSpecific.ControlMode = "ccmactivate"
 
 	po := NewProfileOrchestrator(cfg, "", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 
 	require.ErrorIs(t, po.executeActivation(), errNoActivator)
-	require.Equal(t, 0, executor.callCount, "activation must not fall back to the CLI")
 }
 
 func TestExecuteActivation_ReturnsActivatorErrorWithoutRetry(t *testing.T) {
 	// Activation calls the activator once, with no rotation or settle retry,
-	// as it ran the executor once before.
+	// as the old CLI activation step ran once.
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.ControlMode = "ccmactivate"
 	cfg.Configuration.AMTSpecific.AdminPassword = "admin-pwd"

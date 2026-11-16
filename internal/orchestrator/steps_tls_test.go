@@ -82,8 +82,6 @@ func TestExecuteTLSConfiguration_MapsMode(t *testing.T) {
 				cfg.Configuration.TLS.AllowNonTLS = tt.allowNonTLS
 
 				po := NewProfileOrchestrator(cfg, "", "", skip)
-				executor := newMockExecutor()
-				po.executor = executor
 				po.currentControlMode = 2
 				po.globalPassword = "current-pass"
 
@@ -93,7 +91,6 @@ func TestExecuteTLSConfiguration_MapsMode(t *testing.T) {
 					BaseOptions: configure.BaseOptions{AMTPassword: "current-pass", SkipAMTCertCheck: skip},
 					Mode:        tt.mode,
 				}}, *calls)
-				require.Equal(t, 0, executor.callCount, "the TLS step must not run the CLI")
 			})
 		}
 	}
@@ -156,8 +153,6 @@ func TestExecuteTLSConfiguration_MapsEnterpriseAssistant(t *testing.T) {
 			cfg.Configuration.EnterpriseAssistant.Password = tt.password
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
-			executor := newMockExecutor()
-			po.executor = executor
 			po.currentControlMode = 2
 			po.globalPassword = "current-pass"
 
@@ -170,7 +165,6 @@ func TestExecuteTLSConfiguration_MapsEnterpriseAssistant(t *testing.T) {
 				EAUsername:  tt.wantUsername,
 				EAPassword:  tt.wantPassword,
 			}}, *calls)
-			require.Equal(t, 0, executor.callCount, "the TLS step must not run the CLI")
 		})
 	}
 }
@@ -183,13 +177,10 @@ func TestExecuteTLSConfiguration_SkipsWhenDisabled(t *testing.T) {
 	cfg.Configuration.TLS.Enabled = false
 
 	po := NewProfileOrchestrator(cfg, "", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 
 	require.NoError(t, po.executeTLSConfiguration())
 
 	require.Empty(t, *calls)
-	require.Equal(t, 0, executor.callCount)
 	require.True(t, loggedMessage(hook, "TLS not enabled, skipping TLS configuration"))
 }
 
@@ -198,8 +189,6 @@ func TestExecuteTLSConfiguration_AuthFailureRotates(t *testing.T) {
 	calls := stubConfigureTLS(t, utils.AMTAuthenticationFailed)
 
 	po := NewProfileOrchestrator(tlsProfile(), "old-pass", "", true)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 2
 	po.globalPassword = "stale-pass"
 
@@ -211,7 +200,6 @@ func TestExecuteTLSConfiguration_AuthFailureRotates(t *testing.T) {
 		tlsOpts("admin-pass", true),
 	}, *calls)
 	require.Equal(t, "admin-pass", po.globalPassword)
-	require.Equal(t, 0, executor.callCount, "rotation and retry must not run the CLI")
 }
 
 func TestExecuteTLSConfiguration_SettleRetry(t *testing.T) {
@@ -219,8 +207,6 @@ func TestExecuteTLSConfiguration_SettleRetry(t *testing.T) {
 		calls := stubConfigureTLS(t, errors.New("connection reset while AMT settles"))
 
 		po := NewProfileOrchestrator(tlsProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.globalPassword = "admin-pass"
 		po.activatedThisRun = true
@@ -232,15 +218,12 @@ func TestExecuteTLSConfiguration_SettleRetry(t *testing.T) {
 			tlsOpts("admin-pass", false),
 			tlsOpts("admin-pass", false),
 		}, *calls)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 
 	t.Run("stops on device not activated", func(t *testing.T) {
 		calls := stubConfigureTLS(t, utils.DeviceNotActivated, utils.DeviceNotActivated)
 
 		po := NewProfileOrchestrator(tlsProfile(), "", "", false)
-		executor := newMockExecutor()
-		po.executor = executor
 		po.currentControlMode = 2
 		po.activatedThisRun = true
 		po.settleDelaySeconds = 0
@@ -248,6 +231,5 @@ func TestExecuteTLSConfiguration_SettleRetry(t *testing.T) {
 		require.ErrorIs(t, po.executeTLSConfiguration(), utils.DeviceNotActivated)
 
 		require.Len(t, *calls, 1)
-		require.Equal(t, 0, executor.callCount, "the settle retry must not run the CLI")
 	})
 }
