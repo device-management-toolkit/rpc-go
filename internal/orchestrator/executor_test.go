@@ -124,13 +124,12 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	t.Setenv(fakeRPCRecordEnv, record)
 
 	cfg := config.Configuration{}
-	cfg.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
-	cfg.Configuration.AMTSpecific.CIRA.MPSCert = "cert"
+	cfg.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com"}}
 
 	po := NewProfileOrchestrator(cfg, "", "", false)
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeCIRAConfiguration())
+	require.NoError(t, po.executeHTTPProxyConfiguration())
 
-	assert.Equal(t, []string{fake, "configure", "cira", "--mpsaddress", "mps.example.com", "--mpscert", "cert"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "configure", "proxy", "--address", "proxy.example.com"}, readArgv(t, record))
 }
