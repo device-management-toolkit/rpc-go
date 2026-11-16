@@ -925,6 +925,10 @@ func setupService(f *flags.Flags) ProvisioningService {
 	service.amtCommand = MockAMT{}
 	service.networker = &MockOSNetworker{}
 	service.interfacedWsmanMessage = MockWSMAN{}
+	// Keep unit tests off the host's HECI and SMBIOS; tests that exercise the
+	// identifiers set their own sources.
+	service.upidCommand = nil
+	service.serialNumber = nil
 
 	return service
 }

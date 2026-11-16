@@ -12,6 +12,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/local/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 )
 
@@ -29,6 +30,9 @@ type ProvisioningService struct {
 	amtCommand             internalAMT.Interface
 	handlesWithCerts       map[string]string
 	networker              OSNetworker
+	// Physical machine identifier sources for amtinfo. A nil source is skipped.
+	upidCommand  upid.Interface
+	serialNumber func() (string, error)
 }
 
 func NewProvisioningService(flags *flags.Flags) ProvisioningService {
@@ -45,6 +49,8 @@ func NewProvisioningService(flags *flags.Flags) ProvisioningService {
 		amtCommand:             internalAMT.NewAMTCommand(),
 		handlesWithCerts:       make(map[string]string),
 		networker:              &RealOSNetworker{},
+		upidCommand:            upid.NewCommand(),
+		serialNumber:           utils.GetSystemSerialNumber,
 		interfacedWsmanMessage: amt.NewGoWSMANMessages(flags.LMSAddress),
 	}
 }

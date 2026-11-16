@@ -25,7 +25,14 @@ func TestParseFlagsAmtInfo(t *testing.T) {
 		Lan:      true,
 		Hostname: true,
 		OpState:  true,
+
+		SerialNumber: true,
+		UPID:         true,
 	}
+
+	allFlags := defaultFlags
+	allFlags.All = true
+	allFlags.Cert = true
 
 	tests := map[string]struct {
 		cmdLine    string
@@ -41,6 +48,20 @@ func TestParseFlagsAmtInfo(t *testing.T) {
 			cmdLine:    "./rpc amtinfo -balderdash",
 			wantResult: utils.IncorrectCommandLineParameters,
 			wantFlags:  AmtInfoFlags{},
+		},
+		"expect identifiers included for -all": {
+			cmdLine:    "./rpc amtinfo -all",
+			wantResult: nil,
+			wantFlags:  allFlags,
+		},
+		"expect only the identifier flags when requested": {
+			cmdLine:    "./rpc amtinfo -uuid -serialNumber -upid",
+			wantResult: nil,
+			wantFlags: AmtInfoFlags{
+				UUID:         true,
+				SerialNumber: true,
+				UPID:         true,
+			},
 		},
 		"expect only cert flag with no password on command line": {
 			cmdLine:    "./rpc amtinfo -cert",
