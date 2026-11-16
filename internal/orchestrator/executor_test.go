@@ -124,12 +124,13 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	t.Setenv(fakeRPCRecordEnv, record)
 
 	cfg := config.Configuration{}
-	cfg.Configuration.TLS.Enabled = true
+	cfg.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
+	cfg.Configuration.AMTSpecific.CIRA.MPSCert = "cert"
 
 	po := NewProfileOrchestrator(cfg, "", "", false)
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeTLSConfiguration())
+	require.NoError(t, po.executeCIRAConfiguration())
 
-	assert.Equal(t, []string{fake, "configure", "tls", "--mode", "Server"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "configure", "cira", "--mpsaddress", "mps.example.com", "--mpscert", "cert"}, readArgv(t, record))
 }

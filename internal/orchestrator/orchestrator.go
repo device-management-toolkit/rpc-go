@@ -38,7 +38,6 @@ const (
 	envProvisioningCertPwd = "PROVISIONING_CERT_PASSWORD"
 	envProvisioningCert    = "PROVISIONING_CERT"
 	envMPSPassword         = "MPS_PASSWORD"
-	envEAPassword          = "EA_PASSWORD"
 
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
 	// because the device is not yet activated; activation continues afterward.
@@ -744,7 +743,9 @@ func validateWirelessOptions(opts configure.WirelessOptions) error {
 	return nil
 }
 
-// executeTLSConfiguration performs TLS configuration
+// executeTLSConfiguration performs TLS configuration. The Enterprise
+// Assistant password comes from the profile only: unlike the old child, an
+// empty one is not filled from EA_PASSWORD in the operator's environment.
 func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	if !po.profile.Configuration.TLS.Enabled {
 		log.Info("TLS not enabled, skipping TLS configuration")
@@ -753,9 +754,6 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	}
 
 	log.Info("Executing TLS configuration")
-
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "tls")
 
 	// Determine TLS mode
 	var mode string
@@ -774,26 +772,27 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 		}
 	}
 
-	args = append(args, "--mode", mode)
+	// Delay stays 0 so pkg/configure applies its default of 3, the CLI
+	// default the old child got.
+	opts := configure.TLSOptions{Mode: mode}
 
-	extraEnv := map[string]string{}
-
-	if po.profile.Configuration.TLS.SigningAuthority == "SelfSigned" {
-	} else {
-		// Add Enterprise Assistant settings if configured
-		if po.profile.Configuration.EnterpriseAssistant.URL != "" {
-			args = append(args, "--eaAddress", po.profile.Configuration.EnterpriseAssistant.URL)
-			if po.profile.Configuration.EnterpriseAssistant.Username != "" {
-				args = append(args, "--eaUsername", po.profile.Configuration.EnterpriseAssistant.Username)
-			}
-
-			if po.profile.Configuration.EnterpriseAssistant.Password != "" {
-				extraEnv[envEAPassword] = po.profile.Configuration.EnterpriseAssistant.Password
-			}
-		}
+	// Add Enterprise Assistant settings if configured and not self-signed
+	ea := po.profile.Configuration.EnterpriseAssistant
+	if po.profile.Configuration.TLS.SigningAuthority != "SelfSigned" && ea.URL != "" {
+		opts.EAAddress = ea.URL
+		opts.EAUsername = ea.Username
+		opts.EAPassword = ea.Password
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureTLS(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeCIRAConfiguration performs CIRA (Cloud-Initiated Remote Access) configuration
