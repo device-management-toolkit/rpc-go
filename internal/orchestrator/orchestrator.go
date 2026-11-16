@@ -8,6 +8,7 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -37,11 +38,6 @@ const (
 	envProvisioningCertPwd = "PROVISIONING_CERT_PASSWORD"
 	envProvisioningCert    = "PROVISIONING_CERT"
 	envMPSPassword         = "MPS_PASSWORD"
-	envPSKPassphrase       = "PSK_PASSPHRASE"
-	envIEEE8021xPassword   = "IEEE8021X_PASSWORD"
-	envIEEE8021xPrivKey    = "IEEE8021X_PRIVATE_KEY"
-	envIEEE8021xClientCert = "IEEE8021X_CLIENT_CERT"
-	envIEEE8021xCACert     = "IEEE8021X_CA_CERT"
 	envEAPassword          = "EA_PASSWORD"
 
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
@@ -634,10 +630,17 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	// Always purge existing Wi-Fi profiles before applying new ones
 	log.Info("Purging existing AMT wireless profiles before applying new configuration")
 
-	purgeArgs := po.baseArgs()
-	purgeArgs = append(purgeArgs, commandConfigure, "wireless", "--purge")
+	// The purge sets only Purge, as the old child got only --purge;
+	// pkg/configure fills the defaults the CLI's flags did. The AMT password
+	// is the current po.globalPassword the fallback wrapper passes in.
+	purge := func(amtPassword string) error {
+		return configureWireless(configure.WirelessOptions{
+			BaseOptions: configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			Purge:       true,
+		})
+	}
 
-	if err := po.executeWithPasswordFallback(po.execStep(purgeArgs, nil)); err != nil {
+	if err := po.executeWithPasswordFallback(purge); err != nil {
 		return fmt.Errorf("wireless purge failed: %w", err)
 	}
 
@@ -658,67 +661,87 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	return nil
 }
 
-// executeWirelessProfile configures a single wireless profile
+// executeWirelessProfile configures a single wireless profile. Only the
+// profile's values are used: unlike the old child, empty secrets are not
+// filled from PSK_PASSPHRASE or IEEE8021X_* in the operator's environment.
 func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessProfile) error {
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wireless")
-
-	args = append(args, "--profileName", profile.ProfileName)
-	args = append(args, "--ssid", profile.SSID)
-	args = append(args, "--priority", strconv.Itoa(profile.Priority))
-
 	method, success := wifi.ParseAuthenticationMethod(profile.AuthenticationMethod)
 	if !success {
 		return fmt.Errorf("invalid authentication method: %s", profile.AuthenticationMethod)
 	}
-
-	args = append(args, "--authenticationMethod", strconv.Itoa(int(method)))
 
 	encryptionMethod, success := wifi.ParseEncryptionMethod(profile.EncryptionMethod)
 	if !success {
 		return fmt.Errorf("invalid encryption method: %s", profile.EncryptionMethod)
 	}
 
-	args = append(args, "--encryptionMethod", strconv.Itoa(int(encryptionMethod)))
-
-	// Add PSK passphrase if provided
-	extraEnv := map[string]string{}
-
-	if profile.Password != "" {
-		extraEnv[envPSKPassphrase] = profile.Password
+	opts := configure.WirelessOptions{
+		ProfileName:          profile.ProfileName,
+		SSID:                 profile.SSID,
+		Priority:             profile.Priority,
+		AuthenticationMethod: int(method),
+		EncryptionMethod:     int(encryptionMethod),
+		PSKPassphrase:        profile.Password,
 	}
 
-	// Add 802.1x settings if configured
-	if profile.IEEE8021x != nil {
-		ieee := profile.IEEE8021x
-		args = append(args, "--ieee8021xProfileName", fmt.Sprintf("%s_8021x", profile.ProfileName))
-
-		if ieee.Username != "" {
-			args = append(args, "--ieee8021xUsername", ieee.Username)
-		}
-
-		if ieee.Password != "" {
-			extraEnv[envIEEE8021xPassword] = ieee.Password
-		}
-
-		if ieee.AuthenticationProtocol != 0 {
-			args = append(args, "--ieee8021xAuthenticationProtocol", strconv.Itoa(ieee.AuthenticationProtocol))
-		}
-
-		if ieee.PrivateKey != "" {
-			extraEnv[envIEEE8021xPrivKey] = ieee.PrivateKey
-		}
-
-		if ieee.ClientCert != "" {
-			extraEnv[envIEEE8021xClientCert] = ieee.ClientCert
-		}
-
-		if ieee.CACert != "" {
-			extraEnv[envIEEE8021xCACert] = ieee.CACert
-		}
+	if ieee := profile.IEEE8021x; ieee != nil {
+		opts.IEEE8021xProfileName = fmt.Sprintf("%s_8021x", profile.ProfileName)
+		opts.IEEE8021xUsername = ieee.Username
+		opts.IEEE8021xPassword = ieee.Password
+		opts.IEEE8021xAuthenticationProtocol = ieee.AuthenticationProtocol
+		opts.IEEE8021xPrivateKey = ieee.PrivateKey
+		opts.IEEE8021xClientCert = ieee.ClientCert
+		opts.IEEE8021xCACert = ieee.CACert
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	if err := validateWirelessOptions(opts); err != nil {
+		return err
+	}
+
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureWireless(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
+}
+
+// validateWirelessOptions rejects the values the CLI rejected and
+// pkg/configure would default or accept: Kong's enums on the authentication
+// method, encryption method and 802.1x authentication protocol, and the
+// Validate check on priority (pkg/configure turns 0 into 1).
+func validateWirelessOptions(opts configure.WirelessOptions) error {
+	enums := []struct {
+		name    string
+		value   int
+		allowed []int
+	}{
+		{"authenticationMethod", opts.AuthenticationMethod, []int{4, 6, 7}},
+		{"encryptionMethod", opts.EncryptionMethod, []int{3, 4}},
+		{"ieee8021xAuthenticationProtocol", opts.IEEE8021xAuthenticationProtocol, []int{0, 2}},
+	}
+
+	for _, e := range enums {
+		if slices.Contains(e.allowed, e.value) {
+			continue
+		}
+
+		quoted := make([]string, len(e.allowed))
+		for i, v := range e.allowed {
+			quoted[i] = strconv.Quote(strconv.Itoa(v))
+		}
+
+		return fmt.Errorf("%s must be one of %s but got %q", e.name, strings.Join(quoted, ","), strconv.Itoa(e.value))
+	}
+
+	if opts.Priority <= 0 {
+		return fmt.Errorf("priority must be greater than 0")
+	}
+
+	return nil
 }
 
 // executeTLSConfiguration performs TLS configuration

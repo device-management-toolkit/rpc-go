@@ -15,4 +15,5 @@ var (
 	configureSetAMTFeatures    = configure.SetAMTFeatures
 	configureWired             = configure.ConfigureWired
 	configureWiFiSync          = configure.ConfigureWiFiSync
+	configureWireless          = configure.ConfigureWireless
 )
