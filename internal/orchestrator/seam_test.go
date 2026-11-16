@@ -14,6 +14,7 @@ import (
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	mock "github.com/device-management-toolkit/rpc-go/v2/internal/mocks"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -82,6 +83,8 @@ func TestHideStepCode_KeepsCIRASentinel(t *testing.T) {
 }
 
 func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
+	rotations := stubChangeAMTPassword(t)
+
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
@@ -107,10 +110,9 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	require.Equal(t, []string{"stale-pass", "new-pass"}, got)
 	require.Equal(t, "new-pass", po.globalPassword)
 
-	// The only executor call is the rotation through changeAMTPassword.
-	require.Equal(t, 1, mock.callCount)
-	require.Equal(t, []string{rpcExecutableName, commandConfigure, commandAMTPassword, "--skip-amt-cert-check"}, mock.executedArgs[0])
-	require.Equal(t, map[string]string{envAMTPassword: "old-pass", envNewAMTPassword: "new-pass"}, mock.executedEnv[0])
+	// The rotation runs in-process; nothing reaches the executor.
+	require.Equal(t, 0, mock.callCount)
+	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", true)}, *rotations)
 }
 
 func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
@@ -138,19 +140,21 @@ func TestExecStep_PasswordFromArgumentOverridesStaleEnv(t *testing.T) {
 	mock := newMockExecutor()
 	po.executor = mock
 
-	extra := map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}
+	extra := map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}
 	step := po.execStep([]string{"rpc", "amtinfo"}, extra)
 
 	require.NoError(t, step("fresh"))
 	require.NoError(t, step(""))
 
-	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMPSPassword: "mps"}, mock.executedEnv[0])
-	require.Equal(t, map[string]string{envMPSPassword: "mps"}, mock.executedEnv[1])
+	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMEBXPassword: "mps"}, mock.executedEnv[0])
+	require.Equal(t, map[string]string{envMEBXPassword: "mps"}, mock.executedEnv[1])
 	// The caller's map is not mutated.
-	require.Equal(t, map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}, extra)
+	require.Equal(t, map[string]string{envAMTPassword: "stale", envMEBXPassword: "mps"}, extra)
 }
 
 func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
+	rotations := stubChangeAMTPassword(t)
+
 	cfg := config.Configuration{}
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
@@ -182,7 +186,8 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 	// Initial call with the stale password, the post-rotation call, then the
 	// settle retry: both later calls must see the rotated password.
 	require.Equal(t, []string{"stale-pass", "new-pass", "new-pass"}, got)
-	require.Equal(t, 1, executor.callCount, "only the rotation reaches the executor")
+	require.Equal(t, 0, executor.callCount, "nothing reaches the executor")
+	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}, *rotations)
 }
 
 // stepFailingExecutor fails only the command whose arguments contain token.
@@ -205,7 +210,9 @@ func (e *stepFailingExecutor) Execute(args []string, _ map[string]string) error 
 // TestExecuteProfile_HidesStepCodes pins that ExecuteProfile hides every
 // step's failure code, so a failed profile run exits with the generic code.
 // Rows that reach the configuration steps pay the 1s initial utils.Pause
-// (no seam); activation and password verification fail before it.
+// (no seam); activation and password verification fail before it. Rows with
+// inProcess set fail through the stubbed pkg call their token names instead
+// of the executor.
 func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 	stepErr := func(details string) error {
 		return utils.CustomError{Code: utils.WSMANMessageError.Code, Message: utils.WSMANMessageError.Message, Details: details}
@@ -216,6 +223,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 		controlMode int
 		profile     func(*config.Configuration)
 		token       string
+		inProcess   bool
 		err         error
 		wantCIRA    bool
 	}{
@@ -243,8 +251,9 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
 			},
-			token: commandAMTPassword,
-			err:   stepErr("password step"),
+			token:     "amtpassword",
+			inProcess: true,
+			err:       stepErr("password step"),
 		},
 		{
 			name:        "MEBx",
@@ -253,13 +262,15 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.ControlMode = ACMMODE
 				c.Configuration.AMTSpecific.MEBXPassword = "mebx-pass"
 			},
-			token: "mebx",
-			err:   stepErr("mebx step"),
+			token:     "mebx",
+			inProcess: true,
+			err:       stepErr("mebx step"),
 		},
 		{
 			name:        "AMT features",
 			controlMode: 2,
 			token:       "amtfeatures",
+			inProcess:   true,
 			err:         stepErr("amtfeatures step"),
 		},
 		{
@@ -268,19 +279,22 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.Network.Wired.DHCPEnabled = true
 			},
-			token: "wired",
-			err:   &ExecError{ExitCode: utils.NetworkConfigurationFailed.Code, Err: errors.New("wired step exit status 103")},
+			token:     "wired",
+			inProcess: true,
+			err:       stepErr("wired step"),
 		},
 		{
 			name:        "wifisync",
 			controlMode: 2,
 			token:       "wifisync",
+			inProcess:   true,
 			err:         stepErr("wifisync step"),
 		},
 		{
 			name:        "wireless",
 			controlMode: 2,
 			token:       "wireless",
+			inProcess:   true,
 			err:         stepErr("wireless step"),
 		},
 		{
@@ -289,8 +303,9 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.TLS.Enabled = true
 			},
-			token: "tls",
-			err:   stepErr("tls step"),
+			token:     "tls",
+			inProcess: true,
+			err:       stepErr("tls step"),
 		},
 		{
 			name:        "CIRA",
@@ -299,9 +314,10 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.CIRA.MPSAddress = "mps.example.com"
 				c.Configuration.AMTSpecific.CIRA.MPSCert = "cert"
 			},
-			token:    "cira",
-			err:      stepErr("cira step"),
-			wantCIRA: true,
+			token:     "cira",
+			inProcess: true,
+			err:       stepErr("cira step"),
+			wantCIRA:  true,
 		},
 		{
 			name:        "proxy",
@@ -310,7 +326,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com", Port: 8080}}
 			},
 			token: "proxy",
-			err:   stepErr("proxy step"),
+			err:   &ExecError{ExitCode: utils.WSMANMessageError.Code, Err: errors.New("proxy step exit status 105")},
 		},
 	}
 
@@ -332,6 +348,22 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				tt.profile(&cfg)
 			}
 
+			// Every row stubs every in-process call so none can reach AMT; an
+			// in-process row's token names the call that fails.
+			inProcessErrs := map[string]error{}
+			if tt.inProcess {
+				inProcessErrs[tt.token] = tt.err
+			}
+
+			passwordChanges := stubChangeAMTPassword(t, inProcessErrs["amtpassword"])
+			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
+			amtFeaturesCalls := stubSetAMTFeatures(t, inProcessErrs["amtfeatures"])
+			wiredCalls := stubConfigureWired(t, inProcessErrs["wired"])
+			wifiSyncCalls := stubConfigureWiFiSync(t, inProcessErrs["wifisync"])
+			wirelessCalls := stubConfigureWireless(t, inProcessErrs["wireless"])
+			tlsCalls := stubConfigureTLS(t, inProcessErrs["tls"])
+			ciraCalls := stubConfigureCIRA(t, inProcessErrs["cira"])
+
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
 			exec := &stepFailingExecutor{token: tt.token, err: tt.err}
@@ -343,6 +375,19 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			failed := slices.ContainsFunc(exec.executedArgs, func(args []string) bool {
 				return slices.Contains(args, tt.token)
 			})
+			if tt.inProcess {
+				failed = map[string]bool{
+					"amtpassword": len(*passwordChanges) > 0,
+					"mebx":        len(*mebxCalls) > 0,
+					"amtfeatures": len(*amtFeaturesCalls) > 0,
+					"wired":       len(*wiredCalls) > 0,
+					"wifisync":    len(*wifiSyncCalls) > 0,
+					"wireless":    len(*wirelessCalls) > 0,
+					"tls":         len(*tlsCalls) > 0,
+					"cira":        len(*ciraCalls) > 0,
+				}[tt.token]
+			}
+
 			require.True(t, failed, "the %s step must run", tt.name)
 
 			var customErr utils.CustomError

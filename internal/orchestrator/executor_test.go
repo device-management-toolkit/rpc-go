@@ -123,10 +123,13 @@ func TestProfileOrchestrator_StepsRunTheSetExecutor(t *testing.T) {
 	// The step builds its own environment; the fake rpc inherits this one.
 	t.Setenv(fakeRPCRecordEnv, record)
 
-	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
+	cfg := config.Configuration{}
+	cfg.Configuration.Network.Proxies = []config.Proxy{{Address: "proxy.example.com"}}
+
+	po := NewProfileOrchestrator(cfg, "", "", false)
 	po.SetExecutor(&CLIExecutor{Executable: fake})
 
-	require.NoError(t, po.executeEnableWiFi())
+	require.NoError(t, po.executeHTTPProxyConfiguration())
 
-	assert.Equal(t, []string{fake, "configure", "wifisync", "--oswifisync=false", "--uefiwifisync=false"}, readArgv(t, record))
+	assert.Equal(t, []string{fake, "configure", "proxy", "--address", "proxy.example.com"}, readArgv(t, record))
 }

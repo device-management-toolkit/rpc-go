@@ -8,12 +8,15 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/alecthomas/kong"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/wsman/cim/wifi"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/amt"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/configure"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -26,24 +29,15 @@ var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 var newAMTCommand = func() amt.Interface { return amt.NewAMTCommand() }
 
 const (
-	ACMMODE            = "acmactivate"
-	commandConfigure   = "configure"
-	commandAMTPassword = "amtpassword"
+	ACMMODE          = "acmactivate"
+	commandConfigure = "configure"
 
 	// Environment variable names for passing credentials securely to subprocesses.
 	// Using env vars avoids credential exposure in /proc/<pid>/cmdline and ps output.
 	envAMTPassword         = "AMT_PASSWORD"
-	envNewAMTPassword      = "NEW_AMT_PASSWORD"
 	envMEBXPassword        = "MEBX_PASSWORD"
 	envProvisioningCertPwd = "PROVISIONING_CERT_PASSWORD"
 	envProvisioningCert    = "PROVISIONING_CERT"
-	envMPSPassword         = "MPS_PASSWORD"
-	envPSKPassphrase       = "PSK_PASSPHRASE"
-	envIEEE8021xPassword   = "IEEE8021X_PASSWORD"
-	envIEEE8021xPrivKey    = "IEEE8021X_PRIVATE_KEY"
-	envIEEE8021xClientCert = "IEEE8021X_CLIENT_CERT"
-	envIEEE8021xCACert     = "IEEE8021X_CA_CERT"
-	envEAPassword          = "EA_PASSWORD"
 
 	// msgPasswordAlignSkipped is logged when AMT password alignment is skipped
 	// because the device is not yet activated; activation continues afterward.
@@ -389,22 +383,13 @@ func (po *ProfileOrchestrator) executeWithPasswordRotation(step stepFunc) error 
 	return fmt.Errorf("failed to update AMT password after %d attempts", maxTries)
 }
 
-// changeAMTPassword changes the AMT admin password from current to next.
+// changeAMTPassword changes the AMT admin password from current to next
+// in-process; both passwords travel in the options struct.
 func (po *ProfileOrchestrator) changeAMTPassword(current, next string) error {
-	// Pass both old and new passwords via per-subprocess environment to avoid
-	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-	// and to prevent global process environment pollution in c-shared library mode.
-	changeEnv := map[string]string{
-		envAMTPassword:    current,
-		envNewAMTPassword: next,
-	}
-
-	change := []string{rpcExecutableName, commandConfigure, commandAMTPassword}
-	if po.skipAMTCertCheck {
-		change = append(change, "--skip-amt-cert-check")
-	}
-
-	return po.executor.Execute(change, changeEnv)
+	return configureChangeAMTPassword(configure.AMTPasswordOptions{
+		BaseOptions: configure.BaseOptions{AMTPassword: current, SkipAMTCertCheck: po.skipAMTCertCheck},
+		NewPassword: next,
+	})
 }
 
 // execStep returns a step that runs the rpc CLI with args. The step's AMT
@@ -523,17 +508,16 @@ func (po *ProfileOrchestrator) executeMEBxConfiguration() error {
 
 	log.Info("Executing MEBx password configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "mebx")
-
-	// Pass MEBx password via per-subprocess environment to avoid
-	// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-	// and to prevent global process environment pollution in c-shared library mode.
-	env := map[string]string{
-		envMEBXPassword: po.profile.Configuration.AMTSpecific.MEBXPassword,
+	// Both passwords travel in the options struct; the AMT password is the
+	// current po.globalPassword the fallback wrapper passes in.
+	step := func(amtPassword string) error {
+		return configureSetMEBx(configure.MEBxOptions{
+			BaseOptions:  configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			MEBxPassword: po.profile.Configuration.AMTSpecific.MEBXPassword,
+		})
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, env))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeAMTFeaturesConfiguration performs AMT features configuration
@@ -546,39 +530,36 @@ func (po *ProfileOrchestrator) executeAMTFeaturesConfiguration() error {
 
 	log.Info("Executing AMT features configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "amtfeatures")
+	// User consent is set only in ACM. In CCM it stays empty and pkg
+	// SetAMTFeatures defaults it to "all", as Kong's default did for the old
+	// child. That non-empty consent also lets an all-false profile pass
+	// validation, so no DisableAll option is needed to turn every feature off.
+	var userConsent string
 
-	if redirection.Services.KVM {
-		args = append(args, "--kvm")
-	}
-
-	if redirection.Services.SOL {
-		args = append(args, "--sol")
-	}
-
-	if redirection.Services.IDER {
-		args = append(args, "--ider")
-	}
-
-	// If all features are explicitly false, request explicit disable behavior
-	if !redirection.Services.KVM && !redirection.Services.SOL && !redirection.Services.IDER {
-		args = append(args, "--disableAll")
-	}
-
-	// Set user consent if in ACM mode
 	if po.profile.Configuration.AMTSpecific.ControlMode == ACMMODE {
 		switch redirection.UserConsent {
 		case "None":
-			args = append(args, "--userConsent", "none")
+			userConsent = "none"
 		case "KVM":
-			args = append(args, "--userConsent", "kvm")
+			userConsent = "kvm"
 		default:
-			args = append(args, "--userConsent", "all")
+			userConsent = "all"
 		}
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		return configureSetAMTFeatures(configure.AMTFeaturesOptions{
+			BaseOptions: configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			UserConsent: userConsent,
+			KVM:         redirection.Services.KVM,
+			SOL:         redirection.Services.SOL,
+			IDER:        redirection.Services.IDER,
+		})
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeWiredNetworkConfiguration performs wired network configuration
@@ -595,49 +576,52 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 
 	log.Info("Executing wired network configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wired")
+	// DHCP sets only DHCPEnabled, as the old child got only --dhcp; a static
+	// profile copies its address fields and leaves DHCPEnabled nil. IP sync,
+	// 802.1x and EA fields stay unset because the old child never got them.
+	var opts configure.WiredOptions
 
 	if wired.DHCPEnabled {
-		args = append(args, "--dhcp")
+		dhcp := true
+		opts.DHCPEnabled = &dhcp
 	} else {
-		// Static IP configuration
-		if wired.IPAddress != "" {
-			args = append(args, "--ipaddress", wired.IPAddress)
-		}
-
-		if wired.SubnetMask != "" {
-			args = append(args, "--subnetmask", wired.SubnetMask)
-		}
-
-		if wired.DefaultGateway != "" {
-			args = append(args, "--gateway", wired.DefaultGateway)
-		}
-
-		if wired.PrimaryDNS != "" {
-			args = append(args, "--primarydns", wired.PrimaryDNS)
-		}
-
-		if wired.SecondaryDNS != "" {
-			args = append(args, "--secondarydns", wired.SecondaryDNS)
-		}
+		opts.IPAddress = wired.IPAddress
+		opts.SubnetMask = wired.SubnetMask
+		opts.Gateway = wired.DefaultGateway
+		opts.PrimaryDNS = wired.PrimaryDNS
+		opts.SecondaryDNS = wired.SecondaryDNS
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureWired(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeEnableWiFi enables WiFi port if needed
 func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	log.Info("Executing WiFi sync configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wifisync")
+	// Both values pass through as-is: the old child always got
+	// --oswifisync=<bool> and --uefiwifisync=<bool>, so the CLI defaults
+	// never applied. The AMT password is the current po.globalPassword the
+	// fallback wrapper passes in.
+	wireless := po.profile.Configuration.Network.Wireless
 
-	// Pass through explicit values from the strongly-typed profile
-	args = append(args, "--oswifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.WiFiSyncEnabled))
-	args = append(args, "--uefiwifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.UEFIWiFiSyncEnabled))
+	step := func(amtPassword string) error {
+		return configureWiFiSync(configure.WiFiSyncOptions{
+			BaseOptions:  configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			OSWiFiSync:   wireless.WiFiSyncEnabled,
+			UEFIWiFiSync: wireless.UEFIWiFiSyncEnabled,
+		})
+	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeWirelessConfigurations performs wireless profile configurations
@@ -645,10 +629,17 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	// Always purge existing Wi-Fi profiles before applying new ones
 	log.Info("Purging existing AMT wireless profiles before applying new configuration")
 
-	purgeArgs := po.baseArgs()
-	purgeArgs = append(purgeArgs, commandConfigure, "wireless", "--purge")
+	// The purge sets only Purge, as the old child got only --purge;
+	// pkg/configure fills the defaults the CLI's flags did. The AMT password
+	// is the current po.globalPassword the fallback wrapper passes in.
+	purge := func(amtPassword string) error {
+		return configureWireless(configure.WirelessOptions{
+			BaseOptions: configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			Purge:       true,
+		})
+	}
 
-	if err := po.executeWithPasswordFallback(po.execStep(purgeArgs, nil)); err != nil {
+	if err := po.executeWithPasswordFallback(purge); err != nil {
 		return fmt.Errorf("wireless purge failed: %w", err)
 	}
 
@@ -669,70 +660,92 @@ func (po *ProfileOrchestrator) executeWirelessConfigurations() error {
 	return nil
 }
 
-// executeWirelessProfile configures a single wireless profile
+// executeWirelessProfile configures a single wireless profile. Only the
+// profile's values are used: unlike the old child, empty secrets are not
+// filled from PSK_PASSPHRASE or IEEE8021X_* in the operator's environment.
 func (po *ProfileOrchestrator) executeWirelessProfile(profile config.WirelessProfile) error {
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wireless")
-
-	args = append(args, "--profileName", profile.ProfileName)
-	args = append(args, "--ssid", profile.SSID)
-	args = append(args, "--priority", strconv.Itoa(profile.Priority))
-
 	method, success := wifi.ParseAuthenticationMethod(profile.AuthenticationMethod)
 	if !success {
 		return fmt.Errorf("invalid authentication method: %s", profile.AuthenticationMethod)
 	}
-
-	args = append(args, "--authenticationMethod", strconv.Itoa(int(method)))
 
 	encryptionMethod, success := wifi.ParseEncryptionMethod(profile.EncryptionMethod)
 	if !success {
 		return fmt.Errorf("invalid encryption method: %s", profile.EncryptionMethod)
 	}
 
-	args = append(args, "--encryptionMethod", strconv.Itoa(int(encryptionMethod)))
-
-	// Add PSK passphrase if provided
-	extraEnv := map[string]string{}
-
-	if profile.Password != "" {
-		extraEnv[envPSKPassphrase] = profile.Password
+	opts := configure.WirelessOptions{
+		ProfileName:          profile.ProfileName,
+		SSID:                 profile.SSID,
+		Priority:             profile.Priority,
+		AuthenticationMethod: int(method),
+		EncryptionMethod:     int(encryptionMethod),
+		PSKPassphrase:        profile.Password,
 	}
 
-	// Add 802.1x settings if configured
-	if profile.IEEE8021x != nil {
-		ieee := profile.IEEE8021x
-		args = append(args, "--ieee8021xProfileName", fmt.Sprintf("%s_8021x", profile.ProfileName))
-
-		if ieee.Username != "" {
-			args = append(args, "--ieee8021xUsername", ieee.Username)
-		}
-
-		if ieee.Password != "" {
-			extraEnv[envIEEE8021xPassword] = ieee.Password
-		}
-
-		if ieee.AuthenticationProtocol != 0 {
-			args = append(args, "--ieee8021xAuthenticationProtocol", strconv.Itoa(ieee.AuthenticationProtocol))
-		}
-
-		if ieee.PrivateKey != "" {
-			extraEnv[envIEEE8021xPrivKey] = ieee.PrivateKey
-		}
-
-		if ieee.ClientCert != "" {
-			extraEnv[envIEEE8021xClientCert] = ieee.ClientCert
-		}
-
-		if ieee.CACert != "" {
-			extraEnv[envIEEE8021xCACert] = ieee.CACert
-		}
+	if ieee := profile.IEEE8021x; ieee != nil {
+		opts.IEEE8021xProfileName = fmt.Sprintf("%s_8021x", profile.ProfileName)
+		opts.IEEE8021xUsername = ieee.Username
+		opts.IEEE8021xPassword = ieee.Password
+		opts.IEEE8021xAuthenticationProtocol = ieee.AuthenticationProtocol
+		opts.IEEE8021xPrivateKey = ieee.PrivateKey
+		opts.IEEE8021xClientCert = ieee.ClientCert
+		opts.IEEE8021xCACert = ieee.CACert
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	if err := validateWirelessOptions(opts); err != nil {
+		return err
+	}
+
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureWireless(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
-// executeTLSConfiguration performs TLS configuration
+// validateWirelessOptions rejects the values the CLI rejected and
+// pkg/configure would default or accept: Kong's enums on the authentication
+// method, encryption method and 802.1x authentication protocol, and the
+// Validate check on priority (pkg/configure turns 0 into 1).
+func validateWirelessOptions(opts configure.WirelessOptions) error {
+	enums := []struct {
+		name    string
+		value   int
+		allowed []int
+	}{
+		{"authenticationMethod", opts.AuthenticationMethod, []int{4, 6, 7}},
+		{"encryptionMethod", opts.EncryptionMethod, []int{3, 4}},
+		{"ieee8021xAuthenticationProtocol", opts.IEEE8021xAuthenticationProtocol, []int{0, 2}},
+	}
+
+	for _, e := range enums {
+		if slices.Contains(e.allowed, e.value) {
+			continue
+		}
+
+		quoted := make([]string, len(e.allowed))
+		for i, v := range e.allowed {
+			quoted[i] = strconv.Quote(strconv.Itoa(v))
+		}
+
+		return fmt.Errorf("%s must be one of %s but got %q", e.name, strings.Join(quoted, ","), strconv.Itoa(e.value))
+	}
+
+	if opts.Priority <= 0 {
+		return fmt.Errorf("priority must be greater than 0")
+	}
+
+	return nil
+}
+
+// executeTLSConfiguration performs TLS configuration. The Enterprise
+// Assistant password comes from the profile only: unlike the old child, an
+// empty one is not filled from EA_PASSWORD in the operator's environment.
 func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	if !po.profile.Configuration.TLS.Enabled {
 		log.Info("TLS not enabled, skipping TLS configuration")
@@ -741,9 +754,6 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 	}
 
 	log.Info("Executing TLS configuration")
-
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "tls")
 
 	// Determine TLS mode
 	var mode string
@@ -762,26 +772,27 @@ func (po *ProfileOrchestrator) executeTLSConfiguration() error {
 		}
 	}
 
-	args = append(args, "--mode", mode)
+	// Delay stays 0 so pkg/configure applies its default of 3, the CLI
+	// default the old child got.
+	opts := configure.TLSOptions{Mode: mode}
 
-	extraEnv := map[string]string{}
-
-	if po.profile.Configuration.TLS.SigningAuthority == "SelfSigned" {
-	} else {
-		// Add Enterprise Assistant settings if configured
-		if po.profile.Configuration.EnterpriseAssistant.URL != "" {
-			args = append(args, "--eaAddress", po.profile.Configuration.EnterpriseAssistant.URL)
-			if po.profile.Configuration.EnterpriseAssistant.Username != "" {
-				args = append(args, "--eaUsername", po.profile.Configuration.EnterpriseAssistant.Username)
-			}
-
-			if po.profile.Configuration.EnterpriseAssistant.Password != "" {
-				extraEnv[envEAPassword] = po.profile.Configuration.EnterpriseAssistant.Password
-			}
-		}
+	// Add Enterprise Assistant settings if configured and not self-signed
+	ea := po.profile.Configuration.EnterpriseAssistant
+	if po.profile.Configuration.TLS.SigningAuthority != "SelfSigned" && ea.URL != "" {
+		opts.EAAddress = ea.URL
+		opts.EAUsername = ea.Username
+		opts.EAPassword = ea.Password
 	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureTLS(opts)
+	}
+
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeCIRAConfiguration performs CIRA (Cloud-Initiated Remote Access) configuration
@@ -797,35 +808,32 @@ func (po *ProfileOrchestrator) executeCIRAConfiguration() error {
 
 	log.Info("Executing CIRA configuration")
 
-	args := po.baseArgs()
-
-	args = append(args, commandConfigure, "cira")
-
-	// MPS Address is required
-	args = append(args, "--mpsaddress", cira.MPSAddress)
-
-	// MPS Certificate is required
-	args = append(args, "--mpscert", cira.MPSCert)
-
-	// MPS Password - if not provided, the CLI will prompt
-	extraEnv := map[string]string{}
-
-	if cira.MPSPassword != "" {
-		extraEnv[envMPSPassword] = cira.MPSPassword
+	// Every CIRA field comes from the profile only: unlike the old child, none
+	// is filled from the operator's environment (MPS_PASSWORD,
+	// GENERATE_RANDOM_PASSWORD, ENVIRONMENT_DETECTION, RPC_*) or config.yaml.
+	opts := configure.CIRAOptions{
+		MPSAddress:             cira.MPSAddress,
+		MPSCert:                cira.MPSCert,
+		MPSPassword:            cira.MPSPassword,
+		GenerateRandomPassword: cira.GenerateRandomPassword,
 	}
 
-	if cira.GenerateRandomPassword {
-		args = append(args, "--generateRandomPassword")
+	// The old child got the list comma-joined in one --envdetection flag and
+	// Kong split it with SplitEscaped: a comma inside one profile entry yields
+	// two strings, a backslash-escaped comma stays literal and a trailing
+	// empty entry is dropped. Use Kong's own splitter for the same strings; an
+	// empty list (or [""]) stays nil, as the child got no value.
+	opts.EnvironmentDetection = kong.SplitEscaped(strings.Join(cira.EnvironmentDetection, ","), ',')
+
+	// The AMT password is the current po.globalPassword the fallback wrapper
+	// passes in.
+	step := func(amtPassword string) error {
+		opts.BaseOptions = configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck}
+
+		return configureCIRA(opts)
 	}
 
-	// Environment Detection - optional
-	if len(cira.EnvironmentDetection) > 0 {
-		// Join multiple environment detection strings with comma
-		envDetection := strings.Join(cira.EnvironmentDetection, ",")
-		args = append(args, "--envdetection", envDetection)
-	}
-
-	return po.executeWithPasswordFallback(po.execStep(args, extraEnv))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeHTTPProxyConfiguration performs HTTP proxy configuration
@@ -898,15 +906,13 @@ func (po *ProfileOrchestrator) verifyAndAlignAMTPassword() error {
 	// Use an idempotent password-change-to-same-value operation as an auth probe.
 	// If the provided password is already set, this succeeds and changes nothing.
 	// If authentication fails (wrong password), our fallback will prompt for the
-	// current password, rotate to the profile value, and retry.
-	args := po.baseArgs()
-	args = append(args, commandConfigure, commandAMTPassword)
+	// current password, rotate to the profile value, and retry. The probe gets
+	// the current po.globalPassword from the fallback wrapper.
+	probe := func(password string) error {
+		return po.changeAMTPassword(password, newPass)
+	}
 
-	// Pass passwords via per-subprocess environment to avoid credential exposure in ps/cmdline.
-	// The step sets AMT_PASSWORD from the current po.globalPassword.
-	env := map[string]string{envNewAMTPassword: newPass}
-
-	err := po.executeWithPasswordFallback(po.execStep(args, env))
+	err := po.executeWithPasswordFallback(probe)
 	if isDeviceNotActivatedErr(err) {
 		log.Warn(msgPasswordAlignSkipped)
 
