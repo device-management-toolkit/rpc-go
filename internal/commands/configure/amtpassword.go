@@ -8,6 +8,7 @@ package configure
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -80,7 +81,7 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	// Get general settings to obtain digest realm
 	generalSettings, err := cmd.WSMan.GetGeneralSettings()
 	if err != nil {
-		return fmt.Errorf("failed to get AMT general settings: %s", sanitizeAMTPassError(err))
+		return fmt.Errorf("failed to get AMT general settings: %w", amtPassError(err))
 	}
 
 	// Create authentication challenge with new password
@@ -105,7 +106,7 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	// Update the AMT password
 	response, err := cmd.WSMan.UpdateAMTPassword(encodedMessage)
 	if err != nil {
-		return fmt.Errorf("failed to update AMT password: %s", sanitizeAMTPassError(err))
+		return fmt.Errorf("failed to update AMT password: %w", amtPassError(err))
 	}
 
 	log.Trace(response)
@@ -114,21 +115,59 @@ func (cmd *AMTPasswordCmd) Run(ctx *commands.Context) error {
 	return nil
 }
 
-// sanitizeAMTPassError converts noisy AMT/WSMAN errors (including raw HTML bodies)
-// into concise, user-friendly messages without leaking raw markup.
-func sanitizeAMTPassError(err error) string {
+// msgAMTPass401 is the message the amtpassword command shows for any error
+// that mentions 401.
+const msgAMTPass401 = "Received 401 unauthorized"
+
+// wsmanUnauthorizedMarker is the text go-wsman-messages gives an HTTP 401: it
+// returns fmt.Errorf("%w: %v\n%v", errPostResponse, res.Status, body) with an
+// unexported errPostResponse (pkg/wsman/client/wsman.go:531-535, v2.50.5).
+//
+// TODO: match a typed error once go-wsman-messages exports one for a 401.
+const wsmanUnauthorizedMarker = "wsman.Client post received: 401"
+
+// ErrAMTUnauthorized is the error the amtpassword command returns, wrapped,
+// when AMT answered with HTTP 401. It carries no exit code, so the CLI's exit
+// code is unchanged.
+var ErrAMTUnauthorized error = &amtUnauthorizedError{}
+
+// amtUnauthorizedError is ErrAMTUnauthorized's type: an HTTP 401 from AMT.
+type amtUnauthorizedError struct{}
+
+func (*amtUnauthorizedError) Error() string { return msgAMTPass401 }
+
+// mentions401Error reads like ErrAMTUnauthorized but stands for any other
+// error that mentions 401, such as a 500 whose body contains "401".
+type mentions401Error struct{}
+
+func (mentions401Error) Error() string { return msgAMTPass401 }
+
+// IsWSMANUnauthorized reports whether err is go-wsman-messages' error for an
+// HTTP 401 response. A 500 whose body contains "401" does not match.
+func IsWSMANUnauthorized(err error) bool {
+	return err != nil && strings.Contains(err.Error(), wsmanUnauthorizedMarker)
+}
+
+// amtPassError converts noisy AMT/WSMAN errors (including raw HTML bodies)
+// into concise, user-friendly errors without leaking raw markup. Any error
+// mentioning 401 reads "Received 401 unauthorized", but only an HTTP 401
+// matches ErrAMTUnauthorized. The result never carries err's exit code.
+func amtPassError(err error) error {
 	if err == nil {
-		return ""
+		return nil
+	}
+
+	if IsWSMANUnauthorized(err) {
+		return ErrAMTUnauthorized
 	}
 
 	msg := err.Error()
-	lower := strings.ToLower(msg)
 
 	// Per request: stop being fancy. If we see a 401 anywhere, surface a concise message.
-	if strings.Contains(lower, "401") {
-		return "Received 401 unauthorized"
+	if strings.Contains(strings.ToLower(msg), "401") {
+		return mentions401Error{}
 	}
 
 	// Otherwise, just return the original error message.
-	return msg
+	return errors.New(msg)
 }
