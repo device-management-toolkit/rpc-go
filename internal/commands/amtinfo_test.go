@@ -2862,7 +2862,7 @@ func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
 	require.NotNil(t, gotBody.DeviceInfo.UPID)
 	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.CSMEId)
-	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.OEMId)
+	assert.Equal(t, upid.OEMIDNotSet, gotBody.DeviceInfo.UPID.OEMId)
 	assert.Equal(t, []string{"16af57a9f676b0ab126095aa5ebadef22ab31119d644ac95cd4b93dbf3f26aeb"}, gotBody.DeviceInfo.CertHashes)
 }
 

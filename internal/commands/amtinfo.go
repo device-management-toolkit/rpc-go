@@ -1254,7 +1254,7 @@ func (s *InfoService) populateDiscoveryFields(info *syncDeviceInfo, result *Info
 	if result.UPID != nil {
 		info.UPID = &syncUPIDInfo{
 			CSMEId:            formatHex(result.UPID.HWSerialNum),
-			OEMId:             formatHex(result.UPID.OEMPlatformID),
+			OEMId:             result.UPID.OEMID(),
 			OEMPlatformIdType: interpretPlatformIDType(result.UPID.PlatformIdType),
 		}
 
