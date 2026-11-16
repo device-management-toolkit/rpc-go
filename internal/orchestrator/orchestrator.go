@@ -612,14 +612,21 @@ func (po *ProfileOrchestrator) executeWiredNetworkConfiguration() error {
 func (po *ProfileOrchestrator) executeEnableWiFi() error {
 	log.Info("Executing WiFi sync configuration")
 
-	args := po.baseArgs()
-	args = append(args, commandConfigure, "wifisync")
+	// Both values pass through as-is: the old child always got
+	// --oswifisync=<bool> and --uefiwifisync=<bool>, so the CLI defaults
+	// never applied. The AMT password is the current po.globalPassword the
+	// fallback wrapper passes in.
+	wireless := po.profile.Configuration.Network.Wireless
 
-	// Pass through explicit values from the strongly-typed profile
-	args = append(args, "--oswifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.WiFiSyncEnabled))
-	args = append(args, "--uefiwifisync="+strconv.FormatBool(po.profile.Configuration.Network.Wireless.UEFIWiFiSyncEnabled))
+	step := func(amtPassword string) error {
+		return configureWiFiSync(configure.WiFiSyncOptions{
+			BaseOptions:  configure.BaseOptions{AMTPassword: amtPassword, SkipAMTCertCheck: po.skipAMTCertCheck},
+			OSWiFiSync:   wireless.WiFiSyncEnabled,
+			UEFIWiFiSync: wireless.UEFIWiFiSyncEnabled,
+		})
+	}
 
-	return po.executeWithPasswordFallback(po.execStep(args, nil))
+	return po.executeWithPasswordFallback(step)
 }
 
 // executeWirelessConfigurations performs wireless profile configurations

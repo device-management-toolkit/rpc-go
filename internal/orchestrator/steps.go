@@ -14,4 +14,5 @@ var (
 	configureSetMEBx           = configure.SetMEBx
 	configureSetAMTFeatures    = configure.SetAMTFeatures
 	configureWired             = configure.ConfigureWired
+	configureWiFiSync          = configure.ConfigureWiFiSync
 )
