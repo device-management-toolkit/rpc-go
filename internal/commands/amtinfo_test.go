@@ -2821,6 +2821,12 @@ func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	origSerial := getSystemSerialNumber
+
+	t.Cleanup(func() { getSystemSerialNumber = origSerial })
+
+	getSystemSerialNumber = func() (string, error) { return "PF4ABCDE", nil }
+
 	mockAMT := mock.NewMockInterface(ctrl)
 	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
 	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
@@ -2860,10 +2866,61 @@ func TestSyncDeviceInfoHelper_IncludesUPIDAndCertHashes(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Equal(t, "PF4ABCDE", gotBody.DeviceInfo.SerialNumber)
 	require.NotNil(t, gotBody.DeviceInfo.UPID)
 	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.CSMEId)
 	assert.NotEmpty(t, gotBody.DeviceInfo.UPID.OEMId)
 	assert.Equal(t, []string{"16af57a9f676b0ab126095aa5ebadef22ab31119d644ac95cd4b93dbf3f26aeb"}, gotBody.DeviceInfo.CertHashes)
+}
+
+func TestSyncDeviceInfoHelper_OmitsUnavailableSerialNumber(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	origSerial := getSystemSerialNumber
+
+	t.Cleanup(func() { getSystemSerialNumber = origSerial })
+
+	getSystemSerialNumber = func() (string, error) { return "", utils.ErrSerialNumberUnavailable }
+
+	mockAMT := mock.NewMockInterface(ctrl)
+	mockAMT.EXPECT().GetVersionDataFromME("AMT", gomock.Any()).Return("16.1.35", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Build Number", gomock.Any()).Return("2557", nil)
+	mockAMT.EXPECT().GetVersionDataFromME("Sku", gomock.Any()).Return("16392", nil)
+	mockAMT.EXPECT().GetUUID().Return("12345678-1234-1234-1234-123456789ABC", nil)
+	mockAMT.EXPECT().GetUPID().Return(nil, nil)
+	mockAMT.EXPECT().GetControlMode().Return(2, nil).AnyTimes()
+	mockAMT.EXPECT().GetLANInterfaceSettings(false).Return(amt.InterfaceSettings{MACAddress: "00:11:22:33:44:55", IPAddress: "192.168.1.100"}, nil)
+	mockAMT.EXPECT().GetLANInterfaceSettings(true).Return(amt.InterfaceSettings{MACAddress: "00:AA:BB:CC:DD:EE", IPAddress: "0.0.0.0"}, nil)
+	mockAMT.EXPECT().GetDNSSuffix().Return("amt.example.com", nil)
+	mockAMT.EXPECT().GetOSDNSSuffix().Return("example.com", nil)
+	mockAMT.EXPECT().GetCertificateHashes().Return(nil, nil)
+
+	// Decode into a map: a struct cannot tell a missing key from an empty one.
+	var gotBody struct {
+		GUID       string                     `json:"guid"`
+		DeviceInfo map[string]json.RawMessage `json:"deviceInfo"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ctx := &Context{
+		AMTCommand:    mockAMT,
+		SkipCertCheck: true,
+	}
+	baseCmd := &AMTBaseCmd{HECIAvailable: true}
+
+	err := SyncDeviceInfoHelper(ctx, baseCmd, nil, server.URL+"/api/v1/devices", "token-123", "12345678-1234-1234-1234-123456789ABC")
+	require.NoError(t, err)
+
+	assert.Equal(t, "12345678-1234-1234-1234-123456789ABC", gotBody.GUID)
+	assert.Contains(t, gotBody.DeviceInfo, "fwVersion")
+	assert.NotContains(t, gotBody.DeviceInfo, "serialNumber")
 }
 
 func TestSyncDeviceInfoHelper_HECIUnavailable_HandlesGracefully(t *testing.T) {
