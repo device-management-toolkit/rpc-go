@@ -211,7 +211,9 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		e.stream = nil
 	}
 
-	if request.Method == MethodTLSData {
+	// The session ID advertises streaming support. Choose the reader when a tunnel
+	// starts, and do not switch modes because a later chunk omits the field.
+	if request.Method == MethodTLSData && (isTLSClientHello || newTLSSession || !e.lmConnected) {
 		e.tlsSessionID = request.TLSSessionID
 	}
 
@@ -249,9 +251,9 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		}
 	}
 
-	if e.localTlsEnforced {
+	if e.localTlsEnforced && e.tlsSessionID != "" {
 		// TLS tunnel: one streaming reader per LMS connection forwards AMT's bytes to RPS as
-		// they arrive (lm.LMSConnection.listenStream); they are delivered through MakeItSo's
+		// they arrive (lm.LMSConnection.StartTLSStream); they are delivered through MakeItSo's
 		// select, so this handler returns as soon as the request is written.
 		if !e.lmListening {
 			reader, ok := e.localManagement.(lm.TLSStreamReader)

@@ -425,12 +425,15 @@ func TestProcessMessagePortSwitch(t *testing.T) {
 
 // streamTestLM keeps executor tests independent of hardware socket timing.
 type streamTestLM struct {
-	generation uint64
-	events     chan lm.StreamEvent
-	closed     int
-	connected  int
-	writes     [][]byte
-	sendErr    error
+	generation   uint64
+	events       chan lm.StreamEvent
+	closed       int
+	connected    int
+	writes       [][]byte
+	sendErr      error
+	listenCalls  int
+	replyChannel chan []byte
+	reply        []byte
 }
 
 func (m *streamTestLM) Initialize() error { return nil }
@@ -439,7 +442,12 @@ func (m *streamTestLM) Connect() error {
 
 	return nil
 }
-func (m *streamTestLM) Listen() {}
+func (m *streamTestLM) Listen() {
+	m.listenCalls++
+	if m.replyChannel != nil {
+		m.replyChannel <- m.reply
+	}
+}
 func (m *streamTestLM) Close() error {
 	m.closed++
 
@@ -734,5 +742,58 @@ func TestExecutorShutdownClosesPortSwitchReplacement(t *testing.T) {
 		assert.ErrorIs(t, err, io.EOF)
 	case <-time.After(6 * time.Second):
 		t.Fatal("replacement socket did not close on executor shutdown")
+	}
+}
+
+func TestTLSReaderSelectedByRPSSessionID(t *testing.T) {
+	for _, sessionID := range []string{"", "streaming-session"} {
+		t.Run("session="+sessionID, func(t *testing.T) {
+			conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
+			if response != nil {
+				defer response.Body.Close()
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer conn.Close()
+
+			assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+			data := make(chan []byte)
+			local := &streamTestLM{events: make(chan lm.StreamEvent), replyChannel: data, reply: []byte{0x16, 3, 3, 0, 1, 2, 0x17, 3, 3, 0, 1, 0}}
+			executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: local, data: data, errors: make(chan error), localTlsEnforced: true}
+			hello, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: sessionID, Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
+			assert.NoError(t, err)
+			assert.False(t, executor.HandleDataFromRPS(hello))
+			assert.Len(t, local.writes, 1)
+
+			if sessionID == "" {
+				assert.Equal(t, 1, local.listenCalls)
+				assert.Zero(t, local.generation)
+				assert.Nil(t, executor.stream)
+			} else {
+				assert.Zero(t, local.listenCalls)
+				assert.Equal(t, uint64(1), local.generation)
+				assert.NotNil(t, executor.stream)
+				executor.handleStreamedEvent(lm.StreamEvent{Generation: 1, Data: local.reply})
+			}
+
+			var forwarded Message
+			assert.NoError(t, conn.ReadJSON(&forwarded))
+			assert.Equal(t, MethodTLSData, forwarded.Method)
+			assert.Equal(t, sessionID, forwarded.TLSSessionID)
+			assert.Equal(t, base64.StdEncoding.EncodeToString(local.reply), forwarded.Payload)
+
+			if sessionID != "" {
+				continuation, err := json.Marshal(Message{Method: MethodTLSData, Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
+				assert.NoError(t, err)
+				assert.False(t, executor.HandleDataFromRPS(continuation))
+				assert.Zero(t, local.listenCalls)
+				assert.Equal(t, uint64(1), local.generation)
+				assert.Equal(t, sessionID, executor.tlsSessionID)
+			}
+		})
 	}
 }

@@ -103,7 +103,7 @@ func TestListen(t *testing.T) {
 	lms.Close() // should close client pipe
 }
 
-// TestListenTLSStreamsChunksImmediately verifies that in TLS-tunnel mode Listen forwards
+// TestListenTLSStreamsChunksImmediately verifies that the TLS stream reader forwards
 // each chunk as soon as it is read instead of waiting for a silence gap, and keeps reading.
 func TestListenTLSStreamsChunksImmediately(t *testing.T) {
 	server, client := net.Pipe()
@@ -119,7 +119,7 @@ func TestListenTLSStreamsChunksImmediately(t *testing.T) {
 		errors:     errCh,
 	}
 
-	go lms.Listen()
+	go lms.listenStream()
 
 	for _, chunk := range []string{"first", "second"} {
 		written := time.Now()
@@ -161,7 +161,7 @@ func TestListenTLSPeerCloseSignalsEmptyBuffer(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		lms.Listen()
+		lms.listenStream()
 		close(done)
 	}()
 
@@ -201,7 +201,7 @@ func TestListenTLSLocalCloseIsSilent(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		lms.Listen()
+		lms.listenStream()
 		close(done)
 	}()
 
@@ -357,4 +357,71 @@ func TestStreamKeepsFinalBytesBeforeEOF(t *testing.T) {
 			t.Fatal("stream event not delivered")
 		}
 	}
+}
+
+func TestListenTLSBuffersHandshakeForOlderRPS(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	data := make(chan []byte)
+	errCh := make(chan error, 1)
+	local := &LMSConnection{Connection: server, useTls: true, data: data, errors: errCh}
+	hello := []byte{0x16, 3, 3, 0, 1, 2}
+	encrypted := []byte{0x17, 3, 3, 0, 1, 0}
+
+	go local.Listen()
+
+	_, err := client.Write(hello)
+	assert.NoError(t, err)
+
+	select {
+	case <-data:
+		t.Fatal("legacy reader forwarded ServerHello before the silence window")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	_, err = client.Write(encrypted)
+	assert.NoError(t, err)
+
+	written := time.Now()
+
+	select {
+	case <-data:
+		t.Fatal("legacy reader forwarded a separate encrypted handshake record")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	select {
+	case received := <-data:
+		assert.Equal(t, append(hello, encrypted...), received)
+		assert.GreaterOrEqual(t, time.Since(written), 900*time.Millisecond)
+	case err := <-errCh:
+		t.Fatalf("unexpected read error: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("legacy reader did not flush the bundled handshake")
+	}
+}
+
+func TestListenTLSQuietRoundDoesNotReset(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	data := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+	local := &LMSConnection{Connection: server, useTls: true, data: data, errors: errCh}
+	done := make(chan struct{})
+
+	go func() { local.Listen(); close(done) }()
+
+	select {
+	case err := <-errCh:
+		assert.ErrorIs(t, err, ErrLMSReadTimeoutNoData)
+	case <-time.After(5 * time.Second):
+		t.Fatal("quiet TLS round did not report its typed timeout")
+	}
+
+	<-done
+	assert.Empty(t, data)
 }

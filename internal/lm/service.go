@@ -144,15 +144,8 @@ func (lms *LMSConnection) Close() error {
 // ends the current message and the accumulated buffer (possibly empty) is
 // delivered on the data channel.
 func (lms *LMSConnection) Listen() {
-	// TLS-tunnel mode: a streaming reader that runs for the life of the connection (see
-	// listenStream). The request/response read below, which ends a message after a silence
-	// gap, remains for the plain LMS path and is unchanged.
-	if lms.useTls {
-		lms.listenStream()
-
-		return
-	}
-
+	// Older RPS requires TLS handshake records to be bundled. Keep the original
+	// silence-based reader here; session-aware RPS uses StartTLSStream instead.
 	lms.mu.Lock()
 	conn := lms.Connection
 	lms.mu.Unlock()
