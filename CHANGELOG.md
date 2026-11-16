@@ -1,3 +1,17 @@
+# [3.0.0-beta.83](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.82...v3.0.0-beta.83) (2026-11-16)
+
+
+### Features
+
+* **internal:** include OEM serial number in amtinfo ([#1681](https://github.com/device-management-toolkit/rpc-go/issues/1681)) ([bc47a52](https://github.com/device-management-toolkit/rpc-go/commit/bc47a529a453b8c1dfd667112b99991f60506867)), closes [device-management-toolkit/deployment#729](https://github.com/device-management-toolkit/deployment/issues/729)
+
+# [3.0.0-beta.82](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.81...v3.0.0-beta.82) (2026-11-16)
+
+
+### Bug Fixes
+
+* rotate the AMT password when a profile step gets a 401 ([#1709](https://github.com/device-management-toolkit/rpc-go/issues/1709)) ([8a81217](https://github.com/device-management-toolkit/rpc-go/commit/8a81217cffc03fd60da65308008bbe9e7d226199)), closes [#1581](https://github.com/device-management-toolkit/rpc-go/issues/1581)
+
 # [3.0.0-beta.81](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.80...v3.0.0-beta.81) (2026-11-09)
 
 
