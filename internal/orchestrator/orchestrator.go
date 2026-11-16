@@ -24,6 +24,20 @@ import (
 // ErrCIRAConfiguration is returned when CIRA configuration fails.
 var ErrCIRAConfiguration = errors.New("CIRA configuration failed")
 
+// errNoActivator is returned by the activation step when no activator is set.
+var errNoActivator = errors.New("no activator set for the activation step")
+
+// LocalActivation is what the activation step passes to the activator: local
+// activation into ACM (or CCM when ACM is false) with these credentials.
+type LocalActivation struct {
+	ACM                      bool
+	ProvisioningCert         string
+	ProvisioningCertPassword string
+	AMTPassword              string
+	MEBxPassword             string
+	SkipAMTCertCheck         bool
+}
+
 // newAMTCommand opens the local AMT (MEI) command interface ExecuteProfile
 // reads the control mode from; replaced in tests.
 var newAMTCommand = func() amt.Interface { return amt.NewAMTCommand() }
@@ -66,6 +80,8 @@ type stepFunc func(amtPassword string) error
 type ProfileOrchestrator struct {
 	profile  config.Configuration
 	executor CommandExecutor
+	// activator runs the activation step; set with SetActivator.
+	activator func(LocalActivation) error
 	// cached control mode at start of orchestration
 	currentControlMode int
 	// optional current AMT password provided by caller (e.g., activate --password)
@@ -110,6 +126,12 @@ func NewProfileOrchestrator(cfg config.Configuration, currentPassword, mebxPassw
 // default is a CLIExecutor for the current executable.
 func (po *ProfileOrchestrator) SetExecutor(executor CommandExecutor) {
 	po.executor = executor
+}
+
+// SetActivator sets the function that runs the activation step. The
+// orchestrator cannot import the activate command, so its caller injects it.
+func (po *ProfileOrchestrator) SetActivator(fn func(LocalActivation) error) {
+	po.activator = fn
 }
 
 // baseArgs returns the common CLI arguments including global flags like skip-amt-cert-check.
@@ -422,50 +444,32 @@ func (po *ProfileOrchestrator) executeActivation() error {
 
 	log.Infof("Executing activation with control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 
-	base := po.baseArgs()
-	base = append(base, "activate")
-
-	env := make(map[string]string)
-	if po.globalPassword != "" {
-		env[envAMTPassword] = po.globalPassword
+	activation := LocalActivation{
+		AMTPassword:      po.globalPassword,
+		SkipAMTCertCheck: po.skipAMTCertCheck,
 	}
 
 	switch po.profile.Configuration.AMTSpecific.ControlMode {
 	case ACMMODE:
-		base = append(base, "--acm")
+		activation.ACM = true
+		activation.ProvisioningCert = po.profile.Configuration.AMTSpecific.ProvisioningCert
+		activation.ProvisioningCertPassword = po.profile.Configuration.AMTSpecific.ProvisioningCertPwd
 
-		if po.profile.Configuration.AMTSpecific.ProvisioningCert != "" {
-			env[envProvisioningCert] = po.profile.Configuration.AMTSpecific.ProvisioningCert
-		}
-
-		if po.profile.Configuration.AMTSpecific.ProvisioningCertPwd != "" {
-			// Pass provisioning certificate password via per-subprocess environment to avoid
-			// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-			// and to prevent global process environment pollution in c-shared library mode.
-			env[envProvisioningCertPwd] = po.profile.Configuration.AMTSpecific.ProvisioningCertPwd
-		}
-
-		// Pass MEBx password for AMT19+ TLS activation; prefer profile value over CLI value
-		mebxPwd := po.profile.Configuration.AMTSpecific.MEBXPassword
-		if mebxPwd == "" {
-			mebxPwd = po.mebxPassword
-		}
-
-		if mebxPwd != "" {
-			// Pass MEBx password via per-subprocess environment to avoid
-			// exposing credentials in command-line arguments (ps, /proc/<pid>/cmdline)
-			// and to prevent global process environment pollution in c-shared library mode.
-			env[envMEBXPassword] = mebxPwd
+		// MEBx password for AMT19+ TLS activation; prefer profile value over CLI value
+		activation.MEBxPassword = po.profile.Configuration.AMTSpecific.MEBXPassword
+		if activation.MEBxPassword == "" {
+			activation.MEBxPassword = po.mebxPassword
 		}
 	case "ccmactivate":
-		base = append(base, "--ccm")
 	default:
 		return fmt.Errorf("unsupported control mode: %s", po.profile.Configuration.AMTSpecific.ControlMode)
 	}
 
-	base = append(base, "--local")
+	if po.activator == nil {
+		return errNoActivator
+	}
 
-	return po.executor.Execute(base, env)
+	return po.activator(activation)
 }
 
 // executeACMUpgrade performs an in-place upgrade from CCM to ACM when already activated
