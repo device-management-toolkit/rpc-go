@@ -13,4 +13,10 @@ var (
 	configureChangeAMTPassword = configure.ChangeAMTPassword
 	configureSetMEBx           = configure.SetMEBx
 	configureSetAMTFeatures    = configure.SetAMTFeatures
+	configureWired             = configure.ConfigureWired
+	configureWiFiSync          = configure.ConfigureWiFiSync
+	configureWireless          = configure.ConfigureWireless
+	configureTLS               = configure.ConfigureTLS
+	configureCIRA              = configure.ConfigureCIRA
+	configureProxy             = configure.ConfigureProxy
 )

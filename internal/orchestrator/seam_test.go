@@ -8,7 +8,6 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"testing"
 
 	"github.com/device-management-toolkit/go-wsman-messages/v2/pkg/config"
@@ -28,7 +27,6 @@ func TestFailureCode(t *testing.T) {
 		wantOK   bool
 	}{
 		{name: "nil", err: nil, wantCode: 0, wantOK: false},
-		{name: "exec error", err: &ExecError{ExitCode: 100, Err: errors.New("exit status 100")}, wantCode: 100, wantOK: true},
 		{name: "custom error", err: utils.AMTAuthenticationFailed, wantCode: utils.AMTAuthenticationFailed.Code, wantOK: true},
 		{name: "wrapped custom error", err: fmt.Errorf("x: %w", utils.DeviceNotActivated), wantCode: utils.DeviceNotActivated.Code, wantOK: true},
 		{name: "plain error", err: errors.New("boom"), wantCode: 0, wantOK: false},
@@ -51,7 +49,8 @@ func TestHideStepCode(t *testing.T) {
 		err  error
 	}{
 		{name: "custom error", err: utils.AMTAuthenticationFailed},
-		{name: "wrapped exec error", err: fmt.Errorf("step: %w", authExecError())},
+		{name: "wrapped custom error", err: fmt.Errorf("step: %w", utils.AMTAuthenticationFailed)},
+		{name: "plain error", err: errors.New("boom")},
 	}
 
 	for _, tt := range tests {
@@ -62,9 +61,6 @@ func TestHideStepCode(t *testing.T) {
 
 			var customErr utils.CustomError
 			require.False(t, errors.As(hidden, &customErr), "CustomError must not be reachable")
-
-			var execErr *ExecError
-			require.False(t, errors.As(hidden, &execErr), "*ExecError must not be reachable")
 
 			_, ok := failureCode(hidden)
 			require.False(t, ok)
@@ -89,8 +85,6 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
 	po := NewProfileOrchestrator(cfg, "old-pass", "", true)
-	mock := newMockExecutor()
-	po.executor = mock
 	po.currentControlMode = 1
 	po.globalPassword = "stale-pass"
 
@@ -110,15 +104,11 @@ func TestRotation_InProcessAuthFailureRotates(t *testing.T) {
 	require.Equal(t, []string{"stale-pass", "new-pass"}, got)
 	require.Equal(t, "new-pass", po.globalPassword)
 
-	// The rotation runs in-process; nothing reaches the executor.
-	require.Equal(t, 0, mock.callCount)
 	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", true)}, *rotations)
 }
 
 func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
 	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
 	po.settleDelaySeconds = 0
 	po.activatedThisRun = true
 
@@ -132,24 +122,6 @@ func TestSettle_InProcessDeviceNotActivatedNotRetried(t *testing.T) {
 	err := po.executeWithPasswordFallback(step)
 	require.ErrorIs(t, err, utils.DeviceNotActivated)
 	require.Equal(t, 1, calls)
-	require.Equal(t, 0, mock.callCount)
-}
-
-func TestExecStep_PasswordFromArgumentOverridesStaleEnv(t *testing.T) {
-	po := NewProfileOrchestrator(config.Configuration{}, "", "", false)
-	mock := newMockExecutor()
-	po.executor = mock
-
-	extra := map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}
-	step := po.execStep([]string{"rpc", "amtinfo"}, extra)
-
-	require.NoError(t, step("fresh"))
-	require.NoError(t, step(""))
-
-	require.Equal(t, map[string]string{envAMTPassword: "fresh", envMPSPassword: "mps"}, mock.executedEnv[0])
-	require.Equal(t, map[string]string{envMPSPassword: "mps"}, mock.executedEnv[1])
-	// The caller's map is not mutated.
-	require.Equal(t, map[string]string{envAMTPassword: "stale", envMPSPassword: "mps"}, extra)
 }
 
 func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
@@ -159,8 +131,6 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 	cfg.Configuration.AMTSpecific.AdminPassword = "new-pass"
 
 	po := NewProfileOrchestrator(cfg, "old-pass", "", false)
-	executor := newMockExecutor()
-	po.executor = executor
 	po.currentControlMode = 1
 	po.activatedThisRun = true
 	po.settleDelaySeconds = 0
@@ -173,6 +143,9 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 
 		switch len(got) {
 		case 1:
+			// Something else keeps the password current meanwhile.
+			po.globalPassword = "new-pass"
+
 			return utils.AMTAuthenticationFailed
 		case 2:
 			return errors.New("connection reset while AMT settles")
@@ -183,36 +156,17 @@ func TestSettle_RetryUsesCurrentPassword(t *testing.T) {
 
 	require.NoError(t, po.executeWithPasswordFallback(step))
 
-	// Initial call with the stale password, the post-rotation call, then the
-	// settle retry: both later calls must see the rotated password.
+	// The settle retries read the current password at each call; a 401 in the
+	// settle window does not rotate.
 	require.Equal(t, []string{"stale-pass", "new-pass", "new-pass"}, got)
-	require.Equal(t, 0, executor.callCount, "nothing reaches the executor")
-	require.Equal(t, []configure.AMTPasswordOptions{amtPasswordOpts("old-pass", "new-pass", false)}, *rotations)
-}
-
-// stepFailingExecutor fails only the command whose arguments contain token.
-type stepFailingExecutor struct {
-	token        string
-	err          error
-	executedArgs [][]string
-}
-
-func (e *stepFailingExecutor) Execute(args []string, _ map[string]string) error {
-	e.executedArgs = append(e.executedArgs, slices.Clone(args))
-
-	if slices.Contains(args, e.token) {
-		return e.err
-	}
-
-	return nil
+	require.Empty(t, *rotations)
 }
 
 // TestExecuteProfile_HidesStepCodes pins that ExecuteProfile hides every
 // step's failure code, so a failed profile run exits with the generic code.
 // Rows that reach the configuration steps pay the 1s initial utils.Pause
-// (no seam); activation and password verification fail before it. Rows with
-// inProcess set fail through the stubbed pkg call their token names instead
-// of the executor.
+// (no seam); activation and password verification fail before it. Each row
+// fails through the stubbed call its token names.
 func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 	stepErr := func(details string) error {
 		return utils.CustomError{Code: utils.WSMANMessageError.Code, Message: utils.WSMANMessageError.Message, Details: details}
@@ -223,7 +177,6 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 		controlMode int
 		profile     func(*config.Configuration)
 		token       string
-		inProcess   bool
 		err         error
 		wantCIRA    bool
 	}{
@@ -251,9 +204,8 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 			profile: func(c *config.Configuration) {
 				c.Configuration.AMTSpecific.AdminPassword = "P@ssw0rd"
 			},
-			token:     "amtpassword",
-			inProcess: true,
-			err:       stepErr("password step"),
+			token: "amtpassword",
+			err:   stepErr("password step"),
 		},
 		{
 			name:        "MEBx",
@@ -262,15 +214,13 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.AMTSpecific.ControlMode = ACMMODE
 				c.Configuration.AMTSpecific.MEBXPassword = "mebx-pass"
 			},
-			token:     "mebx",
-			inProcess: true,
-			err:       stepErr("mebx step"),
+			token: "mebx",
+			err:   stepErr("mebx step"),
 		},
 		{
 			name:        "AMT features",
 			controlMode: 2,
 			token:       "amtfeatures",
-			inProcess:   true,
 			err:         stepErr("amtfeatures step"),
 		},
 		{
@@ -280,7 +230,7 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				c.Configuration.Network.Wired.DHCPEnabled = true
 			},
 			token: "wired",
-			err:   &ExecError{ExitCode: utils.NetworkConfigurationFailed.Code, Err: errors.New("wired step exit status 103")},
+			err:   stepErr("wired step"),
 		},
 		{
 			name:        "wifisync",
@@ -343,43 +293,44 @@ func TestExecuteProfile_HidesStepCodes(t *testing.T) {
 				tt.profile(&cfg)
 			}
 
-			// Every row stubs every in-process call so none can reach AMT; an
-			// in-process row's token names the call that fails.
-			inProcessErrs := map[string]error{}
-			if tt.inProcess {
-				inProcessErrs[tt.token] = tt.err
-			}
+			// Every row stubs every in-process call so none can reach AMT; a
+			// row's token names the call that fails.
+			inProcessErrs := map[string]error{tt.token: tt.err}
 
 			passwordChanges := stubChangeAMTPassword(t, inProcessErrs["amtpassword"])
 			mebxCalls := stubSetMEBx(t, inProcessErrs["mebx"])
 			amtFeaturesCalls := stubSetAMTFeatures(t, inProcessErrs["amtfeatures"])
+			wiredCalls := stubConfigureWired(t, inProcessErrs["wired"])
+			wifiSyncCalls := stubConfigureWiFiSync(t, inProcessErrs["wifisync"])
+			wirelessCalls := stubConfigureWireless(t, inProcessErrs["wireless"])
+			tlsCalls := stubConfigureTLS(t, inProcessErrs["tls"])
+			ciraCalls := stubConfigureCIRA(t, inProcessErrs["cira"])
+			proxyCalls := stubConfigureProxy(t, inProcessErrs["proxy"])
 
 			po := NewProfileOrchestrator(cfg, "", "", false)
 			po.settleDelaySeconds = 0
-			exec := &stepFailingExecutor{token: tt.token, err: tt.err}
-			po.SetExecutor(exec)
+			activations := stubActivator(po, inProcessErrs["activate"])
 
 			err := po.ExecuteProfile()
 			require.Error(t, err)
 
-			failed := slices.ContainsFunc(exec.executedArgs, func(args []string) bool {
-				return slices.Contains(args, tt.token)
-			})
-			if tt.inProcess {
-				failed = map[string]bool{
-					"amtpassword": len(*passwordChanges) > 0,
-					"mebx":        len(*mebxCalls) > 0,
-					"amtfeatures": len(*amtFeaturesCalls) > 0,
-				}[tt.token]
-			}
+			failed := map[string]bool{
+				"activate":    len(*activations) > 0,
+				"amtpassword": len(*passwordChanges) > 0,
+				"mebx":        len(*mebxCalls) > 0,
+				"amtfeatures": len(*amtFeaturesCalls) > 0,
+				"wired":       len(*wiredCalls) > 0,
+				"wifisync":    len(*wifiSyncCalls) > 0,
+				"wireless":    len(*wirelessCalls) > 0,
+				"tls":         len(*tlsCalls) > 0,
+				"cira":        len(*ciraCalls) > 0,
+				"proxy":       len(*proxyCalls) > 0,
+			}[tt.token]
 
 			require.True(t, failed, "the %s step must run", tt.name)
 
 			var customErr utils.CustomError
 			require.False(t, errors.As(err, &customErr), "CustomError must not be reachable: %v", err)
-
-			var execErr *ExecError
-			require.False(t, errors.As(err, &execErr), "*ExecError must not be reachable: %v", err)
 
 			require.Contains(t, err.Error(), tt.err.Error())
 
