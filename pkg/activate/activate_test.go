@@ -403,6 +403,7 @@ func TestNewStopConfigurationCommand(t *testing.T) {
 }
 
 func TestNewRemoteCommand_MapsOptions(t *testing.T) {
+	tlsTunnel := true
 	cmd, ctx := newRemoteCommand(RemoteOptions{
 		URL:              rpsURL,
 		Profile:          "acm",
@@ -412,7 +413,7 @@ func TestNewRemoteCommand_MapsOptions(t *testing.T) {
 		UUID:             deviceUUID,
 		FriendlyName:     "lab-01",
 		Proxy:            "http://proxy.example.com:8080",
-		TLSTunnel:        true,
+		TLSTunnel:        &tlsTunnel,
 		TenantID:         "tenant-1",
 		SkipCertCheck:    true,
 		SkipAMTCertCheck: true,
@@ -434,6 +435,19 @@ func TestNewRemoteCommand_MapsOptions(t *testing.T) {
 		SkipCertCheck:    true,
 		TenantID:         "tenant-1",
 	}, ctx)
+}
+
+func TestNewRemoteCommandDefaultsTLSTunnelEnabled(t *testing.T) {
+	cmd, _ := newRemoteCommand(RemoteOptions{})
+
+	assert.True(t, cmd.TLSTunnel)
+}
+
+func TestNewRemoteCommandCanDisableTLSTunnel(t *testing.T) {
+	tlsTunnel := false
+	cmd, _ := newRemoteCommand(RemoteOptions{TLSTunnel: &tlsTunnel})
+
+	assert.False(t, cmd.TLSTunnel)
 }
 
 func TestNewProfileCommand_MapsOptions(t *testing.T) {

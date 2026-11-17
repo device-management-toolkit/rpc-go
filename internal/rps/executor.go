@@ -1173,6 +1173,8 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 		method := "response"
 		if e.tlsTunnelActive {
 			method = MethodTLSData
+
+			log.Debugf("TLS tunnel: forwarding %d bytes from LMS to RPS", len(data))
 		}
 
 		err := e.server.Send(e.payload.CreateMessageResponse(data, method))
