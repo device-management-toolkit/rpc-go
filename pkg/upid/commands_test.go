@@ -96,12 +96,12 @@ func TestUPIDString(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "Valid UPID with zeros (OEM not provisioned, only shows CSME)",
+			name: "Valid UPID with zeros (OEM not provisioned, OEM ID is Not Set)",
 			upid: &UPID{
 				Raw:            make([]byte, UPIDSize),
 				PlatformIdType: PlatformIDTypeNotSet,
 			},
-			expected: "---UPID---\nOEM_PLATFORM_ID_TYPE    : Not Set (0)\nOEM ID                  :\nCSME ID                 : 0000000000000000000000000000000000000000000000000000000000000000",
+			expected: "---UPID---\nOEM_PLATFORM_ID_TYPE    : Not Set (0)\nOEM ID                  : Not Set\nCSME ID                 : 0000000000000000000000000000000000000000000000000000000000000000",
 		},
 		{
 			name: "Valid UPID with OEM provisioned (shows both IDs with type)",
@@ -338,7 +338,7 @@ func TestUPIDMarshalJSON(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "OEM not provisioned - only CSME",
+			name: "OEM not provisioned - oemId is Not Set",
 			upid: &UPID{
 				Raw: append(
 					make([]byte, 32), // OEM all zeros
@@ -350,7 +350,7 @@ func TestUPIDMarshalJSON(t *testing.T) {
 					}...,
 				),
 			},
-			expected: `{"oemPlatformIdType":"Not Set (0)","oemId":"","csmeId":"123456789ABCDEF01122334455667788AABBCCDDEEFF00112233445566778899"}`,
+			expected: `{"oemPlatformIdType":"Not Set (0)","oemId":"Not Set","csmeId":"123456789ABCDEF01122334455667788AABBCCDDEEFF00112233445566778899"}`,
 		},
 		{
 			name: "OEM provisioned - both IDs",
@@ -416,6 +416,52 @@ func TestUPIDHECIHeaderSize(t *testing.T) {
 
 	if header.ByteCount != 0 {
 		t.Errorf("Header.ByteCount = %d, want 0", header.ByteCount)
+	}
+}
+
+func TestUPIDOEMID(t *testing.T) {
+	provisioned := make([]byte, OEMPlatformIDSize)
+	provisioned[0] = 0xAB
+
+	tests := []struct {
+		name     string
+		upid     *UPID
+		expected string
+	}{
+		{name: "nil UPID", upid: nil, expected: ""},
+		{
+			name:     "type Not Set with all-zero ID",
+			upid:     &UPID{OEMPlatformID: make([]byte, OEMPlatformIDSize), PlatformIdType: PlatformIDTypeNotSet},
+			expected: OEMIDNotSet,
+		},
+		{
+			name:     "type Not Set with leftover bytes",
+			upid:     &UPID{OEMPlatformID: provisioned, PlatformIdType: PlatformIDTypeNotSet},
+			expected: OEMIDNotSet,
+		},
+		{
+			name:     "typed but all-zero ID",
+			upid:     &UPID{OEMPlatformID: make([]byte, OEMPlatformIDSize), PlatformIdType: PlatformIDTypeBinary},
+			expected: OEMIDNotSet,
+		},
+		{
+			name:     "provisioned ID is uppercase hex",
+			upid:     &UPID{OEMPlatformID: provisioned, PlatformIdType: PlatformIDTypeBinary},
+			expected: "AB00000000000000000000000000000000000000000000000000000000000000",
+		},
+		{
+			name:     "ID read from Raw when OEMPlatformID is unset",
+			upid:     &UPID{Raw: append(append([]byte{}, provisioned...), make([]byte, HWSerialNumSize)...), PlatformIdType: PlatformIDTypePrintableString},
+			expected: "AB00000000000000000000000000000000000000000000000000000000000000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.upid.OEMID(); got != tt.expected {
+				t.Errorf("OEMID() = %q, want %q", got, tt.expected)
+			}
+		})
 	}
 }
 

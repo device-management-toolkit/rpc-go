@@ -19,11 +19,12 @@ Inputs are read from environment variables:
   ccm      AMT_PASSWORD
   acm      AMT_PASSWORD, PROVISIONING_CERT, PROVISIONING_CERT_PASSWORD, MEBX_PASSWORD
   stop     (none)
-	remote   RPS_URL, RPS_PROFILE, AMT_PASSWORD (activated devices), TENANT_ID,
-					 RPS_PROXY, optional TLS_TUNNEL=false to disable (enabled by default),
-					 DNS_SUFFIX, HOSTNAME_OVERRIDE, DEVICE_UUID, FRIENDLY_NAME
-  profile  PROFILE_PATH or PROFILE_URL, RPC_EXECUTABLE, CONFIG_ENCRYPTION_KEY,
-           AMT_PASSWORD, MEBX_PASSWORD
+  remote   RPS_URL, RPS_PROFILE, AMT_PASSWORD (activated devices), TENANT_ID,
+           RPS_PROXY, optional TLS_TUNNEL=false to disable (enabled by default),DNS_SUFFIX,
+           HOSTNAME_OVERRIDE,
+           DEVICE_UUID, FRIENDLY_NAME
+  profile  PROFILE_PATH or PROFILE_URL, CONFIG_ENCRYPTION_KEY, AMT_PASSWORD,
+           MEBX_PASSWORD
 
 Console registration (ccm, acm, profile): AUTH_ENDPOINT, AUTH_TOKEN or
 AUTH_USERNAME and AUTH_PASSWORD, DEVICES_ENDPOINT, TENANT_ID.
@@ -103,7 +104,6 @@ func profileOptions() activate.ProfileOptions {
 		File:             os.Getenv("PROFILE_PATH"),
 		URL:              os.Getenv("PROFILE_URL"),
 		Key:              os.Getenv("CONFIG_ENCRYPTION_KEY"),
-		Executable:       os.Getenv("RPC_EXECUTABLE"),
 		AMTPassword:      os.Getenv("AMT_PASSWORD"),
 		MEBxPassword:     os.Getenv("MEBX_PASSWORD"),
 		SkipAMTCertCheck: envBool("SKIP_AMT_CERT_CHECK"),
