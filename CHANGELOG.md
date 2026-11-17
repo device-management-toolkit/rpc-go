@@ -1,3 +1,17 @@
+# [2.55.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.54.0...v2.55.0) (2026-11-16)
+
+
+### Features
+
+* **cli:** report OEM serial number and Intel UPID in amtinfo ([#1710](https://github.com/device-management-toolkit/rpc-go/issues/1710)) ([f867361](https://github.com/device-management-toolkit/rpc-go/commit/f8673612e2b972d9d02179f23243dec6d92b9264)), closes [device-management-toolkit/deployment#729](https://github.com/device-management-toolkit/deployment/issues/729)
+
+# [2.54.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.53.0...v2.54.0) (2026-11-16)
+
+
+### Features
+
+* report host OS, serial number, and UPID to RPS ([#1679](https://github.com/device-management-toolkit/rpc-go/issues/1679)) ([5e715f9](https://github.com/device-management-toolkit/rpc-go/commit/5e715f9dc276dba9f6555df0d520aee2fadd0ed9)), closes [device-management-toolkit/deployment#729](https://github.com/device-management-toolkit/deployment/issues/729)
+
 # [2.53.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.52.8...v2.53.0) (2026-11-13)
 
 

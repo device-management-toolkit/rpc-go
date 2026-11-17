@@ -21,6 +21,7 @@ import (
 	"github.com/device-management-toolkit/rpc-go/v2/internal/amt"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/config"
 	"github.com/device-management-toolkit/rpc-go/v2/internal/flags"
+	"github.com/device-management-toolkit/rpc-go/v2/pkg/upid"
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
 )
@@ -165,6 +166,14 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 
 		dataStruct["uuid"] = result
 		service.PrintOutput("UUID			: " + result)
+	}
+
+	if service.flags.AmtInfo.SerialNumber {
+		service.displaySerialNumber(dataStruct)
+	}
+
+	if service.flags.AmtInfo.UPID {
+		service.displayUPID(dataStruct)
 	}
 
 	if service.flags.AmtInfo.Mode {
@@ -403,6 +412,72 @@ func (service *ProvisioningService) DisplayAMTInfo() (err error) {
 	}
 
 	return nil
+}
+
+// displaySerialNumber reports the OEM system serial number. Many OEMs leave the
+// SMBIOS serial number blank, so a missing value is never a failure: text output
+// prints "Not Available" and JSON output omits the key.
+func (service *ProvisioningService) displaySerialNumber(dataStruct map[string]interface{}) {
+	if service.serialNumber == nil {
+		return
+	}
+
+	serial, err := service.serialNumber()
+	if err != nil {
+		log.Debugf("Unable to read system serial number: %v", err)
+		service.PrintOutput("Serial Number		: Not Available")
+
+		return
+	}
+
+	if serial == "" {
+		log.Debug("System serial number is not available")
+		service.PrintOutput("Serial Number		: Not Available")
+
+		return
+	}
+
+	dataStruct["serialNumber"] = serial
+	service.PrintOutput("Serial Number		: " + serial)
+}
+
+// displayUPID reports the Intel UPID in the same shape rpc sends to RPS on
+// activation, so the values can be compared against a registered device. UPID
+// only exists on Tiger Lake and newer and can be disabled in BIOS, so an
+// unreadable UPID is never a failure: text output states the reason and JSON
+// output omits the key. A platform without an OEM ID reports it as "Not Set" in
+// both text and JSON output.
+func (service *ProvisioningService) displayUPID(dataStruct map[string]interface{}) {
+	if service.upidCommand == nil {
+		return
+	}
+
+	platformID, err := service.upidCommand.GetUPID()
+	if err != nil {
+		log.Debugf("Unable to read Intel UPID: %v", err)
+
+		if errors.Is(err, upid.ErrUPIDNotSupported) {
+			service.PrintOutput("UPID			: Not Supported")
+		} else {
+			service.PrintOutput(fmt.Sprintf("UPID			: Not Available (%v)", err))
+		}
+
+		return
+	}
+
+	info := platformID.Info()
+	if info == nil {
+		log.Debug("Intel UPID is not available")
+		service.PrintOutput("UPID			: Not Available")
+
+		return
+	}
+
+	dataStruct["upid"] = info
+
+	service.PrintOutput("UPID CSME ID		: " + info.CSMEId)
+	service.PrintOutput("UPID OEM ID		: " + info.OEMId)
+	service.PrintOutput("UPID OEM ID Type	: " + info.OEMPlatformIdType)
 }
 
 func (service *ProvisioningService) PrintOutput(message string) {
