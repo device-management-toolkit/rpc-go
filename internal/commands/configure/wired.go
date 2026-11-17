@@ -154,8 +154,18 @@ func (cmd *WiredCmd) Run(ctx *commands.Context) error {
 		return fmt.Errorf("no ethernet settings found")
 	}
 
+	// Pick the wired port by identity, not position: a LAN-less device
+	// enumerates only its wireless port, and writing wired settings to it
+	// fails with e:UnsupportedFeature.
+	wiredPort, found := findWiredPort(getResponse)
+	if !found {
+		log.Warn("Device does not have a wired network adapter; skipping wired network configuration")
+
+		return nil
+	}
+
 	// Create the request for the new settings based on current settings
-	settingsRequest := cmd.createEthernetSettingsRequest(getResponse[0])
+	settingsRequest := cmd.createEthernetSettingsRequest(wiredPort)
 
 	// Update the ethernet settings in AMT
 	_, err = cmd.WSMan.PutEthernetSettings(settingsRequest, settingsRequest.InstanceID)
@@ -191,6 +201,18 @@ func (cmd *WiredCmd) Run(ctx *commands.Context) error {
 	log.Info("Wired settings configured with 802.1x successfully")
 
 	return nil
+}
+
+// findWiredPort returns the first AMT_EthernetPortSettings entry that is not
+// the wireless NIC.
+func findWiredPort(ports []ethernetport.SettingsResponse) (ethernetport.SettingsResponse, bool) {
+	for _, port := range ports {
+		if !isWirelessPort(port) {
+			return port, true
+		}
+	}
+
+	return ethernetport.SettingsResponse{}, false
 }
 
 // createEthernetSettingsRequest creates an ethernet settings request based on current settings and command parameters
