@@ -1,3 +1,10 @@
+# [3.0.0-beta.86](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.85...v3.0.0-beta.86) (2026-11-17)
+
+
+### Bug Fixes
+
+* skip wired configuration on devices without a wired NIC ([#1675](https://github.com/device-management-toolkit/rpc-go/issues/1675)) ([3324817](https://github.com/device-management-toolkit/rpc-go/commit/3324817b7ddd6c0ebc09c5552505cf9de8f947d7))
+
 # [3.0.0-beta.85](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.84...v3.0.0-beta.85) (2026-11-17)
 
 
