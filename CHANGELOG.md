@@ -1,3 +1,10 @@
+# [3.0.0-beta.85](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.84...v3.0.0-beta.85) (2026-11-17)
+
+
+### Features
+
+* **cli:** enable TLS tunnel by default ([#1674](https://github.com/device-management-toolkit/rpc-go/issues/1674)) ([0c1b2a2](https://github.com/device-management-toolkit/rpc-go/commit/0c1b2a225a38ccbc6a46f4a5474e2ff97371be37)), closes [#1400](https://github.com/device-management-toolkit/rpc-go/issues/1400)
+
 # [3.0.0-beta.84](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.83...v3.0.0-beta.84) (2026-11-16)
 
 
