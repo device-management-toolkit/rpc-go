@@ -80,7 +80,10 @@ func NewExecutor(flags flags.Flags) (Executor, error) {
 	return client, err
 }
 
-func (e *Executor) MakeItSo(messageRequest Message) {
+// MakeItSo drives the RPS session to completion. It returns the exit-code error derived from
+// RPS's structured failure block (see AMTActivationServer.LastError), the send error when the
+// request never reached RPS, or nil on success and for RPS releases that send no failure block.
+func (e *Executor) MakeItSo(messageRequest Message) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
@@ -90,9 +93,9 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 
 	err := e.server.Send(messageRequest)
 	if err != nil {
-		log.Error(err.Error())
-
-		return
+		// The request never reached RPS, so nothing was provisioned: report it instead of exiting 0.
+		// The caller logs the returned error.
+		return err
 	}
 
 	defer e.localManagement.Close()
@@ -109,7 +112,7 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 					log.Error("RPS connection close failed", err)
 				}
 
-				return
+				return e.server.LastError
 			}
 
 			shallIReturn := e.HandleDataFromRPS(dataFromServer)
@@ -117,12 +120,12 @@ func (e *Executor) MakeItSo(messageRequest Message) {
 				close(e.data)
 				close(e.errors)
 
-				return
+				return e.server.LastError
 			}
 		case <-interrupt:
 			e.HandleInterrupt()
 
-			return
+			return e.server.LastError
 		}
 	}
 }
