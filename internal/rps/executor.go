@@ -212,8 +212,10 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 	}
 
 	// The session ID advertises streaming support. Choose the reader when a tunnel
-	// starts, and do not switch modes because a later chunk omits the field.
-	if request.Method == MethodTLSData && (isTLSClientHello || newTLSSession || !e.lmConnected) {
+	// starts. A later chunk without an ID preserves it, including after closure,
+	// so connection_reset still identifies the failed tunnel. An ID-less ClientHello
+	// starts a legacy buffered tunnel.
+	if request.Method == MethodTLSData && (isTLSClientHello || newTLSSession || (!e.lmConnected && request.TLSSessionID != "")) {
 		e.tlsSessionID = request.TLSSessionID
 	}
 

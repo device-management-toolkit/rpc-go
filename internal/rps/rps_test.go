@@ -576,13 +576,16 @@ func TestClosedTLSRequestsWaitForNewSession(t *testing.T) {
 
 			writes := len(local.writes)
 
-			for range 2 {
+			for _, sessionID := range []string{"closed", ""} {
+				request, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: sessionID, Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
+				assert.NoError(t, err)
 				assert.False(t, executor.HandleDataFromRPS(request))
 
 				var reset Message
 				assert.NoError(t, conn.ReadJSON(&reset))
 				assert.Equal(t, MethodConnectionReset, reset.Method)
 				assert.Equal(t, "closed", reset.TLSSessionID)
+				assert.Equal(t, "closed", executor.tlsSessionID)
 				assert.True(t, executor.peerClosed)
 			}
 
@@ -597,6 +600,40 @@ func TestClosedTLSRequestsWaitForNewSession(t *testing.T) {
 			assert.False(t, executor.peerClosed)
 		})
 	}
+}
+
+func TestLegacyClientHelloSelectsBufferedReaderAfterStreamClosure(t *testing.T) {
+	conn, response, err := websocket.DefaultDialer.Dial(testUrl, nil)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer conn.Close()
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+	data := make(chan []byte)
+	local := &streamTestLM{replyChannel: data, reply: []byte{0x16, 3, 3, 0, 1, 2}}
+	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: local, data: data, errors: make(chan error), localTlsEnforced: true, peerClosed: true, tlsSessionID: "closed"}
+	hello, err := json.Marshal(Message{Method: MethodTLSData, Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
+	assert.NoError(t, err)
+	assert.False(t, executor.HandleDataFromRPS(hello))
+	assert.Empty(t, executor.tlsSessionID)
+	assert.False(t, executor.peerClosed)
+	assert.Equal(t, 1, local.connected)
+	assert.Equal(t, 1, local.listenCalls)
+	assert.Zero(t, local.generation)
+	assert.Len(t, local.writes, 1)
+
+	var forwarded Message
+	assert.NoError(t, conn.ReadJSON(&forwarded))
+	assert.Equal(t, MethodTLSData, forwarded.Method)
+	assert.Empty(t, forwarded.TLSSessionID)
+	assert.Equal(t, base64.StdEncoding.EncodeToString(local.reply), forwarded.Payload)
 }
 
 func TestPortSwitchReplacesLMEWithSingleTLSReader(t *testing.T) {
