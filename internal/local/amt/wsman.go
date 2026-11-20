@@ -327,7 +327,7 @@ func (g *GoWSMANMessages) GetGeneralSettings() (general.Response, error) {
 }
 
 func (g *GoWSMANMessages) PutGeneralSettings(request general.GeneralSettingsRequest) (general.Response, error) {
-	return g.wsmanMessages.AMT.GeneralSettings.Put(request)
+	return g.wsmanMessages.AMT.GeneralSettings.Put(&request)
 }
 
 func (g *GoWSMANMessages) HostBasedSetupService(digestRealm, password string) (hostbasedsetup.Response, error) {
