@@ -214,8 +214,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		select {
 		case dataFromLM := <-e.data:
 			if len(dataFromLM) == 0 {
-				e.localManagement.Close()
-				e.lmConnected = false
+				e.closeLocalManagement()
 
 				if e.localTlsEnforced {
 					log.Warn("Empty response from LMS - sending connection_reset")
@@ -234,8 +233,7 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			}
 
 			if !e.localTlsEnforced {
-				e.localManagement.Close()
-				e.lmConnected = false
+				e.closeLocalManagement()
 			}
 
 			return false
@@ -266,6 +264,17 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			}
 		}
 	}
+}
+
+// closeLocalManagement ends the per-message connection. LMS gets a new TCP connection per
+// message; LME keeps /dev/mei0 open for the whole session (closed in MakeItSo), since
+// Close() releases the MEI handle and the next Connect() would fail on it.
+func (e *Executor) closeLocalManagement() {
+	if !e.isLME {
+		e.localManagement.Close()
+	}
+
+	e.lmConnected = false
 }
 
 func (e *Executor) handlePortSwitch(jsonData string) error {
