@@ -169,6 +169,11 @@ func (cmd *CIRACmd) Run(ctx *commands.Context) error {
 		return fmt.Errorf("failed to get remote access policies: %w", err)
 	}
 
+	// The two rules just added are expected back: periodic first, then user initiated.
+	if len(results6) < 2 {
+		return fmt.Errorf("failed to get remote access policies: expected 2 policies, got %d", len(results6))
+	}
+
 	// Configure MPS for user initiated policy
 	_, err = cmd.WSMan.PutRemoteAccessPolicyAppliesToMPS(results6[1])
 	if err != nil {
