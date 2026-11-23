@@ -24,8 +24,8 @@ github.com/charmbracelet/x/term v0.2.1 h1:AQeHeLZ1OqSXhrAWpYUtZyX1T3zVxfpZuEQMIQ
 github.com/charmbracelet/x/term v0.2.1/go.mod h1:oQ4enTYFV7QN4m0i9mzHrViD7TQKvNEEkHUMCmsxdUg=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.6 h1:fXeMCNzqFTTv5cl6XrbPxq3rXrGL+QMessT700RwSsc=
-github.com/device-management-toolkit/go-wsman-messages/v2 v2.50.6/go.mod h1:1CwXpsKcv4JRlFyPvbv3g30LB1cwIA/4rtKyO5KgrKc=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.51.2 h1:4SP29pjzyegSf4Jl97nV8/EuS02Cj04/XSVHqr+maq0=
+github.com/device-management-toolkit/go-wsman-messages/v2 v2.51.2/go.mod h1:1CwXpsKcv4JRlFyPvbv3g30LB1cwIA/4rtKyO5KgrKc=
 github.com/ebitengine/purego v0.11.2 h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU=
 github.com/ebitengine/purego v0.11.2/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 github.com/geoffgarside/ber v1.1.0 h1:qTmFG4jJbwiSzSXoNJeHcOprVzZ8Ulde2Rrrifu5U9w=
