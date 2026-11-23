@@ -193,9 +193,10 @@ func (amt *AMTActivationServer) Listen() chan []byte {
 
 // ProcessedMessage holds the result of processing an RPS message.
 type ProcessedMessage struct {
-	Payload  []byte
-	Method   string // Original RPS method (e.g. "wsman", "tls_data", "port_switch")
-	Terminal bool
+	TLSSessionID string
+	Payload      []byte
+	Method       string // Original RPS method (e.g. "wsman", "tls_data", "port_switch")
+	Terminal     bool
 }
 
 // ProcessMessage inspects RPS messages, decodes the base64 payload from the server and relays it to LMS.
@@ -229,7 +230,7 @@ func (amt *AMTActivationServer) ProcessMessage(message []byte) (ProcessedMessage
 
 		log.Debugf("TLS tunnel: passing through %d bytes to LMS", len(msgPayload))
 
-		return ProcessedMessage{Payload: msgPayload, Method: MethodTLSData}, nil
+		return ProcessedMessage{Payload: msgPayload, Method: MethodTLSData, TLSSessionID: activation.TLSSessionID}, nil
 	}
 
 	// Port switch - RPS wants us to reconnect on a TLS port
