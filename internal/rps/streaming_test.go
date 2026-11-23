@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -239,6 +240,14 @@ func TestLegacyClientHelloSelectsBufferedReaderAfterStreamClosure(t *testing.T) 
 	assert.Equal(t, MethodTLSData, forwarded.Method)
 	assert.Empty(t, forwarded.TLSSessionID)
 	assert.Equal(t, base64.StdEncoding.EncodeToString(local.reply), forwarded.Payload)
+
+	stale, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "closed", Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
+	require.NoError(t, err)
+	assert.False(t, executor.HandleDataFromRPS(stale))
+	assert.Empty(t, executor.tlsSessionID)
+	assert.Zero(t, local.closed)
+	assert.Equal(t, 1, local.connected)
+	assert.Len(t, local.writes, 1)
 }
 
 func TestPortSwitchReplacesLMSWithSingleTLSReader(t *testing.T) {
@@ -266,7 +275,7 @@ func TestPortSwitchReplacesLMSWithSingleTLSReader(t *testing.T) {
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 	assert.NoError(t, err)
 
-	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: &streamTestLM{}}
+	executor := Executor{server: AMTActivationServer{Conn: conn}, localManagement: &streamTestLM{}, tlsSessionID: "before-switch"}
 	payload, err := json.Marshal(PortSwitchPayload{Port: port})
 	assert.NoError(t, err)
 
@@ -274,6 +283,13 @@ func TestPortSwitchReplacesLMSWithSingleTLSReader(t *testing.T) {
 	defer executor.localManagement.Close()
 
 	assert.False(t, executor.isLME)
+
+	stale, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "before-switch", Payload: base64.StdEncoding.EncodeToString([]byte{0x17, 3, 3, 0, 1, 0})})
+	require.NoError(t, err)
+	assert.False(t, executor.HandleDataFromRPS(stale))
+	assert.Empty(t, executor.tlsSessionID)
+	assert.False(t, executor.lmConnected)
+	assert.Nil(t, executor.stream)
 
 	hello, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: "new", Payload: base64.StdEncoding.EncodeToString([]byte{0x16, 3, 3, 0, 1, 1})})
 	assert.NoError(t, err)
@@ -562,4 +578,45 @@ func TestLMEPlainRelayDoesNotSelectTLSStreaming(t *testing.T) {
 	require.NoError(t, conn.ReadJSON(&forwarded))
 	assert.Equal(t, "response", forwarded.Method)
 	assert.Equal(t, base64.StdEncoding.EncodeToString(local.reply), forwarded.Payload)
+}
+
+func TestRetiredTLSSessionCannotReplaceCurrentTunnel(t *testing.T) {
+	for _, stalePayload := range [][]byte{
+		{0x17, 3, 3, 0, 1, 0}, // delayed application data
+		{0x16, 3, 3, 0, 1, 1}, // delayed ClientHello
+	} {
+		t.Run(fmt.Sprintf("record-%x", stalePayload[0]), func(t *testing.T) {
+			local := &streamTestLM{events: make(chan lm.StreamEvent)}
+			executor := Executor{localManagement: local, tlsTunnelActive: true}
+			send := func(id string, payload []byte) {
+				request, err := json.Marshal(Message{Method: MethodTLSData, TLSSessionID: id, Payload: base64.StdEncoding.EncodeToString(payload)})
+				require.NoError(t, err)
+				require.False(t, executor.HandleDataFromRPS(request))
+			}
+			hello := []byte{0x16, 3, 3, 0, 1, 1}
+			send("A", hello)
+			send("B", hello)
+
+			generation, stream := executor.streamGeneration, executor.stream
+
+			send("A", stalePayload)
+			assert.Equal(t, "B", executor.tlsSessionID)
+			assert.Equal(t, generation, executor.streamGeneration)
+			assert.Equal(t, stream, executor.stream)
+			assert.True(t, executor.lmConnected)
+			assert.True(t, executor.lmListening)
+			assert.False(t, executor.peerClosed)
+			assert.Equal(t, 1, local.closed)
+			assert.Equal(t, 2, local.connected)
+			assert.Len(t, local.writes, 2)
+			// B and ID-less continuation records still use the working tunnel.
+			send("B", []byte{0x17, 3, 3, 0, 1, 2})
+			send("", []byte{0x17, 3, 3, 0, 1, 3})
+			assert.Equal(t, "B", executor.tlsSessionID)
+			assert.Equal(t, generation, executor.streamGeneration)
+			assert.Equal(t, 1, local.closed)
+			assert.Equal(t, 2, local.connected)
+			assert.Len(t, local.writes, 4)
+		})
+	}
 }

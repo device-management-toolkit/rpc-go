@@ -105,11 +105,12 @@ type Executor struct {
 	tlsTunnelActive bool // true after port switch; gates tunnel behaviors
 	lmConnected     bool // tracks if LMS connection is active (for TLS tunnel persistence)
 
-	lmListening      bool
-	peerClosed       bool
-	stream           <-chan lm.StreamEvent
-	streamGeneration uint64
-	tlsSessionID     string
+	lmListening        bool
+	peerClosed         bool
+	stream             <-chan lm.StreamEvent
+	streamGeneration   uint64
+	tlsSessionID       string
+	retiredTLSSessions map[string]struct{}
 
 	// lmeStream carries individual APF_CHANNEL_DATA chunks from the AMT side
 	// during LME TLS-tunnel mode; lmeStreamForwarder forwards them into e.data,
@@ -1130,7 +1131,7 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 	e.lmConnected = false
 	e.lmListening = false
 	e.stream = nil
-	e.tlsSessionID = ""
+	e.setTLSSession("")
 	e.peerClosed = false
 
 	// Wait for AMT to restart its TLS subsystem. Use a cancellable wait so a
@@ -1214,8 +1215,16 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 	}
 }
 
-// selectTLSSession returns true when a request belongs to a closed tunnel.
+// selectTLSSession returns true when a request belongs to a closed or retired tunnel.
 func (e *Executor) selectTLSSession(request ProcessedMessage) bool {
+	if request.Method == MethodTLSData && request.TLSSessionID != "" {
+		if _, retired := e.retiredTLSSessions[request.TLSSessionID]; retired {
+			log.Debug("discarding request from retired TLS session")
+
+			return true
+		}
+	}
+
 	// Detect TLS ClientHello - need to close old connection for new handshake
 	isTLSClientHello := len(request.Payload) >= 6 && request.Payload[0] == 0x16 && request.Payload[5] == 0x01
 
@@ -1232,7 +1241,7 @@ func (e *Executor) selectTLSSession(request ProcessedMessage) bool {
 	// so connection_reset still identifies the failed tunnel. An ID-less ClientHello
 	// starts a legacy buffered tunnel.
 	if request.Method == MethodTLSData && (isTLSClientHello || newTLSSession || (!e.lmConnected && request.TLSSessionID != "")) {
-		e.tlsSessionID = request.TLSSessionID
+		e.setTLSSession(request.TLSSessionID)
 	}
 
 	// AMT closed the connection after its last answer (HTTP "Connection: close"). A new TLS
@@ -1252,6 +1261,20 @@ func (e *Executor) selectTLSSession(request ProcessedMessage) bool {
 	}
 
 	return false
+}
+
+// Remember superseded IDs for this executor's lifetime so delayed RPS requests
+// cannot revive a tunnel after replacement, legacy fallback, or a port switch.
+func (e *Executor) setTLSSession(id string) {
+	if e.tlsSessionID != "" && e.tlsSessionID != id {
+		if e.retiredTLSSessions == nil {
+			e.retiredTLSSessions = make(map[string]struct{})
+		}
+
+		e.retiredTLSSessions[e.tlsSessionID] = struct{}{}
+	}
+
+	e.tlsSessionID = id
 }
 
 // Discard obsolete readers before forwarding bytes or changing the current tunnel.
