@@ -1,3 +1,20 @@
+## [2.55.1](https://github.com/device-management-toolkit/rpc-go/compare/v2.55.0...v2.55.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **deps:** resolve TLS stream branch check failures ([3da0823](https://github.com/device-management-toolkit/rpc-go/commit/3da0823873ba443bcd80ca23f2285e820dd6acab))
+* **lms:** isolate TLS stream sessions and forward ordered closure events ([#2935](https://github.com/device-management-toolkit/rpc-go/issues/2935)) ([566d8d0](https://github.com/device-management-toolkit/rpc-go/commit/566d8d0926a475433f2704deba60718b8292924e))
+* **lms:** retain buffered TLS forwarding for older RPS versions ([#2935](https://github.com/device-management-toolkit/rpc-go/issues/2935)) ([9aec874](https://github.com/device-management-toolkit/rpc-go/commit/9aec874cc6aa4302f3c7797cbc856804c82c166c))
+* **rps:** close replacement tunnels and block failed session records ([#2935](https://github.com/device-management-toolkit/rpc-go/issues/2935)) ([947d5c2](https://github.com/device-management-toolkit/rpc-go/commit/947d5c2a04df0dffe51e0c1c55ec49b63ffcaed2))
+* **rps:** recover TLS writes and preserve closed session boundaries ([#2935](https://github.com/device-management-toolkit/rpc-go/issues/2935)) ([e3e9cb8](https://github.com/device-management-toolkit/rpc-go/commit/e3e9cb848b8543734b71d588384fc3aa00e83efc))
+* **rps:** retain closed tunnel identity for untagged TLS records ([70c2781](https://github.com/device-management-toolkit/rpc-go/commit/70c2781b2ecbe9a94fcdc00cee45989a229e73ba))
+
+
+### Performance Improvements
+
+* **lms:** stream TLS tunnel bytes to RPS instead of waiting for silence ([#2935](https://github.com/device-management-toolkit/rpc-go/issues/2935)) ([2c58f5f](https://github.com/device-management-toolkit/rpc-go/commit/2c58f5f0f418edd8ff720c28c9ae452ae79491dc))
+
 # [2.55.0](https://github.com/device-management-toolkit/rpc-go/compare/v2.54.0...v2.55.0) (2026-11-16)
 
 
