@@ -149,129 +149,103 @@ func TestListenPlainWaitsForDelayedResponse(t *testing.T) {
 	}
 }
 
-func TestListenTLSStreamsChunksImmediately(t *testing.T) {
+func TestStartTLSStreamForwardsChunksImmediately(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
-	defer server.Close()
 
-	data := make(chan []byte, 4)
-	errCh := make(chan error, 1)
-	lms := &LMSConnection{
-		Connection: server,
-		useTls:     true,
-		data:       data,
-		errors:     errCh,
-	}
+	lms := &LMSConnection{Connection: server, useTls: true}
+	defer lms.Close()
 
-	go lms.listenStream()
+	generation, events := lms.StartTLSStream()
 
 	for _, chunk := range []string{"first", "second"} {
 		written := time.Now()
 
-		go func(c string) {
-			_, _ = client.Write([]byte(c))
-		}(chunk)
+		go func(c string) { _, _ = client.Write([]byte(c)) }(chunk)
 
 		select {
-		case d := <-data:
-			assert.Equal(t, []byte(chunk), d)
-			assert.Less(t, time.Since(written), 500*time.Millisecond, "chunk must be forwarded without a silence wait")
-		case err := <-errCh:
-			t.Fatalf("unexpected error: %v", err)
+		case event := <-events:
+			assert.Equal(t, generation, event.Generation)
+			assert.Equal(t, []byte(chunk), event.Data)
+			assert.NoError(t, event.Err)
+			assert.Less(t, time.Since(written), 500*time.Millisecond)
 		case <-time.After(5 * time.Second):
 			t.Fatalf("chunk %q was not forwarded", chunk)
 		}
-
-		time.Sleep(300 * time.Millisecond) // longer than any former silence window; reader must still be alive
 	}
 }
 
-// TestListenTLSPeerCloseSignalsEmptyBuffer verifies that when AMT closes the tunnel
-// connection the reader delivers an empty buffer (the executor's connection_reset trigger)
-// and exits.
-
-func TestListenTLSPeerCloseSignalsEmptyBuffer(t *testing.T) {
+func TestStartTLSStreamPeerCloseSignalsEOF(t *testing.T) {
 	server, client := net.Pipe()
-	defer server.Close()
 
-	data := make(chan []byte, 2)
-	errCh := make(chan error, 1)
-	lms := &LMSConnection{
-		Connection: server,
-		useTls:     true,
-		data:       data,
-		errors:     errCh,
-	}
+	lms := &LMSConnection{Connection: server, useTls: true}
+	defer lms.Close()
 
-	done := make(chan struct{})
+	generation, events := lms.StartTLSStream()
 
-	go func() {
-		lms.listenStream()
-		close(done)
-	}()
-
-	client.Close()
+	assert.NoError(t, client.Close())
 
 	select {
-	case d := <-data:
-		assert.Equal(t, 0, len(d))
-	case err := <-errCh:
-		t.Fatalf("expected empty data on peer close, got error: %v", err)
+	case event := <-events:
+		assert.Equal(t, generation, event.Generation)
+		assert.Empty(t, event.Data)
+		assert.ErrorIs(t, event.Err, io.EOF)
 	case <-time.After(5 * time.Second):
 		t.Fatal("peer close was not signaled")
 	}
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Listen goroutine did not exit after peer close")
-	}
 }
 
-// TestListenTLSLocalCloseIsSilent verifies that a deliberate Close() (port switch, new
-// handshake, shutdown) ends the reader without signaling an error or a peer close.
-
-func TestListenTLSLocalCloseIsSilent(t *testing.T) {
+func TestStartTLSStreamLocalCloseIsSilent(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close()
 
-	data := make(chan []byte, 2)
-	errCh := make(chan error, 1)
-	lms := &LMSConnection{
-		Connection: server,
-		useTls:     true,
-		data:       data,
-		errors:     errCh,
+	delayed := &delayedReadConn{Conn: server, entered: make(chan struct{}), release: make(chan struct{})}
+	lms := &LMSConnection{Connection: delayed, useTls: true}
+	_, events := lms.StartTLSStream()
+
+	select {
+	case <-delayed.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reader did not start")
 	}
 
+	assert.NoError(t, lms.Close())
+	close(delayed.release)
+
+	select {
+	case event := <-events:
+		t.Fatalf("local close emitted an event: %v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// A successful emit that closes the local stream must not start another read.
+func TestReadStreamStopsAfterEmit(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	stop := make(chan struct{})
 	done := make(chan struct{})
 
 	go func() {
-		lms.listenStream()
+		readStream(server, stop, func(data []byte, err error) {
+			assert.Equal(t, []byte("data"), data)
+			assert.NoError(t, err)
+			close(stop)
+		})
 		close(done)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-	assert.NoError(t, lms.Close())
+	_, err := client.Write([]byte("data"))
+	assert.NoError(t, err)
 
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Listen goroutine did not exit after local close")
-	}
-
-	select {
-	case d := <-data:
-		t.Fatalf("expected nothing on the data channel after a local close, got %v", d)
-	case err := <-errCh:
-		t.Fatalf("expected nothing on the errors channel after a local close, got %v", err)
-	default:
+		t.Fatal("reader started another read after local stop")
 	}
 }
-
-// TestListenNonTLSTimeoutSendsEmptyBuf verifies that in non-TLS mode the
-// existing behavior is preserved: a first-byte timeout still flushes the
-// (empty) buffer onto the data channel and does NOT emit the typed sentinel.
 
 // Hold an old socket's read result until the replacement is connected.
 type delayedReadConn struct {

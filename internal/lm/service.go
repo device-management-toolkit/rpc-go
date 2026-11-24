@@ -120,6 +120,8 @@ func (lms *LMSConnection) Connect() error {
 
 // Send writes data to LMS TCP Socket
 func (lms *LMSConnection) Send(data []byte) error {
+	// Snapshot the connection under the lock used by Connect and Close.
+	// Release it before Write so a blocked send cannot prevent Close.
 	lms.mu.Lock()
 	conn := lms.Connection
 	lms.mu.Unlock()
@@ -246,45 +248,16 @@ func (lms *LMSConnection) Listen() {
 	log.Trace("done listening")
 }
 
-// listenStream is the TLS-tunnel reader. The bytes on this socket are TLS records that RPS
-// terminates, so rpc-go cannot see HTTP framing and must not try to guess where a response
-// ends. It forwards every chunk the moment it arrives and keeps reading for the life of the
-// connection instead of waiting for an idle gap after each TLS response.
-//
-// An empty buffer on the data channel means the peer closed the connection (the executor
-// turns that into connection_reset). A deliberate local Close() ends the reader silently.
-func (lms *LMSConnection) listenStream() {
-	conn, stop, _ := lms.streamSocket()
-	lms.readStream(conn, stop, func(data []byte, err error) {
-		if err == nil || errors.Is(err, io.EOF) {
-			select {
-			case lms.data <- data:
-			case <-stop:
-			}
-		} else {
-			select {
-			case lms.errors <- err:
-			case <-stop:
-			}
-		}
-	})
-}
-
-func (lms *LMSConnection) streamSocket() (net.Conn, <-chan struct{}, uint64) {
+// StartTLSStream forwards TLS chunks immediately for the current connection.
+// Events carry the connection generation so replaced readers can be ignored.
+func (lms *LMSConnection) StartTLSStream() (uint64, <-chan StreamEvent) {
 	lms.mu.Lock()
-	defer lms.mu.Unlock()
-
 	if lms.readerStop == nil {
 		lms.readerStop = make(chan struct{})
 		lms.generation++
 	}
 
-	return lms.Connection, lms.readerStop, lms.generation
-}
-
-func (lms *LMSConnection) StartTLSStream() (uint64, <-chan StreamEvent) {
-	conn, stop, generation := lms.streamSocket()
-	lms.mu.Lock()
+	conn, stop, generation := lms.Connection, lms.readerStop, lms.generation
 	if lms.stream == nil {
 		lms.stream = make(chan StreamEvent)
 	}
@@ -292,7 +265,8 @@ func (lms *LMSConnection) StartTLSStream() (uint64, <-chan StreamEvent) {
 	stream := lms.stream
 
 	lms.mu.Unlock()
-	go lms.readStream(conn, stop, func(data []byte, err error) {
+
+	go readStream(conn, stop, func(data []byte, err error) {
 		select {
 		case <-stop:
 			return
@@ -308,7 +282,7 @@ func (lms *LMSConnection) StartTLSStream() (uint64, <-chan StreamEvent) {
 	return generation, stream
 }
 
-func (lms *LMSConnection) readStream(conn net.Conn, stop <-chan struct{}, emit func([]byte, error)) {
+func readStream(conn net.Conn, stop <-chan struct{}, emit func([]byte, error)) {
 	if conn == nil {
 		log.Debug("lms stream reader: no connection")
 
@@ -320,7 +294,20 @@ func (lms *LMSConnection) readStream(conn net.Conn, stop <-chan struct{}, emit f
 	tmp := make([]byte, 16384)
 
 	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
 		n, err := conn.Read(tmp)
+
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, tmp[:n])
