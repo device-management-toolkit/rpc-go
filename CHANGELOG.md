@@ -1,3 +1,15 @@
+# [3.0.0-beta.87](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.86...v3.0.0-beta.87) (2026-11-25)
+
+
+### Bug Fixes
+
+* **rps:** reject requests from retired TLS sessions ([2efe5da](https://github.com/device-management-toolkit/rpc-go/commit/2efe5da9bed4bd7a94a534d1bf70d80adc8b5b24))
+
+
+### Performance Improvements
+
+* **lms:** port session-aware TLS streaming to RPC 3.x ([28d6d3e](https://github.com/device-management-toolkit/rpc-go/commit/28d6d3e0ecb57d5a3fee117814b0a595add7a362))
+
 # [3.0.0-beta.86](https://github.com/device-management-toolkit/rpc-go/compare/v3.0.0-beta.85...v3.0.0-beta.86) (2026-11-17)
 
 
