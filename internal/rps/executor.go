@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -103,6 +104,13 @@ type Executor struct {
 	// TLS tunnel state
 	tlsTunnelActive bool // true after port switch; gates tunnel behaviors
 	lmConnected     bool // tracks if LMS connection is active (for TLS tunnel persistence)
+
+	lmListening        bool
+	peerClosed         bool
+	stream             <-chan lm.StreamEvent
+	streamGeneration   uint64
+	tlsSessionID       string
+	retiredTLSSessions map[string]struct{}
 
 	// lmeStream carries individual APF_CHANNEL_DATA chunks from the AMT side
 	// during LME TLS-tunnel mode; lmeStreamForwarder forwards them into e.data,
@@ -213,7 +221,7 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 	rpsDataChannel := e.server.Listen()
 
 	// Deferred before Send, so a failed Send also releases the LMS/LME connection.
-	defer e.localManagement.Close()
+	defer func() { e.localManagement.Close() }()
 
 	log.Debug("sending activation request to RPS")
 
@@ -237,6 +245,8 @@ func (e *Executor) MakeItSo(messageRequest Message) error {
 			if shallIReturn { // quits the loop -- we're either done or reached a point where we need to stop
 				return e.lastError
 			}
+		case event := <-e.stream:
+			e.handleStreamedEvent(event)
 		case <-interrupt:
 			e.HandleInterrupt()
 
@@ -330,18 +340,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 		return false
 	}
 
-	// Detect TLS ClientHello - close existing connection so firmware can renegotiate.
-	// In LME mode the per-TLS-session resource is just the APF channel (already
-	// torn down by AMT on the previous CHANNEL_CLOSE, which cleared lmConnected
-	// via lmeStreamForwarder); the HECI handle owns the tcpip-forward port
-	// registrations from Initialize() and must stay open across TLS sessions.
-	if len(msg.Payload) >= 6 && msg.Payload[0] == 0x16 && msg.Payload[5] == 0x01 && e.lmConnected {
-		log.Debug("TLS ClientHello detected, closing existing connection for new handshake")
-
-		if !e.isLME {
-			e.localManagement.Close()
+	// Streaming is negotiated only for LMS. LME keeps its APF channel and
+	// coalesced response lifecycle, including when RPS advertises streaming.
+	if !e.isLME {
+		if e.selectTLSSession(msg) {
+			return false
 		}
-
+	} else if len(msg.Payload) >= 6 && msg.Payload[0] == 0x16 && msg.Payload[5] == 0x01 {
+		// Retire the APF channel on the next prepareLMETunnel, not its HECI handle.
 		e.lmConnected = false
 	}
 
@@ -379,6 +385,14 @@ func (e *Executor) HandleDataFromRPS(dataFromServer []byte) bool {
 			e.localManagement.Close()
 			e.lmConnected = false
 		}()
+	}
+
+	if !e.isLME && e.tlsTunnelActive && e.tlsSessionID != "" {
+		if err := e.localManagement.Send(msg.Payload); err != nil {
+			e.handleStreamedEvent(lm.StreamEvent{Generation: e.streamGeneration, Err: err})
+		}
+
+		return false
 	}
 
 	// Unified send across all transport modes
@@ -816,9 +830,22 @@ func (e *Executor) prepareLMSTunnel() error {
 		}
 
 		e.lmConnected = true
+		e.peerClosed = false
 	}
 
-	go e.localManagement.Listen()
+	if e.tlsSessionID != "" {
+		if !e.lmListening {
+			reader, ok := e.localManagement.(lm.TLSStreamReader)
+			if !ok {
+				return fmt.Errorf("local management does not support TLS streaming")
+			}
+
+			e.streamGeneration, e.stream = reader.StartTLSStream()
+			e.lmListening = true
+		}
+	} else {
+		go e.localManagement.Listen()
+	}
 
 	return nil
 }
@@ -1099,9 +1126,13 @@ func (e *Executor) handlePortSwitch(jsonData string) error {
 
 	log.Infof("Port switch: closing LMS connection")
 
-	// Close existing LMS connection
+	// Close existing LMS connection and retire its stream before replacement.
 	e.localManagement.Close()
 	e.lmConnected = false
+	e.lmListening = false
+	e.stream = nil
+	e.setTLSSession("")
+	e.peerClosed = false
 
 	// Wait for AMT to restart its TLS subsystem. Use a cancellable wait so a
 	// user interrupt (Ctrl+C / SIGTERM) can abort the activation loop promptly
@@ -1179,6 +1210,108 @@ func (e *Executor) HandleDataFromLM(data []byte) {
 
 		err := e.server.Send(e.payload.CreateMessageResponse(data, method))
 		if err != nil {
+			log.Error(err)
+		}
+	}
+}
+
+// selectTLSSession returns true when a request belongs to a closed or retired tunnel.
+func (e *Executor) selectTLSSession(request ProcessedMessage) bool {
+	if request.Method == MethodTLSData && request.TLSSessionID != "" {
+		if _, retired := e.retiredTLSSessions[request.TLSSessionID]; retired {
+			log.Debug("discarding request from retired TLS session")
+
+			return true
+		}
+	}
+
+	// Detect TLS ClientHello - need to close old connection for new handshake
+	isTLSClientHello := len(request.Payload) >= 6 && request.Payload[0] == 0x16 && request.Payload[5] == 0x01
+
+	newTLSSession := request.Method == MethodTLSData && request.TLSSessionID != "" && request.TLSSessionID != e.tlsSessionID
+	if (isTLSClientHello || newTLSSession) && e.lmConnected {
+		e.localManagement.Close()
+		e.lmConnected = false
+		e.lmListening = false
+		e.stream = nil
+	}
+
+	// The session ID advertises streaming support. Choose the reader when a tunnel
+	// starts. A later chunk without an ID preserves it, including after closure,
+	// so connection_reset still identifies the failed tunnel. An ID-less ClientHello
+	// starts a legacy buffered tunnel.
+	if request.Method == MethodTLSData && (isTLSClientHello || newTLSSession || (!e.lmConnected && request.TLSSessionID != "")) {
+		e.setTLSSession(request.TLSSessionID)
+	}
+
+	// AMT closed the connection after its last answer (HTTP "Connection: close"). A new TLS
+	// session (ClientHello) simply reconnects; any other record belongs to the dead session,
+	// so tell RPS now instead of writing it to a fresh socket and waiting for a timeout.
+	if e.tlsTunnelActive && e.peerClosed && !isTLSClientHello && !newTLSSession {
+		log.Warn("LMS connection was closed by AMT after its last response - sending connection_reset")
+
+		resetMsg := e.payload.CreateMessageResponse([]byte("connection_closed"), MethodConnectionReset)
+
+		resetMsg.TLSSessionID = e.tlsSessionID
+		if err := e.server.Send(resetMsg); err != nil {
+			log.Error(err)
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// Remember superseded IDs for this executor's lifetime so delayed RPS requests
+// cannot revive a tunnel after replacement, legacy fallback, or a port switch.
+func (e *Executor) setTLSSession(id string) {
+	if e.tlsSessionID != "" && e.tlsSessionID != id {
+		if e.retiredTLSSessions == nil {
+			e.retiredTLSSessions = make(map[string]struct{})
+		}
+
+		e.retiredTLSSessions[e.tlsSessionID] = struct{}{}
+	}
+
+	e.tlsSessionID = id
+}
+
+// Discard obsolete readers before forwarding bytes or changing the current tunnel.
+func (e *Executor) handleStreamedEvent(event lm.StreamEvent) {
+	if event.Generation != e.streamGeneration {
+		log.Debug("discarding obsolete LMS stream event")
+
+		return
+	}
+
+	if len(event.Data) > 0 {
+		message := e.payload.CreateMessageResponse(event.Data, MethodTLSData)
+
+		message.TLSSessionID = e.tlsSessionID
+		if err := e.server.Send(message); err != nil {
+			log.Error(err)
+		}
+	}
+
+	if event.Err == nil {
+		return
+	}
+
+	e.localManagement.Close()
+	e.lmConnected = false
+	e.lmListening = false
+
+	e.stream = nil
+	if e.tlsTunnelActive {
+		// RPC cannot determine whether encrypted bytes contained a complete response.
+		// RPS drains TLS input and decides whether EOF interrupted a pending operation.
+		resetMsg := e.payload.CreateMessageResponse([]byte(event.Err.Error()), MethodConnectionReset)
+		resetMsg.TLSSessionID = e.tlsSessionID
+		resetMsg.StreamClosed = errors.Is(event.Err, io.EOF)
+
+		e.peerClosed = true
+		if err := e.server.Send(resetMsg); err != nil {
 			log.Error(err)
 		}
 	}

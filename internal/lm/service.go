@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/device-management-toolkit/rpc-go/v2/pkg/utils"
@@ -24,6 +25,10 @@ type LMSConnection struct {
 	errors        chan error
 	controlMode   int
 	skipCertCheck bool
+	mu            sync.Mutex
+	readerStop    chan struct{}
+	generation    uint64
+	stream        chan StreamEvent
 }
 
 // ErrLMSReadTimeoutNoData indicates the socket hit a read timeout before
@@ -79,6 +84,9 @@ func (lms *LMSConnection) Initialize() error {
 
 // Connect initializes TCP connection to LMS
 func (lms *LMSConnection) Connect() error {
+	lms.mu.Lock()
+	defer lms.mu.Unlock()
+
 	if lms.Connection != nil {
 		log.Debug("connected to lms")
 
@@ -102,6 +110,8 @@ func (lms *LMSConnection) Connect() error {
 	}
 
 	lms.Connection = conn
+	lms.readerStop = make(chan struct{})
+	lms.generation++
 
 	log.Debug("connected to lms")
 
@@ -110,29 +120,41 @@ func (lms *LMSConnection) Connect() error {
 
 // Send writes data to LMS TCP Socket
 func (lms *LMSConnection) Send(data []byte) error {
-	log.Debug("sending message to LMS")
+	// Snapshot the connection under the lock used by Connect and Close.
+	// Release it before Write so a blocked send cannot prevent Close.
+	lms.mu.Lock()
+	conn := lms.Connection
+	lms.mu.Unlock()
 
-	_, err := lms.Connection.Write(data)
-	if err != nil {
-		return err
+	if conn == nil {
+		return net.ErrClosed
 	}
 
-	log.Debug("sent message to LMS")
+	_, err := conn.Write(data)
 
-	return nil
+	return err
 }
 
 // Close closes the LMS socket connection
 func (lms *LMSConnection) Close() error {
+	lms.mu.Lock()
+	defer lms.mu.Unlock()
+
 	log.Debug("closing connection to lms")
+
+	// Set before the socket is closed so the streaming reader, which is blocked in Read and
+	// will wake with a "use of closed network connection" error, knows this close was ours
+	// and must not report it to RPS as a connection reset.
+	if lms.readerStop != nil {
+		close(lms.readerStop)
+		lms.readerStop = nil
+	}
 
 	if lms.Connection != nil {
 		err := lms.Connection.Close()
-		if err != nil {
-			return err
-		}
-
 		lms.Connection = nil
+
+		return err
 	}
 
 	return nil
@@ -165,6 +187,13 @@ func (lms *LMSConnection) Close() error {
 // treat as a connection close).
 func (lms *LMSConnection) Listen() {
 	log.Debug("listening for lms messages...")
+	lms.mu.Lock()
+	conn := lms.Connection
+	lms.mu.Unlock()
+
+	if conn == nil {
+		return
+	}
 
 	readTimeout := plainFirstByteTimeout
 	subsequentReadTimeout := plainSubsequentReadTimeout
@@ -180,9 +209,9 @@ func (lms *LMSConnection) Listen() {
 	sentErr := false
 
 	for {
-		lms.Connection.SetReadDeadline(time.Now().Add(readTimeout))
+		conn.SetReadDeadline(time.Now().Add(readTimeout))
 
-		n, err := lms.Connection.Read(tmp)
+		n, err := conn.Read(tmp)
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
@@ -210,11 +239,103 @@ func (lms *LMSConnection) Listen() {
 		readTimeout = subsequentReadTimeout
 	}
 
-	lms.Connection.SetReadDeadline(time.Time{})
+	conn.SetReadDeadline(time.Time{})
 
 	if !timedOutNoData && !sentErr {
 		lms.data <- buf
 	}
 
 	log.Trace("done listening")
+}
+
+// StartTLSStream forwards TLS chunks immediately for the current connection.
+// Events carry the connection generation so replaced readers can be ignored.
+func (lms *LMSConnection) StartTLSStream() (uint64, <-chan StreamEvent) {
+	lms.mu.Lock()
+	if lms.readerStop == nil {
+		lms.readerStop = make(chan struct{})
+		lms.generation++
+	}
+
+	conn, stop, generation := lms.Connection, lms.readerStop, lms.generation
+	if lms.stream == nil {
+		lms.stream = make(chan StreamEvent)
+	}
+
+	stream := lms.stream
+
+	lms.mu.Unlock()
+
+	go readStream(conn, stop, func(data []byte, err error) {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		select {
+		case stream <- StreamEvent{Generation: generation, Data: data, Err: err}:
+		case <-stop:
+		}
+	})
+
+	return generation, stream
+}
+
+func readStream(conn net.Conn, stop <-chan struct{}, emit func([]byte, error)) {
+	if conn == nil {
+		log.Debug("lms stream reader: no connection")
+
+		return
+	}
+
+	log.Debug("listening for lms messages (tls tunnel, streaming)...")
+
+	tmp := make([]byte, 16384)
+
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		n, err := conn.Read(tmp)
+
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, tmp[:n])
+			emit(chunk, nil)
+		}
+
+		if err == nil {
+			continue
+		}
+
+		select {
+		case <-stop:
+			log.Debug("lms stream reader exiting after local close")
+
+			return
+		default:
+		}
+
+		if errors.Is(err, io.EOF) {
+			log.Debug("lms closed the tunnel connection")
+			emit(nil, io.EOF)
+
+			return
+		}
+
+		log.Println("LMS read error:", err)
+		emit(nil, err)
+
+		return
+	}
 }
