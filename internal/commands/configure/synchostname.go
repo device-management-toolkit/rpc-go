@@ -46,15 +46,14 @@ func (cmd *SyncHostnameCmd) Run(ctx *commands.Context) error {
 		return utils.OSNetworkInterfacesLookupFailed
 	}
 
-	// Ensure service availability (optional)
-	if _, err := cmd.WSMan.GetGeneralSettings(); err != nil {
+	// AMT rejects a Put that omits the settings it requires, so start from the current values.
+	current, err := cmd.WSMan.GetGeneralSettings()
+	if err != nil {
 		return fmt.Errorf("failed to get general settings: %w", err)
 	}
 
-	req := general.GeneralSettingsRequest{}
-	if hostname != "" {
-		req.HostName = hostname
-	}
+	req := generalSettingsRequest(current.Body.GetResponse)
+	req.HostName = hostname
 
 	if dnsSuffix != "" {
 		req.DomainName = dnsSuffix
@@ -67,4 +66,30 @@ func (cmd *SyncHostnameCmd) Run(ctx *commands.Context) error {
 	log.Infof("Synchronized AMT hostname to '%s' with DNS suffix '%s'", hostname, dnsSuffix)
 
 	return nil
+}
+
+// generalSettingsRequest copies the writable fields of the current settings into a Put request.
+func generalSettingsRequest(g general.GeneralSettingsResponse) general.GeneralSettingsRequest {
+	return general.GeneralSettingsRequest{
+		ElementName:                   g.ElementName,
+		InstanceID:                    g.InstanceID,
+		IdleWakeTimeout:               g.IdleWakeTimeout,
+		HostName:                      g.HostName,
+		DomainName:                    g.DomainName,
+		PingResponseEnabled:           g.PingResponseEnabled,
+		WsmanOnlyMode:                 g.WsmanOnlyMode,
+		PreferredAddressFamily:        g.PreferredAddressFamily,
+		DHCPv6ConfigurationTimeout:    g.DHCPv6ConfigurationTimeout,
+		DDNSUpdateEnabled:             g.DDNSUpdateEnabled,
+		DDNSUpdateByDHCPServerEnabled: g.DDNSUpdateByDHCPServerEnabled,
+		SharedFQDN:                    g.SharedFQDN,
+		HostOSFQDN:                    g.HostOSFQDN,
+		DDNSTTL:                       g.DDNSTTL,
+		AMTNetworkEnabled:             g.AMTNetworkEnabled,
+		RmcpPingResponseEnabled:       g.RmcpPingResponseEnabled,
+		DDNSPeriodicUpdateInterval:    g.DDNSPeriodicUpdateInterval,
+		PresenceNotificationInterval:  g.PresenceNotificationInterval,
+		ThunderboltDockEnabled:        g.ThunderboltDockEnabled,
+		DHCPSyncRequiresHostname:      int(g.DHCPSyncRequiresHostname),
+	}
 }
